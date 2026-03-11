@@ -149,3 +149,4 @@ jobs:
           packages-dir: dist/
           skip-existing: true
           attestations: false
+          verbose: true

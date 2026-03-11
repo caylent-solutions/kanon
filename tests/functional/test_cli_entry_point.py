@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from rpm_cli import __version__
+
 
 def _run_rpm(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -56,7 +58,7 @@ class TestRpmVersion:
     def test_version_flag(self) -> None:
         result = _run_rpm("--version")
         assert result.returncode == 0
-        assert "0.1.0" in result.stdout
+        assert __version__ in result.stdout
 
 
 @pytest.mark.functional

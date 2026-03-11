@@ -1,0 +1,34 @@
+#!/bin/bash
+
+ROOT_DIR=$(git rev-parse --show-toplevel)
+cd "$ROOT_DIR"
+
+echo "Running lint..."
+if ! make lint; then
+  echo "Linting failed. Please fix the issues before pushing."
+  exit 1
+fi
+
+echo "Running unit tests with coverage check..."
+if ! make test-unit; then
+  echo "Unit tests failed. Please fix the issues before pushing."
+  exit 1
+fi
+
+coverage_percent=$(python -m coverage report --format=total 2>/dev/null || echo "0")
+echo "Coverage: $coverage_percent%"
+if python -c "import sys; sys.exit(0 if float('${coverage_percent}') >= 85 else 1)"; then
+  echo "Coverage meets 90% threshold."
+else
+  echo "Code coverage is below 85% threshold ($coverage_percent%). Please add more tests."
+  exit 1
+fi
+
+echo "Running functional tests..."
+if ! make test-functional; then
+  echo "Functional tests failed. Please fix the issues before pushing."
+  exit 1
+fi
+
+echo "All tests and linting passed!"
+exit 0

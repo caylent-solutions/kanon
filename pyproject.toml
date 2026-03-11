@@ -6,13 +6,34 @@ build-backend = "hatchling.build"
 name = "rpm-cli"
 version = "0.1.0"
 description = "RPM (Repo Package Manager) CLI tool"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+
+authors = [
+  { name = "Caylent", email = "solutions-owners@caylent.com" }
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14"
+]
+
 dependencies = [
     "packaging>=23.0",
 ]
 
 [project.scripts]
 rpm = "rpm_cli.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/caylent-solutions/rpm"
+Issues = "https://github.com/caylent-solutions/rpm/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rpm_cli"]
@@ -23,7 +44,7 @@ packages = ["src/rpm_cli"]
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-extend-exclude = ["tests/fixtures"]
+extend-exclude = ["tests/fixtures", ".devcontainer"]
 
 [tool.ruff.lint]
 select = ["F", "E"]
@@ -47,3 +68,37 @@ data_file = ".coverage-data/.coverage"
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.semantic_release]
+version_variable = "src/rpm_cli/__init__.py:__version__"
+version_toml = ["pyproject.toml:project.version"]
+build_command = "python -m build"
+tag_format = "{version}"
+major_on_zero = true
+branch = "main"
+upload_to_pypi = false
+upload_to_release = false
+commit_version_number = true
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+changelog_scope = false
+exclude_commit_patterns = []
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+  "build",
+  "chore",
+  "ci",
+  "docs",
+  "feat",
+  "fix",
+  "perf",
+  "refactor",
+  "revert",
+  "security",
+  "style",
+  "test"
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "security", "revert"]

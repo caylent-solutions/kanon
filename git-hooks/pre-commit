@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Run pre-commit hooks
+pre-commit run --all-files
+
+# Auto-format and re-stage formatted files
+echo "Running format for staged changes..."
+make format
+
+for file in $(git diff --cached --name-only --diff-filter=d | grep '\.py$'); do
+  if [ -f "$file" ]; then
+    git add "$file"
+  fi
+done

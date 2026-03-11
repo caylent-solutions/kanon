@@ -1,0 +1,151 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g., 1.5.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
+jobs:
+  validate-version:
+    name: Validate version format
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate semver format
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+
+          if ! [[ $TAG_NAME =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: $TAG_NAME. Version must follow semver format (e.g., 1.2.3) without any prefix."
+            echo "::error::Please use the format: MAJOR.MINOR.PATCH (e.g., 0.1.0, 1.0.0, 2.3.4)"
+            exit 1
+          fi
+          echo "Version format is valid: $TAG_NAME"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+        shell: bash
+
+  build-and-publish:
+    name: Build and publish to PyPI
+    needs: validate-version
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rpm-cli
+    permissions:
+      id-token: write
+    env:
+      TAG_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Cache ASDF installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.asdf
+          key: ${{ runner.os }}-asdf-v0.15.0-${{ hashFiles('.tool-versions') }}
+          restore-keys: |
+            ${{ runner.os }}-asdf-v0.15.0-
+
+      - name: Install ASDF
+        run: |
+          if [ ! -d ~/.asdf ]; then
+            git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
+          fi
+          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
+          source $HOME/.asdf/asdf.sh
+        shell: bash
+
+      - name: Install ASDF plugins and tools
+        run: |
+          cd $GITHUB_WORKSPACE
+          source $HOME/.asdf/asdf.sh
+          cut -d' ' -f1 .tool-versions | xargs -I{} asdf plugin add {} || true
+          asdf install
+          asdf reshim
+        shell: bash
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python*/site-packages
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install build dependencies
+        run: |
+          pip install --upgrade pip
+          make install-dev
+          asdf reshim
+        shell: bash
+
+      - name: Verify version consistency
+        run: |
+          TAG_VERSION="${{ env.TAG_VERSION }}"
+
+          INIT_VERSION=$(python -c "
+          import re
+          with open('src/rpm_cli/__init__.py', 'r') as f:
+              content = f.read()
+              match = re.search(r'__version__ = [\"\'](.*?)[\"\']', content)
+              print(match.group(1) if match else 'NOT_FOUND')
+          ")
+
+          TOML_VERSION=$(python -c "
+          import re
+          with open('pyproject.toml', 'r') as f:
+              content = f.read()
+              match = re.search(r'^version = [\"\'](.*?)[\"\']', content, re.MULTILINE)
+              print(match.group(1) if match else 'NOT_FOUND')
+          ")
+
+          echo "Tag version: $TAG_VERSION"
+          echo "__init__.py version: $INIT_VERSION"
+          echo "pyproject.toml version: $TOML_VERSION"
+
+          if [[ "$TAG_VERSION" != "$INIT_VERSION" ]]; then
+            echo "::error::Version mismatch: tag ($TAG_VERSION) != __init__.py ($INIT_VERSION)"
+            exit 1
+          fi
+
+          if [[ "$TAG_VERSION" != "$TOML_VERSION" ]]; then
+            echo "::error::Version mismatch: tag ($TAG_VERSION) != pyproject.toml ($TOML_VERSION)"
+            exit 1
+          fi
+
+          echo "Version consistency verified: $TAG_VERSION"
+        shell: bash
+
+      - name: Build package
+        run: make publish
+        shell: bash
+
+      - name: Publish to PyPI
+        id: publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+          attestations: false

@@ -645,13 +645,27 @@ Standard `repo` restricts `<linkfile dest>` to relative paths within the workspa
 ### Install from Source
 
 ```bash
-pip install -e ".[dev]"
+make install-dev
+```
+
+### Set Up Git Hooks
+
+```bash
+make install-hooks
 ```
 
 ### Run Tests
 
 ```bash
-python -m pytest
+make test          # All tests
+make test-unit     # Unit tests only
+make test-cov      # Tests with coverage report
+```
+
+### Build
+
+```bash
+make publish       # Clean, build, and check distribution
 ```
 
 ### Project Structure
@@ -666,6 +680,22 @@ tests/                 # Unit and functional tests
 docs/                  # Configuration, lifecycle, version resolution documentation
 pyproject.toml         # Package config (hatchling build, entry point: rpm)
 ```
+
+### Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, PR process, and how the automated release pipeline works.
+
+### CI/CD Pipeline
+
+This project uses a fully automated SDLC pipeline:
+
+1. **PR Validation** -- Lint, build, test (90% coverage), security scan on every PR
+2. **Main Branch Validation** -- Full validation + CodeQL on merge to main
+3. **Manual QA Approval** -- Human gate before release
+4. **Automated Release** -- Semantic versioning from conventional commit prefixes, changelog generation, tagging
+5. **PyPI Publishing** -- Automated publish via OIDC trusted publishing
+
+PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: add feature`, `fix: resolve bug`) as they drive automatic version bumps.
 
 ---
 

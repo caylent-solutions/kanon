@@ -9,3 +9,12 @@ build/
 .coverage-data/
 .coverage
 htmlcov/
+
+# Environment files
+shell.env
+devcontainer-environment-variables.json
+.devcontainer/aws-profile-map.json
+.devcontainer/ssh-private-key
+
+# Claude Code local settings
+.claude/settings.local.json

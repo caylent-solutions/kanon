@@ -1,0 +1,152 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Validate PR
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Simulate merge
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git fetch origin ${{ github.base_ref }}
+          git checkout -b pr-validation origin/${{ github.base_ref }}
+          git merge --no-commit --no-ff ${{ github.event.pull_request.head.sha }}
+        shell: bash
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Cache ASDF installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.asdf
+          key: ${{ runner.os }}-asdf-v0.15.0-${{ hashFiles('.tool-versions') }}
+          restore-keys: |
+            ${{ runner.os }}-asdf-v0.15.0-
+
+      - name: Install ASDF
+        run: |
+          if [ ! -d ~/.asdf ]; then
+            git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
+          fi
+          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
+          source $HOME/.asdf/asdf.sh
+        shell: bash
+
+      - name: Install ASDF plugins and tools
+        run: |
+          cd $GITHUB_WORKSPACE
+          source $HOME/.asdf/asdf.sh
+          cut -d' ' -f1 .tool-versions | xargs -I{} asdf plugin add {} || true
+          asdf plugin remove python 2>/dev/null || true
+          asdf install
+          asdf reshim
+        shell: bash
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python*/site-packages
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          make install-dev
+        shell: bash
+
+      - name: Run pre-commit checks
+        run: |
+          source $HOME/.asdf/asdf.sh
+          make pre-commit-check
+        shell: bash
+
+      - name: Lint
+        run: make lint
+        shell: bash
+
+      - name: Build
+        run: make publish
+        shell: bash
+
+      - name: Run unit tests with coverage threshold
+        run: |
+          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+          coverage json
+          coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
+          echo "Coverage: $coverage_percent%"
+          if (( $(echo "$coverage_percent < 85" | bc -l) )); then
+            echo "Error: Code coverage is below 85% threshold ($coverage_percent%)"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Run functional tests
+        run: make test-functional
+        shell: bash
+
+      - name: Print coverage summary
+        run: |
+          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+        shell: bash
+
+      - name: Find code owners
+        id: codeowners
+        if: success()
+        run: |
+          DEFAULT_OWNER=""
+          if [ -f ".github/CODEOWNERS" ]; then
+            DEFAULT_OWNER=$(grep -E "^\*|^/" .github/CODEOWNERS | awk '{print $2}' || true)
+          fi
+
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.event.pull_request.head.sha }})
+          echo "Changed files: $CHANGED_FILES"
+
+          SPECIFIC_OWNERS=""
+          if [ -f ".github/CODEOWNERS" ]; then
+            for FILE in $CHANGED_FILES; do
+              while [[ "$FILE" == */* ]]; do
+                DIR=$(dirname "$FILE")
+                MATCH=$(grep -E "^$DIR/" .github/CODEOWNERS | awk '{for(i=2;i<=NF;i++) print $i}' || true)
+                if [ -n "$MATCH" ]; then
+                  SPECIFIC_OWNERS="$SPECIFIC_OWNERS $MATCH"
+                  break
+                fi
+                FILE="$DIR"
+              done
+            done
+          fi
+
+          if [ -z "$SPECIFIC_OWNERS" ]; then
+            OWNERS="$DEFAULT_OWNER"
+          else
+            OWNERS="$SPECIFIC_OWNERS"
+          fi
+
+          if [ -n "$OWNERS" ]; then
+            UNIQUE_OWNERS=$(echo "$OWNERS" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ' | xargs)
+          else
+            UNIQUE_OWNERS=""
+          fi
+          echo "Final owners: $UNIQUE_OWNERS"
+          echo "owners=$UNIQUE_OWNERS" >> $GITHUB_OUTPUT
+        shell: bash

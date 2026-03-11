@@ -1,0 +1,29 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: debug-statements
+      - id: check-json
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-added-large-files
+      - id: detect-aws-credentials
+        args:
+          - '--allow-missing-credentials'
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: detect-private-key
+        exclude: ^tests/
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-c=.yamllint]
+        types: [yaml]
+
+  - repo: https://github.com/zricethezav/gitleaks
+    rev: v8.26.0
+    hooks:
+      - id: gitleaks

@@ -38,9 +38,6 @@ Issues = "https://github.com/caylent-solutions/rpm/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/rpm_cli"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/rpm_cli/catalog" = "rpm_cli/catalog"
-
 [tool.ruff]
 target-version = "py311"
 line-length = 120

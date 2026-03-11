@@ -17,17 +17,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.14'
 
       - name: Cache ASDF installation
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.asdf
           key: ${{ runner.os }}-asdf-v0.15.0-${{ hashFiles('.tool-versions') }}
@@ -55,7 +55,7 @@ jobs:
         shell: bash
 
       - name: Cache Python dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pip
@@ -116,7 +116,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -151,7 +151,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -163,12 +163,12 @@ jobs:
           private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.14'
 
       - name: Cache ASDF installation for release
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.asdf
           key: ${{ runner.os }}-asdf-release-v0.15.0-${{ hashFiles('.tool-versions') }}
@@ -197,7 +197,7 @@ jobs:
         shell: bash
 
       - name: Cache Python dependencies for release
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pip
@@ -268,7 +268,14 @@ jobs:
           git add CHANGELOG.md pyproject.toml src/rpm_cli/__init__.py
 
           echo "Git status after staging:"
-          git status --porcelain
+          STAGED=$(git status --porcelain)
+          echo "$STAGED"
+
+          if [[ -z "$STAGED" ]]; then
+            echo "No file changes detected — no version bump needed. Skipping release."
+            echo "skip_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           git commit -m "chore(release): $VERSION"
 
@@ -283,12 +290,14 @@ jobs:
           echo "Pull request created: $PR_URL"
 
           echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          echo "skip_release=false" >> "$GITHUB_OUTPUT"
 
           gh pr merge ${PR_URL} --admin --merge
           echo "Pull request merged successfully"
         shell: bash
 
       - name: Wait for PR to merge and create Git tag
+        if: steps.commit-changes.outputs.skip_release != 'true'
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |
@@ -332,6 +341,7 @@ jobs:
         shell: bash
 
       - name: Trigger publish workflow
+        if: steps.commit-changes.outputs.skip_release != 'true'
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
         run: |

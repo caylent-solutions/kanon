@@ -2,7 +2,23 @@
 
 
 
+## v0.1.2 (2026-03-11)
+
+### Fix
+
+* fix: use dynamic version in functional test and enable verbose PyPI publish
+
+- Replace hardcoded version string in test_version_flag with
+  rpm_cli.__version__ so the test doesn&#39;t break on version bumps
+- Enable verbose mode on pypa/gh-action-pypi-publish to diagnose
+  400 Bad Request from PyPI trusted publisher upload ([`2e082f0`](https://github.com/caylent-solutions/rpm/commit/2e082f02aec6eef85605a7d04dfba6f53ac62d8d))
+
+
 ## v0.1.1 (2026-03-11)
+
+### Chore
+
+* chore(release): 0.1.1 ([`10922ca`](https://github.com/caylent-solutions/rpm/commit/10922caa7a054fa215cfcb4aec2c6dc407a480f1))
 
 ### Ci
 
@@ -43,6 +59,12 @@ the pipeline to pass. Threshold can be raised as coverage improves. ([`91b2be1`]
 - Add early exit in create-release job when no file changes are
   detected (e.g., ci: commits that don&#39;t trigger a version bump)
 - Skip tag creation and publish trigger when release is skipped ([`d8b5fd9`](https://github.com/caylent-solutions/rpm/commit/d8b5fd99d3892f928e1835ef680dc02d5616258d))
+
+### Unknown
+
+* Merge pull request #4 from caylent-solutions/release-0.1.1
+
+Release 0.1.1 ([`9477192`](https://github.com/caylent-solutions/rpm/commit/94771923e156c189a4f775f3260115d54632e1d7))
 
 
 ## v0.1.0 (2026-03-11)

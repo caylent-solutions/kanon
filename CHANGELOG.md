@@ -2,7 +2,23 @@
 
 
 
+## v0.1.3 (2026-03-11)
+
+### Fix
+
+* fix(build): remove duplicate catalog files from wheel
+
+Remove redundant force-include for src/rpm_cli/catalog in pyproject.toml.
+The catalog directory is already included via packages = [&#34;src/rpm_cli&#34;],
+so force-include caused duplicate entries in the ZIP archive, which PyPI
+rejects with &#34;Duplicate filename in local headers&#34;. ([`a9aa28c`](https://github.com/caylent-solutions/rpm/commit/a9aa28c583f178fbe8e186d923253a6371f8d4ff))
+
+
 ## v0.1.2 (2026-03-11)
+
+### Chore
+
+* chore(release): 0.1.2 ([`d9da1a6`](https://github.com/caylent-solutions/rpm/commit/d9da1a6010d728bf3f20187ad29194df61673c18))
 
 ### Fix
 
@@ -12,6 +28,12 @@
   rpm_cli.__version__ so the test doesn&#39;t break on version bumps
 - Enable verbose mode on pypa/gh-action-pypi-publish to diagnose
   400 Bad Request from PyPI trusted publisher upload ([`2e082f0`](https://github.com/caylent-solutions/rpm/commit/2e082f02aec6eef85605a7d04dfba6f53ac62d8d))
+
+### Unknown
+
+* Merge pull request #7 from caylent-solutions/release-0.1.2
+
+Release 0.1.2 ([`361e8f1`](https://github.com/caylent-solutions/rpm/commit/361e8f163758de3ebaf6a128f235834f708142ad))
 
 
 ## v0.1.1 (2026-03-11)

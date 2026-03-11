@@ -86,7 +86,7 @@ jobs:
 
       - name: Run unit tests with coverage threshold
         run: |
-          make test-unit
+          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -100,8 +100,9 @@ jobs:
         run: make test-functional
         shell: bash
 
-      - name: Generate coverage report
-        run: make test-cov
+      - name: Print coverage summary
+        run: |
+          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
         shell: bash
 
   codeql:

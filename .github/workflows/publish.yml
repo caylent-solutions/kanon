@@ -9,7 +9,7 @@ on:
         type: string
 
 concurrency:
-  group: release-pipeline
+  group: publish-pipeline
   cancel-in-progress: false
 
 jobs:

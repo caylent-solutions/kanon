@@ -2,7 +2,39 @@
 
 
 
+## v0.3.0 (2026-03-12)
+
+### Feature
+
+* feat: use separate concurrency group for publish workflow to prevent cancellation (#14)
+
+* feat: support PEP 440 constraints in RPM_SOURCE_*_REVISION with refs/tags/ prefix
+
+Extends resolve_version() to mirror the constraint syntax supported by
+rpm-git-repo manifest &lt;project&gt; revision attributes. The last path
+component is inspected for PEP 440 operators, enabling prefixed
+constraints like refs/tags/~=1.1.0 and refs/tags/prefix/&gt;=1.0.0,&lt;2.0.0.
+
+_list_tags() now returns full ref paths (refs/tags/1.1.2) so the
+resolved value is directly usable with repo init -b. All operators
+supported by rpm-git-repo are supported: ~=, &gt;=, &lt;=, &gt;, &lt;, ==, !=, *.
+
+Removes _parse_tag_versions() (logic inlined), adds _is_version_constraint()
+mirroring rpm-git-repo version_constraints.py. Updates version-resolution.md,
+multi-source-guide.md, and README to document the new syntax.
+
+* style: apply ruff formatting to version.py and test_version.py
+
+* docs: add table of contents to README
+
+* fix: use separate concurrency group for publish workflow to prevent cancellation ([`ebacbaa`](https://github.com/caylent-solutions/rpm/commit/ebacbaa2574bf0f8c464ce24058ecb0d7e409f04))
+
+
 ## v0.2.0 (2026-03-12)
+
+### Chore
+
+* chore(release): 0.2.0 ([`e6b8b86`](https://github.com/caylent-solutions/rpm/commit/e6b8b86e25ceba82a01b026cf15c4fb8d0fb0599))
 
 ### Feature
 
@@ -26,6 +58,12 @@ multi-source-guide.md, and README to document the new syntax.
 * style: apply ruff formatting to version.py and test_version.py
 
 * docs: add table of contents to README ([`d99b071`](https://github.com/caylent-solutions/rpm/commit/d99b071c78c1521b81ae364a7c41debe3c4387bd))
+
+### Unknown
+
+* Merge pull request #13 from caylent-solutions/release-0.2.0
+
+Release 0.2.0 ([`7c48bfe`](https://github.com/caylent-solutions/rpm/commit/7c48bfedc8547ca9c980bf0af21c0496ce2c7f52))
 
 
 ## v0.1.4 (2026-03-12)

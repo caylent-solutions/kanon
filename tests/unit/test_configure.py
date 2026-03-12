@@ -193,3 +193,25 @@ class TestConfigureLifecycle:
         assert mp_dir.is_dir()
         assert (tmp_path / ".rpm" / "sources" / "build").is_dir()
         mock_install.assert_called_once_with(mp_dir)
+
+    def test_wildcard_revision_resolved_before_repo_init(self, tmp_path: pathlib.Path) -> None:
+        """resolve_version must be called for source revisions with PEP 440 specifiers."""
+        rpmenv = tmp_path / ".rpmenv"
+        rpmenv.write_text(
+            "RPM_SOURCE_build_URL=https://example.com/build.git\n"
+            "RPM_SOURCE_build_REVISION=*\n"
+            "RPM_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        with (
+            patch("rpm_cli.core.configure.subprocess.run") as mock_run,
+            patch("rpm_cli.core.configure.resolve_version", return_value="3.0.0") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stderr = ""
+            configure(rpmenv)
+
+        mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
+        # Confirm the resolved tag was used in the repo init command
+        repo_init_call = mock_run.call_args_list[0]
+        assert "3.0.0" in repo_init_call.kwargs.get("args", repo_init_call.args[0])

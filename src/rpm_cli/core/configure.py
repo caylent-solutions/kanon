@@ -14,6 +14,7 @@ import sys
 
 from rpm_cli.core.marketplace import install_marketplace_plugins
 from rpm_cli.core.rpmenv import parse_rpmenv
+from rpm_cli.version import resolve_version
 
 
 def create_source_dirs(
@@ -320,11 +321,12 @@ def configure(rpmenv_path: pathlib.Path) -> None:
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"rpm configure: syncing source '{name}'...")
+        resolved_revision = resolve_version(source_data["url"], source_data["revision"])
         print(f"  repo init ({source_data['path']})...")
         run_repo_init(
             source_dir,
             source_data["url"],
-            source_data["revision"],
+            resolved_revision,
             source_data["path"],
             repo_rev,
         )

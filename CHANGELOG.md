@@ -2,7 +2,39 @@
 
 
 
+## v0.4.0 (2026-03-12)
+
+### Feature
+
+* feat: add rpm bootstrap runner with getting-started readmes (#16)
+
+* fix(build): remove duplicate catalog files from wheel
+
+Remove redundant force-include for src/rpm_cli/catalog in pyproject.toml.
+The catalog directory is already included via packages = [&#34;src/rpm_cli&#34;],
+so force-include caused duplicate entries in the ZIP archive, which PyPI
+rejects with &#34;Duplicate filename in local headers&#34;.
+
+* feat: add rpm bootstrap runner with getting-started readmes
+
+Add a third bootstrap runner called &#39;rpm&#39; for projects that don&#39;t use
+a standard task runner (Make or Gradle). Running &#39;rpm bootstrap rpm&#39;
+creates only .rpmenv and rpm-readme.md — no wrapper files.
+
+Add rpm-readme.md getting-started guides to all three runner catalog
+directories (make, gradle, rpm) with runner-specific prerequisites,
+setup steps, full .rpmenv variable reference, and troubleshooting.
+
+Update .rpmenv template to use concrete rpm-git-repo URL and branch
+instead of placeholders. Cover with unit and functional tests (218
+tests passing). ([`3c9a7fd`](https://github.com/caylent-solutions/rpm/commit/3c9a7fd7f1a99e82e3da6e003bffca51370e79f8))
+
+
 ## v0.3.0 (2026-03-12)
+
+### Chore
+
+* chore(release): 0.3.0 ([`be2d0d3`](https://github.com/caylent-solutions/rpm/commit/be2d0d3f65b01d2a7d3b0119930b265d184e322e))
 
 ### Feature
 
@@ -28,6 +60,12 @@ multi-source-guide.md, and README to document the new syntax.
 * docs: add table of contents to README
 
 * fix: use separate concurrency group for publish workflow to prevent cancellation ([`ebacbaa`](https://github.com/caylent-solutions/rpm/commit/ebacbaa2574bf0f8c464ce24058ecb0d7e409f04))
+
+### Unknown
+
+* Merge pull request #15 from caylent-solutions/release-0.3.0
+
+Release 0.3.0 ([`48fdf5f`](https://github.com/caylent-solutions/rpm/commit/48fdf5f51a27f6a001eef54655d26b5859be248d))
 
 
 ## v0.2.0 (2026-03-12)

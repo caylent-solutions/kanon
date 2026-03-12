@@ -2,7 +2,25 @@
 
 
 
+## v0.1.4 (2026-03-12)
+
+### Fix
+
+* fix: resolve source revision specifiers before passing to repo init (#10)
+
+RPM_SOURCE_&lt;name&gt;_REVISION supports PEP 440 specifiers (e.g. *, ~=1.0)
+via resolve_version, but configure() was passing the raw specifier
+directly to repo init -b, causing repo to fail with &#39;revision not found&#39;.
+
+Call resolve_version on the source revision before run_repo_init so
+that wildcard and range specifiers are resolved to actual tags. ([`98abc86`](https://github.com/caylent-solutions/rpm/commit/98abc868d0d3b0321d49d6e36c7dc4132621254e))
+
+
 ## v0.1.3 (2026-03-11)
+
+### Chore
+
+* chore(release): 0.1.3 ([`1b1483d`](https://github.com/caylent-solutions/rpm/commit/1b1483d5b0a58ef10c45cb58bccc040cb22b94d7))
 
 ### Fix
 
@@ -12,6 +30,12 @@ Remove redundant force-include for src/rpm_cli/catalog in pyproject.toml.
 The catalog directory is already included via packages = [&#34;src/rpm_cli&#34;],
 so force-include caused duplicate entries in the ZIP archive, which PyPI
 rejects with &#34;Duplicate filename in local headers&#34;. ([`a9aa28c`](https://github.com/caylent-solutions/rpm/commit/a9aa28c583f178fbe8e186d923253a6371f8d4ff))
+
+### Unknown
+
+* Merge pull request #9 from caylent-solutions/release-0.1.3
+
+Release 0.1.3 ([`b340608`](https://github.com/caylent-solutions/rpm/commit/b340608fad9fbf03ecc6da1776df25afb4f5ccb5))
 
 
 ## v0.1.2 (2026-03-11)

@@ -2,7 +2,37 @@
 
 
 
+## v0.2.0 (2026-03-12)
+
+### Feature
+
+* feat: support PEP 440 constraints in RPM_SOURCE_*_REVISION with refs/tags/ prefix (#12)
+
+* feat: support PEP 440 constraints in RPM_SOURCE_*_REVISION with refs/tags/ prefix
+
+Extends resolve_version() to mirror the constraint syntax supported by
+rpm-git-repo manifest &lt;project&gt; revision attributes. The last path
+component is inspected for PEP 440 operators, enabling prefixed
+constraints like refs/tags/~=1.1.0 and refs/tags/prefix/&gt;=1.0.0,&lt;2.0.0.
+
+_list_tags() now returns full ref paths (refs/tags/1.1.2) so the
+resolved value is directly usable with repo init -b. All operators
+supported by rpm-git-repo are supported: ~=, &gt;=, &lt;=, &gt;, &lt;, ==, !=, *.
+
+Removes _parse_tag_versions() (logic inlined), adds _is_version_constraint()
+mirroring rpm-git-repo version_constraints.py. Updates version-resolution.md,
+multi-source-guide.md, and README to document the new syntax.
+
+* style: apply ruff formatting to version.py and test_version.py
+
+* docs: add table of contents to README ([`d99b071`](https://github.com/caylent-solutions/rpm/commit/d99b071c78c1521b81ae364a7c41debe3c4387bd))
+
+
 ## v0.1.4 (2026-03-12)
+
+### Chore
+
+* chore(release): 0.1.4 ([`6d98ebf`](https://github.com/caylent-solutions/rpm/commit/6d98ebf4f8b361ceedf5dcbe16a59d9a4a106d8a))
 
 ### Fix
 
@@ -14,6 +44,12 @@ directly to repo init -b, causing repo to fail with &#39;revision not found&#39;
 
 Call resolve_version on the source revision before run_repo_init so
 that wildcard and range specifiers are resolved to actual tags. ([`98abc86`](https://github.com/caylent-solutions/rpm/commit/98abc868d0d3b0321d49d6e36c7dc4132621254e))
+
+### Unknown
+
+* Merge pull request #11 from caylent-solutions/release-0.1.4
+
+Release 0.1.4 ([`56ea6bc`](https://github.com/caylent-solutions/rpm/commit/56ea6bccb740fc59c364d8f2faedf501253868b7))
 
 
 ## v0.1.3 (2026-03-11)

@@ -30,24 +30,43 @@ extracts it by stripping the `RPM_SOURCE_` prefix and the `_URL` suffix,
 treating everything in between as the source name. The name has no semantic
 meaning to the CLI; it is purely organizational.
 
-**The CLI treats all sources identically.** There is no distinction between
-"build" and "marketplace" source types at the processing level. What
-determines a source's behavior is the **manifest content**, not the source
-name. A source produces build packages when its manifest contains
-`<project>` entries pointing to build package repositories. A source
-produces marketplace plugins when its manifest contains `<project>` entries
-with `<linkfile>` elements that create symlinks into
-`${CLAUDE_MARKETPLACES_DIR}`.
+**The CLI treats all sources identically.** Every source goes through the
+same processing pipeline: `repo init` → `repo envsubst` → `repo sync`.
+The source name does not influence how the CLI processes it. What a source
+delivers is determined entirely by its **manifest content**.
 
-**Recommended naming convention:** Prefix source names with `build` for
-build package sources and `marketplaces` for Claude Code plugin sources
-(e.g., `RPM_SOURCE_build_*`, `RPM_SOURCE_marketplaces_*`). This naming
-convention is recommended because it allows humans and AI agents to
-immediately understand the purpose of each source when reading a `.rpmenv`
-file, without needing to inspect the manifest content. When multiple
-sources serve the same concern, append a hyphenated qualifier
-(e.g., `build-core`, `build-infra`, `marketplaces-core`,
-`marketplaces-team`).
+A source delivers build packages when its manifest contains `<project>`
+entries that clone package repositories into `.packages/`. A source
+delivers marketplace plugins when its manifest contains `<project>` entries
+with `<linkfile>` elements that create symlinks into
+`${CLAUDE_MARKETPLACES_DIR}`. It is the symlink destination — not the
+source name — that causes the synced content to be recognized as a
+marketplace plugin. When `RPM_MARKETPLACE_INSTALL=true`, the CLI scans the
+entire `${CLAUDE_MARKETPLACES_DIR}` directory after all sources have synced
+and installs every plugin found there, regardless of which source created
+the symlink.
+
+### Recommended Naming Convention
+
+Choose source names that describe what the source provides. This makes
+`.rpmenv` files self-documenting for humans and AI agents without needing
+to inspect the manifest XML content. Common prefixes include:
+
+| Prefix | Purpose |
+|---|---|
+| `build` | Build tooling packages (linting, formatting, conventions) |
+| `marketplaces` | Claude Code marketplace plugins |
+| `pipelines` | CI/CD pipeline packages |
+| `runners` | Task runner packages |
+| `tf-deploy-templates` | Terraform deployment templates |
+| `sonarqube-config` | SonarQube configuration packages |
+
+These prefixes are conventions, not requirements. Any descriptive name
+that communicates the source's purpose to your team is appropriate.
+
+When multiple sources serve the same concern, append a hyphenated qualifier
+to distinguish them (e.g., `build-core`, `build-infra`,
+`marketplaces-core`, `marketplaces-team`, `pipelines-ci`, `pipelines-cd`).
 
 **Use hyphens to create descriptive, multi-word source names.** Hyphens
 keep the three-field structure (`RPM_SOURCE_` + `<name>` + `_SUFFIX`)
@@ -67,6 +86,7 @@ Field 3: _URL            (fixed suffix: _URL, _REVISION, or _PATH)
 ```properties
 RPM_SOURCE_build_URL=...
 RPM_SOURCE_marketplaces_URL=...
+RPM_SOURCE_pipelines_URL=...
 ```
 
 **Multiple sources per concern — hyphenate the name:**
@@ -76,6 +96,8 @@ RPM_SOURCE_build-core_URL=...
 RPM_SOURCE_build-infra_URL=...
 RPM_SOURCE_marketplaces-core_URL=...
 RPM_SOURCE_marketplaces-team_URL=...
+RPM_SOURCE_pipelines-ci_URL=...
+RPM_SOURCE_pipelines-cd_URL=...
 ```
 
 There is no limit on the number of sources. The CLI discovers all

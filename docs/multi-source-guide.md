@@ -9,34 +9,124 @@ and organizations.
 ## Named Source Format (.rpmenv)
 
 RPM auto-discovers sources from `RPM_SOURCE_<name>_URL` variable patterns in `.rpmenv`.
-Each source is defined by a set of variables following the
-`RPM_SOURCE_<name>_<property>` naming convention (`_URL`, `_REVISION`, `_PATH`).
+Each source is defined by a set of three variables following the
+`RPM_SOURCE_<name>_<property>` naming convention:
+
+| Suffix | Purpose |
+|---|---|
+| `_URL` | Git repository URL for the manifest source |
+| `_REVISION` | Branch name, exact tag ref, or PEP 440 version constraint |
+| `_PATH` | Path to the entry-point manifest XML within the repository |
+
 Sources are processed in alphabetical order by name.
 
 See the [.rpmenv variable reference](../README.md#rpmenv-variable-reference)
 for the full variable table.
 
-### Example .rpmenv Configuration
+### Source Naming Convention
+
+The `<name>` in `RPM_SOURCE_<name>_URL` is a free-form identifier — RPM
+extracts it by stripping the `RPM_SOURCE_` prefix and the `_URL` suffix,
+treating everything in between as the source name. The name has no semantic
+meaning to the CLI; it is purely organizational.
+
+**Use hyphens to create descriptive, multi-word source names.** Hyphens
+keep the three-field structure (`RPM_SOURCE_` + `<name>` + `_SUFFIX`)
+visually unambiguous:
+
+```text
+RPM_SOURCE_<name>_URL
+     ^1       ^2    ^3
+
+Field 1: RPM_SOURCE_     (fixed prefix)
+Field 2: <name>          (free-form identifier — use hyphens for multi-word names)
+Field 3: _URL            (fixed suffix: _URL, _REVISION, or _PATH)
+```
+
+**Single source per concern:**
+
+```properties
+RPM_SOURCE_build_URL=...
+RPM_SOURCE_marketplaces_URL=...
+```
+
+**Multiple sources per concern — hyphenate the name:**
+
+```properties
+RPM_SOURCE_build-core_URL=...
+RPM_SOURCE_build-infra_URL=...
+RPM_SOURCE_marketplaces-core_URL=...
+RPM_SOURCE_marketplaces-team_URL=...
+```
+
+There is no limit on the number of sources. The CLI discovers all
+`RPM_SOURCE_<name>_URL` keys, extracts each `<name>`, and processes
+them in alphabetical order.
+
+> **Note:** Underscores within the name (e.g., `RPM_SOURCE_build_core_URL`)
+> also work — the parser strips only the known prefix and suffix. However,
+> hyphens are recommended because they visually distinguish the source name
+> from the surrounding underscore-delimited fields.
+
+### Example: Single Build and Marketplace Source
 
 ```properties
 # Sources are auto-discovered from RPM_SOURCE_<name>_URL patterns.
 # No explicit source list is needed — names are extracted from _URL keys
-# and processed in alphabetical order (build-tools, then marketplace).
+# and processed in alphabetical order.
 
 # Build tools source — pinned to exact tag
-RPM_SOURCE_build_tools_URL=https://github.com/org/rpm-build-tools.git
-RPM_SOURCE_build_tools_REVISION=refs/tags/2.0.0
-RPM_SOURCE_build_tools_PATH=repo-specs/meta.xml
+RPM_SOURCE_build_URL=https://github.com/org/rpm-build-tools.git
+RPM_SOURCE_build_REVISION=refs/tags/2.0.0
+RPM_SOURCE_build_PATH=repo-specs/build-meta.xml
 
 # Marketplace source — compatible release constraint (>=1.1.0, <1.2.0)
-RPM_SOURCE_marketplace_URL=https://github.com/org/rpm-marketplace.git
-RPM_SOURCE_marketplace_REVISION=refs/tags/~=1.1.0
-RPM_SOURCE_marketplace_PATH=repo-specs/common/example/development/python/make/argparse/cli/meta.xml
+RPM_SOURCE_marketplaces_URL=https://github.com/org/rpm-marketplace.git
+RPM_SOURCE_marketplaces_REVISION=refs/tags/~=1.1.0
+RPM_SOURCE_marketplaces_PATH=repo-specs/claude-marketplaces.xml
 
 # Global variables available to all sources
 GITBASE=https://github.com/org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 ```
+
+### Example: Multiple Build and Marketplace Sources
+
+When a project needs packages from several repositories, add additional
+sources with hyphenated names. Each source gets its own isolated workspace
+and all packages are aggregated into a unified `.packages/` directory.
+
+```properties
+# Build sources — each points to a different manifest repository
+RPM_SOURCE_build-core_URL=https://github.com/org/rpm-build-core.git
+RPM_SOURCE_build-core_REVISION=refs/tags/~=2.0.0
+RPM_SOURCE_build-core_PATH=repo-specs/build-meta.xml
+
+RPM_SOURCE_build-infra_URL=https://github.com/org/rpm-build-infra.git
+RPM_SOURCE_build-infra_REVISION=refs/tags/>=1.0.0,<2.0.0
+RPM_SOURCE_build-infra_PATH=repo-specs/build-meta.xml
+
+RPM_SOURCE_build-security_URL=https://github.com/org/rpm-build-security.git
+RPM_SOURCE_build-security_REVISION=refs/tags/~=1.4.0
+RPM_SOURCE_build-security_PATH=repo-specs/build-meta.xml
+
+# Marketplace sources — each provides Claude Code plugins
+RPM_SOURCE_marketplaces-core_URL=https://github.com/org/rpm-marketplace-core.git
+RPM_SOURCE_marketplaces-core_REVISION=main
+RPM_SOURCE_marketplaces-core_PATH=repo-specs/claude-marketplaces.xml
+
+RPM_SOURCE_marketplaces-team_URL=https://github.com/org/rpm-marketplace-team.git
+RPM_SOURCE_marketplaces-team_REVISION=main
+RPM_SOURCE_marketplaces-team_PATH=repo-specs/claude-marketplaces.xml
+
+# Global variables available to all sources
+GITBASE=https://github.com/org/
+CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
+RPM_MARKETPLACE_INSTALL=true
+```
+
+Processing order (alphabetical): `build-core` → `build-infra` →
+`build-security` → `marketplaces-core` → `marketplaces-team`.
 
 `RPM_SOURCE_<name>_REVISION` accepts a branch name, an exact tag ref, or a PEP 440 constraint. When a constraint is used, the CLI resolves it against available tags before passing the result to `repo init -b`. Using the `refs/tags/` prefix is recommended — it scopes resolution to tags and produces a full ref path compatible with `repo init`. See [version-resolution.md](version-resolution.md) for all supported operators and syntax.
 
@@ -54,17 +144,27 @@ with each other.
 
 ### Directory Structure
 
+Each source name becomes a directory under `.rpm/sources/`:
+
 ```text
 .rpm/
 └── sources/
-    ├── marketplace/          # Isolated workspace for marketplace source
-    │   ├── .repo/            # repo tool metadata
-    │   └── .packages/        # Packages synced from this source
+    ├── build-core/               # From RPM_SOURCE_build-core_*
+    │   ├── .repo/
+    │   └── .packages/
+    │       └── rpm-build-conventions/
+    ├── build-infra/              # From RPM_SOURCE_build-infra_*
+    │   ├── .repo/
+    │   └── .packages/
+    │       └── rpm-terraform-modules/
+    ├── marketplaces-core/        # From RPM_SOURCE_marketplaces-core_*
+    │   ├── .repo/
+    │   └── .packages/
     │       └── rpm-claude-marketplaces-example-dev-lint/
-    └── build-tools/          # Isolated workspace for build-tools source
+    └── marketplaces-team/        # From RPM_SOURCE_marketplaces-team_*
         ├── .repo/
         └── .packages/
-            └── rpm-build-conventions/
+            └── rpm-claude-marketplaces-team-tools/
 ```
 
 ### Why Isolation Matters
@@ -93,8 +193,10 @@ provided them.
 
 ```text
 .packages/                                         # Unified view (symlinks)
-├── rpm-claude-marketplaces-example-dev-lint -> .rpm/sources/marketplace/.packages/rpm-claude-marketplaces-example-dev-lint
-└── rpm-build-conventions -> .rpm/sources/build-tools/.packages/rpm-build-conventions
+├── rpm-build-conventions          -> .rpm/sources/build-core/.packages/rpm-build-conventions
+├── rpm-terraform-modules          -> .rpm/sources/build-infra/.packages/rpm-terraform-modules
+├── rpm-claude-marketplaces-example-dev-lint -> .rpm/sources/marketplaces-core/.packages/rpm-claude-marketplaces-example-dev-lint
+└── rpm-claude-marketplaces-team-tools      -> .rpm/sources/marketplaces-team/.packages/rpm-claude-marketplaces-team-tools
 ```
 
 Consumers reference packages from `.packages/` without needing to know
@@ -118,7 +220,7 @@ sources and the duplicate package name.
 
 ```text
 Error: Package collision for 'rpm-shared-utils':
-  provided by source 'marketplace' and source 'build-tools'
+  provided by source 'build-core' and source 'build-infra'
 ```
 
 ### Resolution

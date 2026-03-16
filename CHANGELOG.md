@@ -2,7 +2,50 @@
 
 
 
+## v0.5.0 (2026-03-16)
+
+### Feature
+
+* feat: clarify source naming convention for multiple sources (#18)
+
+* feat: clarify source naming convention for multiple sources in multi-source guide
+
+Add dedicated &#34;Source Naming Convention&#34; section explaining the three-field
+variable structure and the hyphenation pattern for supporting multiple
+sources of the same concern type. Add a multi-source .rpmenv example
+showing multiple build and marketplace sources side by side. Update
+directory structure, symlink aggregation, and collision detection examples
+to use consistent multi-source naming throughout.
+
+* feat: clarify that source names are arbitrary and do not affect CLI behavior
+
+Add explicit explanation that the CLI treats all sources identically
+regardless of name. The names &#34;build&#34; and &#34;marketplaces&#34; are team
+conventions for readability — what determines a source&#39;s behavior is
+the manifest content (project entries and linkfile elements), not the
+source name.
+
+* feat: recommend build/marketplaces naming convention with rationale
+
+Add explicit recommendation to prefix source names with &#34;build&#34; or
+&#34;marketplaces&#34; so that humans and AI agents can immediately understand
+each source&#39;s purpose from the .rpmenv file alone, without needing to
+inspect manifest content.
+
+* feat: document flexible source naming convention and marketplace mechanism
+
+Clarify that marketplace behavior is determined by linkfile symlink
+destinations into CLAUDE_MARKETPLACES_DIR, not by source naming. Expand
+the naming convention section with a table of common prefixes beyond
+build/marketplaces (pipelines, runners, tf-deploy-templates,
+sonarqube-config) and explain that any descriptive name is appropriate. ([`6c91de5`](https://github.com/caylent-solutions/rpm/commit/6c91de5b93c8ecad38d89cfda0a17f6bdf62e6a8))
+
+
 ## v0.4.0 (2026-03-12)
+
+### Chore
+
+* chore(release): 0.4.0 ([`c8fa8dd`](https://github.com/caylent-solutions/rpm/commit/c8fa8ddbce109a729ad68ec3cf1e10c25e39dd5d))
 
 ### Feature
 
@@ -28,6 +71,12 @@ setup steps, full .rpmenv variable reference, and troubleshooting.
 Update .rpmenv template to use concrete rpm-git-repo URL and branch
 instead of placeholders. Cover with unit and functional tests (218
 tests passing). ([`3c9a7fd`](https://github.com/caylent-solutions/rpm/commit/3c9a7fd7f1a99e82e3da6e003bffca51370e79f8))
+
+### Unknown
+
+* Merge pull request #17 from caylent-solutions/release-0.4.0
+
+Release 0.4.0 ([`14a2843`](https://github.com/caylent-solutions/rpm/commit/14a284380c7afac0ecc0f010364b2b29ba89ef10))
 
 
 ## v0.3.0 (2026-03-12)

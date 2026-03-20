@@ -2,9 +2,36 @@
 
 
 
-## v0.5.0 (2026-03-16)
+## v0.6.0 (2026-03-20)
 
 ### Feature
+
+* feat: simplify bundled catalog to rpm-only with placeholder .rpmenv (#21)
+
+Remove make and gradle catalog entries — the bundled catalog now contains
+only the `rpm` standalone entry. Replace hard-coded Caylent-specific values
+in the rpm catalog .rpmenv with descriptive placeholders and commented-out
+examples showing single-source and multi-source configurations.
+
+This makes the bundled catalog generic for any organization. Users edit
+.rpmenv after bootstrap to configure their GITBASE, marketplace toggle,
+and source variables. ([`a331153`](https://github.com/caylent-solutions/rpm/commit/a331153c28885daf92575189192e744aa6aeffdb))
+
+
+## v0.5.0 (2026-03-16)
+
+### Chore
+
+* chore(release): 0.5.0 ([`d67ecc5`](https://github.com/caylent-solutions/rpm/commit/d67ecc5663acd381de1fbdb113f51b2c8e01a426))
+
+### Feature
+
+* feat: catalog-driven bootstrap with pre-configured .rpmenv (#19)
+
+Bootstrap now copies all files from catalog entries including a
+pre-configured .rpmenv, eliminating placeholder editing on first
+setup. Renames runner terminology to package throughout CLI, code,
+tests, and docs for consistency with the catalog entry model. ([`2fc907c`](https://github.com/caylent-solutions/rpm/commit/2fc907c8a7fac72aa82f2bbfd73e81241cf7800b))
 
 * feat: clarify source naming convention for multiple sources (#18)
 
@@ -39,6 +66,12 @@ destinations into CLAUDE_MARKETPLACES_DIR, not by source naming. Expand
 the naming convention section with a table of common prefixes beyond
 build/marketplaces (pipelines, runners, tf-deploy-templates,
 sonarqube-config) and explain that any descriptive name is appropriate. ([`6c91de5`](https://github.com/caylent-solutions/rpm/commit/6c91de5b93c8ecad38d89cfda0a17f6bdf62e6a8))
+
+### Unknown
+
+* Merge pull request #20 from caylent-solutions/release-0.5.0
+
+Release 0.5.0 ([`32afa79`](https://github.com/caylent-solutions/rpm/commit/32afa79b219f92b4288dacc607740f3fde739192))
 
 
 ## v0.4.0 (2026-03-12)

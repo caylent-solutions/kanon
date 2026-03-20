@@ -120,13 +120,13 @@ RPM works directly from the command line. No task runner is needed.
 **1. Bootstrap a project:**
 
 ```bash
-rpm bootstrap make              # Copy .rpmenv, Makefile, and readme
-rpm bootstrap gradle            # Copy .rpmenv, Gradle files, and readme
-rpm bootstrap rpm               # Copy .rpmenv and readme (no task runner)
+rpm bootstrap rpm               # Copy .rpmenv and readme (template with placeholders)
 rpm bootstrap list              # See all available catalog entry packages
 ```
 
-**2. Configure (sync all packages):**
+**2. Edit `.rpmenv`** -- Set `GITBASE`, `RPM_MARKETPLACE_INSTALL`, and source variables for your organization.
+
+**3. Configure (sync all packages):**
 
 ```bash
 rpm configure .rpmenv
@@ -136,6 +136,8 @@ This syncs all packages to `.packages/`, creates source workspaces in `.rpm/sour
 
 **4. Clean (full teardown):**
 
+> **Tip:** Use a remote catalog for pre-configured entries that require no placeholder editing. See [Usage with Remote Catalogs](#usage-with-remote-catalogs-optional) below.
+
 ```bash
 rpm clean .rpmenv
 ```
@@ -144,25 +146,28 @@ This removes all synced packages, RPM state directories, and optionally uninstal
 
 **Important:** All synced files in `.packages/` and `.rpm/` are ephemeral and should not be committed. Only commit the catalog entry files and `.rpmenv` to your repository.
 
-### Usage with Task Runners (Optional)
+### Usage with Remote Catalogs (Optional)
 
-The `rpm bootstrap` command copies all files from a catalog entry into your project directory, including a pre-configured `.rpmenv`. The Make and Gradle entries provide wrapper targets that delegate to the CLI:
-
-**Make:**
+Remote catalogs provide pre-configured `.rpmenv` files that require no placeholder editing. Set `RPM_CATALOG_SOURCE` or pass `--catalog-source` to bootstrap from a remote repository:
 
 ```bash
-make rpmConfigure    # Delegates to: rpm configure .rpmenv
-make rpmClean        # Delegates to: rpm clean .rpmenv
+# Set once in your shell rc file
+export RPM_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@main'
+
+# Bootstrap a pre-configured entry
+rpm bootstrap <entry-name>
+
+# Or pass the catalog source inline
+rpm bootstrap <entry-name> --catalog-source 'https://github.com/your-org/your-catalog-repo.git@v1.0.0'
 ```
 
-**Gradle:**
+The `@<ref>` portion accepts a branch name, a tag, or the special value `latest` (which resolves to the highest semver tag). The remote repo must have a `catalog/` directory at its root, with each subdirectory being a catalog entry.
 
-```bash
-./gradlew rpmConfigure    # Delegates to: rpm configure .rpmenv
-./gradlew rpmClean        # Delegates to: rpm clean .rpmenv
-```
+Use `--output-dir DIR` to bootstrap into a different directory.
 
-Use `--output-dir DIR` to bootstrap into a different directory. Use `--catalog-source '<git_url>@<ref>'` or the `RPM_CATALOG_SOURCE` environment variable to fetch catalog entry packages from a remote catalog repository (ref can be a branch, tag, or `latest` which resolves to the highest semver tag). The `.rpmenv` shipped with each catalog entry is pre-configured by the catalog author, so no placeholder editing is required.
+### Integrating with Task Runners (Optional)
+
+RPM works standalone via `rpm configure .rpmenv` and `rpm clean .rpmenv`. You can wrap these commands in any task runner (Make, Gradle, npm, etc.) by creating targets that delegate to the CLI.
 
 ---
 
@@ -179,11 +184,9 @@ Scaffolds a new RPM project from a catalog entry package, including a pre-config
 
 ```bash
 rpm bootstrap list                      # List available catalog entry packages
-rpm bootstrap make                      # Scaffold a Make project
-rpm bootstrap gradle                    # Scaffold a Gradle project
 rpm bootstrap rpm                       # Scaffold standalone (.rpmenv and readme only)
-rpm bootstrap gradle --output-dir proj  # Scaffold into proj/
-rpm bootstrap make --catalog-source 'https://github.com/org/repo.git@main'
+rpm bootstrap rpm --output-dir proj     # Scaffold into proj/
+rpm bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
 ```
 
 **Options:**

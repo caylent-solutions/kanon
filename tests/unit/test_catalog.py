@@ -21,14 +21,6 @@ class TestGetBundledCatalogDir:
         catalog = _get_bundled_catalog_dir()
         assert catalog.is_dir()
 
-    def test_bundled_catalog_contains_make(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        assert (catalog / "make").is_dir()
-
-    def test_bundled_catalog_contains_gradle(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        assert (catalog / "gradle").is_dir()
-
     def test_bundled_catalog_contains_rpm(self) -> None:
         catalog = _get_bundled_catalog_dir()
         assert (catalog / "rpm").is_dir()

@@ -16,7 +16,7 @@ The RPM CLI is already installed (it just ran `rpm bootstrap` to create this fil
 
 ### 1. Configure (sync all packages)
 
-The `.rpmenv` file is pre-configured from the catalog entry package. Run configure to sync all packages:
+Edit `.rpmenv` to set `GITBASE`, `RPM_MARKETPLACE_INSTALL`, and your source variables, then run configure:
 
 ```bash
 rpm configure .rpmenv
@@ -107,7 +107,7 @@ Use the `rpm` catalog entry package when:
 - You prefer to invoke the RPM CLI directly from scripts or CI/CD pipelines
 - You want the simplest possible setup with no wrapper files
 
-You can always add a Make or Gradle wrapper later by bootstrapping with `rpm bootstrap make` or `rpm bootstrap gradle`.
+You can integrate RPM with any build tool by wrapping `rpm configure .rpmenv` and `rpm clean .rpmenv` in your task runner of choice.
 
 ---
 

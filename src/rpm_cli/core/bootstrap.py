@@ -102,16 +102,6 @@ def _print_next_steps(
 
     print("\nNext steps:")
 
-    if package == "make":
-        print("  1. Run: make rpmConfigure")
-    elif package == "gradle":
-        print("  1. Run: ./gradlew rpmConfigure")
-    elif package == "rpm":
-        print("  1. Run: rpm configure .rpmenv")
-    else:
-        print("  1. Run: rpm configure .rpmenv")
-
-    if package == "rpm":
-        print("  2. Commit .rpmenv to your repository")
-    else:
-        print("  2. Commit .rpmenv and the catalog entry files to your repository")
+    print("  1. Edit .rpmenv — set GITBASE, RPM_MARKETPLACE_INSTALL, and source variables")
+    print("  2. Run: rpm configure .rpmenv")
+    print("  3. Commit .rpmenv to your repository")

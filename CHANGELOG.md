@@ -2,7 +2,24 @@
 
 
 
+## v0.7.0 (2026-03-24)
+
+### Feature
+
+* feat: add documentation for supporting ssh users ([`b7a65fe`](https://github.com/caylent-solutions/rpm/commit/b7a65fe90ea5ac531ccd828cbe1f8600853857bb))
+
+### Unknown
+
+* Merge pull request #23 from caylent-solutions/feat/ssh-support
+
+docs: add documentation for supporting ssh users ([`84614ca`](https://github.com/caylent-solutions/rpm/commit/84614ca7469d6d7bbe1e4d07b3415b335efe9e93))
+
+
 ## v0.6.0 (2026-03-20)
+
+### Chore
+
+* chore(release): 0.6.0 ([`92ad672`](https://github.com/caylent-solutions/rpm/commit/92ad67266c3699ee6aae3f6f9d328b44b2da0966))
 
 ### Feature
 
@@ -16,6 +33,12 @@ examples showing single-source and multi-source configurations.
 This makes the bundled catalog generic for any organization. Users edit
 .rpmenv after bootstrap to configure their GITBASE, marketplace toggle,
 and source variables. ([`a331153`](https://github.com/caylent-solutions/rpm/commit/a331153c28885daf92575189192e744aa6aeffdb))
+
+### Unknown
+
+* Merge pull request #22 from caylent-solutions/release-0.6.0
+
+Release 0.6.0 ([`7899fa4`](https://github.com/caylent-solutions/rpm/commit/7899fa4259ed1d6e54b75bd9ef4abbb3af28179a))
 
 
 ## v0.5.0 (2026-03-16)

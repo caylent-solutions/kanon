@@ -68,7 +68,7 @@ class TestRpmBootstrapList:
         assert result.returncode == 0
         assert "rpm" in result.stdout
 
-    def test_bootstrap_list_contains_expected_packages(self) -> None:
+    def test_bootstrap_list_contains_only_rpm(self) -> None:
         result = _run_rpm("bootstrap", "list")
         assert result.returncode == 0
         lines = [
@@ -76,7 +76,7 @@ class TestRpmBootstrapList:
             for line in result.stdout.splitlines()
             if line.strip() and line.strip() != "Available packages:"
         ]
-        assert lines == ["example-gradle", "example-make", "rpm"]
+        assert lines == ["rpm"]
 
 
 @pytest.mark.functional

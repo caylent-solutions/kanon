@@ -2,13 +2,45 @@
 
 
 
+## v0.7.1 (2026-03-25)
+
+### Fix
+
+* fix: point REPO_REV to main in .rpmenv (#25)
+
+* fix: point REPO_REV to main branch in .rpmenv
+
+The REPO_REV was pointing to the feature branch
+feat/initial-rpm-git-repo which is no longer needed now that
+the work has been merged to main.
+
+* fix: update catalog package tests to include example packages
+
+The test assertions expected only [&#34;rpm&#34;] but the catalog now
+contains example-gradle and example-make packages as well.
+
+* revert: restore original test assertions for catalog packages
+
+The previous test change was incorrect — the example-gradle and
+example-make directories were stale local artifacts not tracked
+in git. The original assertions are correct for CI. ([`11dc6ed`](https://github.com/caylent-solutions/rpm/commit/11dc6eda3d18591c7afbb3ddea9e26b79343524b))
+
+
 ## v0.7.0 (2026-03-24)
+
+### Chore
+
+* chore(release): 0.7.0 ([`3438873`](https://github.com/caylent-solutions/rpm/commit/343887398ce38f50574a93c2a3b692be67c288b5))
 
 ### Feature
 
 * feat: add documentation for supporting ssh users ([`b7a65fe`](https://github.com/caylent-solutions/rpm/commit/b7a65fe90ea5ac531ccd828cbe1f8600853857bb))
 
 ### Unknown
+
+* Merge pull request #24 from caylent-solutions/release-0.7.0
+
+Release 0.7.0 ([`a136e9f`](https://github.com/caylent-solutions/rpm/commit/a136e9f9094d50e3f54c4be783fd27b2a1a45b2c))
 
 * Merge pull request #23 from caylent-solutions/feat/ssh-support
 

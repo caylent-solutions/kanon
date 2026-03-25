@@ -2,7 +2,24 @@
 
 
 
+## v0.7.2 (2026-03-25)
+
+### Fix
+
+* fix: update catalog rpm-readme with current prerequisites and SSH guidance (#27)
+
+- Add Python 3.11+, pipx, and uv to prerequisites (were missing)
+- Add SSH authentication callout with git config --global insteadOf command
+- Update REPO_REV description: feat/initial-rpm-git-repo branch no longer
+  exists, use main
+- Improve troubleshooting SSH guidance with specific command ([`740d512`](https://github.com/caylent-solutions/rpm/commit/740d512a75bd73ec6384988529c12fb9f0082b44))
+
+
 ## v0.7.1 (2026-03-25)
+
+### Chore
+
+* chore(release): 0.7.1 ([`7cafa77`](https://github.com/caylent-solutions/rpm/commit/7cafa7722a0bbb2bdcb2590d8a154efc0e80689d))
 
 ### Fix
 
@@ -24,6 +41,12 @@ contains example-gradle and example-make packages as well.
 The previous test change was incorrect — the example-gradle and
 example-make directories were stale local artifacts not tracked
 in git. The original assertions are correct for CI. ([`11dc6ed`](https://github.com/caylent-solutions/rpm/commit/11dc6eda3d18591c7afbb3ddea9e26b79343524b))
+
+### Unknown
+
+* Merge pull request #26 from caylent-solutions/release-0.7.1
+
+Release 0.7.1 ([`c10265b`](https://github.com/caylent-solutions/rpm/commit/c10265b26baf0cbc0c6ffc0e687ee29f5469c293))
 
 
 ## v0.7.0 (2026-03-24)

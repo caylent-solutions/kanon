@@ -59,7 +59,7 @@ class TestValidateXmlLifecycle:
 class TestValidateMarketplaceLifecycle:
     def test_valid_marketplace_returns_zero(self, tmp_path: Path) -> None:
         _write_xml(
-            tmp_path / "repo-specs" / "claude-marketplaces.xml",
+            tmp_path / "repo-specs" / "test-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
@@ -74,7 +74,7 @@ class TestValidateMarketplaceLifecycle:
 
     def test_invalid_linkfile_dest_returns_one(self, tmp_path: Path) -> None:
         _write_xml(
-            tmp_path / "repo-specs" / "claude-marketplaces.xml",
+            tmp_path / "repo-specs" / "test-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
@@ -89,7 +89,7 @@ class TestValidateMarketplaceLifecycle:
 
     def test_invalid_revision_returns_one(self, tmp_path: Path) -> None:
         _write_xml(
-            tmp_path / "repo-specs" / "claude-marketplaces.xml",
+            tmp_path / "repo-specs" / "test-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="proj" path=".packages/proj" remote="r" revision="invalid-string">
@@ -102,15 +102,43 @@ class TestValidateMarketplaceLifecycle:
         result = validate_marketplace(tmp_path)
         assert result == 1
 
+    def test_new_naming_convention_discovered(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "history" / "claude-history-marketplace.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <project name="proj" path=".packages/proj" remote="r" revision="main">
+                    <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
+                  </project>
+                </manifest>
+            """),
+        )
+
+        result = validate_marketplace(tmp_path)
+        assert result == 0
+
     def test_no_marketplace_files_returns_one(self, tmp_path: Path) -> None:
         (tmp_path / "repo-specs").mkdir()
 
         result = validate_marketplace(tmp_path)
         assert result == 1
 
+    def test_non_marketplace_xml_not_discovered(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "remote.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <remote name="origin" fetch="https://example.com" />
+                </manifest>
+            """),
+        )
+
+        result = validate_marketplace(tmp_path)
+        assert result == 1
+
     def test_duplicate_project_paths_returns_one(self, tmp_path: Path) -> None:
         _write_xml(
-            tmp_path / "repo-specs" / "a" / "claude-marketplaces.xml",
+            tmp_path / "repo-specs" / "a" / "a-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="dup" path=".packages/dup" remote="r" revision="refs/tags/ex/dup/1.0.0">
@@ -120,7 +148,7 @@ class TestValidateMarketplaceLifecycle:
             """),
         )
         _write_xml(
-            tmp_path / "repo-specs" / "b" / "claude-marketplaces.xml",
+            tmp_path / "repo-specs" / "b" / "b-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="dup" path=".packages/dup" remote="r" revision="refs/tags/ex/dup/1.0.0">

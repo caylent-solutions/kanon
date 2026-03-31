@@ -80,9 +80,9 @@ Plain strings without PEP 440 operators are returned unchanged:
 
 ## Where Resolution Applies
 
-### REPO_REV
+### REPO_REV (git override only)
 
-Resolves the repo tool version before `pipx install`:
+When both `REPO_URL` and `REPO_REV` are set in `.rpmenv`, resolves the repo tool version before `pipx install --force`. When both are omitted, the repo tool is installed from PyPI and this resolution does not apply.
 
 ```properties
 REPO_REV=~=1.0.0

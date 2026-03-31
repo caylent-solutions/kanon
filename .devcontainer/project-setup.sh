@@ -26,4 +26,9 @@ log_info "Running project-specific setup..."
 # fi
 log_info "Add project specific setup commands here!"
 
+log_info "Adding grm alias (git reset main)..."
+GRM_ALIAS='alias grm="git fetch --prune origin && git checkout main && git reset --hard origin/main && git clean -fdx"'
+echo "$GRM_ALIAS" >> "${HOME}/.bashrc"
+echo "$GRM_ALIAS" >> "${HOME}/.zshrc"
+
 log_info "Project-specific setup complete"

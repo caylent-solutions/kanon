@@ -124,7 +124,7 @@ RPM_SOURCE_build_PATH=repo-specs/build-meta.xml
 # Marketplace source — compatible release constraint (>=1.1.0, <1.2.0)
 RPM_SOURCE_marketplaces_URL=https://github.com/org/rpm-marketplace.git
 RPM_SOURCE_marketplaces_REVISION=refs/tags/~=1.1.0
-RPM_SOURCE_marketplaces_PATH=repo-specs/claude-marketplaces.xml
+RPM_SOURCE_marketplaces_PATH=repo-specs/common/plugins/plugins-marketplace.xml
 
 # Global variables available to all sources
 GITBASE=https://github.com/org/
@@ -154,11 +154,11 @@ RPM_SOURCE_build-security_PATH=repo-specs/build-meta.xml
 # Marketplace sources — each provides Claude Code plugins
 RPM_SOURCE_marketplaces-core_URL=https://github.com/org/rpm-marketplace-core.git
 RPM_SOURCE_marketplaces-core_REVISION=main
-RPM_SOURCE_marketplaces-core_PATH=repo-specs/claude-marketplaces.xml
+RPM_SOURCE_marketplaces-core_PATH=repo-specs/common/core/core-marketplace.xml
 
 RPM_SOURCE_marketplaces-team_URL=https://github.com/org/rpm-marketplace-team.git
 RPM_SOURCE_marketplaces-team_REVISION=main
-RPM_SOURCE_marketplaces-team_PATH=repo-specs/claude-marketplaces.xml
+RPM_SOURCE_marketplaces-team_PATH=repo-specs/common/team/team-marketplace.xml
 
 # Global variables available to all sources
 GITBASE=https://github.com/org/

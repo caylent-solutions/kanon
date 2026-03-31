@@ -6,8 +6,12 @@
 1. Parse .rpmenv, auto-discover sources from RPM_SOURCE_<name>_URL patterns
 2. Validate RPM_SOURCE_<name>_* variables
 3. Check pipx on PATH (fail-fast)
-4. Resolve REPO_REV if fuzzy (PEP 440)
-5. Install repo tool: pipx install --force "git+URL@REV"
+4. Install repo tool:
+   - If REPO_URL and REPO_REV both set (git override):
+     resolve REPO_REV (PEP 440), pipx install --force "git+URL@REV"
+   - If both omitted (default): check pipx list for rpm-git-repo,
+     install from PyPI if not present
+   - If only one set: fail-fast with error
 6. If RPM_MARKETPLACE_INSTALL=true:
    mkdir -p CLAUDE_MARKETPLACES_DIR, clean contents
 7. For each source in alphabetical order:

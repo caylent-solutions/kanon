@@ -22,7 +22,7 @@ my-manifest-repo/
 │                   └── <toolchain>/
 │                       ├── build-meta.xml          # Entry-point manifest
 │                       ├── packages.xml            # Package declarations
-│                       └── claude-marketplaces.xml  # Optional: marketplace packages
+│                       └── <name>-marketplace.xml   # Optional: marketplace packages
 ├── catalog/                         # Optional: catalog entry packages for rpm bootstrap
 │   ├── make/
 │   │   ├── .rpmenv                  # Pre-configured for this catalog entry
@@ -96,7 +96,7 @@ An entry-point manifest ties everything together with `<include>` tags:
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <include name="repo-specs/common/my-archetype/packages.xml" />
-  <include name="repo-specs/common/my-archetype/claude-marketplaces.xml" />
+  <include name="repo-specs/common/my-archetype/my-archetype-marketplace.xml" />
 </manifest>
 ```
 

@@ -21,10 +21,12 @@ import os
 import pathlib
 import re
 
-_SOURCE_PREFIX = "RPM_SOURCE_"
-_SOURCE_SUFFIXES = ("_URL", "_REVISION", "_PATH")
-_SUFFIX_TO_KEY = {"_URL": "url", "_REVISION": "revision", "_PATH": "path"}
-_SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
+from rpm_cli.constants import (
+    SHELL_VAR_PATTERN,
+    SOURCE_PREFIX,
+    SOURCE_SUFFIXES,
+    SUFFIX_TO_KEY,
+)
 
 
 def parse_rpmenv(path: pathlib.Path) -> dict:
@@ -103,7 +105,7 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
             merged[key] = env_value
     # Also check for env vars that define source groups not in the file
     for key, value in os.environ.items():
-        if key.startswith(_SOURCE_PREFIX) and key not in merged:
+        if key.startswith(SOURCE_PREFIX) and key not in merged:
             merged[key] = value
     return merged
 
@@ -148,7 +150,7 @@ def _expand_value(value: str) -> str:
             raise ValueError(msg)
         return env_val
 
-    return _SHELL_VAR_PATTERN.sub(_replace, value)
+    return SHELL_VAR_PATTERN.sub(_replace, value)
 
 
 def _discover_source_names(expanded: dict[str, str]) -> list[str]:
@@ -170,8 +172,8 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
     url_suffix = "_URL"
     names: list[str] = []
     for key in expanded:
-        if key.startswith(_SOURCE_PREFIX) and key.endswith(url_suffix):
-            name = key[len(_SOURCE_PREFIX) : -len(url_suffix)]
+        if key.startswith(SOURCE_PREFIX) and key.endswith(url_suffix):
+            name = key[len(SOURCE_PREFIX) : -len(url_suffix)]
             if name:
                 names.append(name)
 
@@ -248,8 +250,8 @@ def validate_sources(
             missing variable name for actionable diagnostics.
     """
     for name in source_names:
-        for suffix in _SOURCE_SUFFIXES:
-            var_name = f"{_SOURCE_PREFIX}{name}{suffix}"
+        for suffix in SOURCE_SUFFIXES:
+            var_name = f"{SOURCE_PREFIX}{name}{suffix}"
             if var_name not in expanded:
                 msg = f"Missing required variable '{var_name}' for source '{name}'"
                 raise ValueError(msg)
@@ -275,9 +277,9 @@ def _extract_sources(
     sources: dict[str, dict[str, str]] = {}
     for name in source_names:
         source_data: dict[str, str] = {}
-        for suffix in _SOURCE_SUFFIXES:
-            var_name = f"{_SOURCE_PREFIX}{name}{suffix}"
-            result_key = _SUFFIX_TO_KEY[suffix]
+        for suffix in SOURCE_SUFFIXES:
+            var_name = f"{SOURCE_PREFIX}{name}{suffix}"
+            result_key = SUFFIX_TO_KEY[suffix]
             source_data[result_key] = expanded[var_name]
         sources[name] = source_data
     return sources
@@ -299,8 +301,8 @@ def _extract_globals(
     """
     source_keys: set[str] = set()
     for name in source_names:
-        for suffix in _SOURCE_SUFFIXES:
-            source_keys.add(f"{_SOURCE_PREFIX}{name}{suffix}")
+        for suffix in SOURCE_SUFFIXES:
+            source_keys.add(f"{SOURCE_PREFIX}{name}{suffix}")
 
     special_keys = {"RPM_MARKETPLACE_INSTALL"}
     exclude = source_keys | special_keys

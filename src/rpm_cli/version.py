@@ -18,8 +18,7 @@ import sys
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-# Two-char operators must precede single-char to avoid partial matches.
-_PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
+from rpm_cli.constants import PEP440_OPERATORS
 
 
 def _is_version_constraint(rev_spec: str) -> bool:
@@ -39,14 +38,14 @@ def _is_version_constraint(rev_spec: str) -> bool:
     if last_component == "*":
         return True
 
-    for op in _PEP440_OPERATORS:
+    for op in PEP440_OPERATORS:
         if last_component.startswith(op):
             return True
 
     # Range constraints: comma-separated specifiers (e.g. ">=1.0.0,<2.0.0").
     if "," in last_component:
         parts = last_component.split(",")
-        return any(part.lstrip().startswith(op) for part in parts for op in _PEP440_OPERATORS)
+        return any(part.lstrip().startswith(op) for part in parts for op in PEP440_OPERATORS)
 
     return False
 

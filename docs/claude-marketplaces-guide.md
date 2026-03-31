@@ -6,61 +6,39 @@ marketplace plugins.
 
 ---
 
-## Cascading Manifest Hierarchy
+## Marketplace Manifest Structure
 
-The marketplace system uses a cascading hierarchy of `claude-marketplaces.xml`
-manifest files. Each level in the hierarchy includes its parent via XML
-`<include>` tags, forming a chain from the most specific (leaf) to the most
-general (common/root):
+Marketplace manifest files are named `*-marketplace.xml` (e.g.,
+`claude-history-marketplace.xml`). Each manifest includes shared remote
+definitions via `<include>` and declares its `<project>` entries.
 
-```text
-meta.xml (entry point)
-  └── claude-marketplaces.xml (leaf: e.g. cli)
-        └── claude-marketplaces.xml (argparse)
-              └── claude-marketplaces.xml (make)
-                    └── claude-marketplaces.xml (python)
-                          └── claude-marketplaces.xml (development)
-                                └── claude-marketplaces.xml (example)
-                                      └── claude-marketplaces.xml (common/root)
-```
+Manifests support cascading `<include>` chains where each level includes its
+parent, enabling shared remote definitions, common project entries, and layered
+composition. Currently marketplace manifests use a flat structure (each includes
+`remote.xml` directly), but cascading hierarchies are fully supported.
 
-### How It Works
+### Naming Convention
 
-Each manifest file at a given level:
+Marketplace manifest files must follow the `*-marketplace.xml` naming pattern.
+The `rpm validate marketplace` command discovers files matching this pattern
+under `repo-specs/`. Files that do not match (e.g., `remote.xml`, `packages.xml`)
+are not validated as marketplace manifests.
 
-1. Includes its parent via an `<include>` directive
-2. Adds exactly one marketplace project entry at its own level
-
-When the `repo` tool processes the entry-point manifest (`meta.xml`), it
-recursively resolves each `<include>`, accumulating all marketplace entries
-from the root up to the leaf. The result is a unified set of marketplace
-projects representing the full stack for a given project type.
-
-### Example Include Pattern
+### Example Manifest
 
 ```xml
 <manifest>
-  <!-- Include the parent level -->
-  <include name="repo-specs/common/example/claude-marketplaces.xml" />
+  <include name="repo-specs/git-connection/remote.xml" />
 
-  <!-- Add this level's marketplace project -->
   <project name="rpm-claude-marketplaces"
-           path=".packages/rpm-claude-marketplaces-example-dev-lint"
+           path=".packages/rpm-claude-marketplaces-common-claude-tools-history"
            remote="caylent"
-           revision="refs/tags/example/development/dev-lint/1.0.0">
-    <linkfile src="common/example/development/dev-lint"
-              dest="${CLAUDE_MARKETPLACES_DIR}/rpm-claude-marketplaces-example-dev-lint" />
+           revision="main">
+    <linkfile src="common/claude-tools/history"
+              dest="${CLAUDE_MARKETPLACES_DIR}/rpm-claude-marketplaces-common-claude-tools-history" />
   </project>
 </manifest>
 ```
-
-### Benefits
-
-- Different project types (Python, Go, Node) share common tools (linting,
-  CI/CD) while adding specialized marketplaces at their own level
-- Adding a new marketplace at any level automatically propagates to all
-  descendants
-- No duplication of project entries across manifest files
 
 ---
 

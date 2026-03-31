@@ -1,9 +1,11 @@
 # RPM Configuration
 # Environment variables override these values (for pipeline integration)
 
-# Repo Tool (fork with envsubst support)
-REPO_URL=https://github.com/caylent-solutions/rpm-git-repo.git
-REPO_REV=main
+# Repo Tool
+# By default, rpm installs the latest rpm-git-repo from PyPI.
+# To override (e.g., test an unreleased version), uncomment both lines:
+# REPO_URL=https://github.com/caylent-solutions/rpm-git-repo.git
+# REPO_REV=main
 
 # Shared env vars for envsubst (resolved by 'repo envsubst' in remote.xml)
 GITBASE=<YOUR_GIT_ORG_BASE_URL>

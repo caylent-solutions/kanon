@@ -8,12 +8,17 @@ Checks:
   - All <project revision> attributes follow valid formats.
 """
 
-import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-_REQUIRED_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
+from rpm_cli.constants import (
+    ALLOWED_BRANCHES,
+    CONSTRAINT_RE,
+    MARKETPLACE_DIR_PREFIX,
+    MARKETPLACE_FILE_GLOB,
+    REFS_TAGS_RE,
+)
 
 
 def validate_linkfile_dest(xml_path: Path) -> list[str]:
@@ -38,11 +43,11 @@ def validate_linkfile_dest(xml_path: Path) -> list[str]:
         project_name = project.get("name", "<unknown>")
         for linkfile in project.findall("linkfile"):
             dest = linkfile.get("dest", "")
-            if not dest.startswith(_REQUIRED_PREFIX):
+            if not dest.startswith(MARKETPLACE_DIR_PREFIX):
                 errors.append(
                     f"{xml_path}: project '{project_name}' has "
                     f"invalid linkfile dest='{dest}' — "
-                    f"must start with {_REQUIRED_PREFIX}"
+                    f"must start with {MARKETPLACE_DIR_PREFIX}"
                 )
 
     return errors
@@ -131,11 +136,6 @@ def validate_name_uniqueness(xml_files: list[Path]) -> list[str]:
     return errors
 
 
-_REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
-_CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
-_ALLOWED_BRANCHES = {"main", "review/caylent-claude"}
-
-
 def _is_valid_revision(revision: str) -> bool:
     """Check if a revision string is a valid format.
 
@@ -146,15 +146,15 @@ def _is_valid_revision(revision: str) -> bool:
     - Wildcard (*)
     - Branch names (main)
     """
-    if revision in _ALLOWED_BRANCHES:
+    if revision in ALLOWED_BRANCHES:
         return True
     if revision == "*":
         return True
-    if _REFS_TAGS_RE.match(revision):
+    if REFS_TAGS_RE.match(revision):
         return True
     # Support compound constraints separated by commas (e.g., >=1.0.0,<2.0.0)
     parts = revision.split(",")
-    if all(_CONSTRAINT_RE.match(part) for part in parts):
+    if all(CONSTRAINT_RE.match(part) for part in parts):
         return True
     return False
 
@@ -195,7 +195,7 @@ def validate_tag_format(xml_files: list[Path]) -> list[str]:
 def validate_marketplace(repo_root: Path) -> int:
     """Validate all marketplace XML files found under repo-specs/.
 
-    Scans for claude-marketplaces.xml files and validates each one
+    Scans for *-marketplace.xml files and validates each one
     for linkfile dest attributes and include chain integrity.
     Exits with non-zero code if any validation errors are found.
 
@@ -205,11 +205,11 @@ def validate_marketplace(repo_root: Path) -> int:
     Returns:
         0 if all files pass validation, 1 otherwise.
     """
-    marketplace_files = sorted(repo_root.joinpath("repo-specs").rglob("claude-marketplaces.xml"))
+    marketplace_files = sorted(repo_root.joinpath("repo-specs").rglob(MARKETPLACE_FILE_GLOB))
 
     if not marketplace_files:
         print(
-            "Error: No claude-marketplaces.xml files found",
+            "Error: No *-marketplace.xml files found under repo-specs/",
             file=sys.stderr,
         )
         return 1

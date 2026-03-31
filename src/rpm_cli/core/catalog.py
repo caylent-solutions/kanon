@@ -15,9 +15,8 @@ import subprocess
 import sys
 import tempfile
 
+from rpm_cli.constants import CATALOG_ENV_VAR
 from rpm_cli.version import resolve_version
-
-_CATALOG_ENV_VAR = "RPM_CATALOG_SOURCE"
 
 
 def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
@@ -33,7 +32,7 @@ def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
         SystemExit: If the remote catalog cannot be cloned or has no ``catalog/`` dir.
         ValueError: If the catalog source format is invalid.
     """
-    source = catalog_source or os.environ.get(_CATALOG_ENV_VAR)
+    source = catalog_source or os.environ.get(CATALOG_ENV_VAR)
 
     if source:
         return _clone_remote_catalog(source)

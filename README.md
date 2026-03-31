@@ -209,9 +209,8 @@ rpm configure .rpmenv
 **Steps performed:**
 
 1. Checks prerequisites (pipx on PATH)
-2. Resolves `REPO_REV` if fuzzy (PEP 440 version specifier)
-3. Installs the repo tool via pipx
-4. For each source (alphabetical order): `repo init` / `repo envsubst` / `repo sync`
+2. Installs the repo tool (from PyPI by default; from git when `REPO_URL` and `REPO_REV` are both set)
+3. For each source (alphabetical order): `repo init` / `repo envsubst` / `repo sync`
 5. Aggregates symlinks from `.rpm/sources/<name>/.packages/` into `.packages/`
 6. Detects package name collisions across sources (fail-fast)
 7. Updates `.gitignore`
@@ -275,8 +274,8 @@ The `.rpmenv` file is a shell-compatible `KEY=VALUE` configuration file that dri
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `REPO_URL` | Yes | Git URL of the repo tool fork |
-| `REPO_REV` | Yes | Repo tool version — branch, exact tag, or PEP 440 specifier (e.g. `~=1.0.0`) |
+| `REPO_URL` | No | Git URL of the repo tool. Optional — omit to install from PyPI (default). Set both `REPO_URL` and `REPO_REV` to override with a git source. |
+| `REPO_REV` | No | Repo tool version for git override — branch, exact tag, or PEP 440 specifier (e.g. `~=1.0.0`). Only used when `REPO_URL` is also set. |
 | `GITBASE` | Yes | Base Git URL for `repo envsubst` (e.g., `https://github.com/your-org/`) |
 | `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace symlinks (required when `RPM_MARKETPLACE_INSTALL=true`) |
 | `RPM_MARKETPLACE_INSTALL` | No | Boolean toggle for marketplace lifecycle (default: `false`) |
@@ -300,9 +299,11 @@ Sources are auto-discovered from `RPM_SOURCE_<name>_URL` variable patterns and p
 ### Example .rpmenv
 
 ```properties
-# Repo Tool (fork with envsubst support)
-REPO_URL=https://github.com/your-org/git-repo.git
-REPO_REV=v2.0.0
+# Repo Tool
+# By default, rpm installs the latest rpm-git-repo from PyPI.
+# To override (e.g., test an unreleased version), uncomment both lines:
+# REPO_URL=https://github.com/your-org/git-repo.git
+# REPO_REV=v2.0.0
 
 # Shared env vars for envsubst
 GITBASE=https://github.com/your-org/
@@ -587,8 +588,8 @@ Marketplace packages use `<linkfile>` symlinks to expose plugins to Claude Code.
 
 ```xml
 <manifest>
-  <!-- Include the parent level -->
-  <include name="repo-specs/common/parent-level/claude-marketplaces.xml" />
+  <!-- Include shared remote definitions -->
+  <include name="repo-specs/git-connection/remote.xml" />
 
   <!-- Add this level's marketplace project -->
   <project name="my-marketplace-packages"
@@ -608,19 +609,13 @@ Marketplace packages use `<linkfile>` symlinks to expose plugins to Claude Code.
 - The `RPM_MARKETPLACE_INSTALL` flag in `.rpmenv` must be set to `true`
 - `CLAUDE_MARKETPLACES_DIR` must be defined in `.rpmenv`
 
-### Cascading Hierarchy
+### Naming Convention
 
-```text
-meta.xml
-  └── claude-marketplaces.xml (leaf, e.g. specific CLI tool)
-        └── claude-marketplaces.xml (framework)
-              └── claude-marketplaces.xml (toolchain)
-                    └── claude-marketplaces.xml (language)
-                          └── claude-marketplaces.xml (category)
-                                └── claude-marketplaces.xml (common/root)
-```
+Marketplace manifest files must be named `*-marketplace.xml` (e.g., `claude-history-marketplace.xml`, `immutable-audit-trail-marketplace.xml`). The `rpm validate marketplace` command discovers files matching this pattern under `repo-specs/`.
 
-Different project types (Python, Go, Node) share common tools (linting, CI/CD) while adding specialized marketplaces at their own level. Adding a new marketplace at any level automatically propagates to all descendants.
+### Cascading Includes
+
+Manifests support cascading `<include>` chains where each level includes its parent. This enables shared remote definitions, common project entries, and layered composition across project types. Currently marketplace manifests in `caylent-private-rpm` use a flat structure (each manifest includes `remote.xml` directly), but cascading hierarchies are fully supported when needed.
 
 ### Validation
 

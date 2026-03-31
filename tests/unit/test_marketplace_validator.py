@@ -9,6 +9,7 @@ from rpm_cli.core.marketplace_validator import (
     _is_valid_revision,
     validate_include_chain,
     validate_linkfile_dest,
+    validate_marketplace,
     validate_name_uniqueness,
     validate_tag_format,
 )
@@ -64,6 +65,22 @@ class TestIncludeChain:
         errors = validate_include_chain(tmp_path / "leaf.xml", tmp_path)
         assert len(errors) > 0
         assert any("missing.xml" in e for e in errors)
+
+    def test_malformed_xml_in_chain(self, tmp_path: Path) -> None:
+        (tmp_path / "bad.xml").write_text("<manifest><unclosed")
+        errors = validate_include_chain(tmp_path / "bad.xml", tmp_path)
+        assert any("parse error" in e.lower() for e in errors)
+
+    def test_include_missing_name_attr(self, tmp_path: Path) -> None:
+        _write_xml(tmp_path / "leaf.xml", "<manifest><include /></manifest>")
+        errors = validate_include_chain(tmp_path / "leaf.xml", tmp_path)
+        assert any("name" in e for e in errors)
+
+    def test_circular_include_no_infinite_loop(self, tmp_path: Path) -> None:
+        _write_xml(tmp_path / "a.xml", '<manifest><include name="b.xml" /></manifest>')
+        _write_xml(tmp_path / "b.xml", '<manifest><include name="a.xml" /></manifest>')
+        errors = validate_include_chain(tmp_path / "a.xml", tmp_path)
+        assert errors == []
 
 
 @pytest.mark.unit
@@ -122,3 +139,56 @@ class TestTagFormat:
         )
         errors = validate_tag_format([f1])
         assert len(errors) > 0
+
+
+@pytest.mark.unit
+class TestValidateMarketplace:
+    def test_valid_marketplace_returns_zero(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "test-marketplace.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <project name="proj" path=".packages/proj" remote="r" revision="main">
+                    <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
+                  </project>
+                </manifest>
+            """),
+        )
+        assert validate_marketplace(tmp_path) == 0
+
+    def test_no_marketplace_files_returns_one(self, tmp_path: Path) -> None:
+        (tmp_path / "repo-specs").mkdir()
+        assert validate_marketplace(tmp_path) == 1
+
+    def test_errors_return_one(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "bad-marketplace.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <project name="proj" path=".packages/proj" remote="r" revision="main">
+                    <linkfile src="s" dest="/absolute/bad" />
+                  </project>
+                </manifest>
+            """),
+        )
+        assert validate_marketplace(tmp_path) == 1
+
+    def test_discovers_new_naming_convention(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "sub" / "my-feature-marketplace.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/1.0.0">
+                    <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
+                  </project>
+                </manifest>
+            """),
+        )
+        assert validate_marketplace(tmp_path) == 0
+
+    def test_ignores_non_marketplace_xml(self, tmp_path: Path) -> None:
+        _write_xml(
+            tmp_path / "repo-specs" / "remote.xml",
+            '<manifest><remote name="r" fetch="https://example.com" /></manifest>',
+        )
+        assert validate_marketplace(tmp_path) == 1

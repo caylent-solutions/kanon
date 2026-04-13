@@ -1,12 +1,12 @@
 # Creating a Manifest Repository
 
-How to create a top-level manifest repository that orchestrates RPM packages.
+How to create a top-level manifest repository that orchestrates Kanon packages.
 
 ## What is a Manifest Repository?
 
 A manifest repository is a Git repository that contains XML manifest files defining which packages to sync, from which repositories, at which versions. It acts as the central registry for an organization's automation packages.
 
-The RPM CLI reads `.rpmenv` configurations that point to manifest files in these repositories. When `rpm configure` runs, it uses the [repo tool](https://gerrit.googlesource.com/git-repo/) to clone and sync packages according to the manifest definitions.
+The Kanon CLI reads `.kanon` configurations that point to manifest files in these repositories. When `kanon install` runs, it uses the [repo tool](https://gerrit.googlesource.com/git-repo/) to clone and sync packages according to the manifest definitions.
 
 ## Repository Structure
 
@@ -23,19 +23,19 @@ my-manifest-repo/
 │                       ├── build-meta.xml          # Entry-point manifest
 │                       ├── packages.xml            # Package declarations
 │                       └── <name>-marketplace.xml   # Optional: marketplace packages
-├── catalog/                         # Optional: catalog entry packages for rpm bootstrap
+├── catalog/                         # Optional: catalog entry packages for kanon bootstrap
 │   ├── make/
-│   │   ├── .rpmenv                  # Pre-configured for this catalog entry
+│   │   ├── .kanon                   # Pre-configured for this catalog entry
 │   │   ├── Makefile
-│   │   └── rpm-readme.md
+│   │   └── kanon-readme.md
 │   ├── gradle/
-│   │   ├── .rpmenv                  # Pre-configured for this catalog entry
+│   │   ├── .kanon                   # Pre-configured for this catalog entry
 │   │   ├── build.gradle
-│   │   ├── rpm-bootstrap.gradle
-│   │   └── rpm-readme.md
-│   └── rpm/
-│       ├── .rpmenv                  # Pre-configured for this catalog entry
-│       └── rpm-readme.md
+│   │   ├── kanon-bootstrap.gradle
+│   │   └── kanon-readme.md
+│   └── kanon/
+│       ├── .kanon                   # Pre-configured for this catalog entry
+│       └── kanon-readme.md
 ├── examples/                        # Optional: example bootstrapped projects
 └── README.md
 ```
@@ -56,7 +56,7 @@ The `remote.xml` file defines Git remotes that manifests reference. It uses `${V
 </manifest>
 ```
 
-The `GITBASE` variable comes from `.rpmenv` and defines the base URL for all package repositories.
+The `GITBASE` variable comes from `.kanon` and defines the base URL for all package repositories.
 
 ## Package Manifests (packages.xml)
 
@@ -100,7 +100,7 @@ An entry-point manifest ties everything together with `<include>` tags:
 </manifest>
 ```
 
-This is the file referenced by `RPM_SOURCE_<name>_PATH` in `.rpmenv`.
+This is the file referenced by `KANON_SOURCE_<name>_PATH` in `.kanon`.
 
 ## Cascading Manifest Hierarchy (Optional)
 
@@ -122,49 +122,49 @@ This hierarchy is not required — a flat structure with a single `packages.xml`
 
 ## Providing a Remote Catalog
 
-A manifest repository can also serve as a remote catalog for `rpm bootstrap`. Place catalog entry packages in a `catalog/` directory at the repository root:
+A manifest repository can also serve as a remote catalog for `kanon bootstrap`. Place catalog entry packages in a `catalog/` directory at the repository root:
 
 ```text
 catalog/
 ├── make/
-│   ├── .rpmenv
+│   ├── .kanon
 │   ├── Makefile
-│   └── rpm-readme.md
+│   └── kanon-readme.md
 ├── gradle/
-│   ├── .rpmenv
+│   ├── .kanon
 │   ├── build.gradle
-│   ├── rpm-bootstrap.gradle
-│   └── rpm-readme.md
-└── rpm/
-    ├── .rpmenv
-    └── rpm-readme.md
+│   ├── kanon-bootstrap.gradle
+│   └── kanon-readme.md
+└── kanon/
+    ├── .kanon
+    └── kanon-readme.md
 ```
 
-Each catalog entry package directory includes a pre-configured `.rpmenv` with source URLs and paths pointing to manifests in the repository, plus an `rpm-readme.md` with getting-started instructions. The `rpm/` entry provides `.rpmenv` and the readme only -- no task runner wrapper files -- for users who invoke the RPM CLI directly.
+Each catalog entry package directory includes a pre-configured `.kanon` with source URLs and paths pointing to manifests in the repository, plus a `kanon-readme.md` with getting-started instructions. The `kanon/` entry provides `.kanon` and the readme only -- no task runner wrapper files -- for users who invoke the Kanon CLI directly.
 
-When users bootstrap with your catalog, they get a fully configured `.rpmenv` and can run `rpm configure` immediately without editing placeholders.
+When users bootstrap with your catalog, they get a fully configured `.kanon` and can run `kanon install` immediately without editing placeholders.
 
 Users can then bootstrap projects using your catalog:
 
 ```bash
-rpm bootstrap make --catalog-source 'https://github.com/org/my-manifest-repo.git@main'
+kanon bootstrap make --catalog-source 'https://github.com/org/my-manifest-repo.git@main'
 ```
 
 Or via environment variable:
 
 ```bash
-export RPM_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@v1.0.0'
-rpm bootstrap gradle
+export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@v1.0.0'
+kanon bootstrap gradle
 ```
 
-## Connecting to .rpmenv
+## Connecting to .kanon
 
-The `.rpmenv` file in a consumer project points to your manifest repository:
+The `.kanon` file in a consumer project points to your manifest repository:
 
 ```properties
-RPM_SOURCE_build_URL=https://github.com/org/my-manifest-repo.git
-RPM_SOURCE_build_REVISION=v1.0.0
-RPM_SOURCE_build_PATH=repo-specs/common/my-archetype/build-meta.xml
+KANON_SOURCE_build_URL=https://github.com/org/my-manifest-repo.git
+KANON_SOURCE_build_REVISION=v1.0.0
+KANON_SOURCE_build_PATH=repo-specs/common/my-archetype/build-meta.xml
 ```
 
 Multiple sources can reference different manifest repositories, enabling teams to compose packages from multiple organizations.

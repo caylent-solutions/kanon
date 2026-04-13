@@ -2,7 +2,7 @@
 
 import pytest
 
-from rpm_cli.cli import build_parser, main
+from kanon_cli.cli import build_parser, main
 
 
 @pytest.mark.unit
@@ -11,17 +11,17 @@ class TestBuildParser:
 
     def test_parser_has_version(self) -> None:
         parser = build_parser()
-        assert parser.prog == "rpm"
+        assert parser.prog == "kanon"
 
     def test_parser_has_subcommands(self) -> None:
         parser = build_parser()
         # Verify subparsers exist by checking parse_args on known subcommands
-        args = parser.parse_args(["configure", "/tmp/.rpmenv"])
-        assert args.command == "configure"
+        args = parser.parse_args(["install", "/tmp/.kanon"])
+        assert args.command == "install"
 
     def test_parser_clean_subcommand(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["clean", "/tmp/.rpmenv"])
+        args = parser.parse_args(["clean", "/tmp/.kanon"])
         assert args.command == "clean"
 
     def test_parser_validate_xml_subcommand(self) -> None:
@@ -61,7 +61,7 @@ class TestMainDispatch:
             main(["--version"])
         assert exc_info.value.code == 0
 
-    def test_configure_missing_path_exits_2(self) -> None:
+    def test_install_missing_path_exits_2(self) -> None:
         with pytest.raises(SystemExit) as exc_info:
-            main(["configure"])
+            main(["install"])
         assert exc_info.value.code == 2

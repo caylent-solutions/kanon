@@ -18,7 +18,7 @@ import sys
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from rpm_cli.constants import PEP440_OPERATORS
+from kanon_cli.constants import PEP440_OPERATORS
 
 
 def _is_version_constraint(rev_spec: str) -> bool:

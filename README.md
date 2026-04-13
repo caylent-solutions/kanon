@@ -1,4 +1,4 @@
-# RPM (Repo Package Manager)
+# Kanon (Kanon Package Manager)
 
 A standalone Python CLI for managing versioned DevOps automation packages via declarative manifests.
 
@@ -8,27 +8,27 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
 
 ## Table of Contents
 
-- [What is RPM?](#what-is-rpm)
+- [What is Kanon?](#what-is-kanon)
   - [Use Cases](#use-cases)
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
-  - [Install the RPM CLI](#install-the-rpm-cli)
+  - [Install the Kanon CLI](#install-the-kanon-cli)
   - [Standalone Usage (No Task Runner Required)](#standalone-usage-no-task-runner-required)
   - [Usage with Task Runners (Optional)](#usage-with-task-runners-optional)
 - [CLI Reference](#cli-reference)
-  - [rpm bootstrap](#rpm-bootstrap)
-  - [rpm configure](#rpm-configure)
-  - [rpm clean](#rpm-clean)
-  - [rpm validate xml](#rpm-validate-xml)
-  - [rpm validate marketplace](#rpm-validate-marketplace)
-- [.rpmenv Variable Reference](#rpmenv-variable-reference)
+  - [kanon bootstrap](#kanon-bootstrap)
+  - [kanon install](#kanon-install)
+  - [kanon clean](#kanon-clean)
+  - [kanon validate xml](#kanon-validate-xml)
+  - [kanon validate marketplace](#kanon-validate-marketplace)
+- [.kanon Variable Reference](#kanon-variable-reference)
   - [Core Variables](#core-variables)
   - [Source Variables](#source-variables)
   - [Environment Variables](#environment-variables)
-  - [Example .rpmenv](#example-rpmenv)
+  - [Example .kanon](#example-kanon)
 - [Architecture](#architecture)
   - [How It Works](#how-it-works)
-  - [Directory Structure After Configure](#directory-structure-after-configure)
+  - [Directory Structure After Install](#directory-structure-after-install)
   - [Multi-Source Isolation](#multi-source-isolation)
   - [Environment Variable Portability (envsubst)](#environment-variable-portability-envsubst)
 - [Creating a Manifest Repository](#creating-a-manifest-repository)
@@ -51,7 +51,7 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
   - [Validation](#validation)
 - [Fork Features (PEP 440 Constraints)](#fork-features-pep-440-constraints)
   - [PEP 440 Version Constraints in Manifests](#pep-440-version-constraints-in-manifests)
-  - [PEP 440 Version Resolution in .rpmenv](#pep-440-version-resolution-in-rpmenv)
+  - [PEP 440 Version Resolution in .kanon](#pep-440-version-resolution-in-kanon)
   - [Absolute Linkfile Destinations](#absolute-linkfile-destinations)
 - [SSH Authentication Setup](#ssh-authentication-setup)
 - [Developer Setup](#developer-setup)
@@ -68,12 +68,12 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
 
 ---
 
-## What is RPM?
+## What is Kanon?
 
-RPM is a **DevOps Platform Dependency Manager** that brings version-controlled, reproducible automation to your projects through declarative manifests. RPM enables you to centralize, version, and share automation across your organization without replacing your existing tools.
+Kanon is a **DevOps Platform Dependency Manager** that brings version-controlled, reproducible automation to your projects through declarative manifests. Kanon enables you to centralize, version, and share automation across your organization without replacing your existing tools.
 
 **Solves a common problem:**
-Organizations have quality automation scattered across teams -- build conventions, linting rules, security scanning, test frameworks, and local dev tooling that work well but are not widely adopted because they are hard to discover, version, test, and distribute. RPM enables you to package this automation and share it across projects in a tested, reproducible way.
+Organizations have quality automation scattered across teams -- build conventions, linting rules, security scanning, test frameworks, and local dev tooling that work well but are not widely adopted because they are hard to discover, version, test, and distribute. Kanon enables you to package this automation and share it across projects in a tested, reproducible way.
 
 **Fully customizable:**
 - **Public or Private** -- Use public repositories or host everything privately within your organization
@@ -90,7 +90,7 @@ Organizations have quality automation scattered across teams -- build convention
 ### Use Cases
 
 **Unify Disparate Automation:**
-Your organization has quality automation scattered across teams -- testing frameworks, linting configs, deployment scripts, security scans -- but they are not widely adopted because they are hard to find, version, and integrate. RPM lets you package this automation, version it, and make it available to all teams through simple manifests.
+Your organization has quality automation scattered across teams -- testing frameworks, linting configs, deployment scripts, security scans -- but they are not widely adopted because they are hard to find, version, and integrate. Kanon lets you package this automation, version it, and make it available to all teams through simple manifests.
 
 **Platform Engineering:**
 Provide golden paths and paved roads to development teams. Package your organization's standards, policies, and automation as versioned dependencies that teams can pull into their projects.
@@ -109,58 +109,58 @@ Ensure the same testing, linting, security scanning, and deployment automation a
 - Git
 - If authenticating with Git via SSH, see [SSH Authentication Setup](#ssh-authentication-setup)
 
-### Install the RPM CLI
+### Install the Kanon CLI
 
 ```bash
-pipx install "git+https://github.com/caylent-solutions/rpm.git@0.1.0"
+pipx install kanon-cli
 ```
 
 ### Standalone Usage (No Task Runner Required)
 
-RPM works directly from the command line. No task runner is needed.
+Kanon works directly from the command line. No task runner is needed.
 
 **1. Bootstrap a project:**
 
 ```bash
-rpm bootstrap rpm               # Copy .rpmenv and readme (template with placeholders)
-rpm bootstrap list              # See all available catalog entry packages
+kanon bootstrap kanon               # Copy .kanon and readme (template with placeholders)
+kanon bootstrap list                # See all available catalog entry packages
 ```
 
-**2. Edit `.rpmenv`** -- Set `GITBASE`, `RPM_MARKETPLACE_INSTALL`, and source variables for your organization.
+**2. Edit `.kanon`** -- Set `GITBASE`, `KANON_MARKETPLACE_INSTALL`, and source variables for your organization.
 
-**3. Configure (sync all packages):**
+**3. Install (sync all packages):**
 
 ```bash
-rpm configure .rpmenv
+kanon install .kanon
 ```
 
-This syncs all packages to `.packages/`, creates source workspaces in `.rpm/sources/`, and adds `.packages/` and `.rpm/` to `.gitignore`.
+This syncs all packages to `.packages/`, creates source workspaces in `.kanon-data/sources/`, and adds `.packages/` and `.kanon-data/` to `.gitignore`.
 
 **4. Clean (full teardown):**
 
 > **Tip:** Use a remote catalog for pre-configured entries that require no placeholder editing. See [Usage with Remote Catalogs](#usage-with-remote-catalogs-optional) below.
 
 ```bash
-rpm clean .rpmenv
+kanon clean .kanon
 ```
 
-This removes all synced packages, RPM state directories, and optionally uninstalls marketplace plugins.
+This removes all synced packages, Kanon state directories, and optionally uninstalls marketplace plugins.
 
-**Important:** All synced files in `.packages/` and `.rpm/` are ephemeral and should not be committed. Only commit the catalog entry files and `.rpmenv` to your repository.
+**Important:** All synced files in `.packages/` and `.kanon-data/` are ephemeral and should not be committed. Only commit the catalog entry files and `.kanon` to your repository.
 
 ### Usage with Remote Catalogs (Optional)
 
-Remote catalogs provide pre-configured `.rpmenv` files that require no placeholder editing. Set `RPM_CATALOG_SOURCE` or pass `--catalog-source` to bootstrap from a remote repository:
+Remote catalogs provide pre-configured `.kanon` files that require no placeholder editing. Set `KANON_CATALOG_SOURCE` or pass `--catalog-source` to bootstrap from a remote repository:
 
 ```bash
 # Set once in your shell rc file
-export RPM_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@main'
+export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@main'
 
 # Bootstrap a pre-configured entry
-rpm bootstrap <entry-name>
+kanon bootstrap <entry-name>
 
 # Or pass the catalog source inline
-rpm bootstrap <entry-name> --catalog-source 'https://github.com/your-org/your-catalog-repo.git@v1.0.0'
+kanon bootstrap <entry-name> --catalog-source 'https://github.com/your-org/your-catalog-repo.git@v1.0.0'
 ```
 
 The `@<ref>` portion accepts a branch name, a tag, or the special value `latest` (which resolves to the highest semver tag). The remote repo must have a `catalog/` directory at its root, with each subdirectory being a catalog entry.
@@ -169,26 +169,26 @@ Use `--output-dir DIR` to bootstrap into a different directory.
 
 ### Integrating with Task Runners (Optional)
 
-RPM works standalone via `rpm configure .rpmenv` and `rpm clean .rpmenv`. You can wrap these commands in any task runner (Make, Gradle, npm, etc.) by creating targets that delegate to the CLI.
+Kanon works standalone via `kanon install .kanon` and `kanon clean .kanon`. You can wrap these commands in any task runner (Make, Gradle, npm, etc.) by creating targets that delegate to the CLI.
 
 ---
 
 ## CLI Reference
 
 ```bash
-rpm --help                              # Top-level help
-rpm --version                           # Show version
+kanon --help                              # Top-level help
+kanon --version                           # Show version
 ```
 
-### rpm bootstrap
+### kanon bootstrap
 
-Scaffolds a new RPM project from a catalog entry package, including a pre-configured `.rpmenv`.
+Scaffolds a new Kanon project from a catalog entry package, including a pre-configured `.kanon`.
 
 ```bash
-rpm bootstrap list                      # List available catalog entry packages
-rpm bootstrap rpm                       # Scaffold standalone (.rpmenv and readme only)
-rpm bootstrap rpm --output-dir proj     # Scaffold into proj/
-rpm bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
+kanon bootstrap list                      # List available catalog entry packages
+kanon bootstrap kanon                     # Scaffold standalone (.kanon and readme only)
+kanon bootstrap kanon --output-dir proj   # Scaffold into proj/
+kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
 ```
 
 **Options:**
@@ -196,14 +196,14 @@ rpm bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
 | Option | Description |
 |---|---|
 | `--output-dir DIR` | Target directory (default: current directory) |
-| `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, or `latest`). Overrides `RPM_CATALOG_SOURCE` env var. Default: bundled catalog. |
+| `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, or `latest`). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled catalog. |
 
-### rpm configure
+### kanon install
 
-Executes the full configure lifecycle.
+Executes the full install lifecycle.
 
 ```bash
-rpm configure .rpmenv
+kanon install .kanon
 ```
 
 **Steps performed:**
@@ -211,34 +211,34 @@ rpm configure .rpmenv
 1. Checks prerequisites (pipx on PATH)
 2. Installs the repo tool (from PyPI by default; from git when `REPO_URL` and `REPO_REV` are both set)
 3. For each source (alphabetical order): `repo init` / `repo envsubst` / `repo sync`
-5. Aggregates symlinks from `.rpm/sources/<name>/.packages/` into `.packages/`
+5. Aggregates symlinks from `.kanon-data/sources/<name>/.packages/` into `.packages/`
 6. Detects package name collisions across sources (fail-fast)
 7. Updates `.gitignore`
-8. If `RPM_MARKETPLACE_INSTALL=true`: runs marketplace install lifecycle
+8. If `KANON_MARKETPLACE_INSTALL=true`: runs marketplace install lifecycle
 
-### rpm clean
+### kanon clean
 
 Executes the full teardown lifecycle.
 
 ```bash
-rpm clean .rpmenv
+kanon clean .kanon
 ```
 
 **Steps performed:**
 
-1. If `RPM_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
+1. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
 2. Removes `.packages/` directory
-3. Removes `.rpm/` directory
+3. Removes `.kanon-data/` directory
 
 The order is critical: plugins are uninstalled before files are removed to ensure the registry is cleaned while paths are still resolvable.
 
-### rpm validate xml
+### kanon validate xml
 
 Validates all XML manifest files under `repo-specs/`.
 
 ```bash
-rpm validate xml                        # Validate in current repo
-rpm validate xml --repo-root /path      # Validate with explicit repo root
+kanon validate xml                        # Validate in current repo
+kanon validate xml --repo-root /path      # Validate with explicit repo root
 ```
 
 **Checks performed:**
@@ -248,13 +248,13 @@ rpm validate xml --repo-root /path      # Validate with explicit repo root
 - Required attributes on `<remote>` (name, fetch)
 - `<include>` references point to existing files
 
-### rpm validate marketplace
+### kanon validate marketplace
 
 Validates marketplace XML manifests under `repo-specs/`.
 
 ```bash
-rpm validate marketplace                # Validate in current repo
-rpm validate marketplace --repo-root /path
+kanon validate marketplace                # Validate in current repo
+kanon validate marketplace --repo-root /path
 ```
 
 **Checks performed:**
@@ -266,9 +266,9 @@ rpm validate marketplace --repo-root /path
 
 ---
 
-## .rpmenv Variable Reference
+## .kanon Variable Reference
 
-The `.rpmenv` file is a shell-compatible `KEY=VALUE` configuration file that drives the RPM lifecycle. Lines starting with `#` are comments. Values can reference environment variables using `${VAR}` syntax (e.g., `${HOME}/.claude-marketplaces`). Every `.rpmenv` variable can be overridden by an environment variable of the same name, enabling CI/CD pipelines to customize behavior without modifying the file.
+The `.kanon` file is a shell-compatible `KEY=VALUE` configuration file that drives the Kanon lifecycle. Lines starting with `#` are comments. Values can reference environment variables using `${VAR}` syntax (e.g., `${HOME}/.claude-marketplaces`). Every `.kanon` variable can be overridden by an environment variable of the same name, enabling CI/CD pipelines to customize behavior without modifying the file.
 
 ### Core Variables
 
@@ -277,30 +277,30 @@ The `.rpmenv` file is a shell-compatible `KEY=VALUE` configuration file that dri
 | `REPO_URL` | No | Git URL of the repo tool. Optional — omit to install from PyPI (default). Set both `REPO_URL` and `REPO_REV` to override with a git source. |
 | `REPO_REV` | No | Repo tool version for git override — branch, exact tag, or PEP 440 specifier (e.g. `~=1.0.0`). Only used when `REPO_URL` is also set. |
 | `GITBASE` | Yes | Base Git URL for `repo envsubst` (e.g., `https://github.com/your-org/`) |
-| `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace symlinks (required when `RPM_MARKETPLACE_INSTALL=true`) |
-| `RPM_MARKETPLACE_INSTALL` | No | Boolean toggle for marketplace lifecycle (default: `false`) |
+| `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace symlinks (required when `KANON_MARKETPLACE_INSTALL=true`) |
+| `KANON_MARKETPLACE_INSTALL` | No | Boolean toggle for marketplace lifecycle (default: `false`) |
 
 ### Source Variables
 
-Sources are auto-discovered from `RPM_SOURCE_<name>_URL` variable patterns and processed in alphabetical order by name. Each source requires three variables:
+Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns and processed in alphabetical order by name. Each source requires three variables:
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `RPM_SOURCE_<name>_URL` | Yes | Git URL for the named source's manifest repository |
-| `RPM_SOURCE_<name>_REVISION` | Yes | Branch, exact tag, or PEP 440 constraint (e.g. `refs/tags/~=1.1.0`) for the named source |
-| `RPM_SOURCE_<name>_PATH` | Yes | Path to the entry-point manifest XML for the named source |
+| `KANON_SOURCE_<name>_URL` | Yes | Git URL for the named source's manifest repository |
+| `KANON_SOURCE_<name>_REVISION` | Yes | Branch, exact tag, or PEP 440 constraint (e.g. `refs/tags/~=1.1.0`) for the named source |
+| `KANON_SOURCE_<name>_PATH` | Yes | Path to the entry-point manifest XML for the named source |
 
 ### Environment Variables
 
 | Variable | Purpose |
 |---|---|
-| `RPM_CATALOG_SOURCE` | Remote catalog source for `rpm bootstrap` as `<git_url>@<ref>`. Overridden by `--catalog-source` flag. |
+| `KANON_CATALOG_SOURCE` | Remote catalog source for `kanon bootstrap` as `<git_url>@<ref>`. Overridden by `--catalog-source` flag. |
 
-### Example .rpmenv
+### Example .kanon
 
 ```properties
 # Repo Tool
-# By default, rpm installs the latest rpm-git-repo from PyPI.
+# By default, kanon installs the latest rpm-git-repo from PyPI.
 # To override (e.g., test an unreleased version), uncomment both lines:
 # REPO_URL=https://github.com/your-org/git-repo.git
 # REPO_REV=v2.0.0
@@ -310,17 +310,17 @@ GITBASE=https://github.com/your-org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 
 # Marketplace install toggle
-RPM_MARKETPLACE_INSTALL=true
+KANON_MARKETPLACE_INSTALL=true
 
 # Source: build -- build tooling packages
-RPM_SOURCE_build_URL=https://github.com/your-org/rpm-manifests.git
-RPM_SOURCE_build_REVISION=main
-RPM_SOURCE_build_PATH=repo-specs/build/meta.xml
+KANON_SOURCE_build_URL=https://github.com/your-org/kanon-manifests.git
+KANON_SOURCE_build_REVISION=main
+KANON_SOURCE_build_PATH=repo-specs/build/meta.xml
 
 # Source: marketplaces -- plugin marketplaces
-RPM_SOURCE_marketplaces_URL=https://github.com/your-org/rpm-manifests.git
-RPM_SOURCE_marketplaces_REVISION=main
-RPM_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
+KANON_SOURCE_marketplaces_URL=https://github.com/your-org/kanon-manifests.git
+KANON_SOURCE_marketplaces_REVISION=main
+KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
 ```
 
 ---
@@ -329,8 +329,8 @@ RPM_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
 
 ```text
                     ┌─────────────────────────┐
-                    │     RPM CLI             │
-                    │  (configure / clean /   │
+                    │     Kanon CLI           │
+                    │  (install / clean /     │
                     │   bootstrap / validate) │
                     └───────────┬─────────────┘
                                 │
@@ -366,60 +366,60 @@ RPM_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
 
 ### How It Works
 
-RPM uses [a fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) (with `envsubst` support) to orchestrate dependencies across Git repositories. Manifests define what to clone, where to place it, and how to wire it together.
+Kanon uses [a fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) (with `envsubst` support) to orchestrate dependencies across Git repositories. Manifests define what to clone, where to place it, and how to wire it together.
 
-The configure lifecycle follows three steps per source:
+The install lifecycle follows three steps per source:
 
 1. **`repo init`** -- Clones the manifest repository. `${VARIABLE}` placeholders remain as-is in the XML.
-2. **`repo envsubst`** -- Reads variables from `.rpmenv` (e.g., `GITBASE`) and replaces `${VARIABLE}` placeholders in all manifest XML files.
+2. **`repo envsubst`** -- Reads variables from `.kanon` (e.g., `GITBASE`) and replaces `${VARIABLE}` placeholders in all manifest XML files.
 3. **`repo sync`** -- Clones packages using the now-resolved URLs into `.packages/`.
 
-After all sources are synced, RPM aggregates their packages into a single `.packages/` directory using symlinks, giving consumers a unified view regardless of which source provided each package.
+After all sources are synced, Kanon aggregates their packages into a single `.packages/` directory using symlinks, giving consumers a unified view regardless of which source provided each package.
 
-### Directory Structure After Configure
+### Directory Structure After Install
 
 ```text
 project/
-  .rpmenv                           # Configuration (committed)
-  ...                               # Other catalog entry files, if any (committed)
-  .rpm/                             # RPM state (gitignored)
+  .kanon                                # Configuration (committed)
+  ...                                   # Other catalog entry files, if any (committed)
+  .kanon-data/                          # Kanon state (gitignored)
     sources/
-      build/                        # Isolated source workspace
+      build/                            # Isolated source workspace
         .repo/
         .packages/
           my-build-conventions/
-      marketplaces/                 # Isolated source workspace
+      marketplaces/                     # Isolated source workspace
         .repo/
         .packages/
           my-marketplace-plugin/
-  .packages/                        # Aggregated symlinks (gitignored)
-    my-build-conventions -> ../.rpm/sources/build/.packages/my-build-conventions
-    my-marketplace-plugin -> ../.rpm/sources/marketplaces/.packages/my-marketplace-plugin
+  .packages/                            # Aggregated symlinks (gitignored)
+    my-build-conventions -> ../.kanon-data/sources/build/.packages/my-build-conventions
+    my-marketplace-plugin -> ../.kanon-data/sources/marketplaces/.packages/my-marketplace-plugin
 ```
 
 ### Multi-Source Isolation
 
-Each source is initialized and synced in its own isolated directory under `.rpm/sources/<name>/`. Sources cannot interfere with each other -- each gets its own `repo init` / `repo sync` cycle. If two sources produce a package with the same name, RPM detects the collision and fails immediately with an actionable error message.
+Each source is initialized and synced in its own isolated directory under `.kanon-data/sources/<name>/`. Sources cannot interfere with each other -- each gets its own `repo init` / `repo sync` cycle. If two sources produce a package with the same name, Kanon detects the collision and fails immediately with an actionable error message.
 
 ### Environment Variable Portability (envsubst)
 
 The `envsubst` feature makes manifests portable across organizations. Instead of hard-coding Git URLs in manifest XML, you use `${GITBASE}` placeholders:
 
 ```xml
-<!-- Portable -- resolved from .rpmenv at configure time -->
+<!-- Portable -- resolved from .kanon at install time -->
 <remote name="origin" fetch="${GITBASE}"/>
 ```
 
-Adopting RPM for a different organization means changing one line in `.rpmenv`:
+Adopting Kanon for a different organization means changing one line in `.kanon`:
 
 ```properties
 GITBASE=https://github.com/your-company/
 ```
 
-CI/CD pipelines can override this via environment variables without modifying `.rpmenv`:
+CI/CD pipelines can override this via environment variables without modifying `.kanon`:
 
 ```bash
-GITBASE=https://git.internal.company.com/ rpm configure .rpmenv
+GITBASE=https://git.internal.company.com/ kanon install .kanon
 ```
 
 For full documentation, see [docs/how-it-works.md](docs/how-it-works.md).
@@ -475,7 +475,7 @@ Lists each package repository, its local path, and the pinned version:
 
 ### meta.xml -- Entry Point
 
-Combines all includes into a single entry point referenced by `.rpmenv`:
+Combines all includes into a single entry point referenced by `.kanon`:
 
 ```xml
 <manifest>
@@ -501,10 +501,10 @@ Each level includes its parent and adds its own package entries. The `repo` tool
 
 1. Tag the package repository with the new semver version
 2. Update the `revision` attribute in the corresponding `packages.xml`
-3. Run `rpm validate xml` to verify manifests remain valid
+3. Run `kanon validate xml` to verify manifests remain valid
 4. Tag and push the manifest repository
 
-Projects pick up the new versions on next `rpm configure .rpmenv`.
+Projects pick up the new versions on next `kanon install .kanon`.
 
 For more details, see [docs/contributing.md](docs/contributing.md).
 
@@ -512,7 +512,7 @@ For more details, see [docs/contributing.md](docs/contributing.md).
 
 ## Creating Packages
 
-A package is a Git repository containing automation scripts (Makefile targets, Gradle scripts, configuration files, etc.) tagged with semver versions. RPM syncs packages to `.packages/` where task runners can discover and apply them.
+A package is a Git repository containing automation scripts (Makefile targets, Gradle scripts, configuration files, etc.) tagged with semver versions. Kanon syncs packages to `.packages/` where task runners can discover and apply them.
 
 ### Package Structure
 
@@ -562,7 +562,7 @@ Some packages contain assets (configuration files, templates) that tools expect 
 </project>
 ```
 
-After `repo sync`, the project has `config/checkstyle/checkstyle.xml` as a symlink pointing into `.packages/`. These symlinked paths should be gitignored since they are regenerated by `rpm configure`.
+After `repo sync`, the project has `config/checkstyle/checkstyle.xml` as a symlink pointing into `.packages/`. These symlinked paths should be gitignored since they are regenerated by `kanon install`.
 
 ### Gradle Package Specifics
 
@@ -606,21 +606,21 @@ Marketplace packages use `<linkfile>` symlinks to expose plugins to Claude Code.
 
 - All `<linkfile dest>` attributes must start with `${CLAUDE_MARKETPLACES_DIR}/`
 - Each `<project path>` must be unique across all manifests
-- The `RPM_MARKETPLACE_INSTALL` flag in `.rpmenv` must be set to `true`
-- `CLAUDE_MARKETPLACES_DIR` must be defined in `.rpmenv`
+- The `KANON_MARKETPLACE_INSTALL` flag in `.kanon` must be set to `true`
+- `CLAUDE_MARKETPLACES_DIR` must be defined in `.kanon`
 
 ### Naming Convention
 
-Marketplace manifest files must be named `*-marketplace.xml` (e.g., `claude-history-marketplace.xml`, `immutable-audit-trail-marketplace.xml`). The `rpm validate marketplace` command discovers files matching this pattern under `repo-specs/`.
+Marketplace manifest files must be named `*-marketplace.xml` (e.g., `claude-history-marketplace.xml`, `immutable-audit-trail-marketplace.xml`). The `kanon validate marketplace` command discovers files matching this pattern under `repo-specs/`.
 
 ### Cascading Includes
 
-Manifests support cascading `<include>` chains where each level includes its parent. This enables shared remote definitions, common project entries, and layered composition across project types. Currently marketplace manifests in `caylent-private-rpm` use a flat structure (each manifest includes `remote.xml` directly), but cascading hierarchies are fully supported when needed.
+Manifests support cascading `<include>` chains where each level includes its parent. This enables shared remote definitions, common project entries, and layered composition across project types. Currently marketplace manifests use a flat structure (each manifest includes `remote.xml` directly), but cascading hierarchies are fully supported when needed.
 
 ### Validation
 
 ```bash
-rpm validate marketplace
+kanon validate marketplace
 ```
 
 This checks linkfile destination prefixes, include chain integrity, project path uniqueness, and revision format validity.
@@ -631,7 +631,7 @@ For full documentation, see [docs/claude-marketplaces-guide.md](docs/claude-mark
 
 ## Fork Features (PEP 440 Constraints)
 
-RPM uses a [fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) that adds two features beyond upstream:
+Kanon uses a [fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) that adds two features beyond upstream:
 
 ### PEP 440 Version Constraints in Manifests
 
@@ -673,9 +673,9 @@ The `<` character must be escaped as `&lt;` in XML attribute values:
          revision="refs/tags/my-package/>=1.0.0,&lt;2.0.0" />
 ```
 
-### PEP 440 Version Resolution in .rpmenv
+### PEP 440 Version Resolution in .kanon
 
-The CLI supports PEP 440 constraint syntax in both `REPO_REV` and `RPM_SOURCE_<name>_REVISION` in `.rpmenv`. Constraints are resolved against available git tags before being passed to the underlying tools.
+The CLI supports PEP 440 constraint syntax in both `REPO_REV` and `KANON_SOURCE_<name>_REVISION` in `.kanon`. Constraints are resolved against available git tags before being passed to the underlying tools.
 
 #### Supported Operators
 
@@ -690,19 +690,19 @@ The CLI supports PEP 440 constraint syntax in both `REPO_REV` and `RPM_SOURCE_<n
 
 Plain strings without PEP 440 operators pass through unchanged.
 
-#### Prefixed Constraints (RPM_SOURCE_\<name\>_REVISION)
+#### Prefixed Constraints (KANON_SOURCE_\<name\>_REVISION)
 
 Source revisions support an optional `refs/tags/` prefix. This is recommended because the resolved value is passed to `repo init -b`, which accepts full ref paths:
 
 ```properties
 # Resolves to refs/tags/1.1.2 — works directly with repo init -b
-RPM_SOURCE_build_REVISION=refs/tags/~=1.1.0
+KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
 
 # Namespaced — only considers tags under that path
-RPM_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
+KANON_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
 
 # Also supported — resolves against all tags
-RPM_SOURCE_build_REVISION=~=1.1.0
+KANON_SOURCE_build_REVISION=~=1.1.0
 ```
 
 For full details, see [docs/version-resolution.md](docs/version-resolution.md).
@@ -715,15 +715,15 @@ Standard `repo` restricts `<linkfile dest>` to relative paths within the workspa
 
 ## SSH Authentication Setup
 
-RPM uses HTTPS Git URLs internally. If you authenticate with GitHub via SSH instead of HTTPS tokens, configure Git to rewrite HTTPS URLs to SSH globally:
+Kanon uses HTTPS Git URLs internally. If you authenticate with GitHub via SSH instead of HTTPS tokens, configure Git to rewrite HTTPS URLs to SSH globally:
 
 ```bash
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-This tells Git to use SSH for all `github.com` requests, which RPM's `git clone`, `git ls-remote`, and `repo` commands will then use automatically.
+This tells Git to use SSH for all `github.com` requests, which Kanon's `git clone`, `git ls-remote`, and `repo` commands will then use automatically.
 
-**Note:** The `--global` flag is required. Using `--local` will not work because RPM uses the `repo` tool under the hood, which operates in its own working directories with their own local Git configuration.
+**Note:** The `--global` flag is required. Using `--local` will not work because Kanon uses the `repo` tool under the hood, which operates in its own working directories with their own local Git configuration.
 
 For other Git hosts, adjust the URL accordingly:
 
@@ -776,14 +776,14 @@ make publish       # Clean, build, and check distribution
 ### Project Structure
 
 ```text
-src/rpm_cli/
+src/kanon_cli/
   cli.py              # Entry point
-  commands/            # Subcommand implementations (bootstrap, configure, clean, validate)
-  core/                # Core logic (configure, clean, rpmenv parsing, version resolution)
-  catalog/             # Bundled catalog (fallback templates for rpm bootstrap)
+  commands/            # Subcommand implementations (bootstrap, install, clean, validate)
+  core/                # Core logic (install, clean, kanon parsing, version resolution)
+  catalog/             # Bundled catalog (fallback templates for kanon bootstrap)
 tests/                 # Unit and functional tests
 docs/                  # Configuration, lifecycle, version resolution documentation
-pyproject.toml         # Package config (hatchling build, entry point: rpm)
+pyproject.toml         # Package config (hatchling build, entry point: kanon)
 ```
 
 ### Contributing
@@ -806,16 +806,16 @@ PR titles must follow [Conventional Commits](https://www.conventionalcommits.org
 
 ## Documentation
 
-- [How It Works](docs/how-it-works.md) -- Technical deep-dive into RPM internals
+- [How It Works](docs/how-it-works.md) -- Technical deep-dive into Kanon internals
 - [Setup Guide](docs/setup-guide.md) -- Step-by-step setup for new and existing projects
-- [RPM Guide](docs/rpm-guide.md) -- Comprehensive guide for engineers new to this pattern
+- [Kanon Guide](docs/kanon-guide.md) -- Comprehensive guide for engineers new to this pattern
 - [Multi-Source Guide](docs/multi-source-guide.md) -- Configuring multiple manifest sources
 - [Claude Marketplaces Guide](docs/claude-marketplaces-guide.md) -- Marketplace architecture and plugin lifecycle
-- [Pipeline Integration](docs/pipeline-integration.md) -- Using RPM tasks in CI/CD pipelines
-- [Contributing](docs/contributing.md) -- How to create and maintain RPM packages and marketplaces
+- [Pipeline Integration](docs/pipeline-integration.md) -- Using Kanon tasks in CI/CD pipelines
+- [Contributing](docs/contributing.md) -- How to create and maintain Kanon packages and marketplaces
 - [Version Resolution](docs/version-resolution.md) -- PEP 440 resolver details
-- [Configuration](docs/configuration.md) -- .rpmenv format and variable expansion
-- [Lifecycle](docs/lifecycle.md) -- Configure and clean lifecycle step-by-step
+- [Configuration](docs/configuration.md) -- .kanon format and variable expansion
+- [Lifecycle](docs/lifecycle.md) -- Install and clean lifecycle step-by-step
 
 ---
 

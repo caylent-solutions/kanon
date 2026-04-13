@@ -1,0 +1,35 @@
+# Kanon Configuration
+# Environment variables override these values (for pipeline integration)
+
+# Repo Tool
+# By default, kanon installs the latest rpm-git-repo from PyPI.
+# To override (e.g., test an unreleased version), uncomment both lines:
+# REPO_URL=https://github.com/caylent-solutions/rpm-git-repo.git
+# REPO_REV=main
+
+# Shared env vars for envsubst (resolved by 'repo envsubst' in remote.xml)
+GITBASE=<YOUR_GIT_ORG_BASE_URL>
+CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
+
+# Marketplace install toggle (set to true to enable Claude Code plugin lifecycle)
+KANON_MARKETPLACE_INSTALL=<true|false>
+
+# --- Sources ---
+# Define one or more sources. Each source needs three variables:
+#   KANON_SOURCE_<name>_URL      — Git URL of the manifest repository
+#   KANON_SOURCE_<name>_REVISION — Branch, tag, or PEP 440 constraint
+#   KANON_SOURCE_<name>_PATH     — Path to the entry-point manifest XML
+#
+# Example: single source (marketplace plugins only)
+# KANON_SOURCE_plugins_URL=https://github.com/your-org/your-manifest-repo.git
+# KANON_SOURCE_plugins_REVISION=main
+# KANON_SOURCE_plugins_PATH=repo-specs/marketplace-manifest.xml
+#
+# Example: two sources (build packages + marketplace plugins)
+# KANON_SOURCE_packages_URL=https://github.com/your-org/your-packages-repo.git
+# KANON_SOURCE_packages_REVISION=refs/tags/>=1.0.0,<2.0.0
+# KANON_SOURCE_packages_PATH=repo-specs/build/packages.xml
+#
+# KANON_SOURCE_plugins_URL=https://github.com/your-org/your-marketplace-repo.git
+# KANON_SOURCE_plugins_REVISION=main
+# KANON_SOURCE_plugins_PATH=repo-specs/marketplace-manifest.xml

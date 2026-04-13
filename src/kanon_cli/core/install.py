@@ -1,7 +1,7 @@
-"""Multi-source RPM configure business logic.
+"""Multi-source Kanon install business logic.
 
-Parses .rpmenv, validates sources, creates isolated source workspaces
-under ``.rpm/sources/<name>/``, runs ``repo init``/``envsubst``/``sync``
+Parses .kanon, validates sources, creates isolated source workspaces
+under ``.kanon-data/sources/<name>/``, runs ``repo init``/``envsubst``/``sync``
 per source, aggregates symlinks into ``.packages/``, detects collisions,
 updates ``.gitignore``, and optionally installs marketplace plugins.
 """
@@ -12,16 +12,16 @@ import shutil
 import subprocess
 import sys
 
-from rpm_cli.core.marketplace import install_marketplace_plugins
-from rpm_cli.core.rpmenv import parse_rpmenv
-from rpm_cli.version import resolve_version
+from kanon_cli.core.marketplace import install_marketplace_plugins
+from kanon_cli.core.kanonenv import parse_kanonenv
+from kanon_cli.version import resolve_version
 
 
 def create_source_dirs(
     source_names: list[str],
     base_dir: pathlib.Path,
 ) -> dict[str, pathlib.Path]:
-    """Create .rpm/sources/<name>/ directories for each source.
+    """Create .kanon-data/sources/<name>/ directories for each source.
 
     Args:
         source_names: Ordered list of source names (auto-discovered, alphabetical).
@@ -32,7 +32,7 @@ def create_source_dirs(
     """
     result: dict[str, pathlib.Path] = {}
     for name in source_names:
-        source_dir = base_dir / ".rpm" / "sources" / name
+        source_dir = base_dir / ".kanon-data" / "sources" / name
         source_dir.mkdir(parents=True, exist_ok=True)
         result[name] = source_dir
     return result
@@ -48,7 +48,7 @@ def run_repo_init(
     """Run ``repo init -u <URL> -b <REVISION> -m <PATH>`` in source directory.
 
     Args:
-        source_dir: Path to ``.rpm/sources/<name>/``.
+        source_dir: Path to ``.kanon-data/sources/<name>/``.
         url: Repository URL for repo init.
         revision: Branch/tag/revision for repo init.
         manifest_path: Manifest file path for repo init.
@@ -94,7 +94,7 @@ def run_repo_envsubst(
     """Run ``repo envsubst`` in source directory with exported env vars.
 
     Args:
-        source_dir: Path to ``.rpm/sources/<name>/``.
+        source_dir: Path to ``.kanon-data/sources/<name>/``.
         env_vars: Environment variables to export (GITBASE, CLAUDE_MARKETPLACES_DIR).
 
     Raises:
@@ -121,7 +121,7 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
     """Run ``repo sync`` in source directory.
 
     Args:
-        source_dir: Path to ``.rpm/sources/<name>/``.
+        source_dir: Path to ``.kanon-data/sources/<name>/``.
 
     Raises:
         SystemExit: If repo sync exits non-zero.
@@ -147,7 +147,7 @@ def aggregate_symlinks(
 ) -> dict[str, str]:
     """Aggregate packages from all sources into ``.packages/``.
 
-    For each ``.rpm/sources/<name>/.packages/*``, creates a symlink in
+    For each ``.kanon-data/sources/<name>/.packages/*``, creates a symlink in
     the top-level ``.packages/`` directory. Detects collisions when two
     sources produce the same package name.
 
@@ -167,7 +167,7 @@ def aggregate_symlinks(
     package_owners: dict[str, str] = {}
 
     for name in source_names:
-        source_packages = base_dir / ".rpm" / "sources" / name / ".packages"
+        source_packages = base_dir / ".kanon-data" / "sources" / name / ".packages"
         if not source_packages.exists():
             continue
         for pkg in source_packages.iterdir():
@@ -201,10 +201,10 @@ def update_gitignore(
     Args:
         base_dir: Project root directory.
         entries: List of gitignore entries to ensure. Defaults to
-            ``.packages/`` and ``.rpm/``.
+            ``.packages/`` and ``.kanon-data/``.
     """
     gitignore = base_dir / ".gitignore"
-    required_entries = entries if entries is not None else [".packages/", ".rpm/"]
+    required_entries = entries if entries is not None else [".packages/", ".kanon-data/"]
 
     existing_content = ""
     if gitignore.exists():
@@ -249,7 +249,7 @@ def _print_package_summary(
         source_names: Ordered list of source names.
     """
     if not package_owners:
-        print("\nrpm configure: no packages synced.")
+        print("\nkanon install: no packages synced.")
         return
 
     # Group packages by source, preserving source order
@@ -258,7 +258,7 @@ def _print_package_summary(
         by_source[source_name].append(pkg_name)
 
     total = len(package_owners)
-    print(f"\nrpm configure: {total} packages synced to .packages/")
+    print(f"\nkanon install: {total} packages synced to .packages/")
     for source_name in source_names:
         pkgs = by_source[source_name]
         if not pkgs:
@@ -268,43 +268,43 @@ def _print_package_summary(
             print(f"    - {pkg}")
 
 
-def configure(rpmenv_path: pathlib.Path) -> None:
-    """Execute the full rpmConfigure lifecycle.
+def install(kanonenv_path: pathlib.Path) -> None:
+    """Execute the full Kanon install lifecycle.
 
     Steps:
-      1. Parse .rpmenv and validate sources
-      2. If RPM_MARKETPLACE_INSTALL=true: create and clean marketplace dir
+      1. Parse .kanon and validate sources
+      2. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir
       3. For each source: mkdir, repo init, envsubst, sync
       4. Aggregate symlinks into .packages/
       5. Update .gitignore
-      6. If RPM_MARKETPLACE_INSTALL=true: run install script
+      6. If KANON_MARKETPLACE_INSTALL=true: run install script
 
     Args:
-        rpmenv_path: Path to the .rpmenv configuration file.
+        kanonenv_path: Path to the .kanon configuration file.
 
     Raises:
-        SystemExit: On any failure during the configure process.
+        SystemExit: On any failure during the install process.
     """
-    print(f"rpm configure: parsing {rpmenv_path}...")
-    config = parse_rpmenv(rpmenv_path)
-    base_dir = rpmenv_path.parent
-    source_names = config["RPM_SOURCES"]
+    print(f"kanon install: parsing {kanonenv_path}...")
+    config = parse_kanonenv(kanonenv_path)
+    base_dir = kanonenv_path.parent
+    source_names = config["KANON_SOURCES"]
     sources = config["sources"]
-    marketplace_install = config["RPM_MARKETPLACE_INSTALL"]
+    marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
     globals_dict = config["globals"]
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
     if marketplace_install and not marketplace_dir_str:
         print(
-            "Error: RPM_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .rpmenv",
+            "Error: KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
             file=sys.stderr,
         )
         sys.exit(1)
 
     if marketplace_install:
         marketplace_dir = pathlib.Path(marketplace_dir_str)
-        print("rpm configure: preparing marketplace directory...")
+        print("kanon install: preparing marketplace directory...")
         prepare_marketplace_dir(marketplace_dir)
 
     repo_rev = globals_dict.get("REPO_REV", "")
@@ -320,7 +320,7 @@ def configure(rpmenv_path: pathlib.Path) -> None:
     for name in source_names:
         source_dir = source_dirs[name]
         source_data = sources[name]
-        print(f"rpm configure: syncing source '{name}'...")
+        print(f"kanon install: syncing source '{name}'...")
         resolved_revision = resolve_version(source_data["url"], source_data["revision"])
         print(f"  repo init ({source_data['path']})...")
         run_repo_init(
@@ -335,15 +335,15 @@ def configure(rpmenv_path: pathlib.Path) -> None:
         print("  repo sync...")
         run_repo_sync(source_dir)
 
-    print("rpm configure: aggregating packages into .packages/...")
+    print("kanon install: aggregating packages into .packages/...")
     package_owners = aggregate_symlinks(source_names, base_dir)
     update_gitignore(base_dir)
 
     _print_package_summary(package_owners, source_names)
 
     if marketplace_install:
-        print("\nrpm configure: installing marketplace plugins...")
+        print("\nkanon install: installing marketplace plugins...")
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
 
-    print("\nrpm configure: done.")
+    print("\nkanon install: done.")

@@ -4,8 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from rpm_cli.core.marketplace_validator import validate_marketplace
-from rpm_cli.core.xml_validator import validate_xml
+from kanon_cli.core.marketplace_validator import validate_marketplace
+from kanon_cli.core.xml_validator import validate_xml
 
 
 def register(subparsers) -> None:
@@ -35,7 +35,7 @@ def register(subparsers) -> None:
             "Checks well-formedness, required attributes on <project> and <remote>\n"
             "elements, and that <include> name attributes point to existing files."
         ),
-        epilog="Example:\n  rpm validate xml\n  rpm validate xml --repo-root /path/to/repo",
+        epilog="Example:\n  kanon validate xml\n  kanon validate xml --repo-root /path/to/repo",
         formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
     )
     xml_parser.add_argument(
@@ -55,7 +55,7 @@ def register(subparsers) -> None:
             "Checks linkfile dest attributes, include chain integrity,\n"
             "project path uniqueness, and revision tag format."
         ),
-        epilog="Example:\n  rpm validate marketplace\n  rpm validate marketplace --repo-root /path/to/repo",
+        epilog="Example:\n  kanon validate marketplace\n  kanon validate marketplace --repo-root /path/to/repo",
         formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
     )
     mp_parser.add_argument(

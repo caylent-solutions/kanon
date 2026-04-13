@@ -1,13 +1,13 @@
-# Contributing to RPM CLI
+# Contributing to Kanon CLI
 
-Thank you for your interest in contributing to the RPM CLI! This document provides guidelines and instructions for contributing to this project.
+Thank you for your interest in contributing to the Kanon CLI! This document provides guidelines and instructions for contributing to this project.
 
 ## Development Setup
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/caylent-solutions/rpm.git
-   cd rpm
+   git clone https://github.com/caylent-solutions/kanon.git
+   cd kanon
    ```
 
 2. Install development dependencies:
@@ -103,7 +103,7 @@ Any commit type with `!` suffix OR `BREAKING CHANGE:` in the footer triggers a *
 ```
 feat!: change CLI interface
 
-BREAKING CHANGE: The configure command now requires explicit manifest path argument
+BREAKING CHANGE: The install command now requires explicit manifest path argument
 ```
 
 ### Examples
@@ -178,7 +178,7 @@ Use descriptive branch names with type prefixes:
 The PR title **must** follow conventional commit format because it becomes the squash commit message that drives semantic versioning:
 
 - `feat: add new bootstrap template` -> triggers MINOR bump
-- `fix(configure): handle missing rpmenv` -> triggers PATCH bump
+- `fix(install): handle missing kanon config` -> triggers PATCH bump
 - `docs: update CLI reference` -> no version bump
 - `feat!: redesign manifest format` -> triggers MAJOR bump
 

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rpm-cli"
+name = "kanon-cli"
 version = "0.8.0"
-description = "RPM (Repo Package Manager) CLI tool"
+description = "Kanon (Kanon Package Manager) CLI tool"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -29,14 +29,14 @@ dependencies = [
 ]
 
 [project.scripts]
-rpm = "rpm_cli.cli:main"
+kanon = "kanon_cli.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/caylent-solutions/rpm"
-Issues = "https://github.com/caylent-solutions/rpm/issues"
+Homepage = "https://github.com/caylent-solutions/kanon"
+Issues = "https://github.com/caylent-solutions/kanon/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rpm_cli"]
+packages = ["src/kanon_cli"]
 
 [tool.ruff]
 target-version = "py311"
@@ -60,14 +60,14 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/rpm_cli"]
+source = ["src/kanon_cli"]
 data_file = ".coverage-data/.coverage"
 
 [tool.coverage.report]
 show_missing = true
 
 [tool.semantic_release]
-version_variable = "src/rpm_cli/__init__.py:__version__"
+version_variable = "src/kanon_cli/__init__.py:__version__"
 version_toml = ["pyproject.toml:project.version"]
 build_command = "python -m build"
 tag_format = "{version}"

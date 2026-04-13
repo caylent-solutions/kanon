@@ -1,36 +1,36 @@
-# How RPM Works
+# How Kanon Works
 
-Technical deep-dive into RPM internals. For a high-level overview, see [RPM Guide](rpm-guide.md).
+Technical deep-dive into Kanon internals. For a high-level overview, see [Kanon Guide](kanon-guide.md).
 
-RPM supports multiple catalog entry packages. The sections below cover both the **Gradle bootstrap** (for Gradle/Spring Boot projects) and the **Python-based lifecycle** (for Make projects and multi-source configurations).
+Kanon supports multiple catalog entry packages. The sections below cover both the **Gradle bootstrap** (for Gradle/Spring Boot projects) and the **Python-based lifecycle** (for Make projects and multi-source configurations).
 
 ## Bootstrap
 
-The `rpm bootstrap` command scaffolds a new project by copying all files from a catalog entry package, including a pre-configured `.rpmenv`:
+The `kanon bootstrap` command scaffolds a new project by copying all files from a catalog entry package, including a pre-configured `.kanon`:
 
 ```bash
-rpm bootstrap list      # List available catalog entry packages
-rpm bootstrap gradle    # Copies .rpmenv, rpm-bootstrap.gradle, build.gradle, rpm-readme.md
-rpm bootstrap make      # Copies .rpmenv, Makefile, rpm-readme.md
-rpm bootstrap rpm       # Copies .rpmenv, rpm-readme.md (no task runner files)
+kanon bootstrap list      # List available catalog entry packages
+kanon bootstrap gradle    # Copies .kanon, kanon-bootstrap.gradle, build.gradle, kanon-readme.md
+kanon bootstrap make      # Copies .kanon, Makefile, kanon-readme.md
+kanon bootstrap kanon     # Copies .kanon, kanon-readme.md (no task runner files)
 ```
 
 Options:
 
 - `--output-dir DIR` — target directory for bootstrapped files (default: current directory)
-- `--catalog-source SOURCE` — remote catalog as `<git_url>@<ref>` where ref is a branch, tag, or `latest` (resolves to highest semver tag). Overrides the `RPM_CATALOG_SOURCE` environment variable. When neither flag nor env var is set, the bundled catalog shipped with the CLI package is used.
+- `--catalog-source SOURCE` — remote catalog as `<git_url>@<ref>` where ref is a branch, tag, or `latest` (resolves to highest semver tag). Overrides the `KANON_CATALOG_SOURCE` environment variable. When neither flag nor env var is set, the bundled catalog shipped with the CLI package is used.
 
-The `.rpmenv` shipped with each catalog entry package is pre-configured by the catalog author. Users of the bundled catalog get example values pointing to `caylent-private-rpm`; users of a remote catalog get values specific to their organization's manifest repository.
+The `.kanon` shipped with each catalog entry package is pre-configured by the catalog author. Users of the bundled catalog get example values; users of a remote catalog get values specific to their organization's manifest repository.
 
 ## Gradle Bootstrap Flow
 
-The `rpm-bootstrap.gradle` script is the entry point for Gradle-based RPM consumers. It performs two roles:
+The `kanon-bootstrap.gradle` script is the entry point for Gradle-based Kanon consumers. It performs two roles:
 
 ### Role 1: Package Auto-Discovery (at Gradle evaluation time)
 
-When Gradle evaluates `build.gradle` and reaches `apply from: 'rpm-bootstrap.gradle'`, the bootstrap script:
+When Gradle evaluates `build.gradle` and reaches `apply from: 'kanon-bootstrap.gradle'`, the bootstrap script:
 
-1. Reads `.rpmenv` to get configuration (package directory, tool versions, URLs)
+1. Reads `.kanon` to get configuration (package directory, tool versions, URLs)
 2. Checks if `.packages/` exists
 3. If it does, iterates over each subdirectory in `.packages/`
 4. For each package directory:
@@ -40,66 +40,66 @@ When Gradle evaluates `build.gradle` and reaches `apply from: 'rpm-bootstrap.gra
 
 This means package scripts execute in the context of the project's build. They can apply plugins, configure tasks, add dependencies, and define new tasks — exactly as if the code were in `build.gradle` itself.
 
-### Role 2: Package Sync (via `rpmConfigure` task)
+### Role 2: Package Sync (via `kanonInstall` task)
 
-The `rpmConfigure` Gradle task executes at runtime (not evaluation time). It delegates to the `rpm` CLI:
+The `kanonInstall` Gradle task executes at runtime (not evaluation time). It delegates to the `kanon` CLI:
 
 ```groovy
-task rpmConfigure(type: Exec) {
-    commandLine 'rpm', 'configure', '.rpmenv'
+task kanonInstall(type: Exec) {
+    commandLine 'kanon', 'install', '.kanon'
 }
 ```
 
-The `rpm` CLI must be installed as a prerequisite (same as Make projects). The CLI handles the full multi-source lifecycle: repo init, envsubst, sync, symlink aggregation, and marketplace installation. See the Python-Based Configure section below for the full step-by-step breakdown.
+The `kanon` CLI must be installed as a prerequisite (same as Make projects). The CLI handles the full multi-source lifecycle: repo init, envsubst, sync, symlink aggregation, and marketplace installation. See the Python-Based Install section below for the full step-by-step breakdown.
 
-### Python-Based Configure (Multi-Source)
+### Python-Based Install (Multi-Source)
 
-The `rpm configure` command implements the multi-source
-`rpmConfigure` lifecycle. It is invoked via
-`rpm configure .rpmenv`.
+The `kanon install` command implements the multi-source
+install lifecycle. It is invoked via
+`kanon install .kanon`.
 
 The command performs these steps:
 
-1. **Parse `.rpmenv`** — Reads configuration via the `rpmenv` parser module, auto-discovering sources from `RPM_SOURCE_<name>_URL` patterns
+1. **Parse `.kanon`** — Reads configuration via the kanon parser module, auto-discovering sources from `KANON_SOURCE_<name>_URL` patterns
 2. **Validate sources** — Verifies all required variables present for each source (fail-fast if missing)
-3. **Pre-sync marketplace setup** — If `RPM_MARKETPLACE_INSTALL=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
+3. **Pre-sync marketplace setup** — If `KANON_MARKETPLACE_INSTALL=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
 4. **For each source in alphabetical order:**
-   - Creates `.rpm/sources/<name>/` directory
+   - Creates `.kanon-data/sources/<name>/` directory
    - Runs `repo init -u <URL> -b <REVISION> -m <PATH>` in the source directory
    - Exports `GITBASE` and `CLAUDE_MARKETPLACES_DIR`, runs `repo envsubst`
    - Runs `repo sync` — aborts immediately on non-zero exit
-5. **Aggregate symlinks** — For each `.rpm/sources/<name>/.packages/*`, creates a symlink in `.packages/`
+5. **Aggregate symlinks** — For each `.kanon-data/sources/<name>/.packages/*`, creates a symlink in `.packages/`
 6. **Collision detection** — If two sources produce the same package name, fails fast with error identifying both sources
-7. **Update `.gitignore`** — Ensures `.packages/` and `.rpm/` entries are present
-8. **Post-sync marketplace install** — If `RPM_MARKETPLACE_INSTALL=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
+7. **Update `.gitignore`** — Ensures `.packages/` and `.kanon-data/` entries are present
+8. **Post-sync marketplace install** — If `KANON_MARKETPLACE_INSTALL=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
 
 ### Python-Based Clean (Full Teardown)
 
-The `rpm clean` command implements the `rpmClean`
+The `kanon clean` command implements the clean
 lifecycle. It is invoked via
-`rpm clean .rpmenv`.
+`kanon clean .kanon`.
 
 The command performs these steps in order:
 
-1. **Parse `.rpmenv`** — Reads configuration via the `rpmenv` parser module
-2. **If `RPM_MARKETPLACE_INSTALL=true`:**
+1. **Parse `.kanon`** — Reads configuration via the kanon parser module
+2. **If `KANON_MARKETPLACE_INSTALL=true`:**
    - Uninstalls marketplace plugins via the Claude Code CLI (discovers entries, uninstalls each plugin, removes marketplace registrations)
    - Removes `CLAUDE_MARKETPLACES_DIR` entirely
 3. **Remove `.packages/`** — `shutil.rmtree` with `ignore_errors=True`
-4. **Remove `.rpm/`** — `shutil.rmtree` with `ignore_errors=True`
+4. **Remove `.kanon-data/`** — `shutil.rmtree` with `ignore_errors=True`
 
 The order is critical: uninstalling plugins first ensures Claude Code's
 registry is clean. Removing the marketplace directory before deleting
-symlinks ensures the RPM CLI can resolve marketplace paths during removal.
-Deleting `.packages/` and `.rpm/` last avoids broken symlinks during uninstall.
+symlinks ensures the Kanon CLI can resolve marketplace paths during removal.
+Deleting `.packages/` and `.kanon-data/` last avoids broken symlinks during uninstall.
 
 ## Symlinks via `<linkfile>`
 
 Some packages contain assets (like checkstyle rules or config files) that IDEs or other tools expect at conventional paths in the project root. Rather than requiring consumers to reference `.packages/` directly, the manifest's `<linkfile>` element creates symlinks:
 
 ```xml
-<project name="caylent-private-rpm-gradle-checkstyle" path=".packages/caylent-private-rpm-gradle-checkstyle"
-         remote="caylent" revision="refs/tags/1.0.0">
+<project name="my-gradle-checkstyle" path=".packages/my-gradle-checkstyle"
+         remote="origin" revision="refs/tags/1.0.0">
   <linkfile src="config/checkstyle/checkstyle.xml" dest="config/checkstyle/checkstyle.xml" />
   <linkfile src="config/checkstyle/suppressions.xml" dest="config/checkstyle/suppressions.xml" />
 </project>
@@ -107,17 +107,17 @@ Some packages contain assets (like checkstyle rules or config files) that IDEs o
 
 After `repo sync`, the project has `config/checkstyle/checkstyle.xml` as a symlink pointing into `.packages/`. This means:
 - IDE settings (e.g., VS Code `java.checkstyle.configuration`) continue to reference `config/checkstyle/checkstyle.xml` — no path changes needed
-- The symlinked paths should be gitignored since they are regenerated by `rpmConfigure`
+- The symlinked paths should be gitignored since they are regenerated by `kanonInstall`
 - Gradle package scripts still use `PKG_DIR` to reference assets directly (they don't use the symlinks)
 
 ## External Plugin Resolution
 
-Some RPM packages need external Gradle plugins that are not part of Gradle's core. For example:
-- `caylent-private-rpm-gradle-build` needs `org.springframework.boot` and `io.spring.dependency-management`
-- `caylent-private-rpm-gradle-sonarqube` needs `org.sonarqube`
-- `caylent-private-rpm-gradle-security` needs `org.owasp.dependencycheck`
+Some Kanon packages need external Gradle plugins that are not part of Gradle's core. For example:
+- A Spring Boot package needs `org.springframework.boot` and `io.spring.dependency-management`
+- A SonarQube package needs `org.sonarqube`
+- A security package needs `org.owasp.dependencycheck`
 
-These plugins must be on the build classpath **before** `apply from: 'rpm-bootstrap.gradle'` executes (because the package scripts use `apply plugin:`). The project's `build.gradle` handles this with a `buildscript {}` block that reads `rpm-manifest.properties` from each package:
+These plugins must be on the build classpath **before** `apply from: 'kanon-bootstrap.gradle'` executes (because the package scripts use `apply plugin:`). The project's `build.gradle` handles this with a `buildscript {}` block that reads `rpm-manifest.properties` from each package:
 
 ```groovy
 buildscript {
@@ -163,12 +163,12 @@ checkstyle {
 
 ## Environment Variable Override
 
-`.rpmenv` values can be overridden by environment variables. The bootstrap script checks `System.getenv()` first, then falls back to the `.rpmenv` property:
+`.kanon` values can be overridden by environment variables. The bootstrap script checks `System.getenv()` first, then falls back to the `.kanon` property:
 
 ```groovy
-def rpmProp = { String key ->
-    System.getenv(key) ?: rpmEnv.getProperty(key)
+def kanonProp = { String key ->
+    System.getenv(key) ?: kanonEnv.getProperty(key)
 }
 ```
 
-This enables CI/CD pipelines to override values (e.g., `GITBASE`, `REPO_MANIFESTS_REVISION`) without modifying `.rpmenv`.
+This enables CI/CD pipelines to override values (e.g., `GITBASE`, `REPO_MANIFESTS_REVISION`) without modifying `.kanon`.

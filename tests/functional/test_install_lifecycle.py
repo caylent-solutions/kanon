@@ -1,27 +1,27 @@
-"""Full configure lifecycle with mocked repo tool."""
+"""Full install lifecycle with mocked repo tool."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rpm_cli.core.configure import configure
+from kanon_cli.core.install import install
 
 
-def _write_rpmenv(path: Path, content: str) -> Path:
+def _write_kanonenv(path: Path, content: str) -> Path:
     path.write_text(content)
     return path
 
 
 @pytest.mark.functional
-class TestConfigureLifecycle:
+class TestInstallLifecycle:
     def test_single_source_creates_dirs_and_symlinks(self, tmp_path: Path) -> None:
-        rpmenv = _write_rpmenv(
-            tmp_path / ".rpmenv",
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
             (
-                "RPM_SOURCE_build_URL=https://example.com/repo.git\n"
-                "RPM_SOURCE_build_REVISION=main\n"
-                "RPM_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_PATH=meta.xml\n"
             ),
         )
 
@@ -33,25 +33,25 @@ class TestConfigureLifecycle:
                 (packages / "file.txt").write_text("content")
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("rpm_cli.core.configure.subprocess.run", side_effect=fake_repo_run):
-            configure(rpmenv)
+        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
+            install(kanonenv)
 
-        assert (tmp_path / ".rpm" / "sources" / "build").is_dir()
+        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         assert (tmp_path / ".packages" / "pkg-a").is_symlink()
         gitignore = (tmp_path / ".gitignore").read_text()
         assert ".packages/" in gitignore
-        assert ".rpm/" in gitignore
+        assert ".kanon-data/" in gitignore
 
     def test_two_sources_aggregate_without_collision(self, tmp_path: Path) -> None:
-        rpmenv = _write_rpmenv(
-            tmp_path / ".rpmenv",
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
             (
-                "RPM_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "RPM_SOURCE_alpha_REVISION=main\n"
-                "RPM_SOURCE_alpha_PATH=meta.xml\n"
-                "RPM_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "RPM_SOURCE_bravo_REVISION=main\n"
-                "RPM_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
+                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
+                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_PATH=meta.xml\n"
             ),
         )
 
@@ -68,8 +68,8 @@ class TestConfigureLifecycle:
                 packages.mkdir(parents=True, exist_ok=True)
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("rpm_cli.core.configure.subprocess.run", side_effect=fake_repo_run):
-            configure(rpmenv)
+        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
+            install(kanonenv)
 
         assert call_count["init"] == 2
         assert call_count["sync"] == 2
@@ -77,15 +77,15 @@ class TestConfigureLifecycle:
         assert (tmp_path / ".packages" / "pkg-bravo").is_symlink()
 
     def test_collision_detection_exits(self, tmp_path: Path) -> None:
-        rpmenv = _write_rpmenv(
-            tmp_path / ".rpmenv",
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
             (
-                "RPM_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "RPM_SOURCE_alpha_REVISION=main\n"
-                "RPM_SOURCE_alpha_PATH=meta.xml\n"
-                "RPM_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "RPM_SOURCE_bravo_REVISION=main\n"
-                "RPM_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
+                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
+                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_PATH=meta.xml\n"
             ),
         )
 
@@ -96,25 +96,25 @@ class TestConfigureLifecycle:
                 packages.mkdir(parents=True, exist_ok=True)
             return MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch("rpm_cli.core.configure.subprocess.run", side_effect=fake_repo_run):
+        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
             with pytest.raises(SystemExit) as exc_info:
-                configure(rpmenv)
+                install(kanonenv)
             assert exc_info.value.code == 1
 
     def test_gitignore_appended_not_duplicated(self, tmp_path: Path) -> None:
         (tmp_path / ".gitignore").write_text(".packages/\n")
-        rpmenv = _write_rpmenv(
-            tmp_path / ".rpmenv",
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
             (
-                "RPM_SOURCE_build_URL=https://example.com/repo.git\n"
-                "RPM_SOURCE_build_REVISION=main\n"
-                "RPM_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_PATH=meta.xml\n"
             ),
         )
 
-        with patch("rpm_cli.core.configure.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
-            configure(rpmenv)
+        with patch("kanon_cli.core.install.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+            install(kanonenv)
 
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1
-        assert ".rpm/" in content
+        assert ".kanon-data/" in content

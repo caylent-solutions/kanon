@@ -2,7 +2,7 @@
 
 Provides functions for locating the claude binary, discovering marketplace
 entries and plugins, and orchestrating plugin install/uninstall lifecycles.
-Used by both ``core.configure`` (install) and ``core.clean`` (uninstall).
+Used by both ``core.install`` (install) and ``core.clean`` (uninstall).
 """
 
 import json
@@ -38,7 +38,7 @@ def get_marketplace_dir(globals_dict: dict[str, str]) -> pathlib.Path:
     """Return Path to marketplace directory from globals_dict.
 
     Args:
-        globals_dict: Parsed .rpmenv globals containing CLAUDE_MARKETPLACES_DIR.
+        globals_dict: Parsed .kanon globals containing CLAUDE_MARKETPLACES_DIR.
 
     Returns:
         pathlib.Path to the marketplace directory.

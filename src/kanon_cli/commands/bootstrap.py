@@ -1,16 +1,16 @@
-"""Bootstrap subcommand: scaffold a new RPM project.
+"""Bootstrap subcommand: scaffold a new Kanon project.
 
 Copies catalog entry package files from the catalog and provides
-a pre-configured ``.rpmenv`` configuration file. Supports remote
+a pre-configured ``.kanon`` configuration file. Supports remote
 catalog sources via ``--catalog-source`` flag or
-``RPM_CATALOG_SOURCE`` environment variable.
+``KANON_CATALOG_SOURCE`` environment variable.
 """
 
 import argparse
 import pathlib
 
-from rpm_cli.core.bootstrap import bootstrap_package, list_packages
-from rpm_cli.core.catalog import resolve_catalog_dir
+from kanon_cli.core.bootstrap import bootstrap_package, list_packages
+from kanon_cli.core.catalog import resolve_catalog_dir
 
 
 def register(subparsers) -> None:
@@ -21,18 +21,18 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "bootstrap",
-        help="Scaffold a new RPM project with catalog entry package files",
+        help="Scaffold a new Kanon project with catalog entry package files",
         description=(
             "Copy catalog entry package files (including a pre-configured\n"
-            ".rpmenv) into the target directory.\n\n"
-            "Use 'rpm bootstrap list' to see available packages."
+            ".kanon) into the target directory.\n\n"
+            "Use 'kanon bootstrap list' to see available packages."
         ),
-        epilog="Examples:\n  rpm bootstrap list\n  rpm bootstrap make\n  rpm bootstrap gradle --output-dir my-project\n  rpm bootstrap rpm",
+        epilog="Examples:\n  kanon bootstrap list\n  kanon bootstrap kanon\n  kanon bootstrap kanon --output-dir my-project",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "package",
-        help="Catalog entry package name (e.g. make, gradle, rpm) or 'list' to show available packages",
+        help="Catalog entry package name (e.g. kanon) or 'list' to show available packages",
     )
     parser.add_argument(
         "--output-dir",
@@ -45,7 +45,7 @@ def register(subparsers) -> None:
         default=None,
         help=(
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides RPM_CATALOG_SOURCE env var. "
+            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
             "Default: bundled catalog."
         ),
     )

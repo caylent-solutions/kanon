@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/p/rpm-cli
+      url: https://pypi.org/p/kanon-cli
     permissions:
       id-token: write
     env:
@@ -107,7 +107,7 @@ jobs:
 
           INIT_VERSION=$(python -c "
           import re
-          with open('src/rpm_cli/__init__.py', 'r') as f:
+          with open('src/kanon_cli/__init__.py', 'r') as f:
               content = f.read()
               match = re.search(r'__version__ = [\"\'](.*?)[\"\']', content)
               print(match.group(1) if match else 'NOT_FOUND')

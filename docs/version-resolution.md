@@ -1,6 +1,6 @@
 # Version Resolution
 
-The `rpm` CLI resolves PEP 440 version specifiers against git tags using `git ls-remote`. This applies to both `REPO_REV` and `RPM_SOURCE_<name>_REVISION` values in `.rpmenv`.
+The `kanon` CLI resolves PEP 440 version specifiers against git tags using `git ls-remote`. This applies to both `REPO_REV` and `KANON_SOURCE_<name>_REVISION` values in `.kanon`.
 
 ---
 
@@ -25,7 +25,7 @@ Constraints can be written with or without a `refs/tags/` prefix. The prefix con
 ### Prefixed (recommended)
 
 ```properties
-RPM_SOURCE_build_REVISION=refs/tags/~=1.1.0
+KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
 ```
 
 Resolves against all tags under `refs/tags/`. Returns the full ref, e.g. `refs/tags/1.1.2`.
@@ -33,7 +33,7 @@ Resolves against all tags under `refs/tags/`. Returns the full ref, e.g. `refs/t
 ### Namespaced prefix
 
 ```properties
-RPM_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
+KANON_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
 ```
 
 Filters to tags under `refs/tags/dev/python/my-lib/` only. Returns e.g. `refs/tags/dev/python/my-lib/1.2.7`.
@@ -41,7 +41,7 @@ Filters to tags under `refs/tags/dev/python/my-lib/` only. Returns e.g. `refs/ta
 ### Bare (no prefix)
 
 ```properties
-RPM_SOURCE_build_REVISION=~=1.1.0
+KANON_SOURCE_build_REVISION=~=1.1.0
 ```
 
 Resolves against all available tags. Returns the full ref, e.g. `refs/tags/1.1.2`.
@@ -82,19 +82,19 @@ Plain strings without PEP 440 operators are returned unchanged:
 
 ### REPO_REV (git override only)
 
-When both `REPO_URL` and `REPO_REV` are set in `.rpmenv`, resolves the repo tool version before `pipx install --force`. When both are omitted, the repo tool is installed from PyPI and this resolution does not apply.
+When both `REPO_URL` and `REPO_REV` are set in `.kanon`, resolves the repo tool version before `pipx install --force`. When both are omitted, the repo tool is installed from PyPI and this resolution does not apply.
 
 ```properties
 REPO_REV=~=1.0.0
 ```
 
-### RPM_SOURCE_\<name\>_REVISION
+### KANON_SOURCE_\<name\>_REVISION
 
 Resolves the manifest repository revision before `repo init -b`. The resolved value must be a ref usable by `repo init`, so using the `refs/tags/` prefix is recommended:
 
 ```properties
-RPM_SOURCE_build_REVISION=refs/tags/~=1.1.0
-RPM_SOURCE_marketplaces_REVISION=refs/tags/>=1.0.0,<2.0.0
+KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
+KANON_SOURCE_marketplaces_REVISION=refs/tags/>=1.0.0,<2.0.0
 ```
 
 ---

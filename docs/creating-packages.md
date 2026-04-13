@@ -1,10 +1,10 @@
 # Creating Packages
 
-How to create automation packages that RPM manifest repositories can reference.
+How to create automation packages that Kanon manifest repositories can reference.
 
 ## What is a Package?
 
-An RPM package is a Git repository containing automation scripts, configuration files, or tooling that gets synced into a consumer project's `.packages/` directory. Packages are versioned with Git tags and referenced by manifest XML files.
+A Kanon package is a Git repository containing automation scripts, configuration files, or tooling that gets synced into a consumer project's `.packages/` directory. Packages are versioned with Git tags and referenced by manifest XML files.
 
 ## Package Structure
 
@@ -22,9 +22,9 @@ my-package/
 
 The package structure depends on the task runner ecosystem:
 
-- **Gradle packages** — contain `.gradle` scripts that are auto-applied by `rpm-bootstrap.gradle`
+- **Gradle packages** — contain `.gradle` scripts that are auto-applied by `kanon-bootstrap.gradle`
 - **Make packages** — contain `Makefile` files that are auto-included by the bootstrap `Makefile`
-- **Generic packages** — contain any files (scripts, configs, templates) accessed via `.packages/<name>/` (used with the `rpm` standalone catalog entry or any custom workflow)
+- **Generic packages** — contain any files (scripts, configs, templates) accessed via `.packages/<name>/` (used with the `kanon` standalone catalog entry or any custom workflow)
 
 ## Versioning
 
@@ -47,7 +47,7 @@ This enables PEP 440 version constraints in manifests (e.g., `revision="refs/tag
 
 ## Registering a Package
 
-To make a package available through RPM, add a `<project>` entry to a manifest XML file in your manifest repository:
+To make a package available through Kanon, add a `<project>` entry to a manifest XML file in your manifest repository:
 
 ```xml
 <project name="my-package"
@@ -61,7 +61,7 @@ See [Creating Manifest Repos](creating-manifest-repos.md) for details on manifes
 
 ## Gradle Package Guidelines
 
-For Gradle packages auto-applied by `rpm-bootstrap.gradle`:
+For Gradle packages auto-applied by `kanon-bootstrap.gradle`:
 
 1. **Use `_rpmCurrentPkgDir`** to reference package-local files:
 
@@ -69,7 +69,7 @@ For Gradle packages auto-applied by `rpm-bootstrap.gradle`:
    def PKG_DIR = project.ext.get('_rpmCurrentPkgDir')
    ```
 
-2. **Do not hard-code organization-specific values.** Use project properties or `.rpmenv` values via `_rpmProp`:
+2. **Do not hard-code organization-specific values.** Use project properties or `.kanon` values via `_rpmProp`:
 
    ```groovy
    def rpmProp = project.ext.get('_rpmProp')
@@ -90,7 +90,7 @@ org.sonarqube=org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:4.0.0.2929
 org.owasp.dependencycheck=org.owasp:dependency-check-gradle:9.0.9
 ```
 
-The `rpm-bootstrap.gradle` script reads this file and adds the dependencies to the buildscript classpath before applying your package script.
+The `kanon-bootstrap.gradle` script reads this file and adds the dependencies to the buildscript classpath before applying your package script.
 
 ## Make Package Guidelines
 

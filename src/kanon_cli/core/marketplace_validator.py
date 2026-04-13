@@ -12,7 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from rpm_cli.constants import (
+from kanon_cli.constants import (
     ALLOWED_BRANCHES,
     CONSTRAINT_RE,
     MARKETPLACE_DIR_PREFIX,

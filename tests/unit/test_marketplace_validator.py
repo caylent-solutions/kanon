@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from rpm_cli.core.marketplace_validator import (
+from kanon_cli.core.marketplace_validator import (
     _is_valid_revision,
     validate_include_chain,
     validate_linkfile_dest,

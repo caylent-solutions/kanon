@@ -1,8 +1,8 @@
-"""Configure subcommand: prereqs + repo install + lifecycle.
+"""Install subcommand: prereqs + repo install + lifecycle.
 
 Checks that pipx is available, ensures the repo tool is installed
 (from PyPI by default, or from a git URL when REPO_URL and REPO_REV
-are set), then delegates to the core configure logic.
+are set), then delegates to the core install logic.
 """
 
 import json
@@ -11,49 +11,49 @@ import shutil
 import subprocess
 import sys
 
-from rpm_cli.constants import PYPI_REPO_TOOL_PACKAGE
-from rpm_cli.core.configure import configure
-from rpm_cli.version import resolve_version
+from kanon_cli.constants import PYPI_REPO_TOOL_PACKAGE
+from kanon_cli.core.install import install
+from kanon_cli.version import resolve_version
 
 
 def register(subparsers) -> None:
-    """Register the configure subcommand.
+    """Register the install subcommand.
 
     Args:
         subparsers: The subparsers object from the parent parser.
     """
     parser = subparsers.add_parser(
-        "configure",
+        "install",
         help="Full lifecycle: check prereqs, install repo, multi-source sync",
         description=(
-            "Execute the full rpmConfigure lifecycle.\n\n"
+            "Execute the full Kanon install lifecycle.\n\n"
             "Checks prerequisites (pipx on PATH), installs the repo tool,\n"
             "then runs repo init/envsubst/sync for each source defined in\n"
-            "the .rpmenv file. Aggregates packages into .packages/ via symlinks."
+            "the .kanon file. Aggregates packages into .packages/ via symlinks."
         ),
-        epilog="Example:\n  rpm configure .rpmenv",
+        epilog="Example:\n  kanon install .kanon",
         formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "rpmenv_path",
+        "kanonenv_path",
         type=pathlib.Path,
-        help="Path to the .rpmenv configuration file",
+        help="Path to the .kanon configuration file",
     )
     parser.set_defaults(func=_run)
 
 
 def _run(args) -> None:
-    """Execute the configure command.
+    """Execute the install command.
 
     Args:
-        args: Parsed arguments with rpmenv_path.
+        args: Parsed arguments with kanonenv_path.
     """
-    print("rpm configure: checking prerequisites...")
+    print("kanon install: checking prerequisites...")
     _check_pipx()
 
-    from rpm_cli.core.rpmenv import parse_rpmenv
+    from kanon_cli.core.kanonenv import parse_kanonenv
 
-    config = parse_rpmenv(args.rpmenv_path)
+    config = parse_kanonenv(args.kanonenv_path)
     globals_dict = config["globals"]
 
     repo_url = globals_dict.get("REPO_URL", "")
@@ -61,7 +61,7 @@ def _run(args) -> None:
 
     if repo_url and repo_rev:
         resolved_rev = resolve_version(repo_url, repo_rev)
-        print(f"rpm configure: installing repo tool from git ({resolved_rev})...")
+        print(f"kanon install: installing repo tool from git ({resolved_rev})...")
         _install_repo_tool_from_git(repo_url, resolved_rev)
     elif repo_url or repo_rev:
         print(
@@ -73,7 +73,7 @@ def _run(args) -> None:
     else:
         _ensure_repo_tool_from_pypi()
 
-    configure(args.rpmenv_path)
+    install(args.kanonenv_path)
 
 
 def _check_pipx() -> None:
@@ -85,7 +85,7 @@ def _check_pipx() -> None:
     if shutil.which("pipx") is None:
         print(
             "Error: pipx is not installed or not on PATH.\n\n"
-            "Install pipx before running rpm configure.\n"
+            "Install pipx before running kanon install.\n"
             "  - pip: python3 -m pip install --user pipx\n"
             "  - apt: sudo apt install pipx\n"
             "  - brew: brew install pipx\n"
@@ -143,10 +143,10 @@ def _ensure_repo_tool_from_pypi() -> None:
         SystemExit: If pipx install fails.
     """
     if _is_repo_tool_installed():
-        print("rpm configure: repo tool already installed, skipping.")
+        print("kanon install: repo tool already installed, skipping.")
         return
 
-    print(f"rpm configure: installing repo tool from PyPI ({PYPI_REPO_TOOL_PACKAGE})...")
+    print(f"kanon install: installing repo tool from PyPI ({PYPI_REPO_TOOL_PACKAGE})...")
     result = subprocess.run(
         ["pipx", "install", PYPI_REPO_TOOL_PACKAGE],
         capture_output=True,

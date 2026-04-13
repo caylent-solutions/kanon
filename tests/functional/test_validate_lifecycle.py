@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from rpm_cli.core.marketplace_validator import validate_marketplace
-from rpm_cli.core.xml_validator import validate_xml
+from kanon_cli.core.marketplace_validator import validate_marketplace
+from kanon_cli.core.xml_validator import validate_xml
 
 
 def _write_xml(path: Path, content: str) -> Path:

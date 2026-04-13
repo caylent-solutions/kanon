@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rpm_cli.core.catalog import (
+from kanon_cli.core.catalog import (
     _clone_remote_catalog,
     _get_bundled_catalog_dir,
     _parse_catalog_source,
@@ -21,9 +21,9 @@ class TestGetBundledCatalogDir:
         catalog = _get_bundled_catalog_dir()
         assert catalog.is_dir()
 
-    def test_bundled_catalog_contains_rpm(self) -> None:
+    def test_bundled_catalog_contains_kanon(self) -> None:
         catalog = _get_bundled_catalog_dir()
-        assert (catalog / "rpm").is_dir()
+        assert (catalog / "kanon").is_dir()
 
 
 @pytest.mark.unit
@@ -63,16 +63,16 @@ class TestResolveCatalogDir:
     """Verify catalog directory resolution priority."""
 
     def test_returns_bundled_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("RPM_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         result = resolve_catalog_dir(None)
         assert result == _get_bundled_catalog_dir()
 
     def test_flag_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setenv("RPM_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
         flag_catalog = tmp_path / "repo" / "catalog"
         flag_catalog.mkdir(parents=True)
 
-        with patch("rpm_cli.core.catalog._clone_remote_catalog") as mock_clone:
+        with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
             mock_clone.return_value = flag_catalog
             result = resolve_catalog_dir("https://flag-repo.git@flag-branch")
 
@@ -80,11 +80,11 @@ class TestResolveCatalogDir:
         assert result == flag_catalog
 
     def test_env_var_used_when_no_flag(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setenv("RPM_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
         env_catalog = tmp_path / "repo" / "catalog"
         env_catalog.mkdir(parents=True)
 
-        with patch("rpm_cli.core.catalog._clone_remote_catalog") as mock_clone:
+        with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
             mock_clone.return_value = env_catalog
             result = resolve_catalog_dir(None)
 
@@ -102,8 +102,8 @@ class TestCloneRemoteCatalog:
         catalog_dir.mkdir(parents=True)
 
         with (
-            patch("rpm_cli.core.catalog.subprocess.run") as mock_run,
-            patch("rpm_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
         ):
             mock_run.return_value.returncode = 0
             result = _clone_remote_catalog("https://github.com/org/repo.git@main")
@@ -121,9 +121,9 @@ class TestCloneRemoteCatalog:
         catalog_dir.mkdir(parents=True)
 
         with (
-            patch("rpm_cli.core.catalog.subprocess.run") as mock_run,
-            patch("rpm_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("rpm_cli.core.catalog.resolve_version", return_value="v2.0.0") as mock_resolve,
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version", return_value="v2.0.0") as mock_resolve,
         ):
             mock_run.return_value.returncode = 0
             _clone_remote_catalog("https://github.com/org/repo.git@latest")
@@ -134,8 +134,8 @@ class TestCloneRemoteCatalog:
 
     def test_clone_failure_exits(self) -> None:
         with (
-            patch("rpm_cli.core.catalog.subprocess.run") as mock_run,
-            patch("rpm_cli.core.catalog.tempfile.mkdtemp", return_value="/tmp/rpm-test"),
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value="/tmp/kanon-test"),
         ):
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "clone failed"
@@ -148,8 +148,8 @@ class TestCloneRemoteCatalog:
         # No catalog/ directory inside repo
 
         with (
-            patch("rpm_cli.core.catalog.subprocess.run") as mock_run,
-            patch("rpm_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
         ):
             mock_run.return_value.returncode = 0
             with pytest.raises(SystemExit):

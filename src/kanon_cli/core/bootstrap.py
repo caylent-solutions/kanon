@@ -1,7 +1,7 @@
-"""Bootstrap business logic for scaffolding new RPM projects.
+"""Bootstrap business logic for scaffolding new Kanon projects.
 
 Provides functions to list available catalog entry packages and copy
-them into a target directory with a pre-configured ``.rpmenv``
+them into a target directory with a pre-configured ``.kanon``
 configuration file from the catalog.
 """
 
@@ -26,11 +26,11 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
     """Copy catalog entry package files into the output directory.
 
     Copies all files from the catalog package directory (including a
-    pre-configured ``.rpmenv``) into the output directory. Refuses to
+    pre-configured ``.kanon``) into the output directory. Refuses to
     overwrite existing files.
 
     Args:
-        package: Name of the catalog entry package (e.g. ``make``, ``gradle``, ``rpm``).
+        package: Name of the catalog entry package (e.g. ``make``, ``gradle``, ``kanon``).
         output_dir: Target directory for the bootstrapped files.
         catalog_dir: Path to the catalog directory.
 
@@ -95,13 +95,13 @@ def _print_next_steps(
         output_dir: Directory where files were created.
         files: List of created filenames.
     """
-    print(f"rpm bootstrap: created {package} project in {output_dir}/")
+    print(f"kanon bootstrap: created {package} project in {output_dir}/")
     print("\nFiles created:")
     for f in sorted(files):
         print(f"  {output_dir / f}")
 
     print("\nNext steps:")
 
-    print("  1. Edit .rpmenv — set GITBASE, RPM_MARKETPLACE_INSTALL, and source variables")
-    print("  2. Run: rpm configure .rpmenv")
-    print("  3. Commit .rpmenv to your repository")
+    print("  1. Edit .kanon — set GITBASE, KANON_MARKETPLACE_INSTALL, and source variables")
+    print("  2. Run: kanon install .kanon")
+    print("  3. Commit .kanon to your repository")

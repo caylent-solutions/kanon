@@ -1,9 +1,9 @@
-"""Catalog directory resolution for RPM bootstrap.
+"""Catalog directory resolution for Kanon bootstrap.
 
 Resolves the catalog directory from multiple sources in priority order:
   1. ``--catalog-source`` CLI flag
-  2. ``RPM_CATALOG_SOURCE`` environment variable
-  3. Bundled catalog shipped with the ``rpm_cli`` package
+  2. ``KANON_CATALOG_SOURCE`` environment variable
+  3. Bundled catalog shipped with the ``kanon_cli`` package
 
 Remote catalog sources use the format ``<git_url>@<ref>`` where ref
 can be a branch name, tag, or ``latest`` (resolves to highest semver tag).
@@ -15,8 +15,8 @@ import subprocess
 import sys
 import tempfile
 
-from rpm_cli.constants import CATALOG_ENV_VAR
-from rpm_cli.version import resolve_version
+from kanon_cli.constants import CATALOG_ENV_VAR
+from kanon_cli.version import resolve_version
 
 
 def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
@@ -107,7 +107,7 @@ def _clone_remote_catalog(source: str) -> pathlib.Path:
     if ref == "latest":
         ref = resolve_version(url, "*")
 
-    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="rpm-catalog-"))
+    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-catalog-"))
 
     result = subprocess.run(
         ["git", "clone", "--depth", "1", "--branch", ref, url, str(clone_dir / "repo")],

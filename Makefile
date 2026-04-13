@@ -34,7 +34,7 @@ test-functional: ## Run functional tests only
 	python -m pytest -m functional
 
 test-cov: ## Run tests with coverage report
-	python -m pytest --cov=rpm_cli --cov-report=term-missing
+	python -m pytest --cov=kanon_cli --cov-report=term-missing
 
 clean: ## Remove build artifacts and caches
 	find . -depth -type d -name __pycache__ -exec rm -rf {} +
@@ -52,7 +52,7 @@ distcheck: ## Check the built distribution
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
 coverage-json: ## Generate JSON coverage report
-	python -m pytest -m unit --cov=rpm_cli --cov-report=json
+	python -m pytest -m unit --cov=kanon_cli --cov-report=json
 	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks

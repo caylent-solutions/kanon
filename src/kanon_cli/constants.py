@@ -1,4 +1,4 @@
-"""Centralized constants for the rpm-cli package.
+"""Centralized constants for the kanon-cli package.
 
 All module-level constants live here to avoid hard-coded values
 scattered across source files.
@@ -19,11 +19,11 @@ CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 # -- Version resolution --
 PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
 
-# -- rpmenv parsing --
-SOURCE_PREFIX = "RPM_SOURCE_"
+# -- kanonenv parsing --
+SOURCE_PREFIX = "KANON_SOURCE_"
 SOURCE_SUFFIXES = ("_URL", "_REVISION", "_PATH")
 SUFFIX_TO_KEY = {"_URL": "url", "_REVISION": "revision", "_PATH": "path"}
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # -- Catalog --
-CATALOG_ENV_VAR = "RPM_CATALOG_SOURCE"
+CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"

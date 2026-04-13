@@ -1,6 +1,6 @@
-# Configuration (.rpmenv)
+# Configuration (.kanon)
 
-The `.rpmenv` file is a shell-compatible KEY=VALUE configuration file that drives the RPM lifecycle.
+The `.kanon` file is a shell-compatible KEY=VALUE configuration file that drives the Kanon lifecycle.
 
 ## Format
 
@@ -28,33 +28,33 @@ If the referenced variable is not set in the environment, parsing fails with a d
 
 ## Environment Variable Overrides
 
-Every `.rpmenv` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file:
+Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file:
 
 ```bash
-REPO_REV=v3.0.0 rpm configure .rpmenv
+REPO_REV=v3.0.0 kanon install .kanon
 ```
 
 ## Multi-Source Groups
 
-Sources are auto-discovered from `RPM_SOURCE_<name>_URL` variable patterns and processed in alphabetical order by name:
+Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns and processed in alphabetical order by name:
 
 ```properties
-RPM_SOURCE_build_URL=https://github.com/org/build-repo.git
-RPM_SOURCE_build_REVISION=main
-RPM_SOURCE_build_PATH=repo-specs/meta.xml
+KANON_SOURCE_build_URL=https://github.com/org/build-repo.git
+KANON_SOURCE_build_REVISION=main
+KANON_SOURCE_build_PATH=repo-specs/meta.xml
 
-RPM_SOURCE_marketplaces_URL=https://github.com/org/mp-repo.git
-RPM_SOURCE_marketplaces_REVISION=main
-RPM_SOURCE_marketplaces_PATH=repo-specs/marketplaces.xml
+KANON_SOURCE_marketplaces_URL=https://github.com/org/mp-repo.git
+KANON_SOURCE_marketplaces_REVISION=main
+KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces.xml
 ```
 
 Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed variables.
 
-## RPM_MARKETPLACE_INSTALL Toggle
+## KANON_MARKETPLACE_INSTALL Toggle
 
-When `RPM_MARKETPLACE_INSTALL=true`:
+When `KANON_MARKETPLACE_INSTALL=true`:
 
-- `rpm configure` creates and cleans `CLAUDE_MARKETPLACES_DIR`, then runs the install script post-sync
-- `rpm clean` runs the uninstall script and removes `CLAUDE_MARKETPLACES_DIR`
+- `kanon install` creates and cleans `CLAUDE_MARKETPLACES_DIR`, then runs the install script post-sync
+- `kanon clean` runs the uninstall script and removes `CLAUDE_MARKETPLACES_DIR`
 
 When `false` (default), marketplace lifecycle is skipped entirely.

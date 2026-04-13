@@ -86,7 +86,7 @@ jobs:
 
       - name: Run unit tests with coverage threshold
         run: |
-          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -102,7 +102,7 @@ jobs:
 
       - name: Print coverage summary
         run: |
-          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
         shell: bash
 
   codeql:
@@ -222,7 +222,7 @@ jobs:
           echo "New version: $NEW_VERSION"
           if [[ -z "$NEW_VERSION" ]]; then
             echo "No new version detected, using current version"
-            NEW_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('rpm-cli'))")
+            NEW_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('kanon-cli'))")
             echo "Current version: $NEW_VERSION"
           fi
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
@@ -237,12 +237,12 @@ jobs:
           NEW_VERSION=$(grep '^version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
           echo "Updated version: $NEW_VERSION"
 
-          sed -i "s/__version__ = \"[^\"]*\"/__version__ = \"$NEW_VERSION\"/" src/rpm_cli/__init__.py
+          sed -i "s/__version__ = \"[^\"]*\"/__version__ = \"$NEW_VERSION\"/" src/kanon_cli/__init__.py
           echo "Updated __init__.py to version: $NEW_VERSION"
 
-          sed -i 's/[[:space:]]*$//' CHANGELOG.md pyproject.toml src/rpm_cli/__init__.py
+          sed -i 's/[[:space:]]*$//' CHANGELOG.md pyproject.toml src/kanon_cli/__init__.py
 
-          rm -rf dist/ build/ src/rpm_cli.egg-info/
+          rm -rf dist/ build/ src/kanon_cli.egg-info/
         shell: bash
 
       - name: Commit changelog and version bump
@@ -265,7 +265,7 @@ jobs:
           echo "Git status before staging:"
           git status --porcelain
 
-          git add CHANGELOG.md pyproject.toml src/rpm_cli/__init__.py
+          git add CHANGELOG.md pyproject.toml src/kanon_cli/__init__.py
 
           echo "Git status after staging:"
           STAGED=$(git status --porcelain)

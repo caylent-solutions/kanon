@@ -1,6 +1,6 @@
 """Tests for marketplace shared module (core/marketplace.py).
 
-Validates marketplace operations used by both configure and clean:
+Validates marketplace operations used by both install and clean:
   - Claude binary location
   - Marketplace entry discovery
   - Marketplace name reading from JSON
@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rpm_cli.core.marketplace import (
+from kanon_cli.core.marketplace import (
     _get_timeout,
     discover_marketplace_entries,
     discover_plugins,
@@ -52,12 +52,12 @@ def _create_marketplace(parent_dir: pathlib.Path, name: str, plugins: list[str] 
 @pytest.mark.unit
 class TestLocateClaudeBinary:
     def test_found(self) -> None:
-        with patch("rpm_cli.core.marketplace.shutil.which", return_value="/usr/bin/claude"):
+        with patch("kanon_cli.core.marketplace.shutil.which", return_value="/usr/bin/claude"):
             result = locate_claude_binary()
             assert "claude" in result
 
     def test_not_found_exits(self) -> None:
-        with patch("rpm_cli.core.marketplace.shutil.which", return_value=None):
+        with patch("kanon_cli.core.marketplace.shutil.which", return_value=None):
             with pytest.raises(SystemExit) as exc_info:
                 locate_claude_binary()
             assert exc_info.value.code == 1
@@ -172,7 +172,7 @@ class TestGetTimeout:
 @pytest.mark.unit
 class TestRegisterMarketplace:
     def test_success(self, tmp_path: pathlib.Path) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = register_marketplace("/usr/bin/claude", tmp_path / "mp")
             assert result is True
@@ -180,13 +180,13 @@ class TestRegisterMarketplace:
             assert cmd == ["/usr/bin/claude", "plugin", "marketplace", "add", str(tmp_path / "mp")]
 
     def test_failure(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="error")
             result = register_marketplace("/usr/bin/claude", pathlib.Path("/mp"))
             assert result is False
 
     def test_timeout(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=30)
             result = register_marketplace("/usr/bin/claude", pathlib.Path("/mp"))
             assert result is False
@@ -195,7 +195,7 @@ class TestRegisterMarketplace:
 @pytest.mark.unit
 class TestInstallPlugin:
     def test_success(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is True
@@ -203,13 +203,13 @@ class TestInstallPlugin:
             assert cmd == ["/usr/bin/claude", "plugin", "install", "my-plugin@my-marketplace", "--scope", "user"]
 
     def test_failure(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="error")
             result = install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is False
 
     def test_timeout(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=30)
             result = install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is False
@@ -218,7 +218,7 @@ class TestInstallPlugin:
 @pytest.mark.unit
 class TestUninstallPlugin:
     def test_success(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = uninstall_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is True
@@ -226,25 +226,25 @@ class TestUninstallPlugin:
             assert cmd == ["/usr/bin/claude", "plugin", "uninstall", "my-plugin@my-marketplace", "--scope", "user"]
 
     def test_not_found_is_success(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="Plugin not found")
             result = uninstall_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is True
 
     def test_not_installed_is_success(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="Plugin not installed")
             result = uninstall_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is True
 
     def test_failure(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="some other error")
             result = uninstall_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is False
 
     def test_timeout(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=30)
             result = uninstall_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is False
@@ -254,7 +254,7 @@ class TestUninstallPlugin:
 class TestRemoveMarketplace:
     def test_passes_name_not_path(self) -> None:
         """Bug fix verification: remove_marketplace must pass the marketplace name, not path."""
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = remove_marketplace("/usr/bin/claude", "my-marketplace-name")
             assert result is True
@@ -262,19 +262,19 @@ class TestRemoveMarketplace:
             assert cmd == ["/usr/bin/claude", "plugin", "marketplace", "remove", "my-marketplace-name"]
 
     def test_not_found_is_success(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="Marketplace not found")
             result = remove_marketplace("/usr/bin/claude", "my-marketplace")
             assert result is True
 
     def test_failure(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="some error")
             result = remove_marketplace("/usr/bin/claude", "my-marketplace")
             assert result is False
 
     def test_timeout(self) -> None:
-        with patch("rpm_cli.core.marketplace.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=30)
             result = remove_marketplace("/usr/bin/claude", "my-marketplace")
             assert result is False
@@ -286,9 +286,9 @@ class TestInstallMarketplacePlugins:
         _create_marketplace(tmp_path / "marketplaces", "mp-one", plugins=["plugin-a"])
 
         with (
-            patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
-            patch("rpm_cli.core.marketplace.register_marketplace", return_value=True) as mock_reg,
-            patch("rpm_cli.core.marketplace.install_plugin", return_value=True) as mock_install,
+            patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.marketplace.register_marketplace", return_value=True) as mock_reg,
+            patch("kanon_cli.core.marketplace.install_plugin", return_value=True) as mock_install,
         ):
             install_marketplace_plugins(tmp_path / "marketplaces")
 
@@ -296,15 +296,15 @@ class TestInstallMarketplacePlugins:
         mock_install.assert_called_once_with("/usr/bin/claude", "plugin-a", "mp-one")
 
     def test_missing_dir_no_error(self, tmp_path: pathlib.Path) -> None:
-        with patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"):
+        with patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"):
             install_marketplace_plugins(tmp_path / "nonexistent")
 
     def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
         _create_marketplace(tmp_path / "marketplaces", "mp", plugins=["p"])
         with (
-            patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
-            patch("rpm_cli.core.marketplace.register_marketplace", return_value=False),
-            patch("rpm_cli.core.marketplace.install_plugin", return_value=True),
+            patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.marketplace.register_marketplace", return_value=False),
+            patch("kanon_cli.core.marketplace.install_plugin", return_value=True),
         ):
             with pytest.raises(SystemExit):
                 install_marketplace_plugins(tmp_path / "marketplaces")
@@ -316,9 +316,9 @@ class TestUninstallMarketplacePlugins:
         _create_marketplace(tmp_path / "marketplaces", "mp-one", plugins=["plugin-a"])
 
         with (
-            patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
-            patch("rpm_cli.core.marketplace.uninstall_plugin", return_value=True) as mock_uninstall,
-            patch("rpm_cli.core.marketplace.remove_marketplace", return_value=True) as mock_remove,
+            patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.marketplace.uninstall_plugin", return_value=True) as mock_uninstall,
+            patch("kanon_cli.core.marketplace.remove_marketplace", return_value=True) as mock_remove,
         ):
             uninstall_marketplace_plugins(tmp_path / "marketplaces")
 
@@ -335,23 +335,23 @@ class TestUninstallMarketplacePlugins:
         (claude_plugin / "marketplace.json").write_text(json.dumps({"name": "the-marketplace-name"}))
 
         with (
-            patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
-            patch("rpm_cli.core.marketplace.remove_marketplace", return_value=True) as mock_remove,
+            patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.marketplace.remove_marketplace", return_value=True) as mock_remove,
         ):
             uninstall_marketplace_plugins(tmp_path / "marketplaces")
 
         mock_remove.assert_called_once_with("/usr/bin/claude", "the-marketplace-name")
 
     def test_missing_dir_no_error(self, tmp_path: pathlib.Path) -> None:
-        with patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"):
+        with patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"):
             uninstall_marketplace_plugins(tmp_path / "nonexistent")
 
     def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
         _create_marketplace(tmp_path / "marketplaces", "mp", plugins=["p"])
         with (
-            patch("rpm_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
-            patch("rpm_cli.core.marketplace.uninstall_plugin", return_value=False),
-            patch("rpm_cli.core.marketplace.remove_marketplace", return_value=True),
+            patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.marketplace.uninstall_plugin", return_value=False),
+            patch("kanon_cli.core.marketplace.remove_marketplace", return_value=True),
         ):
             with pytest.raises(SystemExit):
                 uninstall_marketplace_plugins(tmp_path / "marketplaces")

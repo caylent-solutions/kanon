@@ -1,17 +1,17 @@
-"""Multi-source .rpmenv file parser.
+"""Multi-source .kanon file parser.
 
-Parses KEY=VALUE configuration files used by RPM bootstrap. The .rpmenv
+Parses KEY=VALUE configuration files used by Kanon bootstrap. The .kanon
 format supports:
   - Comments (lines starting with #) and blank lines
   - Shell variable expansion (``${VAR}``) resolved from environment
   - Environment variable overrides (env vars take precedence over file values)
-  - Auto-discovered named source groups from ``RPM_SOURCE_<name>_URL`` keys
-  - Boolean parsing for RPM_MARKETPLACE_INSTALL
+  - Auto-discovered named source groups from ``KANON_SOURCE_<name>_URL`` keys
+  - Boolean parsing for KANON_MARKETPLACE_INSTALL
 
 Source names are auto-discovered by scanning for keys matching the
-``RPM_SOURCE_<name>_URL`` pattern. Names are sorted alphabetically for
+``KANON_SOURCE_<name>_URL`` pattern. Names are sorted alphabetically for
 deterministic ordering. Each discovered source must also define
-``RPM_SOURCE_<name>_REVISION`` and ``RPM_SOURCE_<name>_PATH``.
+``KANON_SOURCE_<name>_REVISION`` and ``KANON_SOURCE_<name>_PATH``.
 
 The parser reads the file, applies environment overrides, expands shell
 variables, validates required fields, and returns a structured dict.
@@ -21,7 +21,7 @@ import os
 import pathlib
 import re
 
-from rpm_cli.constants import (
+from kanon_cli.constants import (
     SHELL_VAR_PATTERN,
     SOURCE_PREFIX,
     SOURCE_SUFFIXES,
@@ -29,36 +29,36 @@ from rpm_cli.constants import (
 )
 
 
-def parse_rpmenv(path: pathlib.Path) -> dict:
-    """Parse a .rpmenv file into a structured configuration dict.
+def parse_kanonenv(path: pathlib.Path) -> dict:
+    """Parse a .kanon file into a structured configuration dict.
 
     Reads KEY=VALUE pairs from the file, applies environment variable
     overrides, expands shell variables (``${VAR}``), auto-discovers
-    source names from ``RPM_SOURCE_<name>_URL`` keys, and groups
+    source names from ``KANON_SOURCE_<name>_URL`` keys, and groups
     source-specific variables.
 
     Args:
-        path: Path to the .rpmenv file.
+        path: Path to the .kanon file.
 
     Returns:
         A dict with the following keys:
 
-        - ``RPM_SOURCES``: list of source names (auto-discovered,
+        - ``KANON_SOURCES``: list of source names (auto-discovered,
           sorted alphabetically)
-        - ``RPM_MARKETPLACE_INSTALL``: bool (defaults to False)
+        - ``KANON_MARKETPLACE_INSTALL``: bool (defaults to False)
         - ``sources``: dict mapping each source name to a dict with
           ``url``, ``revision``, and ``path`` keys
         - ``globals``: dict of all other KEY=VALUE pairs
 
     Raises:
         FileNotFoundError: If the file does not exist.
-        ValueError: If RPM_SOURCES is explicitly set (no longer supported),
+        ValueError: If KANON_SOURCES is explicitly set (no longer supported),
             if no sources are discovered, if a named source is missing
             required variables (URL, REVISION, PATH), or if a shell
             variable reference cannot be resolved.
     """
     if not path.exists():
-        msg = f".rpmenv file not found: {path}"
+        msg = f".kanon file not found: {path}"
         raise FileNotFoundError(msg)
 
     raw_vars = _read_key_value_pairs(path)
@@ -72,7 +72,7 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
     """Read KEY=VALUE pairs from a file, ignoring comments and blanks.
 
     Args:
-        path: Path to the .rpmenv file.
+        path: Path to the .kanon file.
 
     Returns:
         Dict of raw string key-value pairs.
@@ -146,7 +146,7 @@ def _expand_value(value: str) -> str:
         var_name = match.group(1)
         env_val = os.environ.get(var_name)
         if env_val is None:
-            msg = f"Undefined shell variable '${{{var_name}}}' referenced in .rpmenv value"
+            msg = f"Undefined shell variable '${{{var_name}}}' referenced in .kanon value"
             raise ValueError(msg)
         return env_val
 
@@ -154,9 +154,9 @@ def _expand_value(value: str) -> str:
 
 
 def _discover_source_names(expanded: dict[str, str]) -> list[str]:
-    """Auto-discover source names from ``RPM_SOURCE_<name>_URL`` keys.
+    """Auto-discover source names from ``KANON_SOURCE_<name>_URL`` keys.
 
-    Scans all keys for the ``RPM_SOURCE_<name>_URL`` pattern, extracts
+    Scans all keys for the ``KANON_SOURCE_<name>_URL`` pattern, extracts
     the ``<name>`` portion, and returns a sorted list for deterministic
     ordering.
 
@@ -167,7 +167,7 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
         Sorted list of discovered source names.
 
     Raises:
-        ValueError: If no ``RPM_SOURCE_<name>_URL`` keys are found.
+        ValueError: If no ``KANON_SOURCE_<name>_URL`` keys are found.
     """
     url_suffix = "_URL"
     names: list[str] = []
@@ -180,8 +180,8 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
     if not names:
         msg = (
             "No sources found. Define at least one source using "
-            "RPM_SOURCE_<name>_URL, RPM_SOURCE_<name>_REVISION, "
-            "and RPM_SOURCE_<name>_PATH variables in .rpmenv"
+            "KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, "
+            "and KANON_SOURCE_<name>_PATH variables in .kanon"
         )
         raise ValueError(msg)
 
@@ -191,38 +191,38 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
 def _build_result(expanded: dict[str, str]) -> dict:
     """Build the structured result dict from expanded variables.
 
-    Auto-discovers source names from ``RPM_SOURCE_<name>_URL`` keys
-    and sorts them alphabetically. Raises an error if ``RPM_SOURCES``
+    Auto-discovers source names from ``KANON_SOURCE_<name>_URL`` keys
+    and sorts them alphabetically. Raises an error if ``KANON_SOURCES``
     is explicitly defined (no longer supported).
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
 
     Returns:
-        Structured dict with RPM_SOURCES (auto-discovered), sources,
-        globals, and RPM_MARKETPLACE_INSTALL.
+        Structured dict with KANON_SOURCES (auto-discovered), sources,
+        globals, and KANON_MARKETPLACE_INSTALL.
 
     Raises:
-        ValueError: If RPM_SOURCES is explicitly set, if no sources
+        ValueError: If KANON_SOURCES is explicitly set, if no sources
             are discovered, or if a named source is missing required
             variables.
     """
-    if "RPM_SOURCES" in expanded:
+    if "KANON_SOURCES" in expanded:
         msg = (
-            "RPM_SOURCES is no longer supported. Source names are "
-            "auto-discovered from RPM_SOURCE_<name>_URL variables. "
-            "Remove the RPM_SOURCES line from your .rpmenv file."
+            "KANON_SOURCES is no longer supported. Source names are "
+            "auto-discovered from KANON_SOURCE_<name>_URL variables. "
+            "Remove the KANON_SOURCES line from your .kanon file."
         )
         raise ValueError(msg)
 
     source_names = _discover_source_names(expanded)
     sources = _extract_sources(expanded, source_names)
     globals_dict = _extract_globals(expanded, source_names)
-    marketplace_install = _parse_bool(expanded.get("RPM_MARKETPLACE_INSTALL", "false"))
+    marketplace_install = _parse_bool(expanded.get("KANON_MARKETPLACE_INSTALL", "false"))
 
     return {
-        "RPM_SOURCES": source_names,
-        "RPM_MARKETPLACE_INSTALL": marketplace_install,
+        "KANON_SOURCES": source_names,
+        "KANON_MARKETPLACE_INSTALL": marketplace_install,
         "sources": sources,
         "globals": globals_dict,
     }
@@ -236,12 +236,12 @@ def validate_sources(
 
     Each source name in ``source_names`` must have three corresponding
     variables defined in ``expanded``:
-      - ``RPM_SOURCE_<name>_URL``
-      - ``RPM_SOURCE_<name>_REVISION``
-      - ``RPM_SOURCE_<name>_PATH``
+      - ``KANON_SOURCE_<name>_URL``
+      - ``KANON_SOURCE_<name>_REVISION``
+      - ``KANON_SOURCE_<name>_PATH``
 
     Args:
-        expanded: Dict of expanded KEY=VALUE pairs from the .rpmenv file.
+        expanded: Dict of expanded KEY=VALUE pairs from the .kanon file.
         source_names: List of source names (auto-discovered, alphabetical).
 
     Raises:
@@ -296,7 +296,7 @@ def _extract_globals(
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict of global variables (excludes RPM_MARKETPLACE_INSTALL
+        Dict of global variables (excludes KANON_MARKETPLACE_INSTALL
         and source-specific variables).
     """
     source_keys: set[str] = set()
@@ -304,7 +304,7 @@ def _extract_globals(
         for suffix in SOURCE_SUFFIXES:
             source_keys.add(f"{SOURCE_PREFIX}{name}{suffix}")
 
-    special_keys = {"RPM_MARKETPLACE_INSTALL"}
+    special_keys = {"KANON_MARKETPLACE_INSTALL"}
     exclude = source_keys | special_keys
 
     return {k: v for k, v in expanded.items() if k not in exclude}

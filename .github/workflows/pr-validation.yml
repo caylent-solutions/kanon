@@ -90,7 +90,7 @@ jobs:
 
       - name: Run unit tests with coverage threshold
         run: |
-          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -106,7 +106,7 @@ jobs:
 
       - name: Print coverage summary
         run: |
-          python -m pytest -m unit --cov=rpm_cli --cov-report=term-missing
+          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
         shell: bash
 
       - name: Find code owners

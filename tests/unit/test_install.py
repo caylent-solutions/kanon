@@ -1,14 +1,14 @@
-"""Tests for configure core business logic."""
+"""Tests for install core business logic."""
 
 import pathlib
 from unittest.mock import patch
 
 import pytest
 
-from rpm_cli.core.configure import (
+from kanon_cli.core.install import (
     aggregate_symlinks,
-    configure,
     create_source_dirs,
+    install,
     prepare_marketplace_dir,
     run_repo_envsubst,
     run_repo_init,
@@ -22,22 +22,22 @@ class TestSourceDirectoryCreation:
     def test_creates_source_dirs(self, tmp_path: pathlib.Path) -> None:
         result = create_source_dirs(["build", "marketplaces"], tmp_path)
         for name in ["build", "marketplaces"]:
-            assert (tmp_path / ".rpm" / "sources" / name).is_dir()
+            assert (tmp_path / ".kanon-data" / "sources" / name).is_dir()
             assert name in result
 
     def test_idempotent(self, tmp_path: pathlib.Path) -> None:
         create_source_dirs(["build"], tmp_path)
         result = create_source_dirs(["build"], tmp_path)
-        assert (tmp_path / ".rpm" / "sources" / "build").is_dir()
-        assert result["build"] == tmp_path / ".rpm" / "sources" / "build"
+        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
+        assert result["build"] == tmp_path / ".kanon-data" / "sources" / "build"
 
 
 @pytest.mark.unit
 class TestRepoInit:
     def test_calls_repo_init(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml")
             mock_run.assert_called_once()
@@ -47,9 +47,9 @@ class TestRepoInit:
             assert "--no-repo-verify" in cmd
 
     def test_includes_repo_rev(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml", "v2.0.0")
             cmd = mock_run.call_args[0][0]
@@ -57,9 +57,9 @@ class TestRepoInit:
             assert "v2.0.0" in cmd
 
     def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "failed"
             with pytest.raises(SystemExit):
@@ -69,18 +69,18 @@ class TestRepoInit:
 @pytest.mark.unit
 class TestRepoEnvsubst:
     def test_calls_envsubst(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             run_repo_envsubst(source_dir, {"GITBASE": "https://example.com/"})
             call_env = mock_run.call_args[1]["env"]
             assert call_env["GITBASE"] == "https://example.com/"
 
     def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "failed"
             with pytest.raises(SystemExit):
@@ -90,17 +90,17 @@ class TestRepoEnvsubst:
 @pytest.mark.unit
 class TestRepoSync:
     def test_calls_sync(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             run_repo_sync(source_dir)
             assert mock_run.call_args[0][0] == ["repo", "sync"]
 
     def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
-        source_dir = tmp_path / ".rpm" / "sources" / "build"
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("rpm_cli.core.configure.subprocess.run") as mock_run:
+        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "failed"
             with pytest.raises(SystemExit):
@@ -110,7 +110,7 @@ class TestRepoSync:
 @pytest.mark.unit
 class TestSymlinkAggregation:
     def test_aggregates(self, tmp_path: pathlib.Path) -> None:
-        build_pkg = tmp_path / ".rpm" / "sources" / "build" / ".packages"
+        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
         build_pkg.mkdir(parents=True)
         (build_pkg / "rpm-lint").mkdir()
         aggregate_symlinks(["build"], tmp_path)
@@ -119,7 +119,7 @@ class TestSymlinkAggregation:
 
     def test_collision_exits(self, tmp_path: pathlib.Path) -> None:
         for src in ["a", "b"]:
-            pkg = tmp_path / ".rpm" / "sources" / src / ".packages"
+            pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "dup").mkdir()
         with pytest.raises(SystemExit):
@@ -132,10 +132,10 @@ class TestGitignore:
         update_gitignore(tmp_path)
         content = (tmp_path / ".gitignore").read_text()
         assert ".packages/" in content
-        assert ".rpm/" in content
+        assert ".kanon-data/" in content
 
     def test_idempotent(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".gitignore").write_text(".packages/\n.rpm/\n")
+        (tmp_path / ".gitignore").write_text(".packages/\n.kanon-data/\n")
         update_gitignore(tmp_path)
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1
@@ -157,59 +157,59 @@ class TestMarketplace:
 
 
 @pytest.mark.unit
-class TestConfigureLifecycle:
+class TestInstallLifecycle:
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
-            "RPM_MARKETPLACE_INSTALL=true\n"
-            "RPM_SOURCE_build_URL=https://example.com\n"
-            "RPM_SOURCE_build_REVISION=main\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         with pytest.raises(SystemExit):
-            configure(rpmenv)
+            install(kanonenv)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / ".claude-mp"
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://example.com/\n"
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "RPM_MARKETPLACE_INSTALL=true\n"
-            "RPM_SOURCE_build_URL=https://example.com/build.git\n"
-            "RPM_SOURCE_build_REVISION=main\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
 
         with (
-            patch("rpm_cli.core.configure.subprocess.run") as mock_run,
-            patch("rpm_cli.core.configure.install_marketplace_plugins") as mock_install,
+            patch("kanon_cli.core.install.subprocess.run") as mock_run,
+            patch("kanon_cli.core.install.install_marketplace_plugins") as mock_install,
         ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            configure(rpmenv)
+            install(kanonenv)
 
         assert mp_dir.is_dir()
-        assert (tmp_path / ".rpm" / "sources" / "build").is_dir()
+        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         mock_install.assert_called_once_with(mp_dir)
 
     def test_wildcard_revision_resolved_before_repo_init(self, tmp_path: pathlib.Path) -> None:
         """resolve_version must be called for source revisions with PEP 440 specifiers."""
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
-            "RPM_SOURCE_build_URL=https://example.com/build.git\n"
-            "RPM_SOURCE_build_REVISION=*\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=*\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
 
         with (
-            patch("rpm_cli.core.configure.subprocess.run") as mock_run,
-            patch("rpm_cli.core.configure.resolve_version", return_value="3.0.0") as mock_resolve,
+            patch("kanon_cli.core.install.subprocess.run") as mock_run,
+            patch("kanon_cli.core.install.resolve_version", return_value="3.0.0") as mock_resolve,
         ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            configure(rpmenv)
+            install(kanonenv)
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
         # Confirm the resolved tag was used in the repo init command

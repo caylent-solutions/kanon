@@ -1,10 +1,10 @@
 # Pipeline Integration
 
-How to use RPM tasks in CI/CD pipelines.
+How to use Kanon tasks in CI/CD pipelines.
 
 ## Overview
 
-RPM tasks map to CI/CD pipeline stages. Gradle projects use `./gradlew` tasks; Make projects use `make` targets. Both can run stages in parallel for faster pipelines.
+Kanon tasks map to CI/CD pipeline stages. Gradle projects use `./gradlew` tasks; Make projects use `make` targets. Both can run stages in parallel for faster pipelines.
 
 ## GitHub Actions — Gradle Example
 
@@ -18,7 +18,7 @@ on:
     branches: [main]
 
 jobs:
-  rpm-configure:
+  kanon-install:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,17 +26,17 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: RPM Configure
-        run: ./gradlew rpmConfigure
+      - name: Kanon Install
+        run: ./gradlew kanonInstall
       - uses: actions/cache/save@v4
         with:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
 
   build:
-    needs: rpm-configure
+    needs: kanon-install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,11 +45,11 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew build
 
   checkstyle:
-    needs: rpm-configure
+    needs: kanon-install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,11 +58,11 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew checkstyleMain
 
   unit-test:
-    needs: rpm-configure
+    needs: kanon-install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,11 +71,11 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew unitTest jacocoTestReport
 
   integration-test:
-    needs: rpm-configure
+    needs: kanon-install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,11 +84,11 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew integrationTest
 
   security:
-    needs: rpm-configure
+    needs: kanon-install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew securityCheck
 
   sonarqube:
@@ -110,7 +110,7 @@ jobs:
           path: |
             .packages
             .repo
-          key: rpm-packages-${{ hashFiles('.rpmenv') }}
+          key: kanon-packages-${{ hashFiles('.kanon') }}
       - run: ./gradlew sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -166,11 +166,11 @@ so failures are immediately visible. All `run` steps use `shell: bash`.
 CI/CD pipelines can override `GITBASE` to use internal Git mirrors:
 
 ```yaml
-- name: RPM Configure (Gradle)
-  run: ./gradlew rpmConfigure
+- name: Kanon Install (Gradle)
+  run: ./gradlew kanonInstall
   env:
-    GITBASE: https://git.internal.company.com/rpm-packages/
+    GITBASE: https://git.internal.company.com/kanon-packages/
 
 ```
 
-The `.rpmenv` value is overridden by the environment variable. No file changes needed.
+The `.kanon` value is overridden by the environment variable. No file changes needed.

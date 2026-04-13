@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from rpm_cli.core.clean import (
+from kanon_cli.core.clean import (
     clean,
+    remove_kanon_dir,
     remove_marketplace_dir,
     remove_packages_dir,
-    remove_rpm_dir,
 )
 
 
@@ -33,57 +33,56 @@ class TestDirectoryRemoval:
     def test_packages_missing_ok(self, tmp_path: pathlib.Path) -> None:
         remove_packages_dir(tmp_path)
 
-    def test_removes_rpm(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".rpm").mkdir()
-        remove_rpm_dir(tmp_path)
-        assert not (tmp_path / ".rpm").exists()
+    def test_removes_kanon(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / ".kanon-data").mkdir()
+        remove_kanon_dir(tmp_path)
+        assert not (tmp_path / ".kanon-data").exists()
 
-    def test_rpm_missing_ok(self, tmp_path: pathlib.Path) -> None:
-        remove_rpm_dir(tmp_path)
+    def test_kanon_missing_ok(self, tmp_path: pathlib.Path) -> None:
+        remove_kanon_dir(tmp_path)
 
 
 @pytest.mark.unit
 class TestCleanLifecycle:
     def test_marketplace_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
-            "RPM_MARKETPLACE_INSTALL=false\n"
-            "RPM_SOURCE_build_URL=https://example.com\n"
-            "RPM_SOURCE_build_REVISION=main\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_MARKETPLACE_INSTALL=false\n"
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         (tmp_path / ".packages").mkdir()
-        (tmp_path / ".rpm").mkdir()
-        with patch("rpm_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
-            clean(rpmenv)
+        (tmp_path / ".kanon-data").mkdir(exist_ok=True)
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
+            clean(kanonenv)
             mock_uninstall.assert_not_called()
         assert not (tmp_path / ".packages").exists()
-        assert not (tmp_path / ".rpm").exists()
 
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
-            "RPM_MARKETPLACE_INSTALL=true\n"
-            "RPM_SOURCE_build_URL=https://example.com\n"
-            "RPM_SOURCE_build_REVISION=main\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         with pytest.raises(SystemExit):
-            clean(rpmenv)
+            clean(kanonenv)
 
     def test_order_of_operations(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / ".mp"
-        rpmenv = tmp_path / ".rpmenv"
-        rpmenv.write_text(
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "RPM_MARKETPLACE_INSTALL=true\n"
-            "RPM_SOURCE_build_URL=https://example.com\n"
-            "RPM_SOURCE_build_REVISION=main\n"
-            "RPM_SOURCE_build_PATH=meta.xml\n"
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         mp_dir.mkdir()
         (tmp_path / ".packages").mkdir()
-        (tmp_path / ".rpm").mkdir()
+        (tmp_path / ".kanon-data").mkdir(exist_ok=True)
 
         ops: list[str] = []
 
@@ -98,14 +97,14 @@ class TestCleanLifecycle:
                 ops.append("rm_mp")
             elif ".packages" in p:
                 ops.append("rm_packages")
-            elif ".rpm" in p:
-                ops.append("rm_rpm")
+            elif ".kanon-data" in p:
+                ops.append("rm_kanon")
             orig_rmtree(path, ignore_errors=ignore_errors)
 
         with (
-            patch("rpm_cli.core.clean.uninstall_marketplace_plugins", side_effect=track_uninstall),
-            patch("rpm_cli.core.clean.shutil.rmtree", side_effect=track_rm),
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins", side_effect=track_uninstall),
+            patch("kanon_cli.core.clean.shutil.rmtree", side_effect=track_rm),
         ):
-            clean(rpmenv)
+            clean(kanonenv)
 
-        assert ops == ["uninstall", "rm_mp", "rm_packages", "rm_rpm"]
+        assert ops == ["uninstall", "rm_mp", "rm_packages", "rm_kanon"]

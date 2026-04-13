@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from rpm_cli.core.xml_validator import find_xml_files, validate_manifest, validate_xml
+from kanon_cli.core.xml_validator import find_xml_files, validate_manifest, validate_xml
 
 
 @pytest.mark.unit

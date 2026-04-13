@@ -112,7 +112,7 @@ Ensure the same testing, linting, security scanning, and deployment automation a
 ### Install the Kanon CLI
 
 ```bash
-pipx install kanon
+pipx install kanon-cli
 ```
 
 ### Standalone Usage (No Task Runner Required)

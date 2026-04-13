@@ -12,7 +12,7 @@ Step-by-step instructions for setting up Kanon in new and existing projects.
 **For all projects:** The `kanon` CLI tool must be installed first:
 
 ```bash
-pipx install kanon
+pipx install kanon-cli
 ```
 
 The `kanon` CLI installs the repo tool automatically during `kanon install`. Both Gradle and Make bootstraps delegate to this CLI. See the [Kanon README](../README.md) for full CLI documentation.
@@ -105,7 +105,7 @@ pipx must be available on PATH to install the `kanon` CLI. Install it with `pyth
 
 ### `kanonInstall` fails with "kanon: command not found"
 
-The `kanon` CLI must be installed before running `kanonInstall`. Install it with `pipx install kanon`.
+The `kanon` CLI must be installed before running `kanonInstall`. Install it with `pipx install kanon-cli`.
 
 ### `repo envsubst` fails
 

@@ -222,7 +222,7 @@ jobs:
           echo "New version: $NEW_VERSION"
           if [[ -z "$NEW_VERSION" ]]; then
             echo "No new version detected, using current version"
-            NEW_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('kanon'))")
+            NEW_VERSION=$(python -c "import importlib.metadata; print(importlib.metadata.version('kanon-cli'))")
             echo "Current version: $NEW_VERSION"
           fi
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"

@@ -149,7 +149,7 @@ Then add a marketplace source and re-run `kanon install .kanon`. When `KANON_MAR
 
 ## Troubleshooting
 
-- **`kanon: command not found`** -- Reinstall the Kanon CLI: `pipx install kanon`
+- **`kanon: command not found`** -- Reinstall the Kanon CLI: `pipx install kanon-cli`
 - **`kanon install` fails with ".kanon not found"** -- Pass the path: `kanon install .kanon`
 - **`repo envsubst` fails** -- Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`
 - **Authentication errors during sync** -- If you use SSH for Git auth, ensure the HTTPS-to-SSH rewrite is configured globally: `git config --global url."git@github.com:".insteadOf "https://github.com/"`. If you use HTTPS, ensure your credential helper is configured.

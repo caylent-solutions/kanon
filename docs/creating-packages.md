@@ -12,19 +12,13 @@ A package repository can contain any combination of automation artifacts:
 
 ```text
 my-package/
-├── <concern>.gradle           # Gradle script with tasks/config
-├── Makefile                   # Make targets
-├── rpm-manifest.properties    # Optional: external Gradle plugin dependencies
+├── scripts/                   # Automation scripts (shell, Python, etc.)
 ├── config/                    # Optional: configuration files (checkstyle, etc.)
 ├── README.md                  # Package documentation
 └── CHANGELOG.md               # Version history
 ```
 
-The package structure depends on the task runner ecosystem:
-
-- **Gradle packages** — contain `.gradle` scripts that are auto-applied by `kanon-bootstrap.gradle`
-- **Make packages** — contain `Makefile` files that are auto-included by the bootstrap `Makefile`
-- **Generic packages** — contain any files (scripts, configs, templates) accessed via `.packages/<name>/` (used with the `kanon` standalone catalog entry or any custom workflow)
+Packages contain any files (scripts, configs, templates) accessed via `.packages/<name>/`.
 
 ## Versioning
 
@@ -58,54 +52,6 @@ To make a package available through Kanon, add a `<project>` entry to a manifest
 ```
 
 See [Creating Manifest Repos](creating-manifest-repos.md) for details on manifest structure.
-
-## Gradle Package Guidelines
-
-For Gradle packages auto-applied by `kanon-bootstrap.gradle`:
-
-1. **Use `_rpmCurrentPkgDir`** to reference package-local files:
-
-   ```groovy
-   def PKG_DIR = project.ext.get('_rpmCurrentPkgDir')
-   ```
-
-2. **Do not hard-code organization-specific values.** Use project properties or `.kanon` values via `_rpmProp`:
-
-   ```groovy
-   def rpmProp = project.ext.get('_rpmProp')
-   def serverUrl = rpmProp('SONAR_HOST_URL')
-   ```
-
-3. **Use `apply plugin:` for core plugins** (java, checkstyle, jacoco). Declare external plugin dependencies in `rpm-manifest.properties`.
-
-4. **Document all provided tasks** in the package README.
-
-### External Plugin Dependencies (rpm-manifest.properties)
-
-If your Gradle package needs external plugins, declare them in `rpm-manifest.properties`:
-
-```properties
-# Format: plugin-id=group:artifact:version
-org.sonarqube=org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:4.0.0.2929
-org.owasp.dependencycheck=org.owasp:dependency-check-gradle:9.0.9
-```
-
-The `kanon-bootstrap.gradle` script reads this file and adds the dependencies to the buildscript classpath before applying your package script.
-
-## Make Package Guidelines
-
-For Make packages auto-included by the bootstrap Makefile:
-
-1. Define targets with `##` comments for help text:
-
-   ```makefile
-   lint: ## Run linters
-   	ruff check .
-   ```
-
-2. Use variables for configurable values, not hard-coded paths.
-
-3. Prefix internal targets with `_` to hide them from the help output.
 
 ## Marketplace Packages
 

@@ -30,7 +30,7 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
     overwrite existing files.
 
     Args:
-        package: Name of the catalog entry package (e.g. ``make``, ``gradle``, ``kanon``).
+        package: Name of the catalog entry package (e.g. ``kanon``).
         output_dir: Target directory for the bootstrapped files.
         catalog_dir: Path to the catalog directory.
 

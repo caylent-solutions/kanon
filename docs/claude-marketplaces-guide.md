@@ -120,9 +120,9 @@ The marketplace install/uninstall lifecycle is controlled by the
 `KANON_MARKETPLACE_INSTALL` flag in `.kanon`. When enabled, Kanon manages
 Claude Code marketplace plugin registration and unregistration.
 
-### Install (kanonInstall)
+### Install Lifecycle
 
-When a user runs `kanonInstall` (e.g. `./gradlew kanonInstall`):
+When a user runs `kanon install .kanon`:
 
 1. **Parse `.kanon`** — Read configuration and validate required variables
 2. **Prepare marketplace directory** — Create `${CLAUDE_MARKETPLACES_DIR}`
@@ -140,9 +140,9 @@ When a user runs `kanonInstall` (e.g. `./gradlew kanonInstall`):
    marketplace entries and plugins, registers marketplaces, and installs
    plugins via the Claude Code CLI
 
-### Uninstall (kanonClean)
+### Uninstall Lifecycle
 
-When a user runs `kanonClean` (e.g. `./gradlew kanonClean`), the order is
+When a user runs `kanon clean .kanon`, the order is
 critical — uninstall plugins before removing files:
 
 1. **Uninstall plugins** — The Kanon CLI locates the `claude` binary, discovers
@@ -155,8 +155,8 @@ critical — uninstall plugins before removing files:
 
 ### Failure Handling
 
-- If any marketplace registration or plugin install fails, `kanonInstall`
+- If any marketplace registration or plugin install fails, `kanon install`
   aborts immediately with an actionable error message
-- If any plugin uninstall or marketplace removal fails, `kanonClean` aborts
+- If any plugin uninstall or marketplace removal fails, `kanon clean` aborts
   immediately with an actionable error message
 - All failures surface clear diagnostics identifying the failed step

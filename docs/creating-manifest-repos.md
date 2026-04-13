@@ -24,15 +24,6 @@ my-manifest-repo/
 │                       ├── packages.xml            # Package declarations
 │                       └── <name>-marketplace.xml   # Optional: marketplace packages
 ├── catalog/                         # Optional: catalog entry packages for kanon bootstrap
-│   ├── make/
-│   │   ├── .kanon                   # Pre-configured for this catalog entry
-│   │   ├── Makefile
-│   │   └── kanon-readme.md
-│   ├── gradle/
-│   │   ├── .kanon                   # Pre-configured for this catalog entry
-│   │   ├── build.gradle
-│   │   ├── kanon-bootstrap.gradle
-│   │   └── kanon-readme.md
 │   └── kanon/
 │       ├── .kanon                   # Pre-configured for this catalog entry
 │       └── kanon-readme.md
@@ -126,35 +117,26 @@ A manifest repository can also serve as a remote catalog for `kanon bootstrap`. 
 
 ```text
 catalog/
-├── make/
-│   ├── .kanon
-│   ├── Makefile
-│   └── kanon-readme.md
-├── gradle/
-│   ├── .kanon
-│   ├── build.gradle
-│   ├── kanon-bootstrap.gradle
-│   └── kanon-readme.md
 └── kanon/
     ├── .kanon
     └── kanon-readme.md
 ```
 
-Each catalog entry package directory includes a pre-configured `.kanon` with source URLs and paths pointing to manifests in the repository, plus a `kanon-readme.md` with getting-started instructions. The `kanon/` entry provides `.kanon` and the readme only -- no task runner wrapper files -- for users who invoke the Kanon CLI directly.
+Each catalog entry package directory includes a pre-configured `.kanon` with source URLs and paths pointing to manifests in the repository, plus a `kanon-readme.md` with getting-started instructions. The `kanon` entry provides `.kanon` and the readme only.
 
 When users bootstrap with your catalog, they get a fully configured `.kanon` and can run `kanon install` immediately without editing placeholders.
 
 Users can then bootstrap projects using your catalog:
 
 ```bash
-kanon bootstrap make --catalog-source 'https://github.com/org/my-manifest-repo.git@main'
+kanon bootstrap kanon --catalog-source 'https://github.com/org/my-manifest-repo.git@main'
 ```
 
 Or via environment variable:
 
 ```bash
 export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@v1.0.0'
-kanon bootstrap gradle
+kanon bootstrap kanon
 ```
 
 ## Connecting to .kanon

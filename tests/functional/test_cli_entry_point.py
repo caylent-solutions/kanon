@@ -113,13 +113,15 @@ class TestKanonBadSubcommand:
         result = _run_kanon("nonexistent")
         assert result.returncode == 2
 
-    def test_install_missing_arg_exits_2(self) -> None:
+    def test_install_no_arg_no_kanonenv_exits_1(self) -> None:
         result = _run_kanon("install")
-        assert result.returncode == 2
+        assert result.returncode == 1
+        assert ".kanon" in result.stderr
 
-    def test_clean_missing_arg_exits_2(self) -> None:
+    def test_clean_no_arg_no_kanonenv_exits_1(self) -> None:
         result = _run_kanon("clean")
-        assert result.returncode == 2
+        assert result.returncode == 1
+        assert ".kanon" in result.stderr
 
     def test_validate_no_target_exits_2(self) -> None:
         result = _run_kanon("validate")

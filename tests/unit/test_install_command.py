@@ -276,3 +276,77 @@ class TestRegister:
         parsed = parser.parse_args(["install", "/tmp/test-kanonenv"])
         assert hasattr(parsed, "func")
         assert str(parsed.kanonenv_path) == "/tmp/test-kanonenv"
+
+    def test_kanonenv_path_is_optional(self) -> None:
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["install"])
+        assert parsed.kanonenv_path is None
+
+
+@pytest.mark.unit
+class TestAutoDiscovery:
+    def test_no_arg_calls_find_kanonenv(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "GITBASE=https://example.com/\n"
+            "KANON_MARKETPLACE_INSTALL=false\n"
+            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+        )
+        args = MagicMock()
+        args.kanonenv_path = None
+
+        with (
+            patch("kanon_cli.commands.install.find_kanonenv", return_value=kanonenv) as mock_find,
+            patch("kanon_cli.commands.install._check_pipx"),
+            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi"),
+            patch("kanon_cli.commands.install.install"),
+        ):
+            _run(args)
+            mock_find.assert_called_once()
+
+    def test_explicit_path_skips_discovery(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "GITBASE=https://example.com/\n"
+            "KANON_MARKETPLACE_INSTALL=false\n"
+            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+        )
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
+
+        with (
+            patch("kanon_cli.commands.install.find_kanonenv") as mock_find,
+            patch("kanon_cli.commands.install._check_pipx"),
+            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi"),
+            patch("kanon_cli.commands.install.install"),
+        ):
+            _run(args)
+            mock_find.assert_not_called()
+
+    def test_auto_discover_not_found_exits(self) -> None:
+        from kanon_cli.commands.install import _run
+
+        args = MagicMock()
+        args.kanonenv_path = None
+
+        with (
+            patch(
+                "kanon_cli.commands.install.find_kanonenv",
+                side_effect=FileNotFoundError("No .kanon file found"),
+            ),
+            pytest.raises(SystemExit),
+        ):
+            _run(args)

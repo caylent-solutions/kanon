@@ -40,7 +40,7 @@ All `.kanon` values can be overridden by environment variables of the same name 
 ### 3. Run kanon install
 
 ```bash
-kanon install .kanon
+kanon install
 ```
 
 ### 4. Verify

@@ -61,7 +61,7 @@ class TestMainDispatch:
             main(["--version"])
         assert exc_info.value.code == 0
 
-    def test_install_missing_path_exits_2(self) -> None:
+    def test_install_no_arg_no_kanonenv_exits_1(self) -> None:
         with pytest.raises(SystemExit) as exc_info:
             main(["install"])
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 1

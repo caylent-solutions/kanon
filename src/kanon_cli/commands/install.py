@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from kanon_cli.constants import PYPI_REPO_TOOL_PACKAGE
+from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
 from kanon_cli.version import resolve_version
 
@@ -31,13 +32,15 @@ def register(subparsers) -> None:
             "then runs repo init/envsubst/sync for each source defined in\n"
             "the .kanon file. Aggregates packages into .packages/ via symlinks."
         ),
-        epilog="Example:\n  kanon install .kanon",
+        epilog="Example:\n  kanon install           # auto-discovers .kanon\n  kanon install .kanon    # explicit path",
         formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "kanonenv_path",
+        nargs="?",
+        default=None,
         type=pathlib.Path,
-        help="Path to the .kanon configuration file",
+        help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
     parser.set_defaults(func=_run)
 
@@ -49,6 +52,14 @@ def _run(args) -> None:
         args: Parsed arguments with kanonenv_path.
     """
     from kanon_cli.core.kanonenv import parse_kanonenv
+
+    if args.kanonenv_path is None:
+        try:
+            args.kanonenv_path = find_kanonenv()
+        except FileNotFoundError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"kanon install: found {args.kanonenv_path}")
 
     try:
         config = parse_kanonenv(args.kanonenv_path)

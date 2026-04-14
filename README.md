@@ -130,7 +130,7 @@ kanon bootstrap list                # See all available catalog entry packages
 **3. Install (sync all packages):**
 
 ```bash
-kanon install .kanon
+kanon install
 ```
 
 This syncs all packages to `.packages/`, creates source workspaces in `.kanon-data/sources/`, and adds `.packages/` and `.kanon-data/` to `.gitignore`.
@@ -140,7 +140,7 @@ This syncs all packages to `.packages/`, creates source workspaces in `.kanon-da
 > **Tip:** Use a remote catalog for pre-configured entries that require no placeholder editing. See [Usage with Remote Catalogs](#usage-with-remote-catalogs-optional) below.
 
 ```bash
-kanon clean .kanon
+kanon clean
 ```
 
 This removes all synced packages, Kanon state directories, and optionally uninstalls marketplace plugins.
@@ -170,7 +170,7 @@ Use `--output-dir DIR` to bootstrap into a different directory.
 
 ### Integrating with Task Runners (Optional)
 
-Kanon works standalone via `kanon install .kanon` and `kanon clean .kanon`. You can wrap these commands in any build tool or task runner by creating targets that delegate to the CLI.
+Kanon works standalone via `kanon install` and `kanon clean`. You can wrap these commands in any build tool or task runner by creating targets that delegate to the CLI.
 
 ---
 
@@ -204,7 +204,8 @@ kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@>=2.0.
 Executes the full install lifecycle.
 
 ```bash
-kanon install .kanon
+kanon install                     # Auto-discover .kanon by walking up from cwd
+kanon install .kanon              # Explicit path to .kanon file
 ```
 
 **Steps performed:**
@@ -222,7 +223,8 @@ kanon install .kanon
 Executes the full teardown lifecycle.
 
 ```bash
-kanon clean .kanon
+kanon clean                       # Auto-discover .kanon by walking up from cwd
+kanon clean .kanon                # Explicit path to .kanon file
 ```
 
 **Steps performed:**
@@ -420,7 +422,7 @@ GITBASE=https://github.com/your-company/
 CI/CD pipelines can override this via environment variables without modifying `.kanon`:
 
 ```bash
-GITBASE=https://git.internal.company.com/ kanon install .kanon
+GITBASE=https://git.internal.company.com/ kanon install
 ```
 
 For full documentation, see [docs/how-it-works.md](docs/how-it-works.md).
@@ -505,7 +507,7 @@ Each level includes its parent and adds its own package entries. The `repo` tool
 3. Run `kanon validate xml` to verify manifests remain valid
 4. Tag and push the manifest repository
 
-Projects pick up the new versions on next `kanon install .kanon`.
+Projects pick up the new versions on next `kanon install`.
 
 For more details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

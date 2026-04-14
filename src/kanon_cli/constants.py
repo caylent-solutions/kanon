@@ -27,3 +27,6 @@ SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # -- Catalog --
 CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
+
+# -- Configuration file --
+KANONENV_FILENAME = ".kanon"

@@ -846,21 +846,13 @@ kanon nonexistent
 
 ### EC-09: Missing required args for subcommands
 
-**Install without path:**
+**Install without path (no .kanon discoverable):**
 
-```bash
-kanon install
-```
+See Category 14 (AD-03) for the case where no `.kanon` exists anywhere in the directory tree.
 
-**Pass criteria:** Exit code 2.
+**Clean without path (no .kanon discoverable):**
 
-**Clean without path:**
-
-```bash
-kanon clean
-```
-
-**Pass criteria:** Exit code 2.
+See Category 14 (AD-03 pattern) for the equivalent clean case.
 
 **Validate without target:**
 
@@ -1462,18 +1454,261 @@ rm -rf "${CS_CATALOG_DIR}"
 
 ---
 
-## 15. Install Verification Details
+## 15. Category 14: Auto-Discovery (8 tests)
+
+These tests verify that `kanon install` and `kanon clean` auto-discover the `.kanon` file
+by walking up the directory tree from the current directory when no explicit path is given.
+They use the fixtures from Category 3 (specifically `MANIFEST_PRIMARY_DIR`).
+
+### AD-01: kanon install (no arg) in directory with .kanon
+
+```bash
+export AD01_DIR="${KANON_TEST_ROOT}/test-ad01"
+mkdir -p "${AD01_DIR}"
+
+cat > "${AD01_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD01_DIR}"
+kanon install
+```
+
+**Pass criteria:**
+- Exit code 0
+- `.packages/pkg-alpha` symlink exists
+- stdout contains `kanon install: done`
+
+**Cleanup:**
+
+```bash
+cd "${AD01_DIR}"
+kanon clean
+rm -rf "${AD01_DIR}"
+```
+
+### AD-02: kanon install in subdirectory, .kanon in parent
+
+```bash
+export AD02_DIR="${KANON_TEST_ROOT}/test-ad02"
+mkdir -p "${AD02_DIR}/child"
+
+cat > "${AD02_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD02_DIR}/child"
+kanon install
+```
+
+**Pass criteria:**
+- Exit code 0
+- `${AD02_DIR}/.packages/pkg-alpha` symlink exists (packages installed in the parent directory where `.kanon` lives)
+- stdout contains `kanon install: done`
+
+**Cleanup:**
+
+```bash
+cd "${AD02_DIR}"
+kanon clean
+rm -rf "${AD02_DIR}"
+```
+
+### AD-03: kanon install with no .kanon anywhere
+
+```bash
+export AD03_DIR="${KANON_TEST_ROOT}/test-ad03"
+mkdir -p "${AD03_DIR}"
+cd "${AD03_DIR}"
+
+set +e
+kanon install
+exit_code=$?
+set -e
+```
+
+**Pass criteria:**
+- Exit code 1
+- stderr contains `.kanon`
+
+**Cleanup:**
+
+```bash
+rm -rf "${AD03_DIR}"
+```
+
+### AD-04: kanon install .kanon (explicit) still works
+
+```bash
+export AD04_DIR="${KANON_TEST_ROOT}/test-ad04"
+mkdir -p "${AD04_DIR}"
+
+cat > "${AD04_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD04_DIR}"
+kanon install .kanon
+```
+
+**Pass criteria:**
+- Exit code 0
+- `.packages/pkg-alpha` symlink exists
+- stdout contains `kanon install: done`
+
+**Cleanup:**
+
+```bash
+cd "${AD04_DIR}"
+kanon clean .kanon
+rm -rf "${AD04_DIR}"
+```
+
+### AD-05: kanon clean (no arg) in directory with .kanon
+
+```bash
+export AD05_DIR="${KANON_TEST_ROOT}/test-ad05"
+mkdir -p "${AD05_DIR}"
+
+cat > "${AD05_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD05_DIR}"
+kanon install .kanon
+kanon clean
+```
+
+**Pass criteria:**
+- Exit code 0
+- stdout contains `kanon clean: done`
+- `.packages/` directory does not exist
+- `.kanon-data/` directory does not exist
+
+**Cleanup:**
+
+```bash
+rm -rf "${AD05_DIR}"
+```
+
+### AD-06: kanon clean in subdirectory, .kanon in parent
+
+```bash
+export AD06_DIR="${KANON_TEST_ROOT}/test-ad06"
+mkdir -p "${AD06_DIR}/child"
+
+cat > "${AD06_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD06_DIR}"
+kanon install .kanon
+
+cd "${AD06_DIR}/child"
+kanon clean
+```
+
+**Pass criteria:**
+- Exit code 0
+- stdout contains `kanon clean: done`
+- `${AD06_DIR}/.packages/` directory does not exist
+- `${AD06_DIR}/.kanon-data/` directory does not exist
+
+**Cleanup:**
+
+```bash
+rm -rf "${AD06_DIR}"
+```
+
+### AD-07: kanon install /explicit/path/.kanon overrides discovery
+
+```bash
+export AD07_DIR="${KANON_TEST_ROOT}/test-ad07"
+export AD07_EXPLICIT="${KANON_TEST_ROOT}/test-ad07-explicit"
+mkdir -p "${AD07_DIR}" "${AD07_EXPLICIT}"
+
+cat > "${AD07_EXPLICIT}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD07_DIR}"
+kanon install "${AD07_EXPLICIT}/.kanon"
+```
+
+**Pass criteria:**
+- Exit code 0
+- `${AD07_EXPLICIT}/.packages/pkg-alpha` symlink exists (uses the explicit path, not cwd)
+- stdout contains `kanon install: done`
+
+**Cleanup:**
+
+```bash
+cd "${AD07_EXPLICIT}"
+kanon clean .kanon
+rm -rf "${AD07_DIR}" "${AD07_EXPLICIT}"
+```
+
+### AD-08: kanon install prints which .kanon was found
+
+```bash
+export AD08_DIR="${KANON_TEST_ROOT}/test-ad08"
+mkdir -p "${AD08_DIR}"
+
+cat > "${AD08_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_primary_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_primary_REVISION=main
+KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
+KANONEOF
+
+cd "${AD08_DIR}"
+kanon install 2>&1
+```
+
+**Pass criteria:**
+- Exit code 0
+- stdout contains `found` and the path to the `.kanon` file
+
+**Cleanup:**
+
+```bash
+cd "${AD08_DIR}"
+kanon clean
+rm -rf "${AD08_DIR}"
+```
+
+---
+
+## 16. Install Verification Details
 
 After any successful `kanon install`, verify the following artifacts:
 
-### 14.1 .gitignore contents
+### 16.1 .gitignore contents
 
 ```bash
 grep -q "^\.packages/$" .gitignore && echo "PASS: .packages/ in .gitignore" || echo "FAIL"
 grep -q "^\.kanon-data/$" .gitignore && echo "PASS: .kanon-data/ in .gitignore" || echo "FAIL"
 ```
 
-### 14.2 .packages/ contains symlinks
+### 16.2 .packages/ contains symlinks
 
 ```bash
 for entry in .packages/*; do
@@ -1485,7 +1720,7 @@ for entry in .packages/*; do
 done
 ```
 
-### 14.3 Symlinks point into .kanon-data/sources/
+### 16.3 Symlinks point into .kanon-data/sources/
 
 ```bash
 for entry in .packages/*; do
@@ -1498,7 +1733,7 @@ for entry in .packages/*; do
 done
 ```
 
-### 14.4 .kanon-data/sources/ has one directory per source
+### 16.4 .kanon-data/sources/ has one directory per source
 
 ```bash
 source_count=$(ls -1d .kanon-data/sources/*/ 2>/dev/null | wc -l)
@@ -1510,12 +1745,12 @@ ls -1d .kanon-data/sources/*/
 
 ---
 
-## 16. How to Run
+## 17. How to Run
 
 ### Full sequential run
 
 Execute all tests sequentially. Each test section is independent and includes
-its own cleanup. Run them in order from Category 1 through Category 13.
+its own cleanup. Run them in order from Category 1 through Category 14.
 
 ```bash
 set -euo pipefail
@@ -1537,6 +1772,7 @@ mkdir -p "${KANON_TEST_ROOT}"
 # 11. Run Category 11 (Validate Commands) -- VA-01 through VA-04
 # 12. Run Category 12 (Entry Points) -- EP-01 through EP-02
 # 13. Run Category 13 (Catalog Source PEP 440 Constraints) -- CS-01 through CS-26
+# 14. Run Category 14 (Auto-Discovery) -- AD-01 through AD-08
 ```
 
 ### Cleanup between tests
@@ -1556,7 +1792,7 @@ rm -rf "${KANON_TEST_ROOT}"
 
 - Categories 1, 2, 8 (error cases), 9, 11, and 12 do not depend on the
   fixtures from Category 3.
-- Categories 4, 5, 6, and 7 require the fixtures from Category 3 to be
+- Categories 4, 5, 6, 7, and 14 require the fixtures from Category 3 to be
   created first.
 - Category 10 (EV-03 specifically) creates its own fixture.
 - For tests that expect non-zero exit codes, capture the exit code before

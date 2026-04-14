@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kanon",
         description="Kanon (Kanon Package Manager) CLI tool. Manages the full Kanon lifecycle: install, clean, and validate.",
-        epilog="Examples:\n  kanon install .kanon\n  kanon clean .kanon\n  kanon validate xml\n  kanon validate marketplace --repo-root /path/to/repo",
+        epilog="Examples:\n  kanon install              # Auto-discover .kanon from cwd\n  kanon install .kanon       # Explicit path\n  kanon clean                # Auto-discover .kanon from cwd\n  kanon clean .kanon         # Explicit path\n  kanon validate xml\n  kanon validate marketplace --repo-root /path/to/repo",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(

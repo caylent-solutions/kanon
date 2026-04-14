@@ -22,7 +22,7 @@ The `.kanon` shipped with each catalog entry package is pre-configured by the ca
 
 ## Install Lifecycle
 
-The `kanon install` command implements the install lifecycle. It is invoked via `kanon install .kanon`.
+The `kanon install` command implements the install lifecycle. It is invoked via `kanon install` (auto-discovers the `.kanon` file by walking up the directory tree from the current directory) or `kanon install .kanon` (explicit path).
 
 The command performs these steps:
 
@@ -41,7 +41,7 @@ The command performs these steps:
 
 ## Clean Lifecycle
 
-The `kanon clean` command implements the clean lifecycle. It is invoked via `kanon clean .kanon`.
+The `kanon clean` command implements the clean lifecycle. It is invoked via `kanon clean` (auto-discovers the `.kanon` file by walking up the directory tree from the current directory) or `kanon clean .kanon` (explicit path).
 
 The command performs these steps in order:
 

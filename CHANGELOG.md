@@ -2,7 +2,30 @@
 
 
 
+## v1.1.0 (2026-04-14)
+
+### Feature
+
+* feat: support PEP 440 version constraints in KANON_CATALOG_SOURCE and --catalog-source (#45)
+
+Resolve PEP 440 constraints (e.g., &gt;=2.0.0,&lt;3.0.0, ~=2.0.0, ==1.1.0)
+against git tags before cloning the catalog repo. Previously only exact
+branch/tag names and the literal &#34;latest&#34; were accepted.
+
+The existing resolve_version() infrastructure handles all constraint
+resolution; this wires it into _clone_remote_catalog() alongside the
+existing &#34;latest&#34; path. Made is_version_constraint() public for cross-
+module use.
+
+Also fixes pre-existing integration test doc issues: fixture repos using
+master instead of main, and incorrect linkfile symlink path assertions. ([`42dcf50`](https://github.com/caylent-solutions/kanon/commit/42dcf50a519b472a1d480f98f5451f2895d9c391))
+
+
 ## v1.0.4 (2026-04-14)
+
+### Chore
+
+* chore(release): 1.0.4 ([`63226f6`](https://github.com/caylent-solutions/kanon/commit/63226f6ac9e41aa1cc153f4ddab725857fe249e3))
 
 ### Fix
 
@@ -12,6 +35,12 @@ Previously _ensure_repo_tool_from_pypi() checked if rpm-git-repo was
 installed and silently skipped if present, leaving users stuck on old
 versions. Now runs pipx upgrade when already installed so new releases
 (e.g. PEP 440 constraint support in 1.1.0) are picked up automatically. ([`c4fe252`](https://github.com/caylent-solutions/kanon/commit/c4fe2529b5561b2ee784957b8905e424dea01dcc))
+
+### Unknown
+
+* Merge pull request #44 from caylent-solutions/release-1.0.4
+
+Release 1.0.4 ([`3f552c0`](https://github.com/caylent-solutions/kanon/commit/3f552c04f3c36b05cf597b00451f8bc311eb77f8))
 
 
 ## v1.0.3 (2026-04-14)

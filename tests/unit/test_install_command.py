@@ -1,5 +1,6 @@
 """Tests for the install command handler."""
 
+import argparse
 import json
 from unittest.mock import MagicMock, patch
 
@@ -98,13 +99,38 @@ class TestIsRepoToolInstalled:
 
 @pytest.mark.unit
 class TestEnsureRepoToolFromPypi:
-    def test_already_installed_skips(self) -> None:
+    def test_already_installed_calls_pipx_upgrade(self) -> None:
         from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
 
         with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
             with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
                 _ensure_repo_tool_from_pypi()
-                mock_run.assert_not_called()
+                cmd = mock_run.call_args[0][0]
+                assert "pipx" in cmd
+                assert "upgrade" in cmd
+                assert "rpm-git-repo" in cmd
+
+    def test_already_installed_upgrade_at_latest(self) -> None:
+        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
+
+        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
+            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=1, stderr="already at latest")
+                _ensure_repo_tool_from_pypi()
+                cmd = mock_run.call_args[0][0]
+                assert "upgrade" in cmd
+
+    def test_already_installed_does_not_call_install(self) -> None:
+        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
+
+        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
+            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
+                _ensure_repo_tool_from_pypi()
+                assert mock_run.call_count == 1
+                cmd = mock_run.call_args[0][0]
+                assert "install" not in cmd
 
     def test_not_installed_calls_pipx_install(self) -> None:
         from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
@@ -170,3 +196,83 @@ class TestRunPartialConfig:
             pytest.raises(SystemExit),
         ):
             _run(args)
+
+    def test_both_repo_url_and_rev_installs_from_git(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "REPO_URL=https://example.com/repo.git\n"
+            "REPO_REV=~=1.0.0\n"
+            "GITBASE=https://example.com/\n"
+            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+        )
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
+
+        with (
+            patch("kanon_cli.commands.install._check_pipx"),
+            patch("kanon_cli.commands.install.resolve_version", return_value="1.0.5") as mock_resolve,
+            patch("kanon_cli.commands.install._install_repo_tool_from_git") as mock_git_install,
+            patch("kanon_cli.commands.install.install"),
+        ):
+            _run(args)
+            mock_resolve.assert_called_once_with("https://example.com/repo.git", "~=1.0.0")
+            mock_git_install.assert_called_once_with("https://example.com/repo.git", "1.0.5")
+
+    def test_no_repo_url_or_rev_installs_from_pypi(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "GITBASE=https://example.com/\n"
+            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+        )
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
+
+        with (
+            patch("kanon_cli.commands.install._check_pipx"),
+            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi") as mock_pypi,
+            patch("kanon_cli.commands.install.install"),
+        ):
+            _run(args)
+            mock_pypi.assert_called_once()
+
+    def test_missing_kanonenv_file_exits(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        args = MagicMock()
+        args.kanonenv_path = tmp_path / "nonexistent"
+
+        with pytest.raises(SystemExit):
+            _run(args)
+
+    def test_invalid_kanonenv_exits(self, tmp_path) -> None:
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("NO_SOURCES_DEFINED=true\n")
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
+
+        with pytest.raises(SystemExit):
+            _run(args)
+
+
+@pytest.mark.unit
+class TestRegister:
+    def test_registers_install_subcommand(self) -> None:
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["install", "/tmp/test-kanonenv"])
+        assert hasattr(parsed, "func")
+        assert str(parsed.kanonenv_path) == "/tmp/test-kanonenv"

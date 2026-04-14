@@ -141,13 +141,25 @@ def _is_repo_tool_installed() -> bool:
 
 
 def _ensure_repo_tool_from_pypi() -> None:
-    """Install rpm-git-repo from PyPI if not already installed.
+    """Install or upgrade rpm-git-repo from PyPI.
+
+    If already installed, runs pipx upgrade to ensure the latest
+    version. If not installed, runs pipx install.
 
     Raises:
-        SystemExit: If pipx install fails.
+        SystemExit: If pipx install/upgrade fails.
     """
     if _is_repo_tool_installed():
-        print("kanon install: repo tool already installed, skipping.")
+        print(f"kanon install: upgrading repo tool from PyPI ({PYPI_REPO_TOOL_PACKAGE})...")
+        result = subprocess.run(
+            ["pipx", "upgrade", PYPI_REPO_TOOL_PACKAGE],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            # upgrade fails if already at latest — that's fine
+            print("kanon install: repo tool already at latest version.")
         return
 
     print(f"kanon install: installing repo tool from PyPI ({PYPI_REPO_TOOL_PACKAGE})...")

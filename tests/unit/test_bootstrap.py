@@ -16,7 +16,7 @@ from kanon_cli.core.catalog import _get_bundled_catalog_dir
 class TestListPackages:
     """Verify list_packages returns available catalog entries."""
 
-    def test_returns_rpm(self) -> None:
+    def test_returns_kanon(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()
         packages = list_packages(catalog_dir)
         assert "kanon" in packages
@@ -26,7 +26,7 @@ class TestListPackages:
         packages = list_packages(catalog_dir)
         assert packages == sorted(packages)
 
-    def test_only_contains_rpm(self) -> None:
+    def test_only_contains_kanon(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()
         packages = list_packages(catalog_dir)
         assert packages == ["kanon"]

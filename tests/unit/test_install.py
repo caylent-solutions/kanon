@@ -112,9 +112,9 @@ class TestSymlinkAggregation:
     def test_aggregates(self, tmp_path: pathlib.Path) -> None:
         build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
         build_pkg.mkdir(parents=True)
-        (build_pkg / "rpm-lint").mkdir()
+        (build_pkg / "test-lint").mkdir()
         aggregate_symlinks(["build"], tmp_path)
-        link = tmp_path / ".packages" / "rpm-lint"
+        link = tmp_path / ".packages" / "test-lint"
         assert link.is_symlink()
 
     def test_collision_exits(self, tmp_path: pathlib.Path) -> None:

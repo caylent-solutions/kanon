@@ -2,7 +2,25 @@
 
 
 
+## v1.2.0 (2026-04-14)
+
+### Feature
+
+* feat: auto-discover .kanon file by walking up the directory tree (#47)
+
+The kanonenv_path argument for kanon install and kanon clean is now
+optional. When omitted, kanon searches the current directory and walks
+up through parent directories to find the nearest .kanon file. An
+explicit path still overrides auto-discovery.
+
+This mirrors how git, npm, and docker-compose find their config files. ([`81c2b87`](https://github.com/caylent-solutions/kanon/commit/81c2b87295fcd28edbffce9208f11826d05ffa32))
+
+
 ## v1.1.0 (2026-04-14)
+
+### Chore
+
+* chore(release): 1.1.0 ([`a3581d6`](https://github.com/caylent-solutions/kanon/commit/a3581d6059d3619022e311741fd0dd60e244a5ff))
 
 ### Feature
 
@@ -19,6 +37,12 @@ module use.
 
 Also fixes pre-existing integration test doc issues: fixture repos using
 master instead of main, and incorrect linkfile symlink path assertions. ([`42dcf50`](https://github.com/caylent-solutions/kanon/commit/42dcf50a519b472a1d480f98f5451f2895d9c391))
+
+### Unknown
+
+* Merge pull request #46 from caylent-solutions/release-1.1.0
+
+Release 1.1.0 ([`9586a93`](https://github.com/caylent-solutions/kanon/commit/9586a93c06deef20c530cd8925acb543a2c1d0be))
 
 
 ## v1.0.4 (2026-04-14)

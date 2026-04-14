@@ -1,6 +1,6 @@
 # How Kanon Works
 
-Technical deep-dive into Kanon internals. For a high-level overview, see [Kanon Guide](kanon-guide.md).
+Technical deep-dive into Kanon internals. For a high-level overview, see the [README](../README.md).
 
 Kanon uses a fork of the Gerrit repo tool to orchestrate dependencies. This doc covers the install and clean lifecycle.
 

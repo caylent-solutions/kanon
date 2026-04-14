@@ -48,12 +48,16 @@ def _run(args) -> None:
     Args:
         args: Parsed arguments with kanonenv_path.
     """
-    print("kanon install: checking prerequisites...")
-    _check_pipx()
-
     from kanon_cli.core.kanonenv import parse_kanonenv
 
-    config = parse_kanonenv(args.kanonenv_path)
+    try:
+        config = parse_kanonenv(args.kanonenv_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print("kanon install: checking prerequisites...")
+    _check_pipx()
     globals_dict = config["globals"]
 
     repo_url = globals_dict.get("REPO_URL", "")

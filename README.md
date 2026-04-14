@@ -505,7 +505,7 @@ Each level includes its parent and adds its own package entries. The `repo` tool
 
 Projects pick up the new versions on next `kanon install .kanon`.
 
-For more details, see [docs/contributing.md](docs/contributing.md).
+For more details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -793,11 +793,10 @@ PR titles must follow [Conventional Commits](https://www.conventionalcommits.org
 
 - [How It Works](docs/how-it-works.md) -- Technical deep-dive into Kanon internals
 - [Setup Guide](docs/setup-guide.md) -- Step-by-step setup for new and existing projects
-- [Kanon Guide](docs/kanon-guide.md) -- Comprehensive guide for engineers new to this pattern
 - [Multi-Source Guide](docs/multi-source-guide.md) -- Configuring multiple manifest sources
 - [Claude Marketplaces Guide](docs/claude-marketplaces-guide.md) -- Marketplace architecture and plugin lifecycle
 - [Pipeline Integration](docs/pipeline-integration.md) -- Using Kanon tasks in CI/CD pipelines
-- [Contributing](docs/contributing.md) -- How to create and maintain Kanon packages and marketplaces
+- [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon packages and marketplaces
 - [Version Resolution](docs/version-resolution.md) -- PEP 440 resolver details
 - [Configuration](docs/configuration.md) -- .kanon format and variable expansion
 - [Lifecycle](docs/lifecycle.md) -- Install and clean lifecycle step-by-step

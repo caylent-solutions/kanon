@@ -1,6 +1,7 @@
 """Clean subcommand handler."""
 
 import pathlib
+import sys
 
 from kanon_cli.core.clean import clean
 
@@ -37,4 +38,8 @@ def _run(args) -> None:
     Args:
         args: Parsed arguments with kanonenv_path.
     """
-    clean(args.kanonenv_path)
+    try:
+        clean(args.kanonenv_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)

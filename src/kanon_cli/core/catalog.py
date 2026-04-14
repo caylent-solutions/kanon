@@ -105,7 +105,8 @@ def _clone_remote_catalog(source: str) -> pathlib.Path:
     url, ref = _parse_catalog_source(source)
 
     if ref == "latest":
-        ref = resolve_version(url, "*")
+        resolved = resolve_version(url, "*")
+        ref = resolved.removeprefix("refs/tags/")
 
     clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-catalog-"))
 

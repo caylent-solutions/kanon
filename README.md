@@ -649,7 +649,18 @@ revision="refs/tags/example/development/dev-lint/~=1.2.0"
 
 #### XML Escaping
 
-The `<` character must be escaped as `&lt;` in XML attribute values:
+Certain characters are reserved in XML and must be escaped inside
+attribute values. The most common case is `<` in range constraints:
+
+| Character | Escape   | When required |
+|-----------|----------|---------------|
+| `<`       | `&lt;`   | Always (reserved XML character) |
+| `&`       | `&amp;`  | Always (reserved XML character) |
+| `"`       | `&quot;` | Inside `"` delimited attributes |
+| `'`       | `&apos;` | Inside `'` delimited attributes |
+| `>`       | `&gt;`   | Optional (`>` is valid in attributes, but `&gt;` also works) |
+
+Example with range constraint:
 
 ```xml
 <project name="my-package"

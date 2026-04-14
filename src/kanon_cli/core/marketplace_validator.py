@@ -141,6 +141,7 @@ def _is_valid_revision(revision: str) -> bool:
 
     Valid formats:
     - refs/tags/<path>/<semver> (e.g., refs/tags/example/proj/1.0.0)
+    - refs/tags/<path>/<constraint> (e.g., refs/tags/example/proj/~=1.0.0)
     - Single version constraints (~=1.2.0, >=1.0.0, <2.0.0)
     - Compound version constraints (>=1.0.0,<2.0.0)
     - Wildcard (*)
@@ -156,6 +157,15 @@ def _is_valid_revision(revision: str) -> bool:
     parts = revision.split(",")
     if all(CONSTRAINT_RE.match(part) for part in parts):
         return True
+    # Support prefixed constraints: refs/tags/<path>/<constraint>
+    # Extract the last path component and check if it's a constraint or wildcard.
+    if revision.startswith("refs/tags/") and "/" in revision[len("refs/tags/") :]:
+        last_component = revision.rsplit("/", 1)[-1]
+        if last_component == "*":
+            return True
+        constraint_parts = last_component.split(",")
+        if all(CONSTRAINT_RE.match(part) for part in constraint_parts):
+            return True
     return False
 
 

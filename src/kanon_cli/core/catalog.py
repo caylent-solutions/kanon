@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 from kanon_cli.constants import CATALOG_ENV_VAR
-from kanon_cli.version import resolve_version
+from kanon_cli.version import is_version_constraint, resolve_version
 
 
 def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
@@ -105,7 +105,9 @@ def _clone_remote_catalog(source: str) -> pathlib.Path:
     url, ref = _parse_catalog_source(source)
 
     if ref == "latest":
-        resolved = resolve_version(url, "*")
+        ref = "*"
+    if is_version_constraint(ref):
+        resolved = resolve_version(url, ref)
         ref = resolved.removeprefix("refs/tags/")
 
     clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-catalog-"))

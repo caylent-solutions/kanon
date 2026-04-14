@@ -27,7 +27,7 @@ Use `kanon bootstrap` to copy catalog entry package files (including a pre-confi
 kanon bootstrap kanon
 ```
 
-This copies all files from the catalog entry package into the target directory. The `.kanon` is pre-configured by the catalog author -- no placeholder editing required. Use `--output-dir` to specify a different target directory. Use `--catalog-source '<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable to fetch catalog entry packages from a remote catalog repo (ref can be a branch, tag, or `latest` which resolves to the highest semver tag).
+This copies all files from the catalog entry package into the target directory. The `.kanon` is pre-configured by the catalog author -- no placeholder editing required. Use `--output-dir` to specify a different target directory. Use `--catalog-source '<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable to fetch catalog entry packages from a remote catalog repo (ref can be a branch, tag, `latest`, or a PEP 440 version constraint such as `>=2.0.0,<3.0.0`).
 
 ### 2. Review `.kanon` (Optional)
 

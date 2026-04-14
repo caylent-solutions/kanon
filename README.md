@@ -152,17 +152,19 @@ This removes all synced packages, Kanon state directories, and optionally uninst
 Remote catalogs provide pre-configured `.kanon` files that require no placeholder editing. Set `KANON_CATALOG_SOURCE` or pass `--catalog-source` to bootstrap from a remote repository:
 
 ```bash
-# Set once in your shell rc file
-export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@main'
+# Set once in your shell rc file — pin to current major version
+export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@>=2.0.0,<3.0.0'
 
 # Bootstrap a pre-configured entry
 kanon bootstrap <entry-name>
 
 # Or pass the catalog source inline
-kanon bootstrap <entry-name> --catalog-source 'https://github.com/your-org/your-catalog-repo.git@v1.0.0'
+kanon bootstrap <entry-name> --catalog-source 'https://github.com/your-org/your-catalog-repo.git@~=2.0.0'
 ```
 
-The `@<ref>` portion accepts a branch name, a tag, or the special value `latest` (which resolves to the highest semver tag). The remote repo must have a `catalog/` directory at its root, with each subdirectory being a catalog entry.
+The `@<ref>` portion accepts a branch name, a tag, the special value `latest` (which resolves to the highest semver tag), or a PEP 440 version constraint (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`). Version constraints are resolved against the repository's git tags via `git ls-remote`. The remote repo must have a `catalog/` directory at its root, with each subdirectory being a catalog entry.
+
+Manifest repositories should use [semantic versioning](https://semver.org/) for git tags. Pinning to a major version range (e.g., `>=2.0.0,<3.0.0`) allows automatic pickup of minor and patch releases while preventing unexpected breaking changes.
 
 Use `--output-dir DIR` to bootstrap into a different directory.
 
@@ -187,7 +189,7 @@ Scaffolds a new Kanon project from a catalog entry package, including a pre-conf
 kanon bootstrap list                      # List available catalog entry packages
 kanon bootstrap kanon                     # Scaffold standalone (.kanon and readme only)
 kanon bootstrap kanon --output-dir proj   # Scaffold into proj/
-kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
+kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@>=2.0.0,<3.0.0'
 ```
 
 **Options:**
@@ -195,7 +197,7 @@ kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@main'
 | Option | Description |
 |---|---|
 | `--output-dir DIR` | Target directory (default: current directory) |
-| `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, or `latest`). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled catalog. |
+| `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, `latest`, or PEP 440 constraint). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled catalog. |
 
 ### kanon install
 
@@ -293,7 +295,7 @@ Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns and
 
 | Variable | Purpose |
 |---|---|
-| `KANON_CATALOG_SOURCE` | Remote catalog source for `kanon bootstrap` as `<git_url>@<ref>`. Overridden by `--catalog-source` flag. |
+| `KANON_CATALOG_SOURCE` | Remote catalog source for `kanon bootstrap` as `<git_url>@<ref>` where ref is a branch, tag, `latest`, or PEP 440 constraint (e.g., `>=2.0.0,<3.0.0`). Overridden by `--catalog-source` flag. |
 
 ### Example .kanon
 

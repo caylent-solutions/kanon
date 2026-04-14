@@ -21,7 +21,7 @@ from packaging.version import InvalidVersion, Version
 from kanon_cli.constants import PEP440_OPERATORS
 
 
-def _is_version_constraint(rev_spec: str) -> bool:
+def is_version_constraint(rev_spec: str) -> bool:
     """Return True if the last path component of rev_spec is a PEP 440 constraint.
 
     Examines only the last path component (after the final ``/``) so that
@@ -76,7 +76,7 @@ def resolve_version(url: str, rev_spec: str) -> str:
     Raises:
         SystemExit: If no matching version is found or git ls-remote fails.
     """
-    if not _is_version_constraint(rev_spec):
+    if not is_version_constraint(rev_spec):
         return rev_spec
 
     # Split on last '/' to separate prefix from constraint.

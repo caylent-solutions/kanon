@@ -11,9 +11,20 @@ or private repositories are required.
 
 ### 1.1 Install kanon-cli
 
+**Post-release (from PyPI):**
+
 ```bash
 pipx install kanon-cli
 ```
+
+**Pre-merge (editable from local checkout):**
+
+```bash
+cd /path/to/kanon
+pip install -e .
+```
+
+Use the editable install when testing unreleased changes before merge and PyPI release. After the release, re-run the full test suite using the PyPI-installed version to verify the published package.
 
 **Verify:**
 
@@ -186,6 +197,7 @@ echo 'print("alpha")' > src/main.py
 echo "# Alpha Package" > README.md
 git add .
 git commit -m "Initial commit for pkg-alpha"
+git branch -m main
 ```
 
 ### 4.2 Package Content Repo B: `pkg-bravo`
@@ -200,6 +212,7 @@ echo 'print("bravo")' > src/main.py
 echo "# Bravo Package" > README.md
 git add .
 git commit -m "Initial commit for pkg-bravo"
+git branch -m main
 ```
 
 ### 4.3 Collision Content Repo: `pkg-collider`
@@ -217,6 +230,7 @@ echo 'print("collider")' > src/main.py
 echo "# Collider Package (same name as alpha)" > README.md
 git add .
 git commit -m "Initial commit for pkg-collider"
+git branch -m main
 ```
 
 ### 4.4 Linkfile Content Repo: `pkg-linked`
@@ -234,6 +248,7 @@ echo "lint_rule = true" > config/lint.toml
 echo "# Linked Package" > README.md
 git add .
 git commit -m "Initial commit for pkg-linked"
+git branch -m main
 ```
 
 ### 4.5 Manifest Repo: `manifest-primary`
@@ -291,6 +306,7 @@ Commit the manifest repo:
 cd "${MANIFEST_PRIMARY_DIR}"
 git add .
 git commit -m "Initial manifest with alpha and bravo packages"
+git branch -m main
 ```
 
 ### 4.6 Collision Manifest Repo: `manifest-collision`
@@ -322,6 +338,7 @@ XMLEOF
 
 git add .
 git commit -m "Collision manifest (produces pkg-alpha path)"
+git branch -m main
 ```
 
 ### 4.7 Linkfile Manifest Repo: `manifest-linkfile`
@@ -355,6 +372,7 @@ XMLEOF
 
 git add .
 git commit -m "Linkfile manifest with config symlinks"
+git branch -m main
 ```
 
 ### 4.8 Verify fixtures
@@ -661,9 +679,9 @@ kanon install .kanon
 
 **Pass criteria:**
 - Exit code 0
-- `.packages/pkg-linked` exists (either as symlink or directory)
-- `app-config.json` exists in the project root as a symlink (created by the linkfile element)
-- `lint.toml` exists in the project root as a symlink (created by the linkfile element)
+- `.packages/pkg-linked` exists (symlink into `.kanon-data/sources/`)
+- `.kanon-data/sources/linked/app-config.json` exists as a symlink (created by the repo tool linkfile element inside the source directory)
+- `.kanon-data/sources/linked/lint.toml` exists as a symlink
 - Symlinks resolve to valid files
 
 **Cleanup:**
@@ -1189,7 +1207,262 @@ python -m kanon_cli --help
 
 ---
 
-## 14. Install Verification Details
+## 14. Category 13: Catalog Source PEP 440 Constraints (26 tests)
+
+These tests verify that `--catalog-source` and `KANON_CATALOG_SOURCE` resolve PEP 440 version constraints against git tags before cloning. Every PEP 440 operator is tested via both the CLI flag and the environment variable.
+
+Run this category twice:
+1. **Pre-merge:** with kanon installed in editable mode (`pip install -e .`) from the local checkout
+2. **Post-release:** with kanon installed from PyPI (`pipx install kanon-cli`) after the release
+
+### Fixture setup
+
+Create a local catalog repo with multiple semver tags:
+
+```bash
+export CS_CATALOG_DIR="${KANON_TEST_ROOT}/fixtures/cs-catalog"
+mkdir -p "${CS_CATALOG_DIR}/catalog/test-entry"
+cd "${CS_CATALOG_DIR}"
+git init
+
+cat > catalog/test-entry/.kanon << 'KANONEOF'
+KANON_MARKETPLACE_INSTALL=false
+KANONEOF
+
+git add .
+git commit -m "init"
+git tag 1.0.0
+git commit --allow-empty -m "1.0.1"
+git tag 1.0.1
+git commit --allow-empty -m "1.1.0"
+git tag 1.1.0
+git commit --allow-empty -m "1.2.0"
+git tag 1.2.0
+git commit --allow-empty -m "2.0.0"
+git tag 2.0.0
+git commit --allow-empty -m "2.1.0"
+git tag 2.1.0
+git commit --allow-empty -m "3.0.0"
+git tag 3.0.0
+```
+
+### CS-01: Wildcard `*` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@*"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+
+### CS-02: Wildcard `*` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@*" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+
+### CS-03: `latest` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+
+### CS-04: `latest` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+
+### CS-05: Compatible release `~=1.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=1.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.0.1` (highest matching `>=1.0.0,<1.1.0`).
+
+### CS-06: Compatible release `~=1.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=1.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.0.1`.
+
+### CS-07: Compatible release `~=2.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0` (highest matching `>=2.0.0,<2.1.0`).
+
+### CS-08: Compatible release `~=2.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=2.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+
+### CS-09: Range `>=1.0.0,<2.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest 1.x).
+
+### CS-10: Range `>=1.0.0,<2.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+
+### CS-11: Range `>=2.0.0,<3.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.1.0` (highest 2.x).
+
+### CS-12: Range `>=2.0.0,<3.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.1.0`.
+
+### CS-13: Minimum `>=1.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0` (highest available).
+
+### CS-14: Minimum `>=1.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0`.
+
+### CS-15: Less than `<2.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest below 2.0.0).
+
+### CS-16: Less than `<2.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<2.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+
+### CS-17: Less than or equal `<=2.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<=2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+
+### CS-18: Less than or equal `<=2.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<=2.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+
+### CS-19: Exact `==1.1.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@==1.1.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to exactly `1.1.0`.
+
+### CS-20: Exact `==1.1.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@==1.1.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to exactly `1.1.0`.
+
+### CS-21: Exclusion `!=1.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@!=1.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0` (highest non-excluded).
+
+### CS-22: Exclusion `!=1.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@!=1.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0`.
+
+### CS-23: Open range `>1.0.0,<2.0.0` via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest in open range).
+
+### CS-24: Open range `>1.0.0,<2.0.0` via env var
+
+```bash
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0" kanon bootstrap list
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+
+### CS-25: Plain branch passthrough via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@main"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. No constraint resolution occurs; `main` is passed directly to `git clone --branch`.
+
+### CS-26: Plain tag passthrough via flag
+
+```bash
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@2.0.0"
+```
+
+**Pass criteria:** Exit code 0. stdout contains `test-entry`. No constraint resolution occurs; `2.0.0` is passed directly to `git clone --branch`.
+
+**Cleanup:**
+
+```bash
+rm -rf "${CS_CATALOG_DIR}"
+```
+
+---
+
+## 15. Install Verification Details
 
 After any successful `kanon install`, verify the following artifacts:
 
@@ -1237,12 +1510,12 @@ ls -1d .kanon-data/sources/*/
 
 ---
 
-## 15. How to Run
+## 16. How to Run
 
 ### Full sequential run
 
 Execute all tests sequentially. Each test section is independent and includes
-its own cleanup. Run them in order from Category 1 through Category 12.
+its own cleanup. Run them in order from Category 1 through Category 13.
 
 ```bash
 set -euo pipefail
@@ -1263,6 +1536,7 @@ mkdir -p "${KANON_TEST_ROOT}"
 # 10. Run Category 10 (Environment Variable Overrides) -- EV-01 through EV-03
 # 11. Run Category 11 (Validate Commands) -- VA-01 through VA-04
 # 12. Run Category 12 (Entry Points) -- EP-01 through EP-02
+# 13. Run Category 13 (Catalog Source PEP 440 Constraints) -- CS-01 through CS-26
 ```
 
 ### Cleanup between tests

@@ -129,15 +129,32 @@ When users bootstrap with your catalog, they get a fully configured `.kanon` and
 Users can then bootstrap projects using your catalog:
 
 ```bash
-kanon bootstrap kanon --catalog-source 'https://github.com/org/my-manifest-repo.git@main'
+kanon bootstrap kanon --catalog-source 'https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
 ```
 
 Or via environment variable:
 
 ```bash
-export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@v1.0.0'
+export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
 kanon bootstrap kanon
 ```
+
+## Versioning
+
+Manifest repositories should use [semantic versioning](https://semver.org/) for git tags:
+
+- **MAJOR** -- breaking changes (renamed manifests, removed packages, changed directory structure)
+- **MINOR** -- new features (new catalog entries, new packages, new manifest archetypes)
+- **PATCH** -- bug fixes (corrected manifest paths, fixed XML attributes)
+
+Consumers should pin `KANON_CATALOG_SOURCE` to a major version range to allow automatic pickup of minor and patch releases while preventing unexpected breaking changes:
+
+```bash
+# Recommended: pin to current major version
+export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
+```
+
+The `@<ref>` portion accepts a branch, tag, `latest` (highest semver tag), or any PEP 440 constraint.
 
 ## Connecting to .kanon
 

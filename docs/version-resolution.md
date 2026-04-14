@@ -97,6 +97,31 @@ KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
 KANON_SOURCE_marketplaces_REVISION=refs/tags/>=1.0.0,<2.0.0
 ```
 
+### KANON_CATALOG_SOURCE / --catalog-source
+
+Resolves the catalog repository version before `git clone --branch`. Supports the same constraint syntax as other revision fields:
+
+```bash
+# Pin to current major, allow minor/patch updates
+export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@>=2.0.0,<3.0.0'
+
+# Compatible release (>=2.0.0, <2.1.0)
+kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@~=2.0.0'
+
+# Exact version
+kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@==2.2.0'
+```
+
+The `latest` keyword is shorthand for `*` (wildcard), resolving to the highest semver tag.
+
+Plain branch names and exact tags pass through without resolution:
+
+```bash
+# These do not trigger constraint resolution
+export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@main'
+export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@2.2.0'
+```
+
 ---
 
 ## Error Cases

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.version import _is_version_constraint, _list_tags, resolve_version
+from kanon_cli.version import is_version_constraint, _list_tags, resolve_version
 
 
 def _mock_ls_remote(tags: list[str]) -> MagicMock:
@@ -36,14 +36,14 @@ class TestIsVersionConstraint:
         ],
     )
     def test_detects_constraints(self, rev_spec: str) -> None:
-        assert _is_version_constraint(rev_spec) is True
+        assert is_version_constraint(rev_spec) is True
 
     @pytest.mark.parametrize(
         "rev_spec",
         ["main", "refs/tags/1.1.2", "some-branch", "caylent-2.0.0", "v1.0.0"],
     )
     def test_ignores_plain_refs(self, rev_spec: str) -> None:
-        assert _is_version_constraint(rev_spec) is False
+        assert is_version_constraint(rev_spec) is False
 
 
 @pytest.mark.unit

@@ -16,7 +16,7 @@ kanon bootstrap kanon     # Copies .kanon, kanon-readme.md
 Options:
 
 - `--output-dir DIR` — target directory for bootstrapped files (default: current directory)
-- `--catalog-source SOURCE` — remote catalog as `<git_url>@<ref>` where ref is a branch, tag, or `latest` (resolves to highest semver tag). Overrides the `KANON_CATALOG_SOURCE` environment variable. When neither flag nor env var is set, the bundled catalog shipped with the CLI package is used.
+- `--catalog-source SOURCE` — remote catalog as `<git_url>@<ref>` where ref is a branch, tag, `latest` (resolves to highest semver tag), or a PEP 440 version constraint (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`). Overrides the `KANON_CATALOG_SOURCE` environment variable. When neither flag nor env var is set, the bundled catalog shipped with the CLI package is used.
 
 The `.kanon` shipped with each catalog entry package is pre-configured by the catalog author. Users of the bundled catalog get example values; users of a remote catalog get values specific to their organization's manifest repository.
 

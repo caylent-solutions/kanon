@@ -154,3 +154,105 @@ class TestCloneRemoteCatalog:
             mock_run.return_value.returncode = 0
             with pytest.raises(SystemExit):
                 _clone_remote_catalog("https://github.com/org/repo.git@main")
+
+    def test_constraint_range_resolves_before_clone(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version", return_value="refs/tags/2.1.0") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@>=2.0.0,<3.0.0")
+
+        mock_resolve.assert_called_once_with("https://github.com/org/repo.git", ">=2.0.0,<3.0.0")
+        cmd = mock_run.call_args[0][0]
+        assert "2.1.0" in cmd
+
+    def test_wildcard_constraint_resolves(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version", return_value="refs/tags/3.0.0") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@*")
+
+        mock_resolve.assert_called_once_with("https://github.com/org/repo.git", "*")
+        cmd = mock_run.call_args[0][0]
+        assert "3.0.0" in cmd
+
+    def test_compatible_release_constraint(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version", return_value="refs/tags/2.0.3") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@~=2.0.0")
+
+        mock_resolve.assert_called_once_with("https://github.com/org/repo.git", "~=2.0.0")
+        cmd = mock_run.call_args[0][0]
+        assert "2.0.3" in cmd
+
+    def test_exact_constraint(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version", return_value="refs/tags/2.0.0") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@==2.0.0")
+
+        mock_resolve.assert_called_once_with("https://github.com/org/repo.git", "==2.0.0")
+        cmd = mock_run.call_args[0][0]
+        assert "2.0.0" in cmd
+
+    def test_plain_branch_skips_resolution(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@main")
+
+        mock_resolve.assert_not_called()
+        cmd = mock_run.call_args[0][0]
+        assert "main" in cmd
+
+    def test_plain_tag_skips_resolution(self, tmp_path: pathlib.Path) -> None:
+        repo_dir = tmp_path / "repo"
+        catalog_dir = repo_dir / "catalog"
+        catalog_dir.mkdir(parents=True)
+
+        with (
+            patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
+            patch("kanon_cli.core.catalog.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.core.catalog.resolve_version") as mock_resolve,
+        ):
+            mock_run.return_value.returncode = 0
+            _clone_remote_catalog("https://github.com/org/repo.git@v2.0.0")
+
+        mock_resolve.assert_not_called()
+        cmd = mock_run.call_args[0][0]
+        assert "v2.0.0" in cmd

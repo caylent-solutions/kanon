@@ -2,9 +2,23 @@
 
 
 
+## v1.0.4 (2026-04-14)
+
+### Fix
+
+* fix: upgrade rpm-git-repo on every kanon install instead of skipping (#43)
+
+Previously _ensure_repo_tool_from_pypi() checked if rpm-git-repo was
+installed and silently skipped if present, leaving users stuck on old
+versions. Now runs pipx upgrade when already installed so new releases
+(e.g. PEP 440 constraint support in 1.1.0) are picked up automatically. ([`c4fe252`](https://github.com/caylent-solutions/kanon/commit/c4fe2529b5561b2ee784957b8905e424dea01dcc))
+
+
 ## v1.0.3 (2026-04-14)
 
 ### Chore
+
+* chore(release): 1.0.3 ([`8c451f6`](https://github.com/caylent-solutions/kanon/commit/8c451f67f68c145c737ca52958e0b64366c9ac36))
 
 * chore: rename stale rpm test method and fixture names (#40)
 
@@ -22,6 +36,12 @@ to the existing bare constraint and exact tag formats.
 
 Also expands XML escaping documentation in README with full special
 character table. ([`6541141`](https://github.com/caylent-solutions/kanon/commit/65411413a976439e2358e8fcaf01d0c022ff95ba))
+
+### Unknown
+
+* Merge pull request #42 from caylent-solutions/release-1.0.3
+
+Release 1.0.3 ([`1fb4eef`](https://github.com/caylent-solutions/kanon/commit/1fb4eef8c78c185c5376c7e520369a663ba7c44e))
 
 
 ## v1.0.2 (2026-04-14)

@@ -145,6 +145,15 @@ def _normalize_source(content: bytes) -> bytes:
         ),
         stripped,
     )
+    # Strip the RepoCommandError, _ExecvIntercepted, and run_from_args blocks
+    # appended to main.py by E0-F2-S1-T2 (library API isolation layer).
+    # Preserve the trailing if __name__ == "__main__" block.
+    stripped = re.sub(
+        r"\nclass RepoCommandError\(Exception\):.*?(?=\nif __name__)",
+        "",
+        stripped,
+        flags=re.DOTALL,
+    )
     return stripped.encode("utf-8")
 
 

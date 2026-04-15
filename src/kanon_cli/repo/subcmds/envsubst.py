@@ -17,8 +17,8 @@ import os
 from xml.dom import minidom
 from xml.dom.minidom import parseString
 
-from command import Command
-from command import MirrorSafeCommand
+from ..command import Command
+from ..command import MirrorSafeCommand
 
 
 class Envsubst(Command, MirrorSafeCommand):

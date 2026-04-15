@@ -14,10 +14,10 @@
 
 import optparse
 
-from color import Coloring
-from command import PagedCommand
-from git_refs import R_HEADS
-from git_refs import R_M
+from ..color import Coloring
+from ..command import PagedCommand
+from ..git_refs import R_HEADS
+from ..git_refs import R_M
 
 
 class _Coloring(Coloring):

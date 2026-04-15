@@ -14,12 +14,12 @@
 
 import optparse
 
-from command import Command
-from command import MirrorSafeCommand
-from error import RepoExitError
-from repo_logging import RepoLogger
-from subcmds.sync import _PostRepoFetch
-from subcmds.sync import _PostRepoUpgrade
+from ..command import Command
+from ..command import MirrorSafeCommand
+from ..error import RepoExitError
+from ..repo_logging import RepoLogger
+from .sync import _PostRepoFetch
+from .sync import _PostRepoUpgrade
 
 
 logger = RepoLogger(__file__)

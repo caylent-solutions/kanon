@@ -18,8 +18,8 @@ import optparse
 import os
 import sys
 
-from command import PagedCommand
-from repo_logging import RepoLogger
+from ..command import PagedCommand
+from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)

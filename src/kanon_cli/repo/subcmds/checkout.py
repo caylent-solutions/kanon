@@ -15,12 +15,12 @@
 import functools
 from typing import NamedTuple
 
-from command import Command
-from command import DEFAULT_LOCAL_JOBS
-from error import GitError
-from error import RepoExitError
-from progress import Progress
-from repo_logging import RepoLogger
+from ..command import Command
+from ..command import DEFAULT_LOCAL_JOBS
+from ..error import GitError
+from ..error import RepoExitError
+from ..progress import Progress
+from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)

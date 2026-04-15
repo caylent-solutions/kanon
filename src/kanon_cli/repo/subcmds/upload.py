@@ -19,18 +19,18 @@ import re
 import sys
 from typing import List
 
-from command import DEFAULT_LOCAL_JOBS
-from command import InteractiveCommand
-from editor import Editor
-from error import GitError
-from error import SilentRepoExitError
-from error import UploadError
-from git_command import GitCommand
-from git_refs import R_HEADS
-from hooks import RepoHook
-from project import ReviewableBranch
-from repo_logging import RepoLogger
-from subcmds.sync import LocalSyncState
+from ..command import DEFAULT_LOCAL_JOBS
+from ..command import InteractiveCommand
+from ..editor import Editor
+from ..error import GitError
+from ..error import SilentRepoExitError
+from ..error import UploadError
+from ..git_command import GitCommand
+from ..git_refs import R_HEADS
+from ..hooks import RepoHook
+from ..project import ReviewableBranch
+from ..repo_logging import RepoLogger
+from .sync import LocalSyncState
 
 
 _DEFAULT_UNUSUAL_COMMIT_THRESHOLD = 5

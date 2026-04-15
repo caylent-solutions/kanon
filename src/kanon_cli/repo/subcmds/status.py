@@ -17,10 +17,10 @@ import glob
 import io
 import os
 
-from color import Coloring
-from command import DEFAULT_LOCAL_JOBS
-from command import PagedCommand
-import platform_utils
+from ..color import Coloring
+from ..command import DEFAULT_LOCAL_JOBS
+from ..command import PagedCommand
+from .. import platform_utils
 
 
 class Status(PagedCommand):

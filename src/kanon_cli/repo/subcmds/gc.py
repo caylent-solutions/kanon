@@ -15,11 +15,11 @@
 import os
 from typing import List, Set
 
-from command import Command
-from git_command import GitCommand
-import platform_utils
-from progress import Progress
-from project import Project
+from ..command import Command
+from ..git_command import GitCommand
+from .. import platform_utils
+from ..progress import Progress
+from ..project import Project
 
 
 class Gc(Command):

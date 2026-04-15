@@ -16,13 +16,13 @@ import collections
 import functools
 import itertools
 
-from command import Command
-from command import DEFAULT_LOCAL_JOBS
-from error import RepoError
-from error import RepoExitError
-from git_command import git
-from progress import Progress
-from repo_logging import RepoLogger
+from ..command import Command
+from ..command import DEFAULT_LOCAL_JOBS
+from ..error import RepoError
+from ..error import RepoExitError
+from ..git_command import git
+from ..progress import Progress
+from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)

@@ -14,10 +14,10 @@
 
 import sys
 
-from color import Coloring
-from command import InteractiveCommand
-from git_command import GitCommand
-from repo_logging import RepoLogger
+from ..color import Coloring
+from ..command import InteractiveCommand
+from ..git_command import GitCommand
+from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)

@@ -15,15 +15,15 @@
 import os
 import sys
 
-from color import Coloring
-from command import InteractiveCommand
-from command import MirrorSafeCommand
-from error import RepoUnhandledExceptionError
-from error import UpdateManifestError
-from git_command import git_require
-from repo_logging import RepoLogger
-from wrapper import Wrapper
-from wrapper import WrapperDir
+from ..color import Coloring
+from ..command import InteractiveCommand
+from ..command import MirrorSafeCommand
+from ..error import RepoUnhandledExceptionError
+from ..error import UpdateManifestError
+from ..git_command import git_require
+from ..repo_logging import RepoLogger
+from ..wrapper import Wrapper
+from ..wrapper import WrapperDir
 
 
 logger = RepoLogger(__file__)

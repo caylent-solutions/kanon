@@ -14,8 +14,8 @@
 
 import os
 
-from command import Command
-from command import MirrorSafeCommand
+from ..command import Command
+from ..command import MirrorSafeCommand
 
 
 class List(Command, MirrorSafeCommand):

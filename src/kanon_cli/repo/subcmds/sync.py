@@ -51,36 +51,36 @@ except ImportError:
         return (256, 256)
 
 
-from command import Command
-from command import DEFAULT_LOCAL_JOBS
-from command import MirrorSafeCommand
-from command import WORKER_BATCH_SIZE
-from error import GitError
-from error import RepoChangedException
-from error import RepoError
-from error import RepoExitError
-from error import RepoUnhandledExceptionError
-from error import SyncError
-from error import UpdateManifestError
-import event_log
-from git_command import git_require
-from git_config import GetUrlCookieFile
-from git_refs import HEAD
-from git_refs import R_HEADS
-import git_superproject
-from hooks import RepoHook
-import platform_utils
-from progress import elapsed_str
-from progress import jobs_str
-from progress import Progress
-from project import DeleteWorktreeError
-from project import Project
-from project import RemoteSpec
-from project import SyncBuffer
-from repo_logging import RepoLogger
-from repo_trace import Trace
-import ssh
-from wrapper import Wrapper
+from ..command import Command
+from ..command import DEFAULT_LOCAL_JOBS
+from ..command import MirrorSafeCommand
+from ..command import WORKER_BATCH_SIZE
+from ..error import GitError
+from ..error import RepoChangedException
+from ..error import RepoError
+from ..error import RepoExitError
+from ..error import RepoUnhandledExceptionError
+from ..error import SyncError
+from ..error import UpdateManifestError
+from .. import event_log
+from ..git_command import git_require
+from ..git_config import GetUrlCookieFile
+from ..git_refs import HEAD
+from ..git_refs import R_HEADS
+from .. import git_superproject
+from ..hooks import RepoHook
+from .. import platform_utils
+from ..progress import elapsed_str
+from ..progress import jobs_str
+from ..progress import Progress
+from ..project import DeleteWorktreeError
+from ..project import Project
+from ..project import RemoteSpec
+from ..project import SyncBuffer
+from ..repo_logging import RepoLogger
+from ..repo_trace import Trace
+from .. import ssh
+from ..wrapper import Wrapper
 
 
 _ONE_DAY_S = 24 * 60 * 60

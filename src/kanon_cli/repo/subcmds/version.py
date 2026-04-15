@@ -15,13 +15,13 @@
 import platform
 import sys
 
-from command import Command
-from command import MirrorSafeCommand
-from git_command import git
-from git_command import RepoSourceVersion
-from git_command import user_agent
-from git_refs import HEAD
-from wrapper import Wrapper
+from ..command import Command
+from ..command import MirrorSafeCommand
+from ..git_command import git
+from ..git_command import RepoSourceVersion
+from ..git_command import user_agent
+from ..git_refs import HEAD
+from ..wrapper import Wrapper
 
 
 class Version(Command, MirrorSafeCommand):

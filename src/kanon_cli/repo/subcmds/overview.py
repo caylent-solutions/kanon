@@ -14,8 +14,8 @@
 
 import optparse
 
-from color import Coloring
-from command import PagedCommand
+from ..color import Coloring
+from ..command import PagedCommand
 
 
 class Overview(PagedCommand):

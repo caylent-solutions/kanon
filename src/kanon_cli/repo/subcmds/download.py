@@ -15,11 +15,11 @@
 import re
 import sys
 
-from command import Command
-from error import GitError
-from error import NoSuchProjectError
-from error import RepoExitError
-from repo_logging import RepoLogger
+from ..command import Command
+from ..error import GitError
+from ..error import NoSuchProjectError
+from ..error import RepoExitError
+from ..repo_logging import RepoLogger
 
 
 CHANGE_RE = re.compile(r"^([1-9][0-9]*)(?:[/\.-]([1-9][0-9]*))?$")

@@ -16,12 +16,12 @@ import re
 import sys
 import textwrap
 
-from color import Coloring
-from command import MirrorSafeCommand
-from command import PagedCommand
-from error import RepoExitError
-from subcmds import all_commands
-from wrapper import Wrapper
+from ..color import Coloring
+from ..command import MirrorSafeCommand
+from ..command import PagedCommand
+from ..error import RepoExitError
+from . import all_commands
+from ..wrapper import Wrapper
 
 
 class InvalidHelpCommand(RepoExitError):

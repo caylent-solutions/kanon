@@ -21,12 +21,12 @@ import signal
 import subprocess
 import sys
 
-from color import Coloring
-from command import Command
-from command import DEFAULT_LOCAL_JOBS
-from command import MirrorSafeCommand
-from error import ManifestInvalidRevisionError
-from repo_logging import RepoLogger
+from ..color import Coloring
+from ..command import Command
+from ..command import DEFAULT_LOCAL_JOBS
+from ..command import MirrorSafeCommand
+from ..error import ManifestInvalidRevisionError
+from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)

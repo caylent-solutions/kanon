@@ -16,6 +16,7 @@ import errno
 import filecmp
 import glob
 import os
+import pathlib
 import platform
 import random
 import re
@@ -144,9 +145,8 @@ def _ProjectHooks():
     """
     global _project_hook_list
     if _project_hook_list is None:
-        d = os.path.realpath(os.path.abspath(os.path.dirname(__file__)))
-        d = os.path.join(d, "hooks")
-        _project_hook_list = [os.path.join(d, x) for x in platform_utils.listdir(d)]
+        hooks_dir = pathlib.Path(__file__).resolve().parent / "hooks"
+        _project_hook_list = [str(hooks_dir / x) for x in platform_utils.listdir(str(hooks_dir))]
     return _project_hook_list
 
 

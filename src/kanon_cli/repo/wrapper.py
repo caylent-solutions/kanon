@@ -15,15 +15,15 @@
 import functools
 import importlib.machinery
 import importlib.util
-import os
+import pathlib
 
 
 def WrapperDir():
-    return os.path.dirname(__file__)
+    return str(pathlib.Path(__file__).resolve().parent)
 
 
 def WrapperPath():
-    return os.path.join(WrapperDir(), "repo")
+    return str(pathlib.Path(__file__).resolve().parent / "repo")
 
 
 @functools.lru_cache(maxsize=None)

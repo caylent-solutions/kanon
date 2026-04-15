@@ -127,9 +127,11 @@ class Trace(contextlib.ContextDecorator):
 
 def _GetTraceFile(quiet):
     """Get the trace file or create one."""
-    # TODO: refactor to pass repodir to Trace.
-    repo_dir = os.path.dirname(os.path.dirname(__file__))
-    # Use temp directory if repo_dir is not writable
+    # Use the current working directory for trace output so that trace files
+    # are placed relative to where the user is running the tool, not inside
+    # the installed kanon_cli package directory.
+    repo_dir = str(os.getcwd())
+    # Use temp directory if the working directory is not writable
     if not os.access(repo_dir, os.W_OK):
         repo_dir = tempfile.gettempdir()
     trace_file = os.path.join(repo_dir, _TRACE_FILE_NAME)

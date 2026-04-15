@@ -17,6 +17,7 @@
 import functools
 import multiprocessing
 import os
+import pathlib
 import re
 import signal
 import subprocess
@@ -29,7 +30,7 @@ from . import platform_utils
 from .repo_trace import Trace
 
 
-PROXY_PATH = os.path.join(os.path.dirname(__file__), "git_ssh")
+PROXY_PATH = str(pathlib.Path(__file__).resolve().parent / "git_ssh")
 
 # Timeout in seconds to wait for the SSH control master process to confirm it
 # is running. Configurable via environment variable.

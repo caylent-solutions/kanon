@@ -15,6 +15,7 @@
 import functools
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -80,8 +81,8 @@ def RepoSourceVersion():
     if ver is None:
         env = GitCommand._GetBasicEnv()
 
-        proj = os.path.dirname(os.path.abspath(__file__))
-        env[GIT_DIR] = os.path.join(proj, ".git")
+        proj = pathlib.Path(__file__).resolve().parent
+        env[GIT_DIR] = str(proj / ".git")
         result = subprocess.run(
             [GIT, "describe", HEAD],
             stdout=subprocess.PIPE,

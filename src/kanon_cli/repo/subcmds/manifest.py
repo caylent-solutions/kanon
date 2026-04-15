@@ -15,7 +15,7 @@
 import enum
 import json
 import optparse
-import os
+import pathlib
 import sys
 
 from ..command import PagedCommand
@@ -63,9 +63,8 @@ human-readable variations.
     @property
     def helpDescription(self):
         helptext = self._helpDescription + "\n"
-        r = os.path.dirname(__file__)
-        r = os.path.dirname(r)
-        with open(os.path.join(r, "docs", "manifest-format.md")) as fd:
+        docs_file = pathlib.Path(__file__).resolve().parent.parent / "docs" / "manifest-format.md"
+        with open(docs_file) as fd:
             for line in fd:
                 helptext += line
         return helptext

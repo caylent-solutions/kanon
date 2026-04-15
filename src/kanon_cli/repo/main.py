@@ -847,5 +847,161 @@ def main():
     _Main(argv)
 
 
+class RepoCommandError(Exception):
+    """Raised by run_from_args() when the underlying repo command exits with an error.
+
+    Wraps the SystemExit raised by _Main so that library callers receive a
+    typed exception rather than a raw SystemExit, which is reserved for CLI
+    entry points only.
+
+    Attributes:
+        exit_code: The integer exit code from the underlying SystemExit, or
+            None if the exit code was not an integer.
+    """
+
+    def __init__(self, exit_code: int | None, message: str | None = None) -> None:
+        detail = message if message is not None else f"repo command failed with exit code {exit_code}"
+        super().__init__(detail)
+        self.exit_code = exit_code
+
+
+class _ExecvIntercepted(Exception):
+    """Raised when os.execv is intercepted during run_from_args.
+
+    Used to prevent process replacement when RepoChangedException causes
+    _Main to attempt an os.execv restart. The intercepted call information
+    is stored for diagnostic purposes.
+
+    Attributes:
+        execv_path: The path that would have been passed to os.execv.
+        execv_argv: The argv list that would have been passed to os.execv.
+    """
+
+    def __init__(self, execv_path: str, execv_argv: list[str]) -> None:
+        super().__init__(f"os.execv intercepted: path={execv_path!r}")
+        self.execv_path = execv_path
+        self.execv_argv = list(execv_argv)
+
+
+def run_from_args(argv: list[str], *, repo_dir: str) -> None:
+    """Run a repo command with explicit argv and repo_dir, without persistently modifying global state.
+
+    Accepts an explicit argv list and repo_dir path as parameters instead of
+    reading from sys.argv or scanning the filesystem. During execution this
+    function temporarily replaces os.execv and may temporarily modify
+    os.environ, but both are restored in a finally block so the calling
+    process observes no persistent change. Isolates the calling process from
+    repo command execution:
+
+    - Never reads or writes sys.argv
+    - Intercepts os.execv to prevent process replacement on RepoChangedException,
+      looping internally instead (up to KANON_MAX_REPO_RESTART_RETRIES retries)
+    - Restores os.environ to its pre-call state after the command completes
+    - Overrides _FindRepoDir() by injecting repo_dir directly into the argv
+      passed to _Main, bypassing filesystem scanning
+
+    Args:
+        argv: The repo subcommand and its arguments (e.g., ["version"] or
+            ["sync", "--jobs=4"]). Must not include "repo" itself as the
+            leading element.
+        repo_dir: Path to the .repo directory for this invocation. Injected
+            directly into the internal argv so _Main uses it without calling
+            _FindRepoDir().
+
+    Returns:
+        None when the repo command exits with code 0 (success).
+
+    Raises:
+        RepoCommandError: When the repo command exits with a non-zero exit
+            code. The exit_code attribute contains the integer code from the
+            underlying SystemExit.
+        RepoCommandError: When the repo restart loop exhausts
+            KANON_MAX_REPO_RESTART_RETRIES retries (RepoChangedException
+            triggered os.execv too many times).
+    """
+    # Read the retry limit per-call so that changes to the environment variable
+    # between calls take effect immediately, without requiring a process restart.
+    from kanon_cli.constants import REPO_RESTART_RETRIES_DEFAULT
+
+    raw_retries = os.environ.get(
+        "KANON_MAX_REPO_RESTART_RETRIES",
+        str(REPO_RESTART_RETRIES_DEFAULT),
+    )
+    try:
+        max_retries = int(raw_retries)
+    except ValueError:
+        raise RepoCommandError(
+            exit_code=1,
+            message=(f"KANON_MAX_REPO_RESTART_RETRIES must be a non-negative integer, got {raw_retries!r}"),
+        ) from None
+    if max_retries < 0:
+        raise RepoCommandError(
+            exit_code=1,
+            message=(f"KANON_MAX_REPO_RESTART_RETRIES must be a non-negative integer, got {max_retries}"),
+        )
+
+    repo_dir_str = str(repo_dir)
+    wrapper_version = ".".join(str(x) for x in Wrapper().VERSION)
+    user_argv = list(argv)
+
+    internal_argv = [
+        f"--repo-dir={repo_dir_str}",
+        f"--wrapper-version={wrapper_version}",
+        f"--wrapper-path={__file__}",
+        "--",
+    ] + user_argv
+
+    # Snapshot os.environ so we can restore it in the finally block.
+    # The repo trace2 event log unconditionally writes GIT_TRACE2_PARENT_SID
+    # into os.environ on every invocation; other subcommands may write
+    # additional keys. We restore the full snapshot so callers see no change.
+    environ_snapshot = dict(os.environ)
+
+    # Temporarily replace os.execv with a sentinel that raises
+    # _ExecvIntercepted. This prevents _Main's RepoChangedException handler
+    # from replacing the calling process with os.execv.
+    original_execv = os.execv
+
+    def _intercepting_execv(path: str, args: list[str]) -> None:
+        raise _ExecvIntercepted(path, list(args))
+
+    os.execv = _intercepting_execv
+    try:
+        retries_remaining = max_retries
+        while True:
+            try:
+                _Main(internal_argv)
+            except SystemExit as exc:
+                # _Main always calls sys.exit(result). Exit code 0 means
+                # success -- return normally. Non-zero means failure -- raise
+                # RepoCommandError so library callers receive a typed exception.
+                if exc.code == 0:
+                    break
+                raise RepoCommandError(exit_code=exc.code) from exc
+            except _ExecvIntercepted:
+                # RepoChangedException triggered an os.execv attempt.
+                # Retry the same command using the updated repo tool.
+                if retries_remaining <= 0:
+                    raise RepoCommandError(
+                        exit_code=1,
+                        message=(
+                            f"repo restart loop exceeded {max_retries} retries "
+                            f"(set KANON_MAX_REPO_RESTART_RETRIES to increase the limit)"
+                        ),
+                    ) from None
+                retries_remaining -= 1
+                continue
+            break
+    finally:
+        os.execv = original_execv
+        # Restore os.environ: remove keys added and reset changed values.
+        keys_to_remove = [k for k in list(os.environ) if k not in environ_snapshot]
+        for k in keys_to_remove:
+            del os.environ[k]
+        for k, v in environ_snapshot.items():
+            if os.environ.get(k) != v:
+                os.environ[k] = v
+
+
 if __name__ == "__main__":
     _Main(sys.argv[1:])

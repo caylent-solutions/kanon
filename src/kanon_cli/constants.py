@@ -30,3 +30,6 @@ CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
 
 # -- Configuration file --
 KANONENV_FILENAME = ".kanon"
+
+# -- Embedded repo tool --
+REPO_RESTART_RETRIES_DEFAULT = 3

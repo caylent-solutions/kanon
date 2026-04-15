@@ -5,9 +5,9 @@ the calling process in the same state it was in before the call. The contract
 is: sys.argv, os.execv, sys.path, os.getcwd(), and os.environ must all be
 unchanged (or restored) after any API entry point into the repo package.
 
-All tests in this module are in the TDD RED phase. They fail because
-``run_from_args`` does not exist yet in ``kanon_cli.repo``. Once E0-F2-S1-T2
-implements the isolation layer, these tests must all pass.
+The isolation tests expect RepoCommandError (not SystemExit) to be raised
+because run_from_args() is library code -- it must never propagate SystemExit
+to callers.
 """
 
 import copy
@@ -18,17 +18,23 @@ from typing import NoReturn
 import pytest
 
 import kanon_cli.repo as repo_pkg
+import kanon_cli.repo.main as repo_main
+from kanon_cli.repo import RepoCommandError
 
 _SENTINEL_REPO_DIR = "/nonexistent/.repo"
-_SENTINEL_ARGS = ["version"]
+# Use an unknown subcommand so _Main raises SystemExit(1) immediately after
+# printing "not a repo command", without attempting any git operations that
+# would fail with GitCommandError on a nonexistent repo directory.
+_SENTINEL_ARGS = ["kanon-nonexistent-subcommand-sentinel"]
 
 
 def _invoke_api() -> None:
     """Invoke the repo API with sentinel arguments.
 
-    Uses a nonexistent repo dir so the call exercises the isolation layer
-    without requiring a real git repository on disk. Expected to raise
-    SystemExit once run_from_args is implemented (E0-F2-S1-T2).
+    Uses an unknown subcommand name so _Main raises SystemExit(1) immediately
+    (printing "not a repo command") without reaching any git operations that
+    would fail with GitCommandError on the nonexistent sentinel repo dir.
+    Expected to raise RepoCommandError wrapping that SystemExit.
     """
     repo_pkg.run_from_args(_SENTINEL_ARGS, repo_dir=_SENTINEL_REPO_DIR)
 
@@ -41,7 +47,7 @@ def test_sys_argv_unchanged_after_api_call() -> None:
     contents are identical after the call returns.
     """
     argv_before = list(sys.argv)
-    with pytest.raises(SystemExit):
+    with pytest.raises(RepoCommandError):
         _invoke_api()
     argv_after = list(sys.argv)
     assert argv_after == argv_before, (
@@ -64,7 +70,7 @@ def test_os_execv_never_called_during_api_call(monkeypatch: pytest.MonkeyPatch) 
         raise AssertionError(f"os.execv was called during repo API call: path={path!r}, argv={argv!r}")
 
     monkeypatch.setattr(os, "execv", _record_execv)
-    with pytest.raises(SystemExit):
+    with pytest.raises(RepoCommandError):
         _invoke_api()
     assert execv_calls == [], f"os.execv was called {len(execv_calls)} time(s) during repo API call: {execv_calls!r}"
 
@@ -77,7 +83,7 @@ def test_sys_path_unchanged_after_api_call() -> None:
     insert, remove, or reorder entries in the interpreter path.
     """
     path_before = list(sys.path)
-    with pytest.raises(SystemExit):
+    with pytest.raises(RepoCommandError):
         _invoke_api()
     path_after = list(sys.path)
     assert path_after == path_before, (
@@ -92,7 +98,7 @@ def test_cwd_unchanged_after_api_call() -> None:
     Record os.getcwd() before and after run_from_args and assert they are equal.
     """
     cwd_before = os.getcwd()
-    with pytest.raises(SystemExit):
+    with pytest.raises(RepoCommandError):
         _invoke_api()
     cwd_after = os.getcwd()
     assert cwd_after == cwd_before, (
@@ -109,7 +115,7 @@ def test_os_environ_restored_after_api_call() -> None:
     violation.
     """
     env_before = copy.deepcopy(dict(os.environ))
-    with pytest.raises(SystemExit):
+    with pytest.raises(RepoCommandError):
         _invoke_api()
     env_after = dict(os.environ)
 
@@ -126,3 +132,78 @@ def test_os_environ_restored_after_api_call() -> None:
         violations.append(f"Keys changed in os.environ: {changed!r}")
 
     assert not violations, "os.environ was mutated by repo API call:\n" + "\n".join(f"  {v}" for v in violations)
+
+
+@pytest.mark.unit
+def test_system_exit_converted_to_repo_command_error() -> None:
+    """AC-TEST-002 (exception contract): SystemExit from _Main must be converted to RepoCommandError.
+
+    run_from_args() is library code and must never propagate SystemExit to
+    callers. Instead, it must catch SystemExit and raise RepoCommandError
+    carrying the original exit code. An unknown subcommand reliably triggers
+    SystemExit(1) from _Main without reaching git operations.
+    """
+    with pytest.raises(RepoCommandError) as exc_info:
+        repo_pkg.run_from_args(_SENTINEL_ARGS, repo_dir=_SENTINEL_REPO_DIR)
+    assert exc_info.value.exit_code is not None, (
+        "RepoCommandError must carry the exit_code from the underlying SystemExit"
+    )
+
+
+@pytest.mark.unit
+def test_repo_command_error_carries_exit_code() -> None:
+    """AC-TEST-002 (exit code propagation): RepoCommandError.exit_code reflects _Main's exit code.
+
+    When _Main raises SystemExit with a specific exit code, run_from_args must
+    wrap it in a RepoCommandError that exposes the same exit code so callers
+    can act on it. An unknown subcommand reliably produces SystemExit(1).
+    """
+    with pytest.raises(RepoCommandError) as exc_info:
+        repo_pkg.run_from_args(_SENTINEL_ARGS, repo_dir=_SENTINEL_REPO_DIR)
+    error = exc_info.value
+    assert isinstance(error.exit_code, int), f"RepoCommandError.exit_code must be an int, got {type(error.exit_code)}"
+    assert error.exit_code != 0, f"Expected a non-zero exit code for an unknown subcommand, got {error.exit_code}"
+
+
+@pytest.mark.unit
+def test_repo_changed_retries_without_execv_and_raises_on_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-TEST-003: RepoChangedException retry path must never call os.execv.
+
+    Simulate the RepoChangedException path by patching _Main to always raise
+    _ExecvIntercepted (the exception raised when os.execv is intercepted inside
+    run_from_args). Verify:
+    (a) os.execv is never called on the real os module -- the retry loop handles
+        the restart internally without replacing the process.
+    (b) After the retry limit is exhausted, RepoCommandError is raised with a
+        descriptive message mentioning the retry limit env var.
+    """
+    monkeypatch.setenv("KANON_MAX_REPO_RESTART_RETRIES", "1")
+
+    real_execv_calls: list[tuple[str, list[str]]] = []
+
+    def _record_execv(path: str, argv: list[str]) -> NoReturn:
+        real_execv_calls.append((path, list(argv)))
+        raise AssertionError(f"os.execv reached the real os module during retry loop: path={path!r}")
+
+    monkeypatch.setattr(os, "execv", _record_execv)
+
+    # Patch _Main to always raise _ExecvIntercepted, simulating a scenario
+    # where every invocation triggers a RepoChangedException -> os.execv path.
+    def _always_intercept(argv: list[str]) -> None:
+        raise repo_main._ExecvIntercepted("/fake/python", list(argv))
+
+    monkeypatch.setattr(repo_main, "_Main", _always_intercept)
+
+    with pytest.raises(RepoCommandError) as exc_info:
+        repo_pkg.run_from_args(_SENTINEL_ARGS, repo_dir=_SENTINEL_REPO_DIR)
+
+    error = exc_info.value
+    assert real_execv_calls == [], (
+        f"os.execv was invoked on the real os module {len(real_execv_calls)} time(s): {real_execv_calls!r}"
+    )
+    assert "KANON_MAX_REPO_RESTART_RETRIES" in str(error), (
+        f"RepoCommandError message must mention KANON_MAX_REPO_RESTART_RETRIES so the "
+        f"caller knows how to adjust the retry limit; got: {error!r}"
+    )

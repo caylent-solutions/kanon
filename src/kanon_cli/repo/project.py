@@ -450,6 +450,17 @@ class _LinkFile:
     def __linkIt(self, relSrc, absDest):
         # Link file if it does not exist or is out of date.
         if not platform_utils.islink(absDest) or (platform_utils.readlink(absDest) != relSrc):
+            # Warn before overwriting a foreign (non-repo-managed) symlink so the
+            # user knows their manually created symlink is being replaced.
+            if platform_utils.islink(absDest):
+                old_target = platform_utils.readlink(absDest)
+                if old_target != relSrc:
+                    logger.warning(
+                        "warning: Replacing foreign symlink %s -> %s with repo-managed target %s",
+                        absDest,
+                        old_target,
+                        relSrc,
+                    )
             try:
                 # Remove existing file first, since it might be read-only.
                 if os.path.lexists(absDest):

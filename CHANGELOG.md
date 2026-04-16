@@ -2,6 +2,180 @@
 
 
 
+## v2.0.0 (2026-04-16)
+
+### Breaking
+
+* feat!: embed repo tool as Python package inside kanon (removes pipx prerequisite)
+
+The `rpm-git-repo` tool is no longer installed as a separate external tool via
+`pipx`. It is now embedded directly as a Python package (`kanon_cli.repo`) inside
+the `kanon-cli` wheel. Installing `kanon-cli` with `pipx install kanon-cli`
+automatically includes `repo` -- no additional installation step is required.
+
+This is a breaking change for any automation or scripts that relied on:
+- Provisioning `rpm-git-repo` via `pipx` as a separate prerequisite setup step
+- Calling the standalone `repo` binary directly from outside kanon
+- Setting `REPO_URL` or `REPO_REV` in `.kanon` files to configure tool sourcing
+
+Migration: remove any steps that separately provision the `rpm-git-repo` package
+from CI/CD pipelines and setup scripts. The `repo` binary is no longer managed
+by pipx. Use the new `kanon repo <subcommand>` CLI interface for direct repo
+operations.
+
+### Feature
+
+* feat: add `kanon repo <subcommand>` CLI for direct repo operations
+
+A new top-level `kanon repo` subcommand exposes the embedded repo tool directly
+from the kanon CLI. Any repo subcommand can be invoked as:
+
+    kanon repo init -u <manifest-url>
+    kanon repo sync
+    kanon repo status
+
+This provides a stable interface for direct repo operations without requiring a
+separately installed `repo` binary.
+
+### Deprecation
+
+* deprecation: REPO_URL and REPO_REV environment variables are deprecated
+
+`REPO_URL` and `REPO_REV` in `.kanon` configuration files are deprecated and will
+be removed in a future version. These variables previously controlled which git
+URL and revision to use when installing `rpm-git-repo` via pipx. Since `repo` is
+now embedded and no longer installed via pipx, these variables have no effect.
+
+Migration: remove `REPO_URL` and `REPO_REV` from all `.kanon` files. No
+replacement configuration is needed -- the embedded repo is always available.
+
+### Fix
+
+* fix: malformed XML in envsubst now raises a clear error instead of crashing unhandled
+
+`subcmds/envsubst.py` now wraps `minidom.parse()` in a try-except for
+`xml.parsers.expat.ExpatError` so that malformed XML produces an actionable error
+message rather than an unhandled exception. Backup files are not orphaned on parse
+failure.
+
+* fix: linkfile symlink errors are now propagated instead of silently swallowed
+
+`project.py` no longer discards `platform_utils.symlink()` failures. Symlink
+errors are now propagated to the caller so downstream code does not silently
+operate on missing symlinks.
+
+* fix: os.execv() in RepoChangedException no longer kills the kanon process
+
+When the embedded repo detects that it changed during execution, it previously
+called `os.execv()` which would replace the entire kanon process. The library
+API wrapper now catches `RepoChangedException` and handles it without
+`os.execv()`.
+
+* fix: symlink overwrite now warns before silently removing user-created symlinks
+
+If a symlink exists but points to a location not managed by repo, kanon now emits
+a warning before deleting and recreating it, rather than silently overwriting the
+user's symlink.
+
+* fix: empty file list in envsubst now fails fast with a clear warning
+
+`subcmds/envsubst.py` now fails fast when `glob.glob()` returns an empty list,
+emitting a warning so the user knows no XML files were processed. Previously, an
+empty file list was silently ignored and envsubst reported success with no output.
+
+* fix: undefined environment variables in envsubst are now detected and reported
+
+`subcmds/envsubst.py` now detects unexpanded `${UNDEFINED}` variables after
+`os.path.expandvars()` and reports them with a clear error message. Previously,
+undefined variables were silently left as literal text, causing downstream
+manifest parse failures.
+
+* fix: git ls-remote failures now use retry with exponential backoff
+
+`project.py` now performs a retry with exponential backoff for transient
+`git ls-remote` failures (network errors, timeouts) rather than immediately
+raising `ManifestInvalidRevisionError`. Permanent errors (auth, invalid URL)
+are still raised immediately.
+
+* fix: git ls-remote error messages now include stderr output
+
+The stderr captured from a failed `git ls-remote` command is now included in the
+error message, making it possible to distinguish authentication failures, network
+errors, and invalid URL errors.
+
+* fix: version constraint resolution is no longer called redundantly
+
+`_ResolveVersionConstraint()` was previously called in both
+`Sync_NetworkHalf()` and `GetRevisionId()`, each triggering a separate
+`git ls-remote --tags` round trip. The result is now resolved once and
+cached so the remote is contacted only once per constraint.
+
+* fix: selfupdate subcommand is now disabled when repo is embedded
+
+`subcmds/selfupdate.py` previously tried to sync the "repo project" which does
+not exist when repo is embedded inside kanon. The selfupdate subcommand is now
+a no-op when running in embedded mode.
+
+* fix: race condition between ls-remote and fetch on tag deletion is documented
+
+A tag enumerated by `git ls-remote` could be deleted before the actual fetch
+completes. The race condition and its behavior are now documented in the error
+message so users know what steps to take.
+
+* fix: envsubst backup files now use timestamped names to prevent overwrite
+
+Running `kanon repo envsubst` twice no longer overwrites the `.bak` file from
+the first run. Backup files now include a timestamp suffix so all backups are
+preserved.
+
+* fix: repo init now warns when reinitializing with a different manifest URL
+
+If `.repo/` exists and `repo init` is called with a different `-u` URL, kanon
+now emits a warning identifying the previous and new URLs before proceeding.
+Previously, the URL change occurred silently.
+
+* fix: interactive prompts skipped in non-TTY mode are now logged
+
+When stdin/stdout are not TTYs, user configuration prompts in `subcmds/init.py`
+are skipped. A log message is now emitted to explain that prompts were skipped
+and why, rather than silently continuing.
+
+* fix: pre-release version exclusion by PEP 440 is now documented in help text
+
+`version_constraints.py` now documents that constraints such as `>=1.0.0`
+exclude pre-release versions (e.g., `1.0.0a1`) per the PEP 440 specification.
+This behavior is unchanged but is now visible in the help text.
+
+* fix: nested variable references in envsubst are now documented as unsupported
+
+`subcmds/envsubst.py` now documents that `${OUTER${INNER}}` nested variable
+references are not supported by `os.path.expandvars()`. Previously, unsupported
+references were silently left unchanged.
+
+* fix: path operations use pathlib throughout to avoid Unix separator assumptions
+
+Locations in the codebase that used literal `/` path separators have been
+audited and migrated to `pathlib` to ensure correct behavior across platforms.
+
+* fix: envsubst XML save no longer uses inefficient double-parse
+
+`subcmds/envsubst.py` previously passed `toprettyxml()` output through a second
+`parseString()` call to strip empty lines. The save path now uses string
+manipulation directly, removing the redundant re-parse.
+
+* fix: glob linkfile source error message now distinguishes non-existent from invalid
+
+`project.py` now provides a more specific error message when a glob linkfile `src`
+pattern does not match any files, distinguishing a path that has never existed
+from one that is merely empty at sync time.
+
+* fix: glob linkfile destination conflict now raises an exception instead of logging and continuing
+
+When processing glob linkfiles, if the destination exists as a file rather than a
+directory, `project.py` now raises an exception immediately. Previously, the error
+was logged but execution continued, silently skipping the glob.
+
+
 ## v1.2.0 (2026-04-14)
 
 ### Feature

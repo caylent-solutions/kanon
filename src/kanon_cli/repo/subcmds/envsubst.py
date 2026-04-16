@@ -49,6 +49,10 @@ variables with values.
         print(f"Executing envsubst {opt}, {args}")
         files = glob.glob(self.path, recursive=True)
 
+        if not files:
+            _LOG.warning("No files matched glob pattern: %s", self.path)
+            return
+
         for file in files:
             print(file)
             if os.path.getsize(file) > 0:

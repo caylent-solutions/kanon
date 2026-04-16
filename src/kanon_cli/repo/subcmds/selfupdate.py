@@ -13,10 +13,14 @@
 # limitations under the License.
 
 import optparse
+import sys
+
+from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 
 from ..command import Command
 from ..command import MirrorSafeCommand
 from ..error import RepoExitError
+from .. import pager as _pager_module
 from ..repo_logging import RepoLogger
 from .sync import _PostRepoFetch
 from .sync import _PostRepoUpgrade
@@ -59,6 +63,10 @@ need to be performed by an end-user.
         )
 
     def Execute(self, opt, args):
+        if _pager_module.EMBEDDED:
+            print(SELFUPDATE_EMBEDDED_MESSAGE, file=sys.stderr)
+            return 0
+
         rp = self.manifest.repoProject
         rp.PreSync()
 

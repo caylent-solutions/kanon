@@ -34,3 +34,6 @@ REPO_RESTART_RETRIES_DEFAULT = 3
 # -- Repo CLI --
 KANON_REPO_DIR_ENV = "KANON_REPO_DIR"
 KANONENV_REPO_DIR_DEFAULT = ".repo"
+
+# -- Selfupdate embedded mode --
+SELFUPDATE_EMBEDDED_MESSAGE = "selfupdate is not available -- upgrade kanon-cli instead: pipx upgrade kanon-cli"

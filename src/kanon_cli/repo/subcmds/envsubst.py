@@ -118,7 +118,10 @@ variables with values.
         unresolved = _collect_unresolved_vars(doc)
         for var_name in sorted(unresolved):
             _LOG.warning("Unresolved variable ${%s} in %s", var_name, infile)
-        os.rename(infile, infile + ".bak")
+        bak_path = infile + ".bak"
+        if os.path.exists(bak_path):
+            os.remove(bak_path)
+        os.rename(infile, bak_path)
         self.save(infile, doc)
         return unresolved
 

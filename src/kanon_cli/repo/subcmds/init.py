@@ -370,12 +370,23 @@ to update the working directory files.
                 self.manifest.topdir,
             )
 
+        if existing_checkout and opt.manifest_url:
+            current_url = self.manifest.manifestProject.config.GetString("remote.origin.url")
+            if current_url and current_url != opt.manifest_url:
+                logger.warning(
+                    "repo: manifest URL changed during reinit -- old URL: %s, new URL: %s",
+                    current_url,
+                    opt.manifest_url,
+                )
+
         self._SyncManifest(opt)
 
         if os.isatty(0) and os.isatty(1) and not self.manifest.IsMirror:
             if opt.config_name or self._ShouldConfigureUser(opt, existing_checkout):
                 self._ConfigureUser(opt)
             self._ConfigureColor()
+        elif not os.isatty(0):
+            logger.info("skipping interactive prompts: stdin is not a TTY")
 
         if not opt.quiet:
             self._DisplayResult()

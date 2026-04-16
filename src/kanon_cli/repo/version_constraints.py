@@ -18,6 +18,15 @@ Provides functions to detect PEP 440 constraint syntax in revision strings
 and resolve constraints against available tags to find the highest matching
 version.
 
+Pre-release version behavior:
+    By default, PEP 440 constraint specifiers (such as >=1.0.0 or ~=2.0.0)
+    exclude pre-release versions (e.g., 1.0.0a1, 1.0.0b2, 1.0.0rc1) unless
+    the constraint itself references a pre-release version. This follows the
+    semantic versioning rules defined in PEP 440. For example, >=1.0.0 will
+    not match 1.0.0a1 even though 1.0.0a1 is technically "before" 1.0.0.
+    To include pre-release versions, specify a pre-release constraint
+    explicitly (e.g., >=1.0.0a1).
+
 Spec references:
 - Section 5.5: PEP 440 constraint syntax table, supported types, resolution.
 - Section 17.2: Function signatures for is_version_constraint and

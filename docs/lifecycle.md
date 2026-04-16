@@ -5,27 +5,26 @@
 ```text
 1. Parse .kanon, auto-discover sources from KANON_SOURCE_<name>_URL patterns
 2. Validate KANON_SOURCE_<name>_* variables
-3. Check pipx on PATH (fail-fast)
-4. Install repo tool:
-   - If REPO_URL and REPO_REV both set (git override):
-     resolve REPO_REV (PEP 440), pipx install --force "git+URL@REV"
-   - If both omitted (default): check pipx list for rpm-git-repo,
-     install from PyPI if not present
-   - If only one set: fail-fast with error
-6. If KANON_MARKETPLACE_INSTALL=true:
+3. If KANON_MARKETPLACE_INSTALL=true:
    mkdir -p CLAUDE_MARKETPLACES_DIR, clean contents
-7. For each source in alphabetical order:
+4. For each source in alphabetical order:
    a. mkdir -p .kanon-data/sources/<name>/
-   b. repo init -u URL -b REVISION -m PATH --no-repo-verify [--repo-rev REV]
-   c. GITBASE=... CLAUDE_MARKETPLACES_DIR=... repo envsubst
-   d. repo sync (fail-fast on non-zero)
-8. Aggregate: symlink .kanon-data/sources/<name>/.packages/* -> .packages/
-9. Collision check: fail-fast if duplicate package names
-10. Update .gitignore with .packages/ and .kanon-data/
-11. If KANON_MARKETPLACE_INSTALL=true:
-    locate claude binary, discover marketplace entries and plugins,
-    register marketplaces, install plugins via claude CLI
+   b. kanon_cli.repo.repo_init(source_dir, url, revision, manifest_path)
+      -- direct Python API call, no subprocess
+   c. kanon_cli.repo.repo_envsubst(source_dir, {GITBASE, CLAUDE_MARKETPLACES_DIR})
+      -- direct Python API call, no subprocess
+   d. kanon_cli.repo.repo_sync(source_dir)
+      -- direct Python API call, fail-fast on RepoCommandError
+5. Aggregate: symlink .kanon-data/sources/<name>/.packages/* -> .packages/
+6. Collision check: fail-fast if duplicate package names
+7. Update .gitignore with .packages/ and .kanon-data/
+8. If KANON_MARKETPLACE_INSTALL=true:
+   locate claude binary, discover marketplace entries and plugins,
+   register marketplaces, install plugins via claude CLI
 ```
+
+All repo operations (init, envsubst, sync) are direct Python API calls into `kanon_cli.repo`.
+No external binaries are invoked; no PATH lookups are performed.
 
 ## Clean Lifecycle (`kanon clean`)
 

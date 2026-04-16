@@ -67,11 +67,13 @@ def _run(args) -> None:
 
     globals_dict = config["globals"]
 
-    if globals_dict.get("REPO_URL") or globals_dict.get("REPO_REV"):
-        print(
-            "Deprecation warning: REPO_URL and REPO_REV are no longer used by kanon install.\n"
-            "These keys have no effect and will be ignored. Remove them from your .kanon file.",
-            file=sys.stderr,
-        )
+    for deprecated_key in ("REPO_URL", "REPO_REV"):
+        if globals_dict.get(deprecated_key):
+            print(
+                f"Deprecation warning: {deprecated_key} is no longer used by kanon install. "
+                f"This key has no effect and will be ignored. "
+                f"Remove {deprecated_key} from your .kanon file.",
+                file=sys.stderr,
+            )
 
     install(args.kanonenv_path)

@@ -2,6 +2,12 @@
 
 Provides reusable utilities for content-match tests that verify copied
 rpm-git-repo source files against their originals.
+
+Also configures sys.path so that the verbatim-copied rpm-git-repo test files
+(which use relative bare imports like ``from test_manifest_xml import ...``)
+can locate sibling test modules during collection.  Import fixes for these
+files happen in E0-F5-S1-T3; this path entry is the minimal change needed to
+prevent collection errors while those files are still unmodified.
 """
 
 import os
@@ -17,6 +23,10 @@ REPO_ROOT = pathlib.Path(__file__).parents[3]
 
 TARGET_DIR = REPO_ROOT / "src" / "kanon_cli" / "repo"
 """Target directory where rpm-git-repo source files are copied."""
+
+_THIS_DIR = str(pathlib.Path(__file__).parent)
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
 
 
 def get_rpm_source_dir(subdirectory: str | None = None) -> pathlib.Path:

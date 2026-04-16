@@ -1,0 +1,10 @@
+---
+# Known-bad YAML file for yamllint testing.
+# DO NOT fix these — they exist to verify the linter config works.
+
+# Duplicate key violation
+duplicate_key: first
+duplicate_key: second
+
+# Trailing spaces violation (line below has trailing spaces)
+trailing:

@@ -41,7 +41,7 @@ packages = ["src/kanon_cli"]
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-extend-exclude = ["tests/fixtures", ".devcontainer"]
+extend-exclude = ["tests/fixtures", "tests/unit/repo/fixtures", ".devcontainer"]
 
 [tool.ruff.lint]
 select = ["F", "E"]

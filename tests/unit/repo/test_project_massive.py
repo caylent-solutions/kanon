@@ -110,6 +110,9 @@ def _proj(tmp_path, name="test"):
     p._userident_name = None
     p._userident_email = None
 
+    # Caching flag for _ResolveVersionConstraint (mirrors __init__ default).
+    p._constraint_resolved = False
+
     return p
 
 

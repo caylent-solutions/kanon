@@ -82,6 +82,10 @@ def _make_project(tmp_path):
     proj._userident_name = None
     proj._userident_email = None
     proj.bare_ref.all = {}
+
+    # Caching flag for _ResolveVersionConstraint (mirrors __init__ default).
+    proj._constraint_resolved = False
+
     return proj
 
 

@@ -49,10 +49,12 @@ def _make_project(remote_url="https://example.com/org/repo.git"):
     - revisionExpr: a PEP 440 constraint string
     - name: project name for error messages
     - remote.url: the remote URL for ls-remote
+    - _constraint_resolved: caching flag (False by default)
     """
     project = Project.__new__(Project)
     project.name = "test-project"
     project.revisionExpr = "refs/tags/dev/mylib/~=1.0.0"
+    project._constraint_resolved = False
 
     remote = mock.MagicMock()
     remote.url = remote_url

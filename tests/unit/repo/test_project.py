@@ -758,7 +758,7 @@ def _build_ls_remote_output(tags):
 class TestGetRevisionIdVersionConstraints:
     """Tests for _ResolveVersionConstraint() on the Project class.
 
-    Spec reference: Section 17.2 — version constraint resolution.
+    Spec reference: Section 17.2 -- version constraint resolution.
 
     _ResolveVersionConstraint() detects PEP 440 constraints in
     revisionExpr, runs git ls-remote to get available tags, resolves
@@ -771,7 +771,7 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with revisionExpr containing a PEP 440 constraint.
         When: _ResolveVersionConstraint() is called.
         Then: revisionExpr is mutated to the resolved exact tag.
-        Spec: Section 17.2 — constraint detection and resolution.
+        Spec: Section 17.2 -- constraint detection and resolution.
         """
         from unittest.mock import MagicMock, patch
 
@@ -780,6 +780,7 @@ class TestGetRevisionIdVersionConstraints:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         ls_output = _build_ls_remote_output(_GRI_DATA["remote_tags"])
 
@@ -797,13 +798,14 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with revisionExpr "main" (not a constraint).
         When: _ResolveVersionConstraint() is called.
         Then: revisionExpr remains unchanged, subprocess.run is not called.
-        Spec: Section 17.2 — non-constraint passthrough.
+        Spec: Section 17.2 -- non-constraint passthrough.
         """
         from unittest.mock import MagicMock, patch
 
         proj = MagicMock()
         proj.revisionExpr = _GRI_DATA["non_constraint_revision"]
         proj.name = "test-project"
+        proj._constraint_resolved = False
 
         with patch("subprocess.run") as mock_run:
             project.Project._ResolveVersionConstraint(proj)
@@ -819,13 +821,14 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with revisionExpr set to None.
         When: _ResolveVersionConstraint() is called.
         Then: Nothing happens, subprocess.run is not called.
-        Spec: Section 17.2 — None revisionExpr no-op.
+        Spec: Section 17.2 -- None revisionExpr no-op.
         """
         from unittest.mock import MagicMock, patch
 
         proj = MagicMock()
         proj.revisionExpr = None
         proj.name = "test-project"
+        proj._constraint_resolved = False
 
         with patch("subprocess.run") as mock_run:
             project.Project._ResolveVersionConstraint(proj)
@@ -839,7 +842,7 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with a constraint revisionExpr.
         When: git ls-remote returns a non-zero exit code.
         Then: ManifestInvalidRevisionError is raised with diagnostic message.
-        Spec: Section 17.2 — ls-remote failure handling.
+        Spec: Section 17.2 -- ls-remote failure handling.
         """
         from unittest.mock import MagicMock, patch
 
@@ -848,6 +851,7 @@ class TestGetRevisionIdVersionConstraints:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=128, stdout="", stderr="fatal: error")
@@ -864,7 +868,7 @@ class TestGetRevisionIdVersionConstraints:
         When: _ResolveVersionConstraint() is called.
         Then: ManifestInvalidRevisionError is raised from
             resolve_version_constraint.
-        Spec: Section 17.2 — error on no match.
+        Spec: Section 17.2 -- error on no match.
         """
         from unittest.mock import MagicMock, patch
 
@@ -873,6 +877,7 @@ class TestGetRevisionIdVersionConstraints:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         ls_output = _build_ls_remote_output(_GRI_DATA["remote_tags"])
 
@@ -887,7 +892,7 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with revisionExpr containing wildcard (*).
         When: _ResolveVersionConstraint() is called.
         Then: revisionExpr is mutated to the latest tag.
-        Spec: Section 17.2 — wildcard constraint resolution.
+        Spec: Section 17.2 -- wildcard constraint resolution.
         """
         from unittest.mock import MagicMock, patch
 
@@ -896,6 +901,7 @@ class TestGetRevisionIdVersionConstraints:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         ls_output = _build_ls_remote_output(_GRI_DATA["remote_tags"])
 
@@ -913,7 +919,7 @@ class TestGetRevisionIdVersionConstraints:
         Given: A project with revisionExpr containing a range constraint.
         When: _ResolveVersionConstraint() is called with tags from fixture.
         Then: revisionExpr is mutated to the highest tag within the range.
-        Spec: Section 17.2 — range constraint resolution.
+        Spec: Section 17.2 -- range constraint resolution.
         """
         from unittest.mock import MagicMock, patch
 
@@ -923,6 +929,7 @@ class TestGetRevisionIdVersionConstraints:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         ls_output = _build_ls_remote_output(_VC_DATA["integration"]["available_tags"])
 
@@ -973,7 +980,7 @@ class TestGetRevisionIdIntegration:
         Given: Mock ls-remote output from fixture data and a constraint.
         When: _ResolveVersionConstraint() runs with real version_constraints.
         Then: revisionExpr is mutated to the correct resolved tag.
-        Spec: Section 5.5 — constraint types and resolution behavior.
+        Spec: Section 5.5 -- constraint types and resolution behavior.
         """
         from unittest.mock import MagicMock, patch
 
@@ -983,6 +990,7 @@ class TestGetRevisionIdIntegration:
         proj.name = "test-project"
         proj.remote = MagicMock()
         proj.remote.url = "https://example.com/repo.git"
+        proj._constraint_resolved = False
 
         ls_output = _build_ls_remote_output(_INTEG_DATA["available_tags"])
 

@@ -750,6 +750,13 @@ class Project:
         # if they will be synced.
         self.has_subprojects = False
 
+        # Caching flag for _ResolveVersionConstraint. Set to True after a
+        # successful constraint resolution so that subsequent calls within the
+        # same sync cycle skip the git ls-remote network round-trip. Reset to
+        # False whenever revisionExpr is changed via SetRevision(), allowing
+        # re-resolution with the new expression.
+        self._constraint_resolved = False
+
     def RelPath(self, local=True):
         """Return the path for the project relative to a manifest.
 
@@ -763,8 +770,13 @@ class Project:
         return os.path.join(self.manifest.path_prefix, self.relpath)
 
     def SetRevision(self, revisionExpr, revisionId=None):
-        """Set revisionId based on revision expression and id"""
+        """Set revisionId based on revision expression and id.
+
+        Resets the _constraint_resolved cache flag so that the new expression
+        is resolved on the next call to _ResolveVersionConstraint.
+        """
         self.revisionExpr = revisionExpr
+        self._constraint_resolved = False
         if revisionId is None and revisionExpr and IsId(revisionExpr):
             self.revisionId = self.revisionExpr
         else:
@@ -1579,6 +1591,11 @@ class Project:
 
         Does nothing if revisionExpr is not a constraint.
 
+        After a successful resolution the _constraint_resolved flag is set to
+        True. Subsequent calls within the same sync cycle return immediately
+        without making any additional network requests. The flag is reset to
+        False when revisionExpr is changed via SetRevision().
+
         git ls-remote is retried up to KANON_GIT_RETRY_COUNT times on transient
         failures with exponential backoff. Authentication errors are not retried.
 
@@ -1586,6 +1603,8 @@ class Project:
             ManifestInvalidRevisionError: If the constraint cannot be
                 resolved (ls-remote fails after all retries or no matching tags).
         """
+        if self._constraint_resolved:
+            return
         if self.revisionExpr is None:
             return
         if not version_constraints.is_version_constraint(self.revisionExpr):
@@ -1604,6 +1623,7 @@ class Project:
             if len(parts) == 2:
                 available_tags.append(parts[1])
         self.revisionExpr = version_constraints.resolve_version_constraint(self.revisionExpr, available_tags)
+        self._constraint_resolved = True
 
     def GetRevisionId(self, all_refs=None):
         if self.revisionId:

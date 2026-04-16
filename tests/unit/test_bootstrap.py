@@ -92,10 +92,12 @@ class TestBootstrapUnknownPackage:
 class TestCatalogKanonenvFiles:
     """Verify the kanon catalog entry .kanon has placeholders for user configuration."""
 
-    def test_kanon_kanonenv_has_repo_url(self) -> None:
+    def test_kanon_kanonenv_has_no_repo_url_or_repo_rev(self) -> None:
+        """REPO_URL and REPO_REV are deprecated -- the embedded repo tool is used instead."""
         catalog_dir = _get_bundled_catalog_dir()
         content = (catalog_dir / "kanon" / ".kanon").read_text()
-        assert "REPO_URL=" in content
+        assert "REPO_URL=" not in content, "REPO_URL lines (including commented) must not appear in the .kanon template"
+        assert "REPO_REV=" not in content, "REPO_REV lines (including commented) must not appear in the .kanon template"
 
     def test_kanon_kanonenv_has_gitbase_placeholder(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()

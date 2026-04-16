@@ -74,8 +74,8 @@ kanon validate marketplace
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `REPO_URL` | No | Git URL of the [rpm-git-repo](https://github.com/caylent-solutions/rpm-git-repo) tool. Optional — omit to install from PyPI (default). Set both `REPO_URL` and `REPO_REV` to override with a git source (e.g., to test an unreleased version). |
-| `REPO_REV` | No | rpm-git-repo version (branch or tag) for git override. Only used when `REPO_URL` is also set. Supports PEP 440 specifiers (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`, `*`). |
+| `REPO_URL` | No | Git URL of an alternative repo tool. Optional -- omit to use the embedded repo tool (default). Set both `REPO_URL` and `REPO_REV` to override with a git source (e.g., to test an unreleased version). |
+| `REPO_REV` | No | Repo tool version (branch or tag) for git override. Only used when `REPO_URL` is also set. Supports PEP 440 specifiers (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`, `*`). |
 | `GITBASE` | Yes | Base Git URL for your organization (e.g., `https://github.com/your-org/`). Used by `repo envsubst` to resolve `${GITBASE}` placeholders in manifest XML files. |
 | `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace plugin symlinks. Required when `KANON_MARKETPLACE_INSTALL=true`. Typically `${HOME}/.claude-marketplaces`. |
 | `KANON_MARKETPLACE_INSTALL` | No | Set to `true` to enable the marketplace plugin install/uninstall lifecycle during install and clean. Default: `false`. When `false`, marketplace-related operations are skipped entirely. |

@@ -1104,7 +1104,7 @@ class TestFullJourneyDeprecatedRepoUrlWarning:
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            "REPO_URL=https://github.com/caylent-solutions/rpm-git-repo.git\n"
+            "REPO_URL=https://github.com/example-org/repo-tool.git\n"
             "REPO_REV=main\n"
             "KANON_SOURCE_main_URL=https://example.com/main.git\n"
             "KANON_SOURCE_main_REVISION=main\n"

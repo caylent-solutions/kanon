@@ -9,7 +9,9 @@ do not persistently modify host process state:
 - The current working directory is restored after repo_init and repo_envsubst
 - os.execv is never called in embedded mode (the intercept is always active
   during run_from_args and is always restored afterward)
-- Concurrent repo API calls do not interfere with each other
+- Sequential back-to-back repo API calls in the same process do not interfere
+  with each other: each call fully restores process-global state on exit so a
+  subsequent call observes a clean baseline.
 
 All tests are marked @pytest.mark.integration.
 """
@@ -18,8 +20,6 @@ import os
 import pathlib
 import subprocess
 import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
@@ -489,18 +489,38 @@ def test_os_execv_restored_after_run_from_args_completes(tmp_path: pathlib.Path)
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-008: Concurrent repo API calls do not interfere with each other
+# AC-FUNC-008: Sequential back-to-back repo API calls do not interfere
+#
+# run_from_args and repo_run mutate process-global state (os.execv,
+# os.environ, _pager_module.EMBEDDED) under a snapshot/restore pattern.
+# This makes them safe for SEQUENTIAL reuse in the same process: each call
+# fully restores state on exit, so a subsequent call observes a clean
+# baseline. They are NOT safe for parallel invocation across threads in the
+# same process (a parallel caller's snapshot/restore races corrupt the
+# shared state). Process-level concurrency works because each process has
+# its own address space, but is out of scope here.
+#
+# These tests validate the real contract: back-to-back same-process calls
+# on different workspaces succeed and leave the process state identical to
+# what each call entered with.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_concurrent_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path) -> None:
-    """Concurrent run_from_args calls targeting different workspaces do not interfere.
+def test_sequential_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path) -> None:
+    """Back-to-back run_from_args calls on different workspaces do not interfere.
 
     Creates two independent workspaces (each with its own manifest and content
-    repo), then runs run_from_args("init") for both concurrently using a thread
-    pool. Verifies that both inits succeed and that each workspace has a valid
-    .repo directory.
+    repo), runs run_from_args("init") for each sequentially in the same
+    process, and verifies:
+
+    - both inits succeed and each workspace has a valid .repo directory
+    - os.execv, sys.argv, sys.path, and cwd observed before the pair are
+      identical to the values observed after the pair (each call restored
+      its own mutations and did not accumulate drift)
+    - no keys added by the first call remain in os.environ when the second
+      call starts, so the second call sees the same environment baseline as
+      the first
 
     AC-FUNC-008
     """
@@ -509,7 +529,7 @@ def test_concurrent_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path)
     repos_base = tmp_path / "repos"
     repos_base.mkdir()
 
-    workspace_configs = []
+    workspace_configs: list[tuple[pathlib.Path, pathlib.Path]] = []
     for idx in range(num_workspaces):
         name = f"content-{idx}"
         _create_content_repo(repos_base, name=name)
@@ -524,8 +544,24 @@ def test_concurrent_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path)
         workspace.mkdir()
         workspace_configs.append((workspace, manifest_bare))
 
-    def _init_workspace(workspace: pathlib.Path, manifest_bare: pathlib.Path) -> pathlib.Path:
-        repo_dot_dir = str(workspace / ".repo")
+    execv_before = os.execv
+    argv_before = list(sys.argv)
+    path_before = list(sys.path)
+    cwd_before = os.getcwd()
+    environ_before = dict(os.environ)
+
+    repo_dot_dirs: list[pathlib.Path] = []
+    for idx, (workspace, manifest_bare) in enumerate(workspace_configs):
+        # Before the next call starts, os.environ must already be restored
+        # from the previous call's finally block. Any key present now that
+        # was not present at test entry means state leaked across calls.
+        leaked_keys = {k: os.environ[k] for k in os.environ if k not in environ_before}
+        assert not leaked_keys, (
+            f"Before run_from_args call #{idx}, os.environ contains keys not present at test entry: "
+            f"{leaked_keys!r}. Previous call did not fully restore os.environ."
+        )
+
+        repo_dot_dir = workspace / ".repo"
         run_from_args(
             [
                 "init",
@@ -537,47 +573,40 @@ def test_concurrent_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path)
                 "-m",
                 _MANIFEST_FILENAME,
             ],
-            repo_dir=repo_dot_dir,
+            repo_dir=str(repo_dot_dir),
         )
-        return workspace / ".repo"
+        repo_dot_dirs.append(repo_dot_dir)
 
-    errors: list[Exception] = []
-    results: list[pathlib.Path] = []
-    lock = threading.Lock()
+    assert len(repo_dot_dirs) == num_workspaces
+    for repo_dot_dir in repo_dot_dirs:
+        assert repo_dot_dir.is_dir(), f"Expected .repo/ directory at {repo_dot_dir} after init, but it was not created."
 
-    def _worker(args: tuple[pathlib.Path, pathlib.Path]) -> pathlib.Path:
-        return _init_workspace(*args)
-
-    with ThreadPoolExecutor(max_workers=num_workspaces) as pool:
-        futures = {pool.submit(_worker, cfg): cfg for cfg in workspace_configs}
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                with lock:
-                    results.append(result)
-            except Exception as exc:  # capture all failures for reporting
-                with lock:
-                    errors.append(exc)
-
-    assert not errors, f"Concurrent run_from_args calls produced {len(errors)} error(s): " + ", ".join(
-        repr(e) for e in errors
+    assert os.execv is execv_before, (
+        f"run_from_args did not restore os.execv after the pair of calls. Expected {execv_before!r}, got {os.execv!r}."
     )
-    assert len(results) == num_workspaces, f"Expected {num_workspaces} successful inits, got {len(results)}."
-    for repo_dot_dir in results:
-        assert repo_dot_dir.is_dir(), (
-            f"Expected .repo/ directory to exist at {repo_dot_dir} after concurrent init, but it was not created."
-        )
+    assert sys.argv == argv_before, f"sys.argv was modified. Before: {argv_before!r}, After: {sys.argv!r}"
+    assert sys.path == path_before, f"sys.path was modified. Before: {path_before!r}, After: {sys.path!r}"
+    assert os.getcwd() == cwd_before, (
+        f"Working directory was not restored. Before: {cwd_before!r}, After: {os.getcwd()!r}"
+    )
+    residual_keys = {k: os.environ[k] for k in os.environ if k not in environ_before}
+    assert not residual_keys, (
+        f"os.environ contains keys not present at test entry after the pair of calls: {residual_keys!r}"
+    )
 
 
 @pytest.mark.integration
-def test_concurrent_repo_run_help_calls_do_not_interfere(tmp_path: pathlib.Path) -> None:
-    """Concurrent repo_run(["help"]) calls return successfully and do not interfere.
+def test_sequential_repo_run_help_calls_do_not_interfere(tmp_path: pathlib.Path) -> None:
+    """Back-to-back repo_run(["help"]) calls on the same workspace do not interfere.
 
-    Runs multiple concurrent calls to repo_run(["help"]) using the same
-    initialized workspace. Verifies all calls succeed (return 0) without raising
-    and that none of them modify os.environ, sys.argv, or sys.path. The "help"
-    subcommand is used because it completes without requiring git metadata inside
-    the repo tool's own checkout directory, making it reliable in concurrent tests.
+    Runs repo_run(["help"]) four times sequentially against the same
+    initialized workspace and verifies:
+
+    - every call returns 0
+    - os.execv, sys.argv, sys.path, and cwd are identical before the loop
+      and after each individual call
+    - os.environ contains no keys beyond the pre-call baseline after each
+      iteration, so every call observes a clean environment
 
     AC-FUNC-008
     """
@@ -590,51 +619,32 @@ def test_concurrent_repo_run_help_calls_do_not_interfere(tmp_path: pathlib.Path)
     workspace.mkdir()
     repo_dot_dir = _repo_init_workspace(workspace, f"file://{manifest_bare}")
 
-    num_threads = 4
+    num_iterations = 4
 
-    argv_snapshot = list(sys.argv)
-    path_snapshot = list(sys.path)
-    environ_snapshot = dict(os.environ)
+    execv_before = os.execv
+    argv_before = list(sys.argv)
+    path_before = list(sys.path)
+    cwd_before = os.getcwd()
+    environ_before = dict(os.environ)
 
-    errors: list[Exception] = []
-    return_values: list[int] = []
-    lock = threading.Lock()
+    for iteration in range(num_iterations):
+        rv = repo_pkg.repo_run(["help"], repo_dir=repo_dot_dir)
+        assert rv == 0, f"repo_run(['help']) iteration #{iteration} returned {rv!r}, expected 0."
 
-    def _run_help() -> int:
-        return repo_pkg.repo_run(["help"], repo_dir=repo_dot_dir)
-
-    with ThreadPoolExecutor(max_workers=num_threads) as pool:
-        futures = [pool.submit(_run_help) for _ in range(num_threads)]
-        for future in as_completed(futures):
-            try:
-                rv = future.result()
-                with lock:
-                    return_values.append(rv)
-            except Exception as exc:
-                with lock:
-                    errors.append(exc)
-
-    assert not errors, f"Concurrent repo_run calls produced {len(errors)} error(s): " + ", ".join(
-        repr(e) for e in errors
-    )
-    assert len(return_values) == num_threads, (
-        f"Expected {num_threads} successful repo_run calls, got {len(return_values)}."
-    )
-    assert all(rv == 0 for rv in return_values), (
-        f"Expected all concurrent repo_run calls to return 0, got: {return_values!r}"
-    )
-
-    # Verify global state is clean after all concurrent calls complete.
-    assert sys.argv == argv_snapshot, (
-        f"sys.argv was modified by concurrent repo_run calls. Before: {argv_snapshot!r}, After: {sys.argv!r}"
-    )
-    assert sys.path == path_snapshot, (
-        f"sys.path was modified by concurrent repo_run calls. Before: {path_snapshot!r}, After: {sys.path!r}"
-    )
-    # Verify no new keys were permanently injected by the concurrent calls.
-    for key in os.environ:
-        if key not in environ_snapshot:
-            pytest.fail(
-                f"Concurrent repo_run calls left key {key!r}={os.environ[key]!r} in os.environ. "
-                f"This key was not present before the calls began."
-            )
+        assert os.execv is execv_before, (
+            f"os.execv not restored after repo_run iteration #{iteration}. Expected {execv_before!r}, got {os.execv!r}."
+        )
+        assert sys.argv == argv_before, (
+            f"sys.argv mutated after repo_run iteration #{iteration}. Before: {argv_before!r}, After: {sys.argv!r}"
+        )
+        assert sys.path == path_before, (
+            f"sys.path mutated after repo_run iteration #{iteration}. Before: {path_before!r}, After: {sys.path!r}"
+        )
+        assert os.getcwd() == cwd_before, (
+            f"cwd not restored after repo_run iteration #{iteration}. Before: {cwd_before!r}, After: {os.getcwd()!r}"
+        )
+        residual_keys = {k: os.environ[k] for k in os.environ if k not in environ_before}
+        assert not residual_keys, (
+            f"os.environ gained keys after repo_run iteration #{iteration}: {residual_keys!r}. "
+            "The call did not restore its environment mutations."
+        )

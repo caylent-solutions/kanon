@@ -31,7 +31,7 @@ If the referenced variable is not set in the environment, parsing fails with a d
 Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file:
 
 ```bash
-REPO_REV=v3.0.0 kanon install .kanon
+KANON_SOURCE_build_REVISION=refs/tags/~=2.0.0 kanon install .kanon
 ```
 
 ## Multi-Source Groups
@@ -58,3 +58,37 @@ When `KANON_MARKETPLACE_INSTALL=true`:
 - `kanon clean` runs the uninstall script and removes `CLAUDE_MARKETPLACES_DIR`
 
 When `false` (default), marketplace lifecycle is skipped entirely.
+
+## kanon repo Subcommand
+
+The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct
+invocation of any `repo` subcommand (such as `init`, `sync`, `version`, `help`) without requiring
+a separate `repo` installation.
+
+### KANON_REPO_DIR
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_REPO_DIR` | `.repo` | Path to the `.repo` working directory used by `kanon repo` |
+
+This variable controls where `kanon repo` looks for (or creates) the `.repo` directory. It
+corresponds to the `--repo-dir` flag on the `kanon repo` subcommand.
+
+### Usage
+
+```bash
+# Initialize a manifest repository
+kanon repo init -u <url> -b <branch> -m <manifest>
+
+# Sync all projects
+kanon repo sync --jobs=4
+
+# Show the status of checked-out projects
+kanon repo status
+
+# Use a custom .repo directory
+KANON_REPO_DIR=/path/to/workspace/.repo kanon repo status
+
+# Equivalent via flag
+kanon repo --repo-dir /path/to/workspace/.repo status
+```

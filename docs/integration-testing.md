@@ -300,6 +300,20 @@ cat > repo-specs/alpha-only.xml << 'XMLEOF'
 XMLEOF
 ```
 
+Create a single-package manifest (bravo only). This is used by MS-01 together with
+`alpha-only.xml` so two sources can contribute disjoint packages without colliding
+on `pkg-alpha`:
+
+```bash
+cat > repo-specs/bravo-only.xml << 'XMLEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <include name="repo-specs/remote.xml" />
+  <project name="pkg-bravo" path=".packages/pkg-bravo" remote="local" revision="main" />
+</manifest>
+XMLEOF
+```
+
 Commit the manifest repo:
 
 ```bash
@@ -566,7 +580,7 @@ KANON_SOURCE_alpha_REVISION=main
 KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
 KANON_SOURCE_bravo_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_bravo_REVISION=main
-KANON_SOURCE_bravo_PATH=repo-specs/packages.xml
+KANON_SOURCE_bravo_PATH=repo-specs/bravo-only.xml
 KANONEOF
 
 cd "${MS01_DIR}"
@@ -579,6 +593,11 @@ kanon install .kanon
 - `.kanon-data/sources/bravo/` directory exists
 - `.packages/` directory contains symlinks
 - stdout contains `kanon install: done`
+
+**Note:** `alpha-only.xml` declares only `pkg-alpha` and `bravo-only.xml` declares only
+`pkg-bravo`, so the two sources produce disjoint package sets. Using the combined
+`packages.xml` for either source would produce a legitimate collision on `pkg-alpha`
+and exit 1, which is the behavior exercised by CD-01 and CD-02.
 
 **Cleanup:**
 

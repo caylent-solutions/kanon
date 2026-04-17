@@ -1,7 +1,7 @@
-"""Full install lifecycle with mocked repo tool."""
+"""Full install lifecycle with mocked repo Python API."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,15 +25,16 @@ class TestInstallLifecycle:
             ),
         )
 
-        def fake_repo_run(cmd, **kwargs):
-            cwd = kwargs.get("cwd", tmp_path)
-            if "sync" in cmd:
-                packages = cwd / ".packages" / "pkg-a"
-                packages.mkdir(parents=True, exist_ok=True)
-                (packages / "file.txt").write_text("content")
-            return MagicMock(returncode=0, stdout="", stderr="")
+        def fake_repo_sync(repo_dir: str, **kwargs) -> None:
+            packages = Path(repo_dir) / ".packages" / "pkg-a"
+            packages.mkdir(parents=True, exist_ok=True)
+            (packages / "file.txt").write_text("content")
 
-        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
+        ):
             install(kanonenv)
 
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
@@ -55,24 +56,27 @@ class TestInstallLifecycle:
             ),
         )
 
-        call_count = {"init": 0, "sync": 0}
+        init_calls: list[str] = []
+        sync_calls: list[str] = []
 
-        def fake_repo_run(cmd, **kwargs):
-            cwd = kwargs.get("cwd", tmp_path)
-            if "init" in cmd:
-                call_count["init"] += 1
-            if "sync" in cmd:
-                call_count["sync"] += 1
-                source_name = cwd.name
-                packages = cwd / ".packages" / f"pkg-{source_name}"
-                packages.mkdir(parents=True, exist_ok=True)
-            return MagicMock(returncode=0, stdout="", stderr="")
+        def fake_repo_init(repo_dir: str, url: str, revision: str, manifest_path: str, repo_rev: str = "") -> None:
+            init_calls.append(repo_dir)
 
-        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
+        def fake_repo_sync(repo_dir: str, **kwargs) -> None:
+            sync_calls.append(repo_dir)
+            source_name = Path(repo_dir).name
+            packages = Path(repo_dir) / ".packages" / f"pkg-{source_name}"
+            packages.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch("kanon_cli.repo.repo_init", side_effect=fake_repo_init),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
+        ):
             install(kanonenv)
 
-        assert call_count["init"] == 2
-        assert call_count["sync"] == 2
+        assert len(init_calls) == 2
+        assert len(sync_calls) == 2
         assert (tmp_path / ".packages" / "pkg-alpha").is_symlink()
         assert (tmp_path / ".packages" / "pkg-bravo").is_symlink()
 
@@ -89,14 +93,15 @@ class TestInstallLifecycle:
             ),
         )
 
-        def fake_repo_run(cmd, **kwargs):
-            cwd = kwargs.get("cwd", tmp_path)
-            if "sync" in cmd:
-                packages = cwd / ".packages" / "collider"
-                packages.mkdir(parents=True, exist_ok=True)
-            return MagicMock(returncode=0, stdout="", stderr="")
+        def fake_repo_sync(repo_dir: str, **kwargs) -> None:
+            packages = Path(repo_dir) / ".packages" / "collider"
+            packages.mkdir(parents=True, exist_ok=True)
 
-        with patch("kanon_cli.core.install.subprocess.run", side_effect=fake_repo_run):
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 install(kanonenv)
             assert exc_info.value.code == 1
@@ -112,7 +117,11 @@ class TestInstallLifecycle:
             ),
         )
 
-        with patch("kanon_cli.core.install.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+        ):
             install(kanonenv)
 
         content = (tmp_path / ".gitignore").read_text()

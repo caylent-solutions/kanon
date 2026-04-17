@@ -1,8 +1,39 @@
 """Shared fixtures for kanon-cli tests."""
 
+import os
 import pathlib
 
 import pytest
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_SRC_DIR = _REPO_ROOT / "src"
+
+# Disable kanon_cli.repo tracing for all tests. Tracing defaults to ON and
+# writes to <cwd>/TRACE_FILE, which races across tests, grows unbounded, and
+# breaks any test whose cwd is the repo root. Tests never need tracing; setting
+# REPO_TRACE=0 at conftest import time (before any kanon_cli.repo import) turns
+# it off at the module level so every Trace() call short-circuits.
+os.environ.setdefault("REPO_TRACE", "0")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _subprocess_pythonpath_points_at_source_tree() -> None:
+    """Ensure subprocesses spawned by tests import kanon_cli from the current source tree.
+
+    Several test helpers invoke the CLI in a subprocess via
+    ``[sys.executable, "-m", "kanon_cli", ...]``. The child Python resolves
+    ``import kanon_cli`` against its own site-packages, which in some
+    development environments contains a stale ``kanon_cli`` version. Prepending
+    the source tree to ``PYTHONPATH`` makes ``import kanon_cli`` in the child
+    resolve to the current source regardless of which venv pytest runs in.
+
+    The fixture is session-scoped and autouse so every spawned subprocess
+    inherits the modified environment without per-test opt-in.
+    """
+    existing = os.environ.get("PYTHONPATH", "")
+    src_str = str(_SRC_DIR)
+    entries = [src_str] + [p for p in existing.split(os.pathsep) if p and p != src_str]
+    os.environ["PYTHONPATH"] = os.pathsep.join(entries)
 
 
 @pytest.fixture()

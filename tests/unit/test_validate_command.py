@@ -11,9 +11,36 @@ from kanon_cli.commands.validate import _resolve_repo_root, _run_marketplace, _r
 
 @pytest.mark.unit
 class TestResolveRepoRoot:
-    def test_explicit_path(self) -> None:
-        result = _resolve_repo_root(Path("/some/path"))
-        assert result == Path("/some/path")
+    def test_explicit_path(self, tmp_path) -> None:
+        """An existing absolute --repo-root directory is returned resolved."""
+        result = _resolve_repo_root(tmp_path)
+        assert result == tmp_path.resolve()
+        assert result.is_absolute()
+
+    def test_explicit_relative_path_is_resolved_to_abspath(self, tmp_path, monkeypatch) -> None:
+        """A relative --repo-root is resolved to an absolute path at the CLI boundary.
+
+        Downstream validators use ``xml_file.relative_to(repo_root)`` and
+        ``repo_root / name`` for include resolution; both require consistent
+        rooting. Resolving at the entry point guarantees that consistency
+        regardless of whether the user passed ``--repo-root .`` or a full
+        absolute path.
+        """
+        monkeypatch.chdir(tmp_path)
+        result = _resolve_repo_root(Path("."))
+        assert result.is_absolute(), f"--repo-root must be resolved to an absolute path, got {result!r}"
+        assert result == tmp_path.resolve()
+
+    def test_explicit_path_that_does_not_exist_fails_fast(self, tmp_path, capsys) -> None:
+        """A non-existent --repo-root directory exits 1 with a clear message."""
+        missing = tmp_path / "does-not-exist"
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_repo_root(missing)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "--repo-root directory not found" in captured.err, (
+            f"stderr must name the missing directory, got {captured.err!r}"
+        )
 
     def test_auto_detect(self) -> None:
         with patch("kanon_cli.commands.validate.subprocess.run") as mock_run:

@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check format format-check test test-unit test-functional test-cov clean build distcheck publish pre-commit-check install-hooks coverage-json
+.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -24,17 +24,28 @@ format: ## Auto-format Python files (ruff format)
 format-check: ## Verify formatting without modifying files (ruff format --check)
 	ruff format --check .
 
-test: ## Run full test suite
-	python -m pytest
+check: lint ## Run all static analysis checks
+
+validate: check test ## Run full validation pipeline (lint + tests)
+
+test: ## Run full test suite with coverage
+	uv run pytest --cov=kanon_cli --cov-report=term-missing
 
 test-unit: ## Run unit tests only
-	python -m pytest -m unit
+	uv run pytest -m unit
 
+test-integration: ## Run integration tests only
+	uv run pytest -m integration
+
+security-scan: ## Run security scan with bandit (high severity, high confidence, excludes vendored repo submodule)
+	uv run bandit -r src/kanon_cli/ -x src/kanon_cli/repo -lll -iii
+
+test-functional: SMOKE_TEST_TIMEOUT ?= 300
 test-functional: ## Run functional tests only
-	python -m pytest -m functional
+	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m functional
 
 test-cov: ## Run tests with coverage report
-	python -m pytest --cov=kanon_cli --cov-report=term-missing
+	uv run pytest --cov=kanon_cli --cov-report=term-missing
 
 clean: ## Remove build artifacts and caches
 	find . -depth -type d -name __pycache__ -exec rm -rf {} +
@@ -52,7 +63,7 @@ distcheck: ## Check the built distribution
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
 coverage-json: ## Generate JSON coverage report
-	python -m pytest -m unit --cov=kanon_cli --cov-report=json
+	uv run pytest -m unit --cov=kanon_cli --cov-report=json
 	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks

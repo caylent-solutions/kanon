@@ -16,5 +16,8 @@ devcontainer-environment-variables.json
 .devcontainer/aws-profile-map.json
 .devcontainer/ssh-private-key
 
+# Embedded repo tool runtime artifacts
+TRACE_FILE
+
 # Claude Code local settings
 .claude/settings.local.json

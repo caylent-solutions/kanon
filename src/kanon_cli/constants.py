@@ -6,13 +6,10 @@ scattered across source files.
 
 import re
 
-# -- Package identity --
-PYPI_REPO_TOOL_PACKAGE = "rpm-git-repo"
-
 # -- Marketplace validation --
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
 MARKETPLACE_FILE_GLOB = "*-marketplace.xml"
-ALLOWED_BRANCHES = frozenset({"main", "review/caylent-claude"})
+ALLOWED_BRANCHES = frozenset({"main"})
 REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
 CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 
@@ -30,3 +27,22 @@ CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
 
 # -- Configuration file --
 KANONENV_FILENAME = ".kanon"
+
+# -- Embedded repo tool --
+REPO_RESTART_RETRIES_DEFAULT = 3
+
+# -- Repo CLI --
+KANON_REPO_DIR_ENV = "KANON_REPO_DIR"
+KANONENV_REPO_DIR_DEFAULT = ".repo"
+
+# -- Selfupdate embedded mode --
+SELFUPDATE_EMBEDDED_MESSAGE = "selfupdate is not available -- upgrade kanon-cli instead: pipx upgrade kanon-cli"
+
+# -- git ls-remote retry --
+GIT_RETRY_COUNT_ENV_VAR = "KANON_GIT_RETRY_COUNT"
+GIT_RETRY_DELAY_ENV_VAR = "KANON_GIT_RETRY_DELAY"
+GIT_RETRY_COUNT_DEFAULT = 3
+GIT_RETRY_DELAY_DEFAULT = 1
+# Patterns in ls-remote stderr that indicate authentication errors.
+# These errors must not be retried to avoid credential lockouts.
+GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")

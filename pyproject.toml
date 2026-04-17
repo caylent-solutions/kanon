@@ -36,12 +36,22 @@ Homepage = "https://github.com/caylent-solutions/kanon"
 Issues = "https://github.com/caylent-solutions/kanon/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kanon_cli"]
+packages = [
+    "src/kanon_cli",
+    "src/kanon_cli/repo",
+    "src/kanon_cli/repo/subcmds",
+]
+include = [
+    "repo",
+    "git_ssh",
+    "hooks/*",
+    "requirements.json",
+]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-extend-exclude = ["tests/fixtures", ".devcontainer"]
+extend-exclude = ["tests/fixtures", "tests/unit/repo/fixtures", ".devcontainer"]
 
 [tool.ruff.lint]
 select = ["F", "E"]
@@ -54,9 +64,11 @@ indent-style = "space"
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = "--ignore=tests/unit/repo/test_harness_smoke.py"
 markers = [
     "unit: Unit tests -- fast, isolated, no external dependencies",
     "functional: Functional tests -- exercise CLI via subprocess",
+    "integration: Integration tests -- verify modules load and run end-to-end",
 ]
 
 [tool.coverage.run]
@@ -99,3 +111,9 @@ allowed_tags = [
 ]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf", "security", "revert"]
+
+[dependency-groups]
+dev = [
+    "build>=1.4.3",
+    "hatchling>=1.29.0",
+]

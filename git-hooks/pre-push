@@ -9,6 +9,12 @@ if ! make lint; then
   exit 1
 fi
 
+echo "Running security scan..."
+if ! make security-scan; then
+  echo "Security scan failed. Please fix the issues before pushing."
+  exit 1
+fi
+
 echo "Running unit tests with coverage check..."
 if ! make test-unit; then
   echo "Unit tests failed. Please fix the issues before pushing."
@@ -24,11 +30,17 @@ else
   exit 1
 fi
 
+echo "Running integration tests..."
+if ! make test-integration; then
+  echo "Integration tests failed. Please fix the issues before pushing."
+  exit 1
+fi
+
 echo "Running functional tests..."
 if ! make test-functional; then
   echo "Functional tests failed. Please fix the issues before pushing."
   exit 1
 fi
 
-echo "All tests and linting passed!"
+echo "All tests, linting, and security scan passed!"
 exit 0

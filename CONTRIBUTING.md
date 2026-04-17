@@ -114,6 +114,16 @@ BREAKING CHANGE: The install command now requires explicit manifest path argumen
 - `docs: add troubleshooting section to README`
 - `chore(deps): update semantic-release to v9.0.0`
 
+## Configuration
+
+### Runtime Environment Variables
+
+These variables control runtime behavior of the kanon library API.
+
+| Variable | Purpose | Format | Required |
+|----------|---------|--------|----------|
+| `KANON_MAX_REPO_RESTART_RETRIES` | Controls the maximum number of times `run_from_args()` will retry a command when `RepoChangedException` triggers an internal repo restart. The retry loop intercepts the `os.execv` call that the repo tool uses to restart itself after an upgrade, so the calling process is never replaced. When the limit is exhausted, `RepoCommandError` is raised with a descriptive message. Read on every `run_from_args()` call so changes take effect without a process restart. | Non-negative integer; `0` disables retries, e.g. `3` | Optional -- defaults to `3` |
+
 ## Testing
 
 ### Unit Tests

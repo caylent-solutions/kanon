@@ -57,9 +57,9 @@ def resolve_version(url: str, rev_spec: str) -> str:
     the constraint resolution in rpm-git-repo manifest ``<project>`` blocks.
     The constraint may optionally be prefixed with a tag path:
 
-    - ``~=1.0.0`` — bare constraint, resolves against all tags
-    - ``refs/tags/~=1.0.0`` — resolves against tags under refs/tags/
-    - ``refs/tags/dev/python/my-lib/~=1.0.0`` — resolves under a namespace
+    - ``~=1.0.0`` -- bare constraint, resolves against all tags
+    - ``refs/tags/~=1.0.0`` -- resolves against tags under refs/tags/
+    - ``refs/tags/dev/python/my-lib/~=1.0.0`` -- resolves under a namespace
 
     The returned value is a full tag ref (e.g. ``refs/tags/1.1.2``) suitable
     for use with ``repo init -b``.
@@ -79,31 +79,57 @@ def resolve_version(url: str, rev_spec: str) -> str:
     if not is_version_constraint(rev_spec):
         return rev_spec
 
-    # Split on last '/' to separate prefix from constraint.
-    if "/" in rev_spec:
-        prefix, constraint_str = rev_spec.rsplit("/", 1)
-    else:
-        prefix = None
-        constraint_str = rev_spec
-
     tags = _list_tags(url)
     if not tags:
         print(f"Error: No tags found for {url}", file=sys.stderr)
         sys.exit(1)
 
-    # Filter tags by prefix when present.
-    if prefix is not None:
+    try:
+        return _resolve_constraint_from_tags(rev_spec, tags)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> str:
+    """Resolve a PEP 440 version constraint to the highest matching tag.
+
+    Splits the revision into a prefix and constraint, filters available_tags
+    by the prefix, parses version suffixes with packaging.version.Version,
+    evaluates the constraint with packaging.specifiers.SpecifierSet, and
+    returns the full tag name of the highest matching version.
+
+    This is the canonical constraint resolution implementation. Both
+    ``resolve_version`` (CLI, fetches its own tags) and the repo module's
+    ``resolve_version_constraint`` (receives pre-fetched tags) delegate here.
+
+    Args:
+        revision: A revision string with a PEP 440 constraint in the last
+            path component, optionally prefixed.
+            Example: ``refs/tags/dev/python/my-lib/~=1.2.0``
+        available_tags: List of full tag ref strings to resolve against.
+            Example: ``["refs/tags/dev/python/my-lib/1.0.0", ...]``
+
+    Returns:
+        The full tag name of the highest version that satisfies the constraint.
+
+    Raises:
+        ValueError: If no available tag matches the constraint, if the
+            constraint string is invalid, or if no parseable version tags
+            exist under the prefix.
+    """
+    # Split revision into prefix and constraint at the last '/'.
+    if "/" in revision:
+        prefix, constraint_str = revision.rsplit("/", 1)
         tag_prefix = prefix + "/"
-        candidate_tags = [t for t in tags if t.startswith(tag_prefix)]
+        candidate_tags = [t for t in available_tags if t.startswith(tag_prefix)]
     else:
-        candidate_tags = tags
+        prefix = None
+        constraint_str = revision
+        candidate_tags = list(available_tags)
 
     if not candidate_tags:
-        print(
-            f"Error: No tags found under prefix '{prefix}' for {url}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise ValueError(f"No tags found under prefix '{prefix}' for the given revision")
 
     # Parse version from the last path component of each candidate.
     versions = []
@@ -115,11 +141,7 @@ def resolve_version(url: str, rev_spec: str) -> str:
             continue
 
     if not versions:
-        print(
-            f"Error: No parseable version tags found under '{prefix or 'refs/tags'}' for {url}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise ValueError(f"No parseable version tags found under '{prefix or 'refs/tags'}'")
 
     # Wildcard: return highest version.
     if constraint_str == "*":
@@ -128,22 +150,16 @@ def resolve_version(url: str, rev_spec: str) -> str:
     try:
         specifier = SpecifierSet(constraint_str)
     except InvalidSpecifier:
-        print(
-            f"Error: Invalid version constraint '{constraint_str}'",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise ValueError(f"invalid version constraint '{constraint_str}'")
 
     matching = [(tag, ver) for tag, ver in versions if ver in specifier]
 
     if not matching:
-        print(
-            f"Error: No tag matching '{constraint_str}' found under "
-            f"'{prefix or 'refs/tags'}' for {url}. "
-            f"Available versions: {[str(v) for _, v in versions]}",
-            file=sys.stderr,
+        raise ValueError(
+            f"No tag matching '{constraint_str}' found under "
+            f"'{prefix or 'refs/tags'}'. "
+            f"Available versions: {[str(v) for _, v in versions]}"
         )
-        sys.exit(1)
 
     return max(matching, key=lambda pair: pair[1])[0]
 

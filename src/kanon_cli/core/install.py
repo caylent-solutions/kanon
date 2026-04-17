@@ -6,14 +6,14 @@ per source, aggregates symlinks into ``.packages/``, detects collisions,
 updates ``.gitignore``, and optionally installs marketplace plugins.
 """
 
-import os
 import pathlib
 import shutil
-import subprocess
 import sys
 
+import kanon_cli.repo as _repo
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
+from kanon_cli.repo import RepoCommandError
 from kanon_cli.version import resolve_version
 
 
@@ -57,31 +57,11 @@ def run_repo_init(
     Raises:
         SystemExit: If repo init exits non-zero.
     """
-    cmd = [
-        "repo",
-        "--color=never",
-        "init",
-        "--no-repo-verify",
-        "-u",
-        url,
-        "-b",
-        revision,
-        "-m",
-        manifest_path,
-    ]
-    if repo_rev:
-        cmd.extend(["--repo-rev", repo_rev])
-    result = subprocess.run(
-        cmd,
-        cwd=source_dir,
-        capture_output=True,
-        text=True,
-        check=False,
-        input="n\n",
-    )
-    if result.returncode != 0:
+    try:
+        _repo.repo_init(str(source_dir), url, revision, manifest_path, repo_rev)
+    except RepoCommandError as exc:
         print(
-            f"Error: repo init failed in {source_dir}: {result.stderr}",
+            f"Error: repo init failed in {source_dir}: {exc}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -100,18 +80,11 @@ def run_repo_envsubst(
     Raises:
         SystemExit: If repo envsubst exits non-zero.
     """
-    run_env = {**os.environ, **env_vars}
-    result = subprocess.run(
-        ["repo", "envsubst"],
-        cwd=source_dir,
-        env=run_env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
+    try:
+        _repo.repo_envsubst(str(source_dir), env_vars)
+    except RepoCommandError as exc:
         print(
-            f"Error: repo envsubst failed in {source_dir}: {result.stderr}",
+            f"Error: repo envsubst failed in {source_dir}: {exc}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -126,16 +99,11 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
     Raises:
         SystemExit: If repo sync exits non-zero.
     """
-    result = subprocess.run(
-        ["repo", "sync"],
-        cwd=source_dir,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
+    try:
+        _repo.repo_sync(str(source_dir))
+    except RepoCommandError as exc:
         print(
-            f"Error: repo sync failed in {source_dir}: {result.stderr}",
+            f"Error: repo sync failed in {source_dir}: {exc}",
             file=sys.stderr,
         )
         sys.exit(1)

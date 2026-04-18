@@ -4,11 +4,42 @@ Parses the .kanon configuration file and delegates to the core install logic.
 No pipx or external tool management is performed.
 """
 
+import os
 import pathlib
 import sys
+import warnings
 
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
+
+# Legacy environment variables superseded by the embedded repo tool and --catalog-source.
+_LEGACY_REPO_URL_ENV = "REPO_URL"
+_LEGACY_REPO_REV_ENV = "REPO_REV"
+
+
+def _warn_if_legacy_env_vars_set() -> None:
+    """Emit a single DeprecationWarning if REPO_URL and/or REPO_REV are set.
+
+    The legacy REPO_URL and REPO_REV environment variables are no longer
+    used by kanon install. Users should migrate to --catalog-source.
+    A single combined warning is emitted when either or both variables are
+    present so that CI pipelines configured with -W error::DeprecationWarning
+    can detect the stale configuration.
+    """
+    repo_url = os.environ.get(_LEGACY_REPO_URL_ENV)
+    repo_rev = os.environ.get(_LEGACY_REPO_REV_ENV)
+
+    if not repo_url and not repo_rev:
+        return
+
+    set_vars = [v for v, val in ((_LEGACY_REPO_URL_ENV, repo_url), (_LEGACY_REPO_REV_ENV, repo_rev)) if val]
+    var_list = " and ".join(set_vars)
+    warnings.warn(
+        f"{var_list} environment variable(s) are deprecated and no longer used by 'kanon install'. "
+        f"Use --catalog-source to specify a remote catalog source instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 def register(subparsers) -> None:
@@ -48,10 +79,15 @@ def _run(args) -> None:
     Parse/validate failures are converted to a non-zero exit with a clear
     stderr message so the CLI boundary preserves fail-fast semantics.
 
+    Emits a DeprecationWarning if the legacy REPO_URL or REPO_REV environment
+    variables are set so existing CI workflows receive a clear migration signal.
+
     Args:
         args: Parsed arguments with kanonenv_path.
     """
     from kanon_cli.core.kanonenv import parse_kanonenv
+
+    _warn_if_legacy_env_vars_set()
 
     if args.kanonenv_path is None:
         try:

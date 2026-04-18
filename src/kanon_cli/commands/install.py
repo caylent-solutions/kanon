@@ -16,6 +16,13 @@ from kanon_cli.core.install import install
 _LEGACY_REPO_URL_ENV = "REPO_URL"
 _LEGACY_REPO_REV_ENV = "REPO_REV"
 
+# Message template for the legacy env-var deprecation notice.  The var_list
+# placeholder is filled at call time with the set of legacy variable names.
+_LEGACY_ENV_DEPRECATION_MSG = (
+    "{var_list} environment variable(s) are deprecated and no longer used by 'kanon install'. "
+    "Use --catalog-source to specify a remote catalog source instead."
+)
+
 
 def _warn_if_legacy_env_vars_set() -> None:
     """Emit a single DeprecationWarning if REPO_URL and/or REPO_REV are set.
@@ -25,6 +32,11 @@ def _warn_if_legacy_env_vars_set() -> None:
     A single combined warning is emitted when either or both variables are
     present so that CI pipelines configured with -W error::DeprecationWarning
     can detect the stale configuration.
+
+    The same message is also written directly to sys.stderr so that end users
+    and CI logs see the migration notice regardless of Python's active warning
+    filter (Python suppresses DeprecationWarning by default in subprocess
+    contexts without a -W flag).
     """
     repo_url = os.environ.get(_LEGACY_REPO_URL_ENV)
     repo_rev = os.environ.get(_LEGACY_REPO_REV_ENV)
@@ -34,12 +46,13 @@ def _warn_if_legacy_env_vars_set() -> None:
 
     set_vars = [v for v, val in ((_LEGACY_REPO_URL_ENV, repo_url), (_LEGACY_REPO_REV_ENV, repo_rev)) if val]
     var_list = " and ".join(set_vars)
+    message = _LEGACY_ENV_DEPRECATION_MSG.format(var_list=var_list)
     warnings.warn(
-        f"{var_list} environment variable(s) are deprecated and no longer used by 'kanon install'. "
-        f"Use --catalog-source to specify a remote catalog source instead.",
+        message,
         DeprecationWarning,
         stacklevel=2,
     )
+    print(message, file=sys.stderr)
 
 
 def register(subparsers) -> None:

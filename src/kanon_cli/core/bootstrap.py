@@ -7,7 +7,10 @@ configuration file from the catalog.
 
 import pathlib
 import shutil
-import sys
+
+
+class BootstrapOutputDirError(Exception):
+    """Raised when the bootstrap output directory cannot be created or written."""
 
 
 def list_packages(catalog_dir: pathlib.Path) -> list[str]:
@@ -35,24 +38,23 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
         catalog_dir: Path to the catalog directory.
 
     Raises:
-        SystemExit: If the package is unknown, files already exist, or
-            the output directory cannot be created.
+        BootstrapOutputDirError: If the package is unknown, files already exist,
+            or the output directory cannot be created.
     """
     package_dir = catalog_dir / package
 
     if not package_dir.is_dir():
         available = list_packages(catalog_dir)
-        print(
-            f"Error: Unknown package '{package}'. Available packages: {', '.join(available)}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise BootstrapOutputDirError(f"Unknown package '{package}'. Available packages: {', '.join(available)}")
 
     all_files = [f.name for f in package_dir.iterdir() if f.is_file() and f.name != ".gitkeep"]
 
     _check_no_conflicts(all_files, output_dir)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise BootstrapOutputDirError(f"Cannot create output directory '{output_dir}': {exc}") from exc
 
     for src_file in package_dir.iterdir():
         if src_file.is_file() and src_file.name != ".gitkeep":
@@ -69,18 +71,14 @@ def _check_no_conflicts(files: list[str], output_dir: pathlib.Path) -> None:
         output_dir: Target directory.
 
     Raises:
-        SystemExit: If any file already exists, listing all conflicts.
+        BootstrapOutputDirError: If any file already exists, listing all conflicts.
     """
     conflicts = [f for f in files if (output_dir / f).exists()]
     if conflicts:
-        print("Error: The following files already exist:", file=sys.stderr)
-        for f in conflicts:
-            print(f"  {output_dir / f}", file=sys.stderr)
-        print(
-            "\nRemove them first or use a different --output-dir.",
-            file=sys.stderr,
+        conflict_list = "\n".join(f"  {output_dir / f}" for f in conflicts)
+        raise BootstrapOutputDirError(
+            f"The following files already exist:\n{conflict_list}\nRemove them first or use a different --output-dir."
         )
-        sys.exit(1)
 
 
 def _print_next_steps(
@@ -102,6 +100,6 @@ def _print_next_steps(
 
     print("\nNext steps:")
 
-    print("  1. Edit .kanon — set GITBASE, KANON_MARKETPLACE_INSTALL, and source variables")
+    print("  1. Edit .kanon -- set GITBASE, KANON_MARKETPLACE_INSTALL, and source variables")
     print("  2. Run: kanon install .kanon")
     print("  3. Commit .kanon to your repository")

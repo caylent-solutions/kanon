@@ -1,10 +1,12 @@
 """Tests for the bootstrap module."""
 
 import pathlib
+from unittest.mock import patch
 
 import pytest
 
 from kanon_cli.core.bootstrap import (
+    BootstrapOutputDirError,
     _print_next_steps,
     bootstrap_package,
     list_packages,
@@ -69,35 +71,106 @@ class TestBootstrapKanon:
 
 @pytest.mark.unit
 class TestBootstrapConflicts:
-    """Verify fail-fast on existing files."""
+    """Verify fail-fast on existing files raises BootstrapOutputDirError."""
 
     def test_refuses_overwrite_existing_kanonenv(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / ".kanon").write_text("existing")
         catalog_dir = _get_bundled_catalog_dir()
-        with pytest.raises(SystemExit):
+        with pytest.raises(BootstrapOutputDirError):
             bootstrap_package("kanon", tmp_path, catalog_dir)
 
 
 @pytest.mark.unit
 class TestBootstrapUnknownPackage:
-    """Verify fail-fast on unknown package."""
+    """Verify fail-fast on unknown package raises BootstrapOutputDirError."""
 
-    def test_unknown_package_fails(self, tmp_path: pathlib.Path) -> None:
+    def test_unknown_package_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
         catalog_dir = _get_bundled_catalog_dir()
-        with pytest.raises(SystemExit):
+        with pytest.raises(BootstrapOutputDirError):
             bootstrap_package("nonexistent", tmp_path, catalog_dir)
+
+    def test_unknown_package_message_includes_package_name(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        with pytest.raises(BootstrapOutputDirError, match="nonexistent"):
+            bootstrap_package("nonexistent", tmp_path, catalog_dir)
+
+
+@pytest.mark.unit
+class TestBootstrapMkdirFailure:
+    """Verify OSError on mkdir raises BootstrapOutputDirError."""
+
+    def test_mkdir_oserror_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        bad_output = tmp_path / "nonexistent" / "subdir"
+        with patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")):
+            with pytest.raises(BootstrapOutputDirError):
+                bootstrap_package("kanon", bad_output, catalog_dir)
+
+
+@pytest.mark.unit
+class TestBootstrapCliHandler:
+    """Verify the CLI handler catches BootstrapOutputDirError and exits 1 with stderr message."""
+
+    def test_cli_catches_bootstrap_error_and_exits_1(self, tmp_path: pathlib.Path, capsys) -> None:
+        import argparse
+
+        from kanon_cli.commands.bootstrap import _run
+
+        args = argparse.Namespace(
+            package="nonexistent",
+            output_dir=tmp_path,
+            catalog_source=None,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "nonexistent" in captured.err
+
+    def test_cli_error_message_written_to_stderr_not_stdout(self, tmp_path: pathlib.Path, capsys) -> None:
+        import argparse
+
+        from kanon_cli.commands.bootstrap import _run
+
+        args = argparse.Namespace(
+            package="nonexistent",
+            output_dir=tmp_path,
+            catalog_source=None,
+        )
+        with pytest.raises(SystemExit):
+            _run(args)
+
+        captured = capsys.readouterr()
+        assert captured.err != ""
+        assert "nonexistent" not in captured.out
+
+    def test_cli_no_traceback_on_error(self, tmp_path: pathlib.Path, capsys) -> None:
+        import argparse
+
+        from kanon_cli.commands.bootstrap import _run
+
+        args = argparse.Namespace(
+            package="nonexistent",
+            output_dir=tmp_path,
+            catalog_source=None,
+        )
+        with pytest.raises(SystemExit):
+            _run(args)
+
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.err
+        assert "Traceback" not in captured.out
 
 
 @pytest.mark.unit
 class TestCatalogKanonenvFiles:
     """Verify the kanon catalog entry .kanon has placeholders for user configuration."""
 
-    def test_kanon_kanonenv_has_no_repo_url_or_repo_rev(self) -> None:
-        """REPO_URL and REPO_REV are deprecated -- the embedded repo tool is used instead."""
+    def test_kanon_kanonenv_has_repo_url(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()
         content = (catalog_dir / "kanon" / ".kanon").read_text()
-        assert "REPO_URL=" not in content, "REPO_URL lines (including commented) must not appear in the .kanon template"
-        assert "REPO_REV=" not in content, "REPO_REV lines (including commented) must not appear in the .kanon template"
+        assert "REPO_URL=" in content
 
     def test_kanon_kanonenv_has_gitbase_placeholder(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()

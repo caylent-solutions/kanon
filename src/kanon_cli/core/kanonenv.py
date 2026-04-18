@@ -82,7 +82,7 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
         ValueError: If the same key appears more than once in the file.
     """
     result: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

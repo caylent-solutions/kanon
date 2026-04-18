@@ -187,3 +187,40 @@ class TestEdgeCases:
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_MARKETPLACE_INSTALL"] is False
+
+    def test_bom_prefixed_file_parses_clean_keys(self, tmp_path: pathlib.Path) -> None:
+        """BOM-prefixed .kanon file must parse with no leading U+FEFF on any key."""
+        content = (
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+
+        result = parse_kanonenv(kanonenv)
+
+        for key in result["globals"]:
+            assert "\ufeff" not in key, f"BOM codepoint found in globals key: {key!r}"
+        for key in result["sources"]:
+            assert "\ufeff" not in key, f"BOM codepoint found in source name: {key!r}"
+        assert result["KANON_SOURCES"] == ["build"]
+        assert result["sources"]["build"]["url"] == "https://example.com"
+
+    def test_bom_and_no_bom_produce_equal_mappings(self, tmp_path: pathlib.Path) -> None:
+        """Files with and without a UTF-8 BOM must yield identical parsed results."""
+        content = (
+            "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
+            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_PATH=meta.xml\n"
+        )
+        with_bom = tmp_path / ".kanon_bom"
+        with_bom.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+
+        without_bom = tmp_path / ".kanon_no_bom"
+        without_bom.write_bytes(content.encode("utf-8"))
+
+        result_bom = parse_kanonenv(with_bom)
+        result_plain = parse_kanonenv(without_bom)
+
+        assert result_bom == result_plain

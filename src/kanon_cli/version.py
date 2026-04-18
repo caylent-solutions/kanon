@@ -179,12 +179,19 @@ def _list_tags(url: str) -> list[str]:
     Raises:
         SystemExit: If git ls-remote fails.
     """
-    result = subprocess.run(
-        ["git", "ls-remote", "--tags", url],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--tags", url],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        print(
+            "Error: git binary not found. Install git and ensure it is on PATH.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if result.returncode != 0:
         print(
             f"Error: git ls-remote failed for {url}: {result.stderr}",

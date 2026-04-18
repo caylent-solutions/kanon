@@ -136,12 +136,18 @@ def _run_ls_remote_with_retry(remote_url):
 
     last_result = None
     for attempt in range(1, retry_count + 1):
-        result = subprocess.run(
-            ["git", "ls-remote", "--tags", remote_url],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "ls-remote", "--tags", remote_url],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            raise ManifestInvalidRevisionError(
+                "git binary not found while listing remote tags from %s: "
+                "install git and ensure it is on PATH" % remote_url
+            )
         if result.returncode == 0:
             return result
 

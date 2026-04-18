@@ -32,6 +32,20 @@ class TestSourceDirectoryCreation:
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         assert result["build"] == tmp_path / ".kanon-data" / "sources" / "build"
 
+    def test_oserror_propagates_with_path_context(self, tmp_path: pathlib.Path) -> None:
+        """create_source_dirs raises OSError with path context when mkdir fails."""
+        with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
+            with pytest.raises(OSError) as exc_info:
+                create_source_dirs(["src"], tmp_path)
+        assert "Cannot create source directory" in str(exc_info.value)
+
+    def test_oserror_message_contains_strerror(self, tmp_path: pathlib.Path) -> None:
+        """OSError raised by create_source_dirs includes the OS error message."""
+        with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
+            with pytest.raises(OSError) as exc_info:
+                create_source_dirs(["src"], tmp_path)
+        assert "Permission denied" in str(exc_info.value)
+
 
 @pytest.mark.unit
 class TestRepoInit:
@@ -189,6 +203,22 @@ class TestMarketplace:
 
 @pytest.mark.unit
 class TestInstallLifecycle:
+    def test_create_source_dirs_oserror_causes_system_exit(self, tmp_path: pathlib.Path) -> None:
+        """install() exits 1 when create_source_dirs raises OSError."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        with patch(
+            "kanon_cli.core.install.create_source_dirs",
+            side_effect=OSError("Cannot create source directory /x: Permission denied"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                install(kanonenv)
+        assert exc_info.value.code == 1
+
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(

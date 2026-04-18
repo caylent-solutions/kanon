@@ -76,6 +76,10 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
 
     Returns:
         Dict of raw string key-value pairs.
+
+    Raises:
+        PermissionError: If the file cannot be read due to insufficient permissions.
+        ValueError: If the same key appears more than once in the file.
     """
     result: dict[str, str] = {}
     for line in path.read_text().splitlines():
@@ -85,7 +89,11 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
         if "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        result[key.strip()] = value.strip()
+        clean_key = key.strip()
+        if clean_key in result:
+            msg = f"Duplicate key '{clean_key}' in {path}"
+            raise ValueError(msg)
+        result[clean_key] = value.strip()
     return result
 
 

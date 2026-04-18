@@ -1,4 +1,4 @@
-"""Integration tests for the kanon bootstrap workflow (16 tests).
+"""Integration tests for the kanon bootstrap workflow.
 
 Verifies bootstrap business logic against the bundled catalog, exercising
 list_packages, bootstrap_package, and CLI dispatch through the main() entry
@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 from kanon_cli.cli import main
-from kanon_cli.core.bootstrap import bootstrap_package, list_packages
+from kanon_cli.core.bootstrap import BootstrapOutputDirError, bootstrap_package, list_packages
 from kanon_cli.core.catalog import _get_bundled_catalog_dir
 
 
@@ -92,21 +92,61 @@ class TestBootstrapPackageCreation:
         assert actual == expected
 
     def test_output_dir_created_if_not_exists(self, tmp_path: pathlib.Path) -> None:
-        output = tmp_path / "new" / "nested" / "dir"
+        output = tmp_path / "newdir"
         assert not output.exists()
         bootstrap_package("kanon", output, _bundled_catalog())
         assert output.is_dir()
 
-    def test_unknown_package_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
-        with pytest.raises(SystemExit) as exc_info:
+    def test_unknown_package_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
+        with pytest.raises(BootstrapOutputDirError):
             bootstrap_package("nonexistent-package", tmp_path, _bundled_catalog())
-        assert exc_info.value.code != 0
 
-    def test_conflict_on_existing_file_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
+    def test_conflict_on_existing_file_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / ".kanon").write_text("existing content\n")
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(BootstrapOutputDirError):
             bootstrap_package("kanon", tmp_path, _bundled_catalog())
-        assert exc_info.value.code != 0
+
+
+@pytest.mark.integration
+class TestBootstrapMissingParentDir:
+    """Verify CLI exits 1 with clean error when output-dir parent is missing (AC-TEST-002, AC-TEST-003)."""
+
+    def test_cli_exits_1_on_missing_parent(self, tmp_path: pathlib.Path, capsys) -> None:
+        missing_parent = tmp_path / "nonexistent" / "sub"
+        with pytest.raises(SystemExit) as exc_info:
+            main(["bootstrap", "kanon", "--output-dir", str(missing_parent)])
+        assert exc_info.value.code == 1
+
+    def test_cli_stderr_contains_parent_directory(self, tmp_path: pathlib.Path, capsys) -> None:
+        missing_parent = tmp_path / "nonexistent" / "sub"
+        with pytest.raises(SystemExit):
+            main(["bootstrap", "kanon", "--output-dir", str(missing_parent)])
+        captured = capsys.readouterr()
+        assert "parent directory" in captured.err
+
+    def test_cli_stderr_contains_missing_path(self, tmp_path: pathlib.Path, capsys) -> None:
+        missing_parent = tmp_path / "nonexistent" / "sub"
+        with pytest.raises(SystemExit):
+            main(["bootstrap", "kanon", "--output-dir", str(missing_parent)])
+        captured = capsys.readouterr()
+        assert str(tmp_path / "nonexistent") in captured.err
+
+    def test_no_output_dir_created_on_missing_parent(self, tmp_path: pathlib.Path) -> None:
+        missing_parent = tmp_path / "nonexistent" / "sub"
+        with pytest.raises(SystemExit):
+            main(["bootstrap", "kanon", "--output-dir", str(missing_parent)])
+        assert not missing_parent.exists()
+
+    def test_no_kanon_file_created_on_missing_parent(self, tmp_path: pathlib.Path) -> None:
+        missing_parent = tmp_path / "nonexistent" / "sub"
+        with pytest.raises(SystemExit):
+            main(["bootstrap", "kanon", "--output-dir", str(missing_parent)])
+        assert not (missing_parent / ".kanon").exists()
+
+    def test_existing_parent_with_new_leaf_creates_kanon(self, tmp_path: pathlib.Path) -> None:
+        output = tmp_path / "newproject"
+        main(["bootstrap", "kanon", "--output-dir", str(output)])
+        assert (output / ".kanon").is_file()
 
 
 @pytest.mark.integration

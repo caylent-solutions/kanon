@@ -39,7 +39,8 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
 
     Raises:
         BootstrapOutputDirError: If the package is unknown, files already exist,
-            or the output directory cannot be created.
+            the parent of ``output_dir`` does not exist, or the directory cannot
+            be created.
     """
     package_dir = catalog_dir / package
 
@@ -51,8 +52,12 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
 
     _check_no_conflicts(all_files, output_dir)
 
+    parent_dir = output_dir.parent
+    if not parent_dir.is_dir():
+        raise BootstrapOutputDirError(f"parent directory '{parent_dir}' does not exist")
+
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(exist_ok=True)
     except OSError as exc:
         raise BootstrapOutputDirError(f"Cannot create output directory '{output_dir}': {exc}") from exc
 

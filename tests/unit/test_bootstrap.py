@@ -96,12 +96,51 @@ class TestBootstrapUnknownPackage:
 
 
 @pytest.mark.unit
+class TestBootstrapMissingParentDir:
+    """Verify fail-fast when output-dir parent directory does not exist (AC-TEST-001)."""
+
+    def test_missing_parent_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        output = tmp_path / "nonexistent-parent" / "sub"
+        with pytest.raises(BootstrapOutputDirError):
+            bootstrap_package("kanon", output, catalog_dir)
+
+    def test_missing_parent_message_names_parent_path(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        output = tmp_path / "nonexistent-parent" / "sub"
+        with pytest.raises(BootstrapOutputDirError, match="parent directory"):
+            bootstrap_package("kanon", output, catalog_dir)
+
+    def test_missing_parent_message_includes_path(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        output = tmp_path / "nonexistent-parent" / "sub"
+        parent_str = str(tmp_path / "nonexistent-parent")
+        with pytest.raises(BootstrapOutputDirError, match=parent_str):
+            bootstrap_package("kanon", output, catalog_dir)
+
+    def test_no_output_dir_created_on_missing_parent(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        output = tmp_path / "nonexistent-parent" / "sub"
+        with pytest.raises(BootstrapOutputDirError):
+            bootstrap_package("kanon", output, catalog_dir)
+        assert not output.exists()
+
+    def test_existing_parent_with_new_leaf_succeeds(self, tmp_path: pathlib.Path) -> None:
+        catalog_dir = _get_bundled_catalog_dir()
+        output = tmp_path / "sub"
+        bootstrap_package("kanon", output, catalog_dir)
+        assert (output / ".kanon").is_file()
+
+
+@pytest.mark.unit
 class TestBootstrapMkdirFailure:
     """Verify OSError on mkdir raises BootstrapOutputDirError."""
 
     def test_mkdir_oserror_raises_typed_exception(self, tmp_path: pathlib.Path) -> None:
         catalog_dir = _get_bundled_catalog_dir()
-        bad_output = tmp_path / "nonexistent" / "subdir"
+        # Use a path whose parent exists so the is_dir() check passes;
+        # the OSError is injected at the mkdir() call itself.
+        bad_output = tmp_path / "subdir"
         with patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")):
             with pytest.raises(BootstrapOutputDirError):
                 bootstrap_package("kanon", bad_output, catalog_dir)
@@ -167,10 +206,10 @@ class TestBootstrapCliHandler:
 class TestCatalogKanonenvFiles:
     """Verify the kanon catalog entry .kanon has placeholders for user configuration."""
 
-    def test_kanon_kanonenv_has_repo_url(self) -> None:
+    def test_kanon_kanonenv_has_source_url_pattern(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()
         content = (catalog_dir / "kanon" / ".kanon").read_text()
-        assert "REPO_URL=" in content
+        assert "KANON_SOURCE_" in content
 
     def test_kanon_kanonenv_has_gitbase_placeholder(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()

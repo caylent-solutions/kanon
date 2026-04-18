@@ -15,7 +15,9 @@
 import glob
 import logging
 import os
+import pathlib
 import re
+import shutil
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 
@@ -23,6 +25,11 @@ from ..command import Command
 from ..command import MirrorSafeCommand
 
 _LOG = logging.getLogger(__name__)
+
+# File extension for the backup created before the first substitution run.
+# The backup is created once: subsequent runs leave an existing .bak untouched
+# so the user retains the original pre-substitution content as a diff baseline.
+BAK_SUFFIX = ".bak"
 
 # Regex that matches any ${VAR_NAME} pattern remaining after expandvars().
 # A match indicates that VAR_NAME was not defined in the environment.
@@ -32,6 +39,42 @@ _UNRESOLVED_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # appears inside an outer ${...}. expandvars() cannot resolve these patterns
 # and leaves them unchanged. Each match captures the full nested pattern text.
 _NESTED_VAR_PATTERN = re.compile(r"\$\{[^}$]*\$\{[^}]*\}[^}$]*\}")
+
+
+def _ensure_backup_once(manifest_path: pathlib.Path) -> None:
+    """Copy manifest to its .bak sibling if the .bak does not already exist.
+
+    Skip-if-exists semantics: if ``<manifest_path>.bak`` already exists (from
+    a previous run or placed there by the user), it is left completely
+    untouched. Only when the .bak is absent does this function copy the
+    current manifest bytes to the .bak path.
+
+    The backup preserves the content of the manifest BEFORE the first
+    substitution run, giving the user a permanent diff baseline across any
+    number of subsequent envsubst invocations.
+
+    If the copy itself fails (permission denied, disk full, etc.) the OSError
+    is re-raised with context naming the manifest path so the caller can
+    surface a clear error and abort substitution.
+
+    Args:
+        manifest_path: Absolute or relative path to the manifest file that
+            will be backed up. The .bak path is derived by appending BAK_SUFFIX.
+
+    Raises:
+        OSError: When the .bak does not yet exist and the copy operation fails.
+            The exception message includes the manifest path and the underlying
+            OS error.
+    """
+    bak_path = pathlib.Path(str(manifest_path) + BAK_SUFFIX)
+    if bak_path.exists():
+        return
+    try:
+        shutil.copy2(str(manifest_path), str(bak_path))
+    except OSError as exc:
+        raise OSError(
+            f"envsubst: failed to create backup {bak_path!r} for manifest {str(manifest_path)!r}: {exc}"
+        ) from exc
 
 
 def _collect_unresolved_vars(doc):
@@ -90,7 +133,10 @@ class Envsubst(Command, MirrorSafeCommand):
 Replace ENV vars in all xml manifest files
 
 Finds all XML files in the manifests and replaces environment
-variables with values.
+variables with values. On the first run, a <manifest>.bak file is
+created alongside the manifest to preserve the original pre-substitution
+content. Subsequent runs leave the .bak file untouched, so the baseline
+is always the content from before the very first run.
 """
     path = ".repo/manifests/**/*.xml"
 
@@ -129,6 +175,15 @@ variables with values.
         any remaining ${VAR} patterns (undefined variables), logging a WARNING
         per unresolved variable name.
 
+        Before writing the substituted content, ensures a .bak backup exists
+        using skip-if-exists semantics: creates <infile>.bak from the current
+        manifest bytes only when .bak is absent. An existing .bak is left
+        untouched so the user retains the original pre-substitution baseline
+        across any number of subsequent envsubst runs.
+
+        If the backup creation fails (e.g., permission denied), raises OSError
+        and does NOT apply the substitution to the manifest.
+
         Saves the modified document using string-based line filtering instead of
         a second XML parse (Bug 18 fix).
 
@@ -138,6 +193,10 @@ variables with values.
         Returns:
             A set of variable name strings that were left unresolved, or an
             empty set if all variables were resolved (or parsing failed).
+
+        Raises:
+            OSError: When the .bak file cannot be created (propagated from
+                _ensure_backup_once).
         """
         with open(infile, encoding="utf-8") as fh:
             raw_content = fh.read()
@@ -154,10 +213,13 @@ variables with values.
         unresolved = _collect_unresolved_vars(doc)
         for var_name in sorted(unresolved):
             _LOG.warning("Unresolved variable ${%s} in %s", var_name, infile)
-        bak_path = infile + ".bak"
-        if os.path.exists(bak_path):
-            os.remove(bak_path)
-        os.rename(infile, bak_path)
+
+        # Ensure the original manifest is backed up before writing the
+        # substituted content. Skip-if-exists: an existing .bak is preserved.
+        # Any OSError from backup creation propagates here; substitution is NOT
+        # applied when the backup cannot be created (fail-fast contract).
+        _ensure_backup_once(pathlib.Path(infile))
+
         self.save(infile, doc)
         return unresolved
 

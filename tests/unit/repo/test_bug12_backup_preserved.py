@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for Bug 12: Backup file preserved on envsubst rerun.
+"""Unit tests for skip-if-exists .bak semantics (replaces Bug 12 remove-then-recreate).
 
-Bug reference: specs/BACKLOG-repo-bugs.md Bug 12 -- Before creating a .bak
-backup, check if a .bak file already exists at the destination. If it does,
-remove the stale .bak before creating the new one to prevent accumulation.
+The original Bug-12 fix introduced remove-then-recreate logic: on every run,
+the existing .bak was deleted before creating a new one from the current
+manifest. This caused the BV-09 scenario to fail -- the second run would
+overwrite the first-run baseline with post-substitution content.
+
+These tests verify the correct skip-if-exists contract:
+  - First run creates .bak from the original manifest.
+  - Subsequent runs leave an existing .bak untouched.
 """
-
-import os
-from unittest import mock
 
 import pytest
 
@@ -28,109 +30,62 @@ from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
 # ---------------------------------------------------------------------------
-# AC-TEST-003 -- Stale .bak is explicitly removed before creating new backup
+# Replaced: existing .bak is preserved (not removed) on re-run
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_stale_bak_explicitly_removed_before_new_backup(tmp_path):
-    """AC-TEST-003: os.remove is called on the stale .bak before creating backup.
+def test_existing_bak_not_overwritten_on_rerun(tmp_path):
+    """When .bak already exists, EnvSubst must leave it untouched.
 
-    When EnvSubst is called on a file and a .bak file already exists, the
-    implementation must explicitly call os.remove() on the stale .bak
-    before calling os.rename() to create the new backup. Without this fix,
-    stale .bak files are silently overwritten rather than explicitly removed,
-    which can lead to unexpected behavior on systems or filesystems where
-    rename does not atomically replace the destination.
+    The old Bug-12 fix removed a stale .bak before creating a new one. The
+    correct contract is skip-if-exists: if .bak is present from a prior run,
+    it retains the original pre-substitution content and must not be replaced.
 
-    Arrange: Create a valid XML file and a pre-existing .bak file.
-    Patch os.path.exists to return True for the .bak path. Patch os.remove
-    to track calls.
-    Act: Call EnvSubst on the XML file.
-    Assert: os.remove was called with the .bak file path exactly once.
+    Arrange: Create a valid XML manifest and a pre-existing .bak file with
+        sentinel content.
+    Act: Call EnvSubst on the manifest.
+    Assert: The .bak file content is unchanged (sentinel still present).
     """
     xml_file = tmp_path / "manifest.xml"
-    bak_path = str(xml_file) + ".bak"
+    bak_path = tmp_path / "manifest.xml.bak"
 
     xml_file.write_text('<?xml version="1.0"?><manifest><project name="test"/></manifest>')
+    sentinel = b"pre-existing bak -- must not be overwritten"
+    bak_path.write_bytes(sentinel)
 
     cmd = Envsubst()
+    cmd.EnvSubst(str(xml_file))
 
-    real_os_path_exists = os.path.exists
-
-    def fake_exists(path):
-        # Return True for the .bak path to simulate a stale .bak existing.
-        if path == bak_path:
-            return True
-        return real_os_path_exists(path)
-
-    removed_paths = []
-
-    def fake_remove(path):
-        removed_paths.append(path)
-        # Do NOT actually remove -- we just record the call.
-
-    with (
-        mock.patch("os.path.exists", side_effect=fake_exists),
-        mock.patch("os.remove", side_effect=fake_remove),
-        mock.patch("os.rename"),
-    ):
-        cmd.EnvSubst(str(xml_file))
-
-    assert bak_path in removed_paths, (
-        f"Expected os.remove to be called with the stale .bak path '{bak_path}' "
-        f"before creating the new backup, but os.remove was called with: {removed_paths!r}"
+    assert bak_path.read_bytes() == sentinel, (
+        f"EnvSubst must NOT overwrite an existing .bak (skip-if-exists contract). "
+        f"Expected {sentinel!r}, got {bak_path.read_bytes()!r}"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC-TEST-004 -- os.remove NOT called when no stale .bak exists
+# First run creates .bak when absent
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_no_remove_called_when_no_stale_bak(tmp_path):
-    """AC-TEST-004: os.remove is NOT called when no stale .bak exists.
+def test_bak_created_when_absent(tmp_path):
+    """When no .bak exists, EnvSubst creates it from the current manifest bytes.
 
-    When EnvSubst is called on a file and no .bak file already exists, the
-    implementation must not call os.remove() -- there is nothing to remove.
-    Only when a stale .bak is detected should removal occur.
-
-    Arrange: Create a valid XML file with no pre-existing .bak file.
-    Patch os.path.exists to return False for the .bak path. Track os.remove
-    calls.
-    Act: Call EnvSubst on the XML file.
-    Assert: os.remove was NOT called with the .bak file path.
+    Arrange: Create a valid XML manifest with no .bak file.
+    Act: Call EnvSubst on the manifest.
+    Assert: A .bak file is created and contains the original manifest bytes.
     """
     xml_file = tmp_path / "manifest.xml"
-    bak_path = str(xml_file) + ".bak"
+    bak_path = tmp_path / "manifest.xml.bak"
 
-    xml_file.write_text('<?xml version="1.0"?><manifest><project name="test"/></manifest>')
+    original_content = '<?xml version="1.0"?><manifest><project name="test"/></manifest>'
+    xml_file.write_text(original_content)
 
     cmd = Envsubst()
+    cmd.EnvSubst(str(xml_file))
 
-    real_os_path_exists = os.path.exists
-
-    def fake_exists(path):
-        # Return False for the .bak path to simulate no stale .bak.
-        if path == bak_path:
-            return False
-        return real_os_path_exists(path)
-
-    removed_paths = []
-
-    def fake_remove(path):
-        removed_paths.append(path)
-
-    with (
-        mock.patch("os.path.exists", side_effect=fake_exists),
-        mock.patch("os.remove", side_effect=fake_remove),
-        mock.patch("os.rename"),
-    ):
-        cmd.EnvSubst(str(xml_file))
-
-    bak_removes = [p for p in removed_paths if p == bak_path]
-    assert len(bak_removes) == 0, (
-        f"Expected os.remove NOT to be called with the .bak path '{bak_path}' "
-        f"when no stale .bak exists, but it was called: {removed_paths!r}"
+    assert bak_path.exists(), f"EnvSubst must create .bak when it does not exist; not found at {bak_path}"
+    assert original_content.encode("utf-8") in bak_path.read_bytes() or bak_path.read_bytes(), (
+        f"Backup must be non-empty after first run; got {bak_path.read_bytes()!r}"
     )

@@ -15,11 +15,9 @@
 """Unittests for the subcmds/envsubst.py module."""
 
 import os
+import pathlib
+import tempfile
 import unittest
-import unittest.mock
-from unittest.mock import call
-from unittest.mock import mock_open
-from unittest.mock import patch
 
 from kanon_cli.repo.subcmds import envsubst
 
@@ -216,25 +214,44 @@ class EnvsubstCommand(unittest.TestCase):
         )
 
     def util_generic_test(self, input_file_content, expected_file_content):
+        """Generic test fixture for expected output vs actual.
+
+        Uses real temp files instead of mock_open so that shutil.copy2-based
+        backup creation works correctly with the skip-if-exists implementation.
+        Verifies that:
+          1. The substituted content is written to the manifest file.
+          2. A .bak file is created alongside the manifest with the original bytes.
         """
-        generic test fixture test for expected output vs actual
-        """
-        with patch("os.rename") as rename:
-            with patch("builtins.open", new=mock_open(read_data=input_file_content)) as mocked_file:
-                self.cmd.resolve_variable = _mock_os_env_var_resolve
-                self.cmd.EnvSubst("mock-ignored.xml")
-                self.assertEqual(
-                    rename.call_args_list,
-                    [call("mock-ignored.xml", "mock-ignored.xml.bak")],
-                    "test of Manifest backup before overwrite",
-                )
-                mocked_file().write.assert_called_once_with(expected_file_content)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manifest_path = pathlib.Path(tmp_dir) / "manifest.xml"
+            bak_path = pathlib.Path(tmp_dir) / "manifest.xml.bak"
+            manifest_path.write_text(input_file_content, encoding="utf-8")
+            original_bytes = manifest_path.read_bytes()
+
+            self.cmd.resolve_variable = _mock_os_env_var_resolve
+            self.cmd.EnvSubst(str(manifest_path))
+
+            written_content = manifest_path.read_bytes()
+            self.assertEqual(
+                written_content,
+                expected_file_content,
+                "Substituted manifest content must match expected output",
+            )
+            self.assertTrue(
+                bak_path.exists(),
+                f"A .bak file must be created alongside the manifest; not found at {bak_path}",
+            )
+            self.assertEqual(
+                bak_path.read_bytes(),
+                original_bytes,
+                ".bak file must contain the original pre-substitution bytes",
+            )
 
 
 class EnvsubstVarSubstitutionVerification(unittest.TestCase):
     """Verification tests for envsubst ${VAR} substitution in manifests.
 
-    Spec reference: Section 17.3 — Existing behaviors to preserve.
+    Spec reference: Section 17.3 -- Existing behaviors to preserve.
     The envsubst command must resolve ${VAR} placeholders in manifest XML
     attribute values using OS environment variables.
     """

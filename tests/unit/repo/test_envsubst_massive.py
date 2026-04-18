@@ -96,32 +96,35 @@ def test_envsubst(tmp_path):
         mock_parse_string.return_value = mock_doc
 
         with mock.patch.object(cmd, "search_replace_placeholders"):
-            with mock.patch("os.rename"):
-                with mock.patch.object(cmd, "save"):
-                    cmd.EnvSubst(str(test_file))
+            with mock.patch.object(cmd, "save"):
+                cmd.EnvSubst(str(test_file))
 
-                    mock_parse_string.assert_called_once_with(xml_content.encode("utf-8"))
+                mock_parse_string.assert_called_once_with(xml_content.encode("utf-8"))
 
 
 @pytest.mark.unit
 def test_envsubst_creates_backup(tmp_path):
-    """Test EnvSubst creates backup file.
+    """Test EnvSubst creates a .bak backup file using skip-if-exists semantics.
 
-    Updated to use a real file path so the open() call in EnvSubst succeeds
-    before the mocked os.rename is checked.
+    Updated from os.rename assertion to .bak file verification: the new
+    implementation copies the manifest to .bak (skip-if-exists) instead of
+    renaming it, so the assertion now checks that .bak exists and contains
+    the original manifest bytes.
     """
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest/>\n'
     test_file = tmp_path / "test.xml"
     test_file.write_text(xml_content, encoding="utf-8")
     test_file_str = str(test_file)
+    bak_path = tmp_path / "test.xml.bak"
+    original_bytes = test_file.read_bytes()
 
     cmd = _make_cmd()
+    cmd.EnvSubst(test_file_str)
 
-    with mock.patch("os.rename") as mock_rename:
-        with mock.patch.object(cmd, "save"):
-            cmd.EnvSubst(test_file_str)
-
-            mock_rename.assert_called_once_with(test_file_str, test_file_str + ".bak")
+    assert bak_path.exists(), f"EnvSubst must create .bak backup; not found at {bak_path}"
+    assert bak_path.read_bytes() == original_bytes, (
+        f".bak must contain original pre-substitution bytes. Expected {original_bytes!r}, got {bak_path.read_bytes()!r}"
+    )
 
 
 @pytest.mark.unit

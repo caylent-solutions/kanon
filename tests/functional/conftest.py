@@ -90,10 +90,10 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
 def functional_repo_dir(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     """Create a minimal .repo directory for the session and export KANON_REPO_DIR.
 
-    The embedded repo tool's version subcommand requires a .repo/repo/ git
-    repository with at least one tagged commit. This fixture creates that
-    minimal structure so that 'kanon repo version' exits with code 0 during
-    functional tests.
+    The embedded repo tool's subcommands (init, envsubst, sync, etc.) expect
+    a .repo/repo/ git repository with at least one tagged commit. This fixture
+    creates that minimal structure so functional tests invoking `kanon repo`
+    subcommands have a well-formed baseline.
 
     The fixture sets os.environ[KANON_REPO_DIR] so that subprocess calls made
     by functional tests inherit the configured .repo path without requiring

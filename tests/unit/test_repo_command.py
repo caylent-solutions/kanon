@@ -20,7 +20,7 @@ class TestRepoRegister:
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
-        parsed = parser.parse_args(["repo", "version"])
+        parsed = parser.parse_args(["repo", "envsubst"])
         assert parsed.command == "repo"
 
     def test_repo_help_lists_subcommands(self, capsys) -> None:
@@ -53,30 +53,13 @@ class TestRepoRegister:
 
 
 @pytest.mark.unit
-class TestRepoVersion:
-    def test_repo_version_exits_zero(self, tmp_path) -> None:
-        """'kanon repo version' must exit with code 0."""
-        from kanon_cli.commands.repo import _run
-
-        args = MagicMock()
-        args.repo_args = ["version"]
-        args.repo_dir = str(tmp_path)
-
-        with (
-            patch("kanon_cli.commands.repo.repo_run", return_value=0) as mock_run,
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            _run(args)
-
-        assert exc_info.value.code == 0
-        mock_run.assert_called_once_with(["version"], repo_dir=str(tmp_path))
-
+class TestRepoSubcommandWiring:
     @pytest.mark.parametrize(
         "subcommand",
         [
-            ["version"],
+            ["envsubst"],
             ["help"],
-            ["version", "--verbose"],
+            ["envsubst", "--verbose"],
         ],
     )
     def test_repo_run_called_with_exact_args(self, tmp_path, subcommand) -> None:
@@ -135,7 +118,7 @@ class TestRepoArgPassing:
 
         repo_dir = str(tmp_path / "my-repo")
         args = MagicMock()
-        args.repo_args = ["version"]
+        args.repo_args = ["envsubst"]
         args.repo_dir = repo_dir
 
         with (
@@ -144,7 +127,7 @@ class TestRepoArgPassing:
         ):
             _run(args)
 
-        assert mock_run.call_args == call(["version"], repo_dir=repo_dir)
+        assert mock_run.call_args == call(["envsubst"], repo_dir=repo_dir)
 
 
 @pytest.mark.unit
@@ -155,7 +138,7 @@ class TestRepoExitCodePropagation:
         from kanon_cli.commands.repo import _run
 
         args = MagicMock()
-        args.repo_args = ["version"]
+        args.repo_args = ["envsubst"]
         args.repo_dir = str(tmp_path)
 
         with (

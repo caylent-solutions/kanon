@@ -38,7 +38,6 @@ def build_parser() -> argparse.ArgumentParser:
             "  kanon clean .kanon         # Explicit path\n"
             "  kanon validate xml\n"
             "  kanon validate marketplace --repo-root /path/to/repo\n"
-            "  kanon repo version         # Show embedded repo tool version\n"
             "  kanon repo init -u <url> -b <branch> -m <manifest>\n"
             "  kanon repo sync --jobs=4"
         ),

@@ -8,29 +8,9 @@ Covers:
 - AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 """
 
-import subprocess
-import sys
-
 import pytest
 
-
-def _run_kanon(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess:
-    """Invoke kanon_cli in a subprocess and return the completed process.
-
-    Args:
-        args: CLI arguments passed after 'python -m kanon_cli'.
-        cwd: Working directory for the subprocess. Defaults to None (inherits caller's cwd).
-
-    Returns:
-        CompletedProcess with returncode, stdout, and stderr captured as text.
-    """
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cwd,
-    )
+from tests.functional.conftest import _run_kanon
 
 
 @pytest.mark.functional

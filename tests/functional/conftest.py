@@ -2,14 +2,68 @@
 
 Provides session-scoped infrastructure required for end-to-end CLI tests,
 including a minimal .repo directory that satisfies the embedded repo tool's
-version subcommand requirements.
+version subcommand requirements, and a shared subprocess helper for invoking
+the kanon CLI.
 """
 
 import os
 import subprocess
+import sys
 import pathlib
+from typing import Union
 
 import pytest
+
+
+def _run_kanon(
+    *args: str,
+    cwd: Union[pathlib.Path, str, None] = None,
+    env: "dict[str, str] | None" = None,
+    extra_env: "dict | None" = None,
+) -> subprocess.CompletedProcess:
+    """Invoke kanon_cli in a subprocess and return the completed process.
+
+    Executes ``python -m kanon_cli`` with the supplied arguments.
+
+    Args:
+        *args: CLI arguments passed after ``python -m kanon_cli``.
+        cwd: Working directory for the subprocess. Accepts a :class:`pathlib.Path`
+            or a plain string. Defaults to ``None`` (inherits the caller's cwd).
+        env: Full replacement environment for the subprocess. When provided,
+            the subprocess receives exactly this dict rather than inheriting the
+            parent environment. Mutually exclusive with ``extra_env``.
+        extra_env: Additional environment variables merged on top of the current
+            :data:`os.environ`. Mutually exclusive with ``env``.
+
+    Returns:
+        The :class:`subprocess.CompletedProcess` object from :func:`subprocess.run`
+        (``check=False``).
+
+    Raises:
+        ValueError: When both ``env`` and ``extra_env`` are provided at once.
+    """
+    if env is not None and extra_env is not None:
+        raise ValueError("Provide either 'env' or 'extra_env', not both.")
+
+    resolved_env: "dict[str, str] | None"
+    if env is not None:
+        resolved_env = env
+    elif extra_env is not None:
+        resolved_env = dict(os.environ)
+        resolved_env.update(extra_env)
+    else:
+        resolved_env = None
+
+    resolved_cwd: "str | None" = str(cwd) if cwd is not None else None
+
+    return subprocess.run(
+        [sys.executable, "-m", "kanon_cli", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=resolved_cwd,
+        env=resolved_env,
+    )
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:

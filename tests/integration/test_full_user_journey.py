@@ -22,7 +22,6 @@ import os
 import pathlib
 import stat
 import subprocess
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -31,6 +30,7 @@ from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
+from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -72,44 +72,6 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
-
-
-# ---------------------------------------------------------------------------
-# kanon CLI subprocess runner
-# ---------------------------------------------------------------------------
-
-
-def _run_kanon(
-    *args: str,
-    cwd: pathlib.Path | None = None,
-    extra_env: dict | None = None,
-) -> subprocess.CompletedProcess:
-    """Run the kanon CLI via subprocess and return the completed process.
-
-    Executes 'python -m kanon_cli' with the supplied arguments. The subprocess
-    inherits the current process environment so uv-installed packages are
-    available; extra_env values are merged on top without modifying the parent
-    environment.
-
-    Args:
-        *args: CLI arguments passed to kanon_cli.
-        cwd: Working directory for the subprocess. Defaults to None.
-        extra_env: Additional environment variables merged into the subprocess env.
-
-    Returns:
-        The CompletedProcess object from subprocess.run (check=False).
-    """
-    env = dict(os.environ)
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(cwd) if cwd is not None else None,
-        env=env,
-    )
 
 
 # ---------------------------------------------------------------------------

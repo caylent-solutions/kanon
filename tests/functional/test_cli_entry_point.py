@@ -1,20 +1,9 @@
 """End-to-end CLI invocation tests via subprocess."""
 
-import subprocess
-import sys
-
 import pytest
 
 from kanon_cli import __version__
-
-
-def _run_kanon(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+from tests.functional.conftest import _run_kanon
 
 
 @pytest.mark.functional

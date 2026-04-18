@@ -7,12 +7,12 @@ exercise the full stack against actual git operations.
 Tests in this module are decorated with @pytest.mark.functional.
 """
 
-import os
 import pathlib
 import subprocess
-import sys
 
 import pytest
+
+from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -154,37 +154,6 @@ def _create_envsubst_manifest_repo(base: pathlib.Path, content_repo_url: str) ->
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=base)
 
     return bare_dir.resolve(), parent_url
-
-
-def _run_kanon(
-    *args: str, cwd: pathlib.Path | None = None, extra_env: dict | None = None
-) -> subprocess.CompletedProcess:
-    """Run kanon CLI via subprocess.
-
-    Executes 'python -m kanon_cli' with the supplied arguments. The subprocess
-    inherits the current process environment so uv-installed packages are
-    available; extra_env values are merged on top without modifying the parent
-    environment.
-
-    Args:
-        *args: CLI arguments passed to kanon_cli (e.g., "repo", "init", ...).
-        cwd: Working directory for the subprocess. Defaults to None (inherits cwd).
-        extra_env: Additional environment variables to set for this invocation.
-
-    Returns:
-        The CompletedProcess object from subprocess.run (check=False).
-    """
-    env = dict(os.environ)
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(cwd) if cwd is not None else None,
-        env=env,
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -8,14 +8,13 @@ direct Python API calls.
 Tests are decorated with @pytest.mark.functional.
 """
 
-import os
 import pathlib
 import subprocess
-import sys
 
 import pytest
 
 from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
+from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -27,45 +26,6 @@ _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from repo-cli test content"
 _ENVSUBST_VAR = "KANON_CLI_TEST_FETCH_URL"
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
-def _run_kanon(
-    *args: str,
-    cwd: pathlib.Path | None = None,
-    extra_env: dict | None = None,
-) -> subprocess.CompletedProcess:
-    """Run the kanon CLI via subprocess and return the completed process.
-
-    Executes 'python -m kanon_cli' with the supplied arguments. The
-    subprocess inherits the current process environment so uv-installed
-    packages are available; extra_env values are merged on top without
-    modifying the parent environment.
-
-    Args:
-        *args: CLI arguments passed to kanon_cli.
-        cwd: Working directory for the subprocess. Defaults to None.
-        extra_env: Additional environment variables merged into the
-            subprocess environment.
-
-    Returns:
-        The CompletedProcess object from subprocess.run (check=False).
-    """
-    env = dict(os.environ)
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(cwd) if cwd is not None else None,
-        env=env,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Git helpers

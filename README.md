@@ -196,7 +196,7 @@ kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@>=2.0.
 
 | Option | Description |
 |---|---|
-| `--output-dir DIR` | Target directory (default: current directory) |
+| `--output-dir DIR` | Target directory (default: current directory). The parent of `DIR` must already exist; bootstrap fails fast if it does not. |
 | `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, `latest`, or PEP 440 constraint). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled catalog. |
 
 ### kanon install

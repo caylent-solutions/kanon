@@ -176,6 +176,30 @@ kanon bootstrap nonexistent
 
 **Pass criteria:** Exit code 1. stderr contains `Unknown package 'nonexistent'`.
 
+### BS-06: Blocker file at output path
+
+**Setup:** Place a regular file at the path that would be used as the output directory so
+that `mkdir` cannot create a directory there.
+
+```bash
+touch "${KANON_TEST_ROOT}/bs06-blocker"
+```
+
+**Run:**
+
+```bash
+kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs06-blocker"
+```
+
+**Expect:** Exit code 1. stderr contains `Cannot create output directory`. No traceback
+is printed -- only the single error line.
+
+**Cleanup:**
+
+```bash
+rm -f "${KANON_TEST_ROOT}/bs06-blocker"
+```
+
 ---
 
 ## 4. Category 3: Creating Local Test Fixtures
@@ -1779,7 +1803,7 @@ rm -rf "${KANON_TEST_ROOT}"
 mkdir -p "${KANON_TEST_ROOT}"
 
 # 1. Run Category 1 (Help & Version) -- HV-01 through HV-08
-# 2. Run Category 2 (Bootstrap) -- BS-01 through BS-05
+# 2. Run Category 2 (Bootstrap) -- BS-01 through BS-06
 # 3. Run Category 3 (Create Fixtures) -- all fixture setup commands
 # 4. Run Category 4 (Install/Clean Lifecycle) -- IC-01 through IC-04
 # 5. Run Category 5 (Multi-Source) -- MS-01

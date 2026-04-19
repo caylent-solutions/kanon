@@ -7,7 +7,7 @@ name = "kanon-cli"
 version = "1.2.0"
 description = "Kanon (Kanon Package Manager) CLI tool"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = {text = "Apache-2.0"}
 
 authors = [
@@ -39,7 +39,7 @@ Issues = "https://github.com/caylent-solutions/kanon/issues"
 packages = ["src/kanon_cli"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 120
 extend-exclude = ["tests/fixtures", ".devcontainer"]
 

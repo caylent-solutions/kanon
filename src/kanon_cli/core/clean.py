@@ -1,12 +1,13 @@
 """Kanon clean business logic for full teardown.
 
 Performs full Kanon teardown in the following order:
-  1. If KANON_MARKETPLACE_INSTALL=true:
-     uninstall marketplace plugins via claude CLI
+  1. Resolve symlinks in kanonenv_path so teardown targets the real project directory
   2. If KANON_MARKETPLACE_INSTALL=true:
+     uninstall marketplace plugins via claude CLI
+  3. If KANON_MARKETPLACE_INSTALL=true:
      remove CLAUDE_MARKETPLACES_DIR
-  3. Remove .packages/ directory (ignore_errors=True)
-  4. Remove .kanon-data/ directory (ignore_errors=True)
+  4. Remove .packages/ directory (ignore_errors=True)
+  5. Remove .kanon-data/ directory (ignore_errors=True)
 """
 
 import pathlib
@@ -69,16 +70,20 @@ def clean(kanonenv_path: pathlib.Path) -> None:
     """Execute the full Kanon clean lifecycle.
 
     Steps:
-      1. Parse .kanon
-      2. If KANON_MARKETPLACE_INSTALL=true: run uninstall, remove marketplace dir
-      3. Remove .packages/ and .kanon-data/
+      1. Resolve kanonenv_path symlinks so .packages/ and .kanon-data/ are removed
+         from the real project directory even when .kanon is a symlink.
+      2. Parse .kanon
+      3. If KANON_MARKETPLACE_INSTALL=true: run uninstall, remove marketplace dir
+      4. Remove .packages/ and .kanon-data/
 
     Args:
-        kanonenv_path: Path to the .kanon configuration file.
+        kanonenv_path: Path to the .kanon configuration file. May be a symlink;
+            the path is resolved before use so teardown targets the real project directory.
 
     Raises:
         SystemExit: On any failure during the clean process.
     """
+    kanonenv_path = kanonenv_path.resolve()
     print(f"kanon clean: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = kanonenv_path.parent

@@ -1,10 +1,12 @@
 """Tests for install core business logic."""
 
+import argparse
 import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kanon_cli.commands.install import _run
 from kanon_cli.core.install import (
     aggregate_symlinks,
     create_source_dirs,
@@ -79,7 +81,7 @@ class TestRepoInit:
             all_args = args + tuple(kwargs.values())
             assert "v2.0.0" in all_args
 
-    def test_failure_raises_system_exit(self, tmp_path: pathlib.Path) -> None:
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
         with patch("kanon_cli.repo.repo_init") as mock_init:
@@ -87,7 +89,7 @@ class TestRepoInit:
                 exit_code=1,
                 message="repo init failed: connection refused",
             )
-            with pytest.raises(SystemExit):
+            with pytest.raises(RepoCommandError):
                 run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml")
             mock_init.assert_called_once()
 
@@ -114,7 +116,7 @@ class TestRepoEnvsubst:
             all_args = args + tuple(kwargs.values())
             assert str(source_dir) in all_args
 
-    def test_failure_raises_system_exit(self, tmp_path: pathlib.Path) -> None:
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
         with patch("kanon_cli.repo.repo_envsubst") as mock_envsubst:
@@ -122,7 +124,7 @@ class TestRepoEnvsubst:
                 exit_code=1,
                 message="repo envsubst failed: manifest not found",
             )
-            with pytest.raises(SystemExit):
+            with pytest.raises(RepoCommandError):
                 run_repo_envsubst(source_dir, {})
             mock_envsubst.assert_called_once()
 
@@ -139,7 +141,7 @@ class TestRepoSync:
             all_args = args + tuple(kwargs.values())
             assert str(source_dir) in all_args
 
-    def test_failure_raises_system_exit(self, tmp_path: pathlib.Path) -> None:
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
         with patch("kanon_cli.repo.repo_sync") as mock_sync:
@@ -147,7 +149,7 @@ class TestRepoSync:
                 exit_code=1,
                 message="repo sync failed: network timeout",
             )
-            with pytest.raises(SystemExit):
+            with pytest.raises(RepoCommandError):
                 run_repo_sync(source_dir)
             mock_sync.assert_called_once()
 
@@ -162,12 +164,12 @@ class TestSymlinkAggregation:
         link = tmp_path / ".packages" / "test-lint"
         assert link.is_symlink()
 
-    def test_collision_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ["a", "b"]:
             pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "dup").mkdir()
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError):
             aggregate_symlinks(["a", "b"], tmp_path)
 
 
@@ -211,15 +213,16 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
+        args = argparse.Namespace(kanonenv_path=kanonenv)
         with patch(
             "kanon_cli.core.install.create_source_dirs",
             side_effect=OSError("Cannot create source directory /x: Permission denied"),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                install(kanonenv)
+                _run(args)
         assert exc_info.value.code == 1
 
-    def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_marketplace_true_missing_dir_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_MARKETPLACE_INSTALL=true\n"
@@ -227,7 +230,7 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError):
             install(kanonenv)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:

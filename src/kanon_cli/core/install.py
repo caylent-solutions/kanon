@@ -8,12 +8,10 @@ updates ``.gitignore``, and optionally installs marketplace plugins.
 
 import pathlib
 import shutil
-import sys
 
 import kanon_cli.repo as _repo
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
-from kanon_cli.repo import RepoCommandError
 from kanon_cli.version import resolve_version
 
 
@@ -29,11 +27,18 @@ def create_source_dirs(
 
     Returns:
         Dict mapping source name to its directory path.
+
+    Raises:
+        OSError: If a source directory cannot be created, with the failing path
+            and OS error message included in the exception message.
     """
     result: dict[str, pathlib.Path] = {}
     for name in source_names:
         source_dir = base_dir / ".kanon-data" / "sources" / name
-        source_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            source_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise OSError(f"Cannot create source directory {source_dir}: {exc.strerror}") from exc
         result[name] = source_dir
     return result
 
@@ -55,16 +60,9 @@ def run_repo_init(
         repo_rev: Repo tool version tag for ``--repo-rev``.
 
     Raises:
-        SystemExit: If repo init exits non-zero.
+        RepoCommandError: If repo init exits non-zero.
     """
-    try:
-        _repo.repo_init(str(source_dir), url, revision, manifest_path, repo_rev)
-    except RepoCommandError as exc:
-        print(
-            f"Error: repo init failed in {source_dir}: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    _repo.repo_init(str(source_dir), url, revision, manifest_path, repo_rev)
 
 
 def run_repo_envsubst(
@@ -78,16 +76,9 @@ def run_repo_envsubst(
         env_vars: Environment variables to export (GITBASE, CLAUDE_MARKETPLACES_DIR).
 
     Raises:
-        SystemExit: If repo envsubst exits non-zero.
+        RepoCommandError: If repo envsubst exits non-zero.
     """
-    try:
-        _repo.repo_envsubst(str(source_dir), env_vars)
-    except RepoCommandError as exc:
-        print(
-            f"Error: repo envsubst failed in {source_dir}: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    _repo.repo_envsubst(str(source_dir), env_vars)
 
 
 def run_repo_sync(source_dir: pathlib.Path) -> None:
@@ -97,16 +88,9 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
         source_dir: Path to ``.kanon-data/sources/<name>/``.
 
     Raises:
-        SystemExit: If repo sync exits non-zero.
+        RepoCommandError: If repo sync exits non-zero.
     """
-    try:
-        _repo.repo_sync(str(source_dir))
-    except RepoCommandError as exc:
-        print(
-            f"Error: repo sync failed in {source_dir}: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    _repo.repo_sync(str(source_dir))
 
 
 def aggregate_symlinks(
@@ -127,7 +111,7 @@ def aggregate_symlinks(
         Dict mapping package name to source name.
 
     Raises:
-        SystemExit: If two sources produce the same package name.
+        ValueError: If two sources produce the same package name.
     """
     packages_dir = base_dir / ".packages"
     packages_dir.mkdir(exist_ok=True)
@@ -141,13 +125,9 @@ def aggregate_symlinks(
         for pkg in source_packages.iterdir():
             pkg_name = pkg.name
             if pkg_name in package_owners:
-                print(
-                    f"Error: Package collision for '{pkg_name}': "
-                    f"provided by both '{package_owners[pkg_name]}' "
-                    f"and '{name}'",
-                    file=sys.stderr,
+                raise ValueError(
+                    f"Package collision for '{pkg_name}': provided by both '{package_owners[pkg_name]}' and '{name}'"
                 )
-                sys.exit(1)
             package_owners[pkg_name] = name
             link_path = packages_dir / pkg_name
             if link_path.exists() or link_path.is_symlink():
@@ -251,7 +231,10 @@ def install(kanonenv_path: pathlib.Path) -> None:
         kanonenv_path: Path to the .kanon configuration file.
 
     Raises:
-        SystemExit: On any failure during the install process.
+        ValueError: If marketplace install is requested but
+            CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
+        OSError: If a source directory cannot be created.
+        RepoCommandError: If any repo sub-command exits non-zero.
     """
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
@@ -264,11 +247,7 @@ def install(kanonenv_path: pathlib.Path) -> None:
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
     if marketplace_install and not marketplace_dir_str:
-        print(
-            "Error: KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise ValueError("KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon")
 
     if marketplace_install:
         marketplace_dir = pathlib.Path(marketplace_dir_str)

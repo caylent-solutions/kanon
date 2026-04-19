@@ -11,6 +11,7 @@ import warnings
 
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
+from kanon_cli.repo import RepoCommandError
 
 # Legacy environment variables superseded by the embedded repo tool and --catalog-source.
 _LEGACY_REPO_URL_ENV = "REPO_URL"
@@ -126,4 +127,8 @@ def _run(args) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    install(args.kanonenv_path)
+    try:
+        install(args.kanonenv_path)
+    except (OSError, ValueError, RepoCommandError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)

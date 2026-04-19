@@ -61,6 +61,7 @@ The command performs these steps:
 2. **Validate sources** -- Verifies all required variables present for each source (fail-fast if missing)
 3. **Pre-sync marketplace setup** -- If `KANON_MARKETPLACE_INSTALL=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
 4. **For each source in alphabetical order:**
+   `kanonenv_path` is resolved via `Path.resolve()` before its parent is used, so a symlinked `.kanon` file will cause source directories to be created under the real project directory rather than the symlink's containing directory.
    - Creates `.kanon-data/sources/<name>/` directory
    - Calls `kanon_cli.repo.repo_init(source_dir, url, revision, manifest_path)` -- direct Python API call
    - Calls `kanon_cli.repo.repo_envsubst(source_dir, env_vars)` with `GITBASE` and `CLAUDE_MARKETPLACES_DIR` -- direct Python API call
@@ -76,12 +77,13 @@ The `kanon clean` command implements the clean lifecycle. It is invoked via `kan
 
 The command performs these steps in order:
 
-1. **Parse `.kanon`** -- Reads configuration via the kanon parser module
-2. **If `KANON_MARKETPLACE_INSTALL=true`:**
+1. **Resolve `.kanon` symlinks** -- `kanonenv_path.resolve()` is called before deriving the base directory, so `.packages/` and `.kanon-data/` are removed from the real project directory even when `.kanon` is a symlink.
+2. **Parse `.kanon`** -- Reads configuration via the kanon parser module
+3. **If `KANON_MARKETPLACE_INSTALL=true`:**
    - Uninstalls marketplace plugins via the Claude Code CLI (discovers entries, uninstalls each plugin, removes marketplace registrations)
    - Removes `CLAUDE_MARKETPLACES_DIR` entirely
-3. **Remove `.packages/`** -- `shutil.rmtree` with `ignore_errors=True`
-4. **Remove `.kanon-data/`** -- `shutil.rmtree` with `ignore_errors=True`
+4. **Remove `.packages/`** -- `shutil.rmtree` with `ignore_errors=True`
+5. **Remove `.kanon-data/`** -- `shutil.rmtree` with `ignore_errors=True`
 
 The order is critical: uninstalling plugins first ensures Claude Code's
 registry is clean. Removing the marketplace directory before deleting

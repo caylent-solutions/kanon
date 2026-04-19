@@ -227,9 +227,10 @@ kanon clean .kanon                # Explicit path to .kanon file
 
 **Steps performed:**
 
-1. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
-2. Removes `.packages/` directory
-3. Removes `.kanon-data/` directory
+1. Resolves `.kanon` symlinks so teardown targets the real project directory even when `.kanon` is a symlink
+2. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
+3. Removes `.packages/` directory
+4. Removes `.kanon-data/` directory
 
 The order is critical: plugins are uninstalled before files are removed to ensure the registry is cleaned while paths are still resolvable.
 

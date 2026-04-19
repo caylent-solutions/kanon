@@ -29,12 +29,13 @@ No external binaries are invoked; no PATH lookups are performed.
 ## Clean Lifecycle (`kanon clean`)
 
 ```text
-1. Parse .kanon
-2. If KANON_MARKETPLACE_INSTALL=true:
+1. Resolve .kanon symlinks (kanonenv_path.resolve())
+2. Parse .kanon
+3. If KANON_MARKETPLACE_INSTALL=true:
    a. Uninstall marketplace plugins via claude CLI
    b. rm -rf CLAUDE_MARKETPLACES_DIR
-3. rm -rf .packages/ (ignore_errors)
-4. rm -rf .kanon-data/ (ignore_errors)
+4. rm -rf .packages/ (ignore_errors)
+5. rm -rf .kanon-data/ (ignore_errors)
 ```
 
 Steps execute in this specific order: uninstalling plugins first ensures

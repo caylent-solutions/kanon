@@ -18,7 +18,12 @@ import pathlib
 
 import pytest
 
-from tests.functional.conftest import _git, _run_kanon
+from tests.functional.conftest import (
+    _create_bare_content_repo,
+    _create_manifest_repo,
+    _run_kanon,
+    _setup_synced_repo,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level constants (no hard-coded values in test logic)
@@ -36,93 +41,14 @@ _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 # ---------------------------------------------------------------------------
 # Git helpers
 # ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) follow the same pattern
-# as in test_repo_init_happy.py and test_kanon_repo_cli.py. Consolidating
-# them into a shared module requires touching those files, which is outside
-# this task's Changes Manifest. This duplication is tracked as a follow-up
-# DRY cleanup.
+# NOTE: _create_bare_content_repo, _create_manifest_repo, _setup_synced_repo,
+# and _git are imported from tests.functional.conftest (canonical definitions).
 # ---------------------------------------------------------------------------
 
 
-def _init_git_work_dir(work_dir: pathlib.Path) -> None:
-    """Initialise a git working directory with user config set.
-
-    Args:
-        work_dir: The directory to initialise as a git repo.
-    """
-    _git(["init", "-b", "main"], cwd=work_dir)
-    _git(["config", "user.name", _GIT_USER_NAME], cwd=work_dir)
-    _git(["config", "user.email", _GIT_USER_EMAIL], cwd=work_dir)
-
-
-def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Path:
-    """Clone work_dir into bare_dir and return the resolved bare_dir path.
-
-    Args:
-        work_dir: The source non-bare working directory.
-        bare_dir: The destination path for the bare clone.
-
-    Returns:
-        The resolved absolute path to the bare clone.
-    """
-    _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
-    return bare_dir.resolve()
-
-
-def _create_bare_content_repo(base: pathlib.Path) -> pathlib.Path:
-    """Create a bare git repo containing one committed file.
-
-    Args:
-        base: Parent directory under which repos are created.
-
-    Returns:
-        The absolute path to the bare content repository.
-    """
-    work_dir = base / "content-work"
-    work_dir.mkdir()
-    _init_git_work_dir(work_dir)
-
-    readme = work_dir / _CONTENT_FILE_NAME
-    readme.write_text(_CONTENT_FILE_TEXT, encoding="utf-8")
-    _git(["add", _CONTENT_FILE_NAME], cwd=work_dir)
-    _git(["commit", "-m", "Initial commit"], cwd=work_dir)
-
-    return _clone_as_bare(work_dir, base / f"{_PROJECT_NAME}.git")
-
-
-def _create_manifest_repo(base: pathlib.Path, fetch_base: str) -> pathlib.Path:
-    """Create a bare manifest git repo pointing at a content repo.
-
-    Args:
-        base: Parent directory under which repos are created.
-        fetch_base: The fetch base URL for the remote element in the manifest.
-
-    Returns:
-        The absolute path to the bare manifest repository.
-    """
-    work_dir = base / "manifest-work"
-    work_dir.mkdir()
-    _init_git_work_dir(work_dir)
-
-    manifest_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        "<manifest>\n"
-        f'  <remote name="local" fetch="{fetch_base}" />\n'
-        '  <default revision="main" remote="local" />\n'
-        f'  <project name="{_PROJECT_NAME}" path="{_PROJECT_PATH}" />\n'
-        "</manifest>\n"
-    )
-    (work_dir / _MANIFEST_FILENAME).write_text(manifest_xml, encoding="utf-8")
-    _git(["add", _MANIFEST_FILENAME], cwd=work_dir)
-    _git(["commit", "-m", "Add manifest"], cwd=work_dir)
-
-    return _clone_as_bare(work_dir, base / _MANIFEST_BARE_DIR_NAME)
-
-
-def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+def _setup_initialized_repo(
+    tmp_path: pathlib.Path,
+) -> tuple[pathlib.Path, pathlib.Path]:
     """Create bare repos, run repo init, and return (checkout_dir, repo_dir).
 
     Runs 'kanon repo init' against a real bare manifest repository so that
@@ -142,9 +68,25 @@ def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     checkout_dir = tmp_path / "checkout"
     checkout_dir.mkdir()
 
-    bare_content = _create_bare_content_repo(repos_dir)
+    bare_content = _create_bare_content_repo(
+        repos_dir,
+        git_user_name=_GIT_USER_NAME,
+        git_user_email=_GIT_USER_EMAIL,
+        project_name=_PROJECT_NAME,
+        content_file_name=_CONTENT_FILE_NAME,
+        content_file_text=_CONTENT_FILE_TEXT,
+    )
     fetch_base = f"file://{bare_content.parent}"
-    manifest_bare = _create_manifest_repo(repos_dir, fetch_base)
+    manifest_bare = _create_manifest_repo(
+        repos_dir,
+        fetch_base,
+        git_user_name=_GIT_USER_NAME,
+        git_user_email=_GIT_USER_EMAIL,
+        project_name=_PROJECT_NAME,
+        project_path=_PROJECT_PATH,
+        manifest_filename=_MANIFEST_FILENAME,
+        manifest_bare_dir_name=_MANIFEST_BARE_DIR_NAME,
+    )
     manifest_url = f"file://{manifest_bare}"
 
     repo_dir = checkout_dir / ".repo"
@@ -167,40 +109,6 @@ def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
         f"Prerequisite 'kanon repo init' failed with exit {result.returncode}.\n"
         f"  stdout: {result.stdout!r}\n"
         f"  stderr: {result.stderr!r}"
-    )
-    return checkout_dir, repo_dir
-
-
-def _setup_synced_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """Create bare repos, run repo init and repo sync, return (checkout_dir, repo_dir).
-
-    Runs 'kanon repo init' followed by 'kanon repo sync' so that project
-    worktrees exist on disk. This is required before running 'repo info
-    <project>' since GetProjects requires the worktree to be checked out.
-
-    Args:
-        tmp_path: pytest-provided temporary directory root.
-
-    Returns:
-        A tuple of (checkout_dir, repo_dir) after a successful init and sync.
-
-    Raises:
-        AssertionError: When kanon repo init or repo sync exits with a non-zero code.
-    """
-    checkout_dir, repo_dir = _setup_initialized_repo(tmp_path)
-
-    sync_result = _run_kanon(
-        "repo",
-        "--repo-dir",
-        str(repo_dir),
-        "sync",
-        "--jobs=1",
-        cwd=checkout_dir,
-    )
-    assert sync_result.returncode == 0, (
-        f"Prerequisite 'kanon repo sync' failed with exit {sync_result.returncode}.\n"
-        f"  stdout: {sync_result.stdout!r}\n"
-        f"  stderr: {sync_result.stderr!r}"
     )
     return checkout_dir, repo_dir
 
@@ -258,7 +166,9 @@ class TestRepoInfoHappyPathDefaultArgs:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert "Manifest branch" in combined, (
             f"Expected 'Manifest branch' in 'kanon repo info' output.\n"
@@ -283,7 +193,9 @@ class TestRepoInfoHappyPathDefaultArgs:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert len(combined) > 0, (
             f"'kanon repo info' produced empty combined output.\n"
@@ -311,14 +223,23 @@ class TestRepoInfoPositionalArgHappyPath:
     These tests therefore run 'repo init' followed by 'repo sync' as setup.
     """
 
-    def test_repo_info_with_project_name_exits_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_with_project_name_exits_zero(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """'kanon repo info <project>' with a valid project name exits 0.
 
         After a successful 'kanon repo init' and 'kanon repo sync', passes the
         project name from the manifest as a positional argument to 'kanon repo
         info'. Verifies the process exits 0.
         """
-        checkout_dir, repo_dir = _setup_synced_repo(tmp_path)
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_name=_PROJECT_NAME,
+            project_path=_PROJECT_PATH,
+            manifest_filename=_MANIFEST_FILENAME,
+        )
 
         result = _run_kanon(
             "repo",
@@ -335,14 +256,23 @@ class TestRepoInfoPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_info_with_project_name_prints_project_heading(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_with_project_name_prints_project_heading(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """'kanon repo info <project>' must print the 'Project:' heading for that project.
 
         When a valid project name is passed as a positional argument, the
         'info' subcommand must include a 'Project:' heading in the output.
         This verifies that the per-project info rendering path is exercised.
         """
-        checkout_dir, repo_dir = _setup_synced_repo(tmp_path)
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_name=_PROJECT_NAME,
+            project_path=_PROJECT_PATH,
+            manifest_filename=_MANIFEST_FILENAME,
+        )
 
         result = _run_kanon(
             "repo",
@@ -353,7 +283,9 @@ class TestRepoInfoPositionalArgHappyPath:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info {_PROJECT_NAME}' failed: {result.stderr!r}"
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info {_PROJECT_NAME}' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert "Project" in combined, (
             f"Expected 'Project' in 'kanon repo info {_PROJECT_NAME}' output.\n"
@@ -361,14 +293,23 @@ class TestRepoInfoPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_info_with_project_path_alias_exits_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_with_project_path_alias_exits_zero(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """'kanon repo info <path>' with the project path alias exits 0.
 
         Verifies that passing a project by its path alias (as an alternative
         to the project name) also exits 0, exercising the path-based resolution
         branch inside the 'info' subcommand's GetProjects call.
         """
-        checkout_dir, repo_dir = _setup_synced_repo(tmp_path)
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_name=_PROJECT_NAME,
+            project_path=_PROJECT_PATH,
+            manifest_filename=_MANIFEST_FILENAME,
+        )
 
         result = _run_kanon(
             "repo",
@@ -400,7 +341,9 @@ class TestRepoInfoChannelDiscipline:
     stderr does not contain Python exception tracebacks on a successful run.
     """
 
-    def test_repo_info_success_has_no_traceback_on_stdout(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_success_has_no_traceback_on_stdout(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Successful 'kanon repo info' must not emit Python tracebacks to stdout.
 
         On success, stdout must not contain 'Traceback (most recent call last)'.
@@ -417,12 +360,16 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
-        assert "Traceback (most recent call last)" not in result.stdout, (
-            f"Python traceback found in stdout of successful 'kanon repo info'.\n  stdout: {result.stdout!r}"
-        )
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert (
+            "Traceback (most recent call last)" not in result.stdout
+        ), f"Python traceback found in stdout of successful 'kanon repo info'.\n  stdout: {result.stdout!r}"
 
-    def test_repo_info_success_has_no_error_keyword_on_stdout(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_success_has_no_error_keyword_on_stdout(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Successful 'kanon repo info' must not emit 'Error:' prefix to stdout.
 
         Error-prefixed messages are a stderr-only concern. A successful
@@ -438,13 +385,17 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         for line in result.stdout.splitlines():
-            assert not line.startswith("Error:"), (
-                f"'Error:' line found in stdout of successful 'kanon repo info': {line!r}\n  stdout: {result.stdout!r}"
-            )
+            assert not line.startswith(
+                "Error:"
+            ), f"'Error:' line found in stdout of successful 'kanon repo info': {line!r}\n  stdout: {result.stdout!r}"
 
-    def test_repo_info_success_has_no_traceback_on_stderr(self, tmp_path: pathlib.Path) -> None:
+    def test_repo_info_success_has_no_traceback_on_stderr(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         """Successful 'kanon repo info' must not emit Python tracebacks to stderr.
 
         On success, stderr must not contain 'Traceback (most recent call last)'.
@@ -461,7 +412,9 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
-        assert "Traceback (most recent call last)" not in result.stderr, (
-            f"Python traceback found in stderr of successful 'kanon repo info'.\n  stderr: {result.stderr!r}"
-        )
+        assert (
+            result.returncode == 0
+        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert (
+            "Traceback (most recent call last)" not in result.stderr
+        ), f"Python traceback found in stderr of successful 'kanon repo info'.\n  stderr: {result.stderr!r}"

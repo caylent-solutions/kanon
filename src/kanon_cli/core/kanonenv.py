@@ -13,6 +13,11 @@ Source names are auto-discovered by scanning for keys matching the
 deterministic ordering. Each discovered source must also define
 ``KANON_SOURCE_<name>_REVISION`` and ``KANON_SOURCE_<name>_PATH``.
 
+If a partial source definition is found (``_REVISION`` or ``_PATH`` present
+without a corresponding ``_URL``), a ``ValueError`` is raised naming the
+exact missing ``KANON_SOURCE_<name>_URL`` variable so callers can surface
+it to stderr verbatim.
+
 The parser reads the file, applies environment overrides, expands shell
 variables, validates required fields, and returns a structured dict.
 """
@@ -23,8 +28,10 @@ import re
 
 from kanon_cli.constants import (
     SHELL_VAR_PATTERN,
+    SOURCE_NON_URL_SUFFIXES,
     SOURCE_PREFIX,
     SOURCE_SUFFIXES,
+    SOURCE_URL_SUFFIX,
     SUFFIX_TO_KEY,
 )
 
@@ -168,6 +175,11 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
     the ``<name>`` portion, and returns a sorted list for deterministic
     ordering.
 
+    Also scans for keys matching ``KANON_SOURCE_<name>_(REVISION|PATH)``
+    to detect sources that are partially defined without a URL; raises
+    ``ValueError`` naming the exact missing URL variable so callers can
+    surface it verbatim.
+
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
 
@@ -175,17 +187,32 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
         Sorted list of discovered source names.
 
     Raises:
-        ValueError: If no ``KANON_SOURCE_<name>_URL`` keys are found.
+        ValueError: If no ``KANON_SOURCE_<name>_URL`` keys are found, or
+            if a source name is inferred from a non-URL suffix but the
+            corresponding ``KANON_SOURCE_<name>_URL`` key is absent.
     """
-    url_suffix = "_URL"
-    names: list[str] = []
+    url_names: set[str] = set()
     for key in expanded:
-        if key.startswith(SOURCE_PREFIX) and key.endswith(url_suffix):
-            name = key[len(SOURCE_PREFIX) : -len(url_suffix)]
+        if key.startswith(SOURCE_PREFIX) and key.endswith(SOURCE_URL_SUFFIX):
+            name = key[len(SOURCE_PREFIX) : -len(SOURCE_URL_SUFFIX)]
             if name:
-                names.append(name)
+                url_names.add(name)
 
-    if not names:
+    candidate_names: set[str] = set()
+    for key in expanded:
+        if key.startswith(SOURCE_PREFIX):
+            for suffix in SOURCE_NON_URL_SUFFIXES:
+                if key.endswith(suffix):
+                    name = key[len(SOURCE_PREFIX) : -len(suffix)]
+                    if name:
+                        candidate_names.add(name)
+
+    for name in sorted(candidate_names - url_names):
+        url_var = f"{SOURCE_PREFIX}{name}{SOURCE_URL_SUFFIX}"
+        msg = f"{url_var} is required but not set"
+        raise ValueError(msg)
+
+    if not url_names:
         msg = (
             "No sources found. Define at least one source using "
             "KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, "
@@ -193,7 +220,7 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
         )
         raise ValueError(msg)
 
-    return sorted(names)
+    return sorted(url_names)
 
 
 def _build_result(expanded: dict[str, str]) -> dict:

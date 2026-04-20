@@ -18,7 +18,9 @@ PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
 
 # -- kanonenv parsing --
 SOURCE_PREFIX = "KANON_SOURCE_"
-SOURCE_SUFFIXES = ("_URL", "_REVISION", "_PATH")
+SOURCE_URL_SUFFIX = "_URL"
+SOURCE_NON_URL_SUFFIXES = ("_REVISION", "_PATH")
+SOURCE_SUFFIXES = (SOURCE_URL_SUFFIX,) + SOURCE_NON_URL_SUFFIXES
 SUFFIX_TO_KEY = {"_URL": "url", "_REVISION": "revision", "_PATH": "path"}
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 

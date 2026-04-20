@@ -236,6 +236,7 @@ def install(kanonenv_path: pathlib.Path) -> None:
         OSError: If a source directory cannot be created.
         RepoCommandError: If any repo sub-command exits non-zero.
     """
+    kanonenv_path = kanonenv_path.resolve()
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = kanonenv_path.parent

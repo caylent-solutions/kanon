@@ -1,4 +1,4 @@
-"""Integration tests for kanon install path resolution and auto-discovery (7 tests).
+"""Integration tests for kanon install path resolution and auto-discovery (9 tests).
 
 Verifies the CLI boundary behaviour of the install command for:
   - AC-TEST-001: auto-discovery of .kanon from CWD or ancestor
@@ -187,7 +187,7 @@ class TestInstallMissingKanonenv:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert ".kanon" in captured.err, f"Expected '.kanon' in stderr, got: {captured.err!r}"
+        assert "No .kanon file found" in captured.err, f"Expected 'No .kanon file found' in stderr, got: {captured.err!r}"
 
     def test_explicit_missing_path_exits_1_with_not_found_message(
         self,

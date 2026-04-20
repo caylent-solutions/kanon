@@ -47,6 +47,9 @@ class TestInstallAutoDiscoveryFunctional:
         assert ".kanon file not found" not in result.stderr, (
             f"Auto-discovery should have found .kanon in ancestor. stderr={result.stderr!r}"
         )
+        assert "kanon install: found" in result.stdout, (
+            f"Expected auto-discovery success message in stdout. stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
 
     def test_install_no_arg_missing_kanonenv_exits_1(self, tmp_path: pathlib.Path) -> None:
         """AC-TEST-005: install with no arg in directory without .kanon exits 1."""

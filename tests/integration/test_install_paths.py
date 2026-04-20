@@ -17,18 +17,7 @@ import pytest
 
 from kanon_cli.cli import main
 from kanon_cli.core.discover import find_kanonenv
-
-
-_MINIMAL_KANONENV = (
-    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
-)
-
-
-def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
-    """Write a minimal valid .kanon file in directory and return its path."""
-    kanonenv = directory / ".kanon"
-    kanonenv.write_text(_MINIMAL_KANONENV)
-    return kanonenv
+from tests.conftest import write_kanonenv
 
 
 @pytest.mark.integration
@@ -41,7 +30,7 @@ class TestInstallAutoDiscovery:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install with no path argument discovers .kanon in cwd and invokes install."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.install.install") as mock_install:
@@ -59,7 +48,7 @@ class TestInstallAutoDiscovery:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install with no path argument discovers .kanon two levels above cwd."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         deep = tmp_path / "a" / "b"
         deep.mkdir(parents=True)
         monkeypatch.chdir(deep)
@@ -77,7 +66,7 @@ class TestInstallAutoDiscovery:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-FUNC-002: auto-discovery path passed to install() equals find_kanonenv() result."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         child = tmp_path / "sub"
         child.mkdir()
         monkeypatch.chdir(child)
@@ -100,7 +89,7 @@ class TestInstallRelativePath:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-TEST-002: 'kanon install .kanon' resolves to absolute and invokes install."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.install.install") as mock_install:
@@ -117,7 +106,7 @@ class TestInstallRelativePath:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-FUNC-001: install() receives an absolute Path regardless of relative CLI argument."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         received_paths: list[pathlib.Path] = []
@@ -143,7 +132,7 @@ class TestInstallAbsolutePath:
         tmp_path: pathlib.Path,
     ) -> None:
         """AC-TEST-003: 'kanon install /abs/.kanon' accepted and passed as absolute to install()."""
-        kanonenv = _write_kanonenv(tmp_path)
+        kanonenv = write_kanonenv(tmp_path)
         absolute_path = str(kanonenv)
         assert pathlib.Path(absolute_path).is_absolute()
 
@@ -168,7 +157,7 @@ class TestInstallRelativeSubdirPath:
         """AC-TEST-004: 'kanon install subdir/.kanon' resolves relative subdir to absolute."""
         subdir = tmp_path / "subdir"
         subdir.mkdir()
-        _write_kanonenv(subdir)
+        write_kanonenv(subdir)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.install.install") as mock_install:

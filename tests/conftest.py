@@ -5,6 +5,19 @@ import pathlib
 
 import pytest
 
+# Minimal valid .kanon content used across integration and functional tests.
+MINIMAL_KANONENV = (
+    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+)
+
+
+def write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
+    """Write a minimal valid .kanon file in directory and return its path."""
+    kanonenv = directory / ".kanon"
+    kanonenv.write_text(MINIMAL_KANONENV)
+    return kanonenv
+
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SRC_DIR = _REPO_ROOT / "src"
 

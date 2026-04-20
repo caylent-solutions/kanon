@@ -17,18 +17,7 @@ import pathlib
 import pytest
 
 from tests.functional.conftest import _run_kanon
-
-
-_MINIMAL_KANONENV = (
-    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
-)
-
-
-def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
-    """Write a minimal valid .kanon file in directory and return its path."""
-    kanonenv = directory / ".kanon"
-    kanonenv.write_text(_MINIMAL_KANONENV)
-    return kanonenv
+from tests.conftest import write_kanonenv
 
 
 @pytest.mark.functional
@@ -37,21 +26,21 @@ class TestInstallAutoDiscoveryFunctional:
 
     def test_install_no_arg_finds_kanonenv_in_cwd(self, tmp_path: pathlib.Path) -> None:
         """install with no arg discovers .kanon in cwd and attempts to proceed past path resolution."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         result = _run_kanon("install", cwd=tmp_path)
         # The CLI finds the file and prints the discovered path to stdout; then
         # it proceeds to the network/repo phase which may fail -- but the file
-        # was found and path resolution succeeded (exit is not 1 due to "not found").
+        # was found and path resolution succeeded.
         assert ".kanon file not found" not in result.stderr, (
             f"Auto-discovery should have found .kanon in cwd. stderr={result.stderr!r}"
         )
-        assert "found" in result.stdout or result.returncode != 1 or ".kanon" not in result.stderr, (
-            f"Expected auto-discovery to succeed. stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert "kanon install: found" in result.stdout, (
+            f"Expected auto-discovery success message in stdout. stdout={result.stdout!r} stderr={result.stderr!r}"
         )
 
     def test_install_no_arg_finds_kanonenv_in_ancestor(self, tmp_path: pathlib.Path) -> None:
         """install with no arg discovers .kanon two levels above cwd."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         deep = tmp_path / "a" / "b"
         deep.mkdir(parents=True)
         result = _run_kanon("install", cwd=deep)
@@ -74,7 +63,7 @@ class TestInstallRelativePathFunctional:
 
     def test_install_relative_path_dot_kanon_succeeds_past_file_resolution(self, tmp_path: pathlib.Path) -> None:
         """install .kanon (relative) finds the file and proceeds past path resolution."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         result = _run_kanon("install", ".kanon", cwd=tmp_path)
         # The .kanon exists and should be resolved -- no "file not found" error.
         assert ".kanon file not found" not in result.stderr, (
@@ -96,7 +85,7 @@ class TestInstallAbsolutePathFunctional:
 
     def test_install_absolute_path_resolves_correctly(self, tmp_path: pathlib.Path) -> None:
         """install /abs/.kanon finds the file and proceeds past path resolution."""
-        kanonenv = _write_kanonenv(tmp_path)
+        kanonenv = write_kanonenv(tmp_path)
         result = _run_kanon("install", str(kanonenv))
         assert ".kanon file not found" not in result.stderr, (
             f"Absolute path should resolve the file. stderr={result.stderr!r}"
@@ -120,7 +109,7 @@ class TestInstallRelativeSubdirPathFunctional:
         """install subdir/.kanon resolves the subdir relative path correctly."""
         subdir = tmp_path / "subdir"
         subdir.mkdir()
-        _write_kanonenv(subdir)
+        write_kanonenv(subdir)
         result = _run_kanon("install", "subdir/.kanon", cwd=tmp_path)
         assert ".kanon file not found" not in result.stderr, (
             f"Relative subdir path 'subdir/.kanon' should resolve the file. stderr={result.stderr!r}"
@@ -158,12 +147,12 @@ class TestInstallChannelDiscipline:
 
     def test_successful_autodiscovery_prints_found_to_stdout(self, tmp_path: pathlib.Path) -> None:
         """AC-CHANNEL-001: successful auto-discovery prints found path to stdout."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         result = _run_kanon("install", cwd=tmp_path)
-        # Auto-discovery emits "kanon install: found <path>" to stdout (from commands/install.py:111)
+        # Auto-discovery emits "kanon install: found <path>" to stdout (from commands/install.py:112)
         # The install will then fail in the repo phase but the path-found message must be on stdout.
         # We only check channel discipline -- not that install succeeds end-to-end.
-        assert "found" not in result.stderr or "kanon install: found" in result.stdout, (
+        assert "kanon install: found" in result.stdout, (
             f"Auto-discovery 'found' message must be on stdout not stderr. "
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )

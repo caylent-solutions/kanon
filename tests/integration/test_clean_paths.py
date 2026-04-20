@@ -16,18 +16,7 @@ import pytest
 
 from kanon_cli.cli import main
 from kanon_cli.core.discover import find_kanonenv
-
-
-_MINIMAL_KANONENV = (
-    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
-)
-
-
-def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
-    """Write a minimal valid .kanon file in directory and return its path."""
-    kanonenv = directory / ".kanon"
-    kanonenv.write_text(_MINIMAL_KANONENV)
-    return kanonenv
+from tests.conftest import write_kanonenv
 
 
 @pytest.mark.integration
@@ -40,7 +29,7 @@ class TestCleanAutoDiscovery:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-TEST-001: clean with no path argument discovers .kanon in cwd and invokes clean."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
@@ -58,7 +47,7 @@ class TestCleanAutoDiscovery:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-TEST-001: clean with no path argument discovers .kanon two levels above cwd."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         deep = tmp_path / "a" / "b"
         deep.mkdir(parents=True)
         monkeypatch.chdir(deep)
@@ -81,7 +70,7 @@ class TestCleanRelativePath:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-TEST-002: 'kanon clean .kanon' resolves to absolute and invokes clean."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
@@ -98,7 +87,7 @@ class TestCleanRelativePath:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-FUNC-001: clean() receives an absolute Path regardless of relative CLI argument."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         received_paths: list[pathlib.Path] = []
@@ -124,7 +113,7 @@ class TestCleanAbsolutePath:
         tmp_path: pathlib.Path,
     ) -> None:
         """AC-TEST-003: 'kanon clean /abs/.kanon' accepted and passed as absolute to clean()."""
-        kanonenv = _write_kanonenv(tmp_path)
+        kanonenv = write_kanonenv(tmp_path)
         absolute_path = str(kanonenv)
         assert pathlib.Path(absolute_path).is_absolute()
 
@@ -187,7 +176,7 @@ class TestCleanMissingKanonenv:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """AC-CHANNEL-001: discovery success message goes to stdout, not stderr."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         monkeypatch.chdir(tmp_path)
 
         with patch("kanon_cli.commands.clean.clean"):
@@ -205,7 +194,7 @@ class TestCleanMissingKanonenv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC-FUNC-001: path passed to clean() equals find_kanonenv() result from the same cwd."""
-        _write_kanonenv(tmp_path)
+        write_kanonenv(tmp_path)
         child = tmp_path / "sub"
         child.mkdir()
         monkeypatch.chdir(child)

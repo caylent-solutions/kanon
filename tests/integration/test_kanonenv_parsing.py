@@ -220,7 +220,7 @@ class TestKanonenvParsingValidation:
             tmp_path,
             "KANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
         )
-        with pytest.raises(ValueError, match="No sources found"):
+        with pytest.raises(ValueError, match=r"KANON_SOURCE_\w+_URL"):
             parse_kanonenv(kanonenv)
 
     def test_missing_path_raises_value_error(self, tmp_path: pathlib.Path) -> None:

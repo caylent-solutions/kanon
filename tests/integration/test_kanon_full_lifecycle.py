@@ -212,12 +212,12 @@ class TestMultiSourceInstallLifecycle:
 
 @pytest.mark.integration
 class TestSourceCollisionDetection:
-    """Verify that install exits non-zero when two sources produce the same package name."""
+    """Verify that install propagates ValueError when two sources produce the same package name."""
 
-    def test_collision_exits_nonzero_with_error(self, tmp_path: Path) -> None:
-        """When two sources declare a package with the same name, install must exit(1).
+    def test_collision_propagates_value_error(self, tmp_path: Path) -> None:
+        """When two sources declare a package with the same name, install propagates ValueError.
 
-        Filesystem state at exit: source dirs created, .packages/ partially populated.
+        Filesystem state at error: source dirs created, .packages/ partially populated.
         """
         kanonenv = _write_kanonenv(tmp_path, _two_source_content())
 
@@ -232,10 +232,8 @@ class TestSourceCollisionDetection:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_collision),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(ValueError, match="Package collision"):
                 install(kanonenv)
-
-        assert exc_info.value.code != 0, "install() must exit with a non-zero code when a package collision is detected"
 
 
 # ---------------------------------------------------------------------------
@@ -289,10 +287,10 @@ class TestAutoDiscoveryWorkflow:
 
 @pytest.mark.integration
 class TestPartialFailureRecovery:
-    """Verify that a failed sync mid-install produces a non-zero exit and clean is re-runnable."""
+    """Verify that a failed sync mid-install propagates the error and clean is re-runnable."""
 
-    def test_failed_sync_exits_nonzero(self, tmp_path: Path) -> None:
-        """When repo_sync raises RepoCommandError, install exits non-zero immediately.
+    def test_failed_sync_raises_repo_command_error(self, tmp_path: Path) -> None:
+        """When repo_sync raises RepoCommandError, install propagates it immediately.
 
         The first source's directory is created before sync fails.
         """
@@ -305,10 +303,8 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: network error")),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(RepoCommandError, match="sync failed: network error"):
                 install(kanonenv)
-
-        assert exc_info.value.code != 0, "install() must exit non-zero when repo_sync fails"
 
     def test_clean_succeeds_after_partial_install(self, tmp_path: Path) -> None:
         """clean() can remove partial install artifacts left by a failed install.
@@ -325,7 +321,7 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: timeout")),
         ):
-            with pytest.raises(SystemExit):
+            with pytest.raises(RepoCommandError):
                 install(kanonenv)
 
         # Source dir was created by create_source_dirs before sync failed

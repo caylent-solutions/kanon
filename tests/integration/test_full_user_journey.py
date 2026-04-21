@@ -988,7 +988,7 @@ class TestFullJourneyErrorRecovery:
         Steps:
         1. Create .kanon with two sources: 'good' and 'bad'.
         2. Run install: 'good' syncs OK, 'bad' raises RepoCommandError.
-        3. Install must fail with SystemExit non-zero.
+        3. install() propagates the RepoCommandError.
         4. Partial state (.kanon-data/sources/good/ or bad/) exists on disk.
         5. Run clean -- verify .packages/ and .kanon-data/ are removed.
         """
@@ -1019,10 +1019,8 @@ class TestFullJourneyErrorRecovery:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_partial),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(RepoCommandError, match="sync failed: invalid URL"):
                 install(kanonenv_path)
-
-        assert exc_info.value.code != 0, "install must exit non-zero when a source sync fails"
 
         partial_exists = (project_dir / ".kanon-data" / "sources" / "good").is_dir() or (
             project_dir / ".kanon-data" / "sources" / "bad"

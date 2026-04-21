@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
@@ -112,10 +113,8 @@ class TestInstallCrashCleanReinstall:
                 side_effect=RepoCommandError("sync failed: simulated crash"),
             ),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
                 install(kanonenv)
-
-        assert exc_info.value.code != 0, "install() must exit non-zero when repo_sync raises RepoCommandError"
 
         # Step 2: Partial artifacts exist after crash
         source_dir = tmp_path / ".kanon-data" / "sources" / "crash"
@@ -166,14 +165,15 @@ class TestInstallCrashCleanReinstall:
         )
 
     def test_stdout_stderr_discipline_no_cross_channel_leakage(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
+        self, tmp_path: Path, capsys: pytest.CaptureFixture, make_install_args
     ) -> None:
-        """AC-CHANNEL-001: stdout vs stderr discipline is verified.
+        """AC-CHANNEL-001: stdout vs stderr discipline is verified via the CLI handler.
 
         Normal install output goes to stdout; error messages go to stderr.
-        A failed install must write its error to stderr, not stdout.
+        A failed CLI invocation must write its error to stderr, not stdout.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("channel"))
+        args = make_install_args(kanonenv.resolve())
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -184,7 +184,7 @@ class TestInstallCrashCleanReinstall:
             ),
         ):
             with pytest.raises(SystemExit):
-                install(kanonenv)
+                _install_run(args)
 
         captured = capsys.readouterr()
         assert "channel error" in captured.err or "Error:" in captured.err, (

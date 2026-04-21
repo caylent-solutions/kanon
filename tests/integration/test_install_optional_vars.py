@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
 from kanon_cli.core.kanonenv import parse_kanonenv
 
@@ -377,22 +378,24 @@ class TestClaudeMarketplacesDirDefault:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture,
+        make_install_args,
     ) -> None:
         """When KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not
-        defined in .kanon or env, install() must fail fast with exit code 1 and an
-        actionable error message on stderr.
+        defined in .kanon or env, the CLI handler must fail fast with exit code 1
+        and an actionable error message on stderr.
         """
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
         )
+        args = make_install_args(kanonenv.resolve())
 
         with pytest.raises(SystemExit) as exc_info:
-            install(kanonenv)
+            _install_run(args)
 
         assert exc_info.value.code != 0, (
-            "install() must exit non-zero when KANON_MARKETPLACE_INSTALL=true and CLAUDE_MARKETPLACES_DIR is absent"
+            "CLI handler must exit non-zero when KANON_MARKETPLACE_INSTALL=true and CLAUDE_MARKETPLACES_DIR is absent"
         )
         captured = capsys.readouterr()
         assert "CLAUDE_MARKETPLACES_DIR" in captured.err, (
@@ -403,6 +406,7 @@ class TestClaudeMarketplacesDirDefault:
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
+        make_install_args,
     ) -> None:
         """When CLAUDE_MARKETPLACES_DIR is not in .kanon but is provided via env var
         override alongside KANON_MARKETPLACE_INSTALL=true, the install should pick it
@@ -410,9 +414,10 @@ class TestClaudeMarketplacesDirDefault:
         verifies the correct boundary: CLAUDE_MARKETPLACES_DIR must be in the file
         (not just env) for the marketplace path to activate.
 
-        This test verifies that CLAUDE_MARKETPLACES_DIR not in file means install
-        fails even when CLAUDE_MARKETPLACES_DIR is set in the environment, because
-        the env-override mechanism only applies to keys already declared in the file.
+        This test verifies that CLAUDE_MARKETPLACES_DIR not in file means the CLI
+        handler fails even when CLAUDE_MARKETPLACES_DIR is set in the environment,
+        because the env-override mechanism only applies to keys already declared in
+        the file.
         """
         marketplace_dir = tmp_path / "env-only-dir"
         marketplace_dir.mkdir()
@@ -422,12 +427,13 @@ class TestClaudeMarketplacesDirDefault:
             tmp_path,
             "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
         )
+        args = make_install_args(kanonenv.resolve())
 
         with pytest.raises(SystemExit) as exc_info:
-            install(kanonenv)
+            _install_run(args)
 
         assert exc_info.value.code != 0, (
-            "install() must fail when CLAUDE_MARKETPLACES_DIR is only in env (not in .kanon file) "
+            "CLI handler must fail when CLAUDE_MARKETPLACES_DIR is only in env (not in .kanon file) "
             "because env-override only applies to keys present in the file"
         )
 
@@ -446,16 +452,22 @@ class TestChannelDiscipline:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture,
+        make_install_args,
     ) -> None:
-        """Error about missing CLAUDE_MARKETPLACES_DIR must appear on stderr, not stdout."""
+        """Error about missing CLAUDE_MARKETPLACES_DIR must appear on stderr, not stdout.
+
+        The CLI handler must write the error to stderr when CLAUDE_MARKETPLACES_DIR
+        is absent.
+        """
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
         )
+        args = make_install_args(kanonenv.resolve())
 
         with pytest.raises(SystemExit):
-            install(kanonenv)
+            _install_run(args)
 
         captured = capsys.readouterr()
         assert "CLAUDE_MARKETPLACES_DIR" in captured.err, (

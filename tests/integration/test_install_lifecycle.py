@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
 
 
@@ -661,11 +662,11 @@ class TestInstallMultiSourceAggregation:
             assert link.is_symlink(), f"Package '{pkg_name}' must be symlinked in .packages/ after install"
 
     def test_ms01_collision_exits_nonzero_with_error(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture, make_install_args
     ) -> None:
-        """MS-01 collision path: two sources with the same package name exit non-zero.
+        """MS-01 collision path: the CLI handler exits non-zero with a collision error on stderr.
 
-        When 'alpha' and 'bravo' both provide 'shared-pkg', install must
+        When 'alpha' and 'bravo' both provide 'shared-pkg', the CLI handler must
         exit with a non-zero code and write a 'Package collision' error to stderr.
         """
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
@@ -675,15 +676,16 @@ class TestInstallMultiSourceAggregation:
             pkg_dir.mkdir(parents=True, exist_ok=True)
             (pkg_dir / "README.md").write_text("# shared\n")
 
+        args = make_install_args(kanonenv.resolve())
         with pytest.raises(SystemExit) as exc_info:
             with (
                 patch("kanon_cli.repo.repo_init"),
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_collision),
             ):
-                install(kanonenv)
+                _install_run(args)
 
-        assert exc_info.value.code != 0, "install must exit non-zero on package collision"
+        assert exc_info.value.code != 0, "CLI handler must exit non-zero on package collision"
         captured = capsys.readouterr()
         assert "Package collision" in captured.err, f"stderr must contain 'Package collision'; got: {captured.err!r}"
         assert "shared-pkg" in captured.err, (
@@ -854,9 +856,9 @@ class TestInstallChannelDiscipline:
         assert "kanon" in captured.out, f"stdout must contain progress output from install; got stdout={captured.out!r}"
 
     def test_failed_install_writes_error_to_stderr_not_stdout(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture, make_install_args
     ) -> None:
-        """When install fails, the error message appears on stderr, not stdout.
+        """When the CLI handler fails, the error message appears on stderr, not stdout.
 
         A repo_sync failure must result in an error on stderr. The stdout
         must not contain the word 'Error'.
@@ -864,6 +866,7 @@ class TestInstallChannelDiscipline:
         from kanon_cli.repo import RepoCommandError
 
         kanonenv = _write_single_source_kanonenv(tmp_path)
+        args = make_install_args(kanonenv.resolve())
 
         with pytest.raises(SystemExit):
             with (
@@ -871,7 +874,7 @@ class TestInstallChannelDiscipline:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("network timeout")),
             ):
-                install(kanonenv)
+                _install_run(args)
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"stderr must contain 'Error' when install fails; got stderr={captured.err!r}"
@@ -880,12 +883,12 @@ class TestInstallChannelDiscipline:
         )
 
     def test_collision_error_written_to_stderr_not_stdout(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture, make_install_args
     ) -> None:
         """Package collision errors are written to stderr, not stdout.
 
-        When a collision is detected, the collision message must appear on
-        stderr and must not appear on stdout.
+        When a collision is detected, the CLI handler must write the collision
+        message to stderr and must not write it to stdout.
         """
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
 
@@ -893,13 +896,14 @@ class TestInstallChannelDiscipline:
             pkg_dir = pathlib.Path(repo_dir) / ".packages" / "collision-pkg"
             pkg_dir.mkdir(parents=True, exist_ok=True)
 
+        args = make_install_args(kanonenv.resolve())
         with pytest.raises(SystemExit):
             with (
                 patch("kanon_cli.repo.repo_init"),
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync", side_effect=fake_collision_sync),
             ):
-                install(kanonenv)
+                _install_run(args)
 
         captured = capsys.readouterr()
         assert "collision-pkg" in captured.err, (

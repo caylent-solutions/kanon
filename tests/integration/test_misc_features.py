@@ -153,12 +153,12 @@ class TestInstallCoreLogic:
         aggregate_symlinks(["build"], tmp_path)
         assert (tmp_path / ".packages" / "my-tool").is_symlink()
 
-    def test_aggregate_symlinks_collision_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_aggregate_symlinks_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ("a", "b"):
             pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "collision-pkg").mkdir()
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError, match="Package collision"):
             aggregate_symlinks(["a", "b"], tmp_path)
 
     def test_update_gitignore_creates_file(self, tmp_path: pathlib.Path) -> None:

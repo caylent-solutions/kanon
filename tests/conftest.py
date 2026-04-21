@@ -79,3 +79,39 @@ def mock_git_ls_remote_output() -> str:
         "jkl012\trefs/tags/2.0.0\n"
         "mno345\trefs/tags/2.0.0^{}\n"
     )
+
+
+@pytest.fixture()
+def make_install_args():
+    """Factory fixture that returns a MagicMock with kanonenv_path set.
+
+    Returns a callable that accepts a kanonenv path and returns a MagicMock
+    suitable for passing to the install CLI handler _run(args). This allows
+    integration and functional tests to invoke the CLI boundary without
+    duplicating the argparse namespace setup inline.
+
+    Args: (none -- use the returned factory)
+
+    Returns:
+        A factory function that accepts kanonenv_path (Path) and returns a
+        MagicMock with kanonenv_path attribute set to that value.
+
+    Example::
+
+        def test_something(tmp_path, make_install_args):
+            from kanon_cli.commands.install import _run
+            kanonenv = tmp_path / ".kanon"
+            kanonenv.write_text("...")
+            args = make_install_args(kanonenv.resolve())
+            with pytest.raises(SystemExit) as exc_info:
+                _run(args)
+            assert exc_info.value.code == 1
+    """
+    from unittest.mock import MagicMock
+
+    def _factory(kanonenv_path: pathlib.Path) -> MagicMock:
+        args = MagicMock()
+        args.kanonenv_path = kanonenv_path
+        return args
+
+    return _factory

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
 
 
@@ -80,7 +81,7 @@ class TestInstallLifecycle:
         assert (tmp_path / ".packages" / "pkg-alpha").is_symlink()
         assert (tmp_path / ".packages" / "pkg-bravo").is_symlink()
 
-    def test_collision_detection_exits(self, tmp_path: Path) -> None:
+    def test_collision_detection_exits(self, tmp_path: Path, make_install_args) -> None:
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
@@ -97,14 +98,15 @@ class TestInstallLifecycle:
             packages = Path(repo_dir) / ".packages" / "collider"
             packages.mkdir(parents=True, exist_ok=True)
 
+        args = make_install_args(kanonenv.resolve())
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                install(kanonenv)
-            assert exc_info.value.code == 1
+                _install_run(args)
+        assert exc_info.value.code == 1
 
     def test_gitignore_appended_not_duplicated(self, tmp_path: Path) -> None:
         (tmp_path / ".gitignore").write_text(".packages/\n")

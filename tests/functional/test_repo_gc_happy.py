@@ -83,9 +83,7 @@ class TestSharedHelperImportability:
         import at the top of this file raises ImportError and this test fails
         at collection time. The callable check confirms it is a real function.
         """
-        assert callable(
-            _init_git_work_dir
-        ), "_init_git_work_dir imported from conftest must be callable"
+        assert callable(_init_git_work_dir), "_init_git_work_dir imported from conftest must be callable"
 
     def test_clone_as_bare_importable_from_conftest(self) -> None:
         """_clone_as_bare must be importable from tests.functional.conftest.
@@ -93,9 +91,7 @@ class TestSharedHelperImportability:
         If _clone_as_bare is not defined in conftest.py, the module-level
         import raises ImportError and this test fails at collection time.
         """
-        assert callable(
-            _clone_as_bare
-        ), "_clone_as_bare imported from conftest must be callable"
+        assert callable(_clone_as_bare), "_clone_as_bare imported from conftest must be callable"
 
     def test_create_bare_content_repo_importable_from_conftest(self) -> None:
         """_create_bare_content_repo must be importable from tests.functional.conftest.
@@ -104,9 +100,7 @@ class TestSharedHelperImportability:
         module-level import raises ImportError and this test fails at
         collection time.
         """
-        assert callable(
-            _create_bare_content_repo
-        ), "_create_bare_content_repo imported from conftest must be callable"
+        assert callable(_create_bare_content_repo), "_create_bare_content_repo imported from conftest must be callable"
 
     def test_create_manifest_repo_importable_from_conftest(self) -> None:
         """_create_manifest_repo must be importable from tests.functional.conftest.
@@ -114,9 +108,7 @@ class TestSharedHelperImportability:
         If _create_manifest_repo is not defined in conftest.py, the module-level
         import raises ImportError and this test fails at collection time.
         """
-        assert callable(
-            _create_manifest_repo
-        ), "_create_manifest_repo imported from conftest must be callable"
+        assert callable(_create_manifest_repo), "_create_manifest_repo imported from conftest must be callable"
 
     def test_setup_synced_repo_importable_from_conftest(self) -> None:
         """_setup_synced_repo must be importable from tests.functional.conftest.
@@ -124,9 +116,7 @@ class TestSharedHelperImportability:
         If _setup_synced_repo is not defined in conftest.py, the module-level
         import raises ImportError and this test fails at collection time.
         """
-        assert callable(
-            _setup_synced_repo
-        ), "_setup_synced_repo imported from conftest must be callable"
+        assert callable(_setup_synced_repo), "_setup_synced_repo imported from conftest must be callable"
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +162,7 @@ class TestRepoGcHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_gc_prints_nothing_to_clean_up_in_fresh_repo(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_gc_prints_nothing_to_clean_up_in_fresh_repo(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo gc' must print 'Nothing to clean up.' in a freshly synced repo.
 
         When no unused project directories exist after 'repo init' and 'repo
@@ -229,14 +217,10 @@ class TestRepoGcHappyPathDefaultArgs:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert len(combined) > 0, (
-            f"'kanon repo gc' produced empty combined output.\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
+            f"'kanon repo gc' produced empty combined output.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
 
 
@@ -254,9 +238,7 @@ class TestRepoGcHappyChannelDiscipline:
     stderr does not contain Python exception tracebacks on a successful run.
     """
 
-    def test_repo_gc_success_has_no_traceback_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_gc_success_has_no_traceback_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo gc' must not emit Python tracebacks to stdout.
 
         On success, stdout must not contain 'Traceback (most recent call last)'.
@@ -278,17 +260,12 @@ class TestRepoGcHappyChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
         assert _TRACEBACK_MARKER not in result.stdout, (
-            f"Python traceback found in stdout of successful 'kanon repo gc'.\n"
-            f"  stdout: {result.stdout!r}"
+            f"Python traceback found in stdout of successful 'kanon repo gc'.\n  stdout: {result.stdout!r}"
         )
 
-    def test_repo_gc_success_has_no_error_keyword_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_gc_success_has_no_error_keyword_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo gc' must not emit 'Error:' prefix to stdout.
 
         Error-prefixed messages are a stderr-only concern. A successful
@@ -309,18 +286,14 @@ class TestRepoGcHappyChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
         for line in result.stdout.splitlines():
             assert not line.startswith(_ERROR_PREFIX), (
                 f"'{_ERROR_PREFIX}' line found in stdout of successful 'kanon repo gc': {line!r}\n"
                 f"  stdout: {result.stdout!r}"
             )
 
-    def test_repo_gc_success_has_no_traceback_on_stderr(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_gc_success_has_no_traceback_on_stderr(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo gc' must not emit Python tracebacks to stderr.
 
         On success, stderr must not contain 'Traceback (most recent call last)'.
@@ -342,10 +315,7 @@ class TestRepoGcHappyChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
         assert _TRACEBACK_MARKER not in result.stderr, (
-            f"Python traceback found in stderr of successful 'kanon repo gc'.\n"
-            f"  stderr: {result.stderr!r}"
+            f"Python traceback found in stderr of successful 'kanon repo gc'.\n  stderr: {result.stderr!r}"
         )

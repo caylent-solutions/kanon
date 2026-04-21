@@ -12,6 +12,8 @@ directories, it exits 0 and prints 'Nothing to clean up.'
 Covers:
 - AC-TEST-001: Five shared helper functions exist only in tests/functional/conftest.py
   and are imported here, not re-defined locally.
+- AC-TEST-002: 'kanon repo gc' with a positional project name exits 0 in a
+  valid synced repo.
 - AC-CODE-001: 'kanon repo gc' with default args exits 0 in a valid initialized repo.
 - AC-CHANNEL-001: stdout vs stderr channel discipline (no cross-channel leakage).
 
@@ -318,4 +320,114 @@ class TestRepoGcHappyChannelDiscipline:
         assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo gc' failed: {result.stderr!r}"
         assert _TRACEBACK_MARKER not in result.stderr, (
             f"Python traceback found in stderr of successful 'kanon repo gc'.\n  stderr: {result.stderr!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# AC-TEST-002: every positional argument of repo gc has a happy-path test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.functional
+class TestRepoGcPositionalArgHappyPath:
+    """AC-TEST-002: happy-path test for the project name positional argument.
+
+    'repo gc' accepts optional project names as positional arguments to
+    restrict the gc operation to specific projects. When a valid project name
+    from the manifest is supplied in a cleanly synced repository, the command
+    exits 0 (no unused project directories exist for that project).
+    """
+
+    def test_repo_gc_with_project_name_exits_zero(self, tmp_path: pathlib.Path) -> None:
+        """'kanon repo gc <project>' with a valid project name exits 0.
+
+        After a successful 'kanon repo init' and 'kanon repo sync', passes the
+        project name from the manifest as a positional argument to 'kanon repo
+        gc'. The project has no unused .git directories, so the command must
+        exit 0 and report 'Nothing to clean up.'
+        """
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_path=_PROJECT_PATH,
+        )
+
+        result = _run_kanon(
+            "repo",
+            "--repo-dir",
+            str(repo_dir),
+            "gc",
+            _PROJECT_NAME,
+            cwd=checkout_dir,
+        )
+
+        assert result.returncode == _EXPECTED_EXIT_CODE, (
+            f"'kanon repo gc {_PROJECT_NAME}' exited {result.returncode}, "
+            f"expected {_EXPECTED_EXIT_CODE}.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+
+    def test_repo_gc_with_project_name_reports_nothing_to_clean_up(self, tmp_path: pathlib.Path) -> None:
+        """'kanon repo gc <project>' reports 'Nothing to clean up.' in a synced repo.
+
+        When a valid project name is passed as a positional argument and the
+        repository has no unused .git directories for that project, the 'gc'
+        subcommand must print 'Nothing to clean up.' to stdout and exit 0.
+        """
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_path=_PROJECT_PATH,
+        )
+
+        result = _run_kanon(
+            "repo",
+            "--repo-dir",
+            str(repo_dir),
+            "gc",
+            _PROJECT_NAME,
+            cwd=checkout_dir,
+        )
+
+        assert result.returncode == _EXPECTED_EXIT_CODE, (
+            f"Prerequisite 'kanon repo gc {_PROJECT_NAME}' failed: {result.stderr!r}"
+        )
+        assert _NOTHING_TO_CLEAN in result.stdout, (
+            f"Expected {_NOTHING_TO_CLEAN!r} in stdout of 'kanon repo gc {_PROJECT_NAME}'.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+
+    def test_repo_gc_with_project_name_and_dry_run_exits_zero(self, tmp_path: pathlib.Path) -> None:
+        """'kanon repo gc --dry-run <project>' exits 0 for a synced project.
+
+        Combines the --dry-run flag with a positional project name argument.
+        In a cleanly synced repository no unused project directories exist,
+        so the gc command must exit 0 regardless of --dry-run.
+        """
+        checkout_dir, repo_dir = _setup_synced_repo(
+            tmp_path,
+            git_user_name=_GIT_USER_NAME,
+            git_user_email=_GIT_USER_EMAIL,
+            project_path=_PROJECT_PATH,
+        )
+
+        result = _run_kanon(
+            "repo",
+            "--repo-dir",
+            str(repo_dir),
+            "gc",
+            "--dry-run",
+            _PROJECT_NAME,
+            cwd=checkout_dir,
+        )
+
+        assert result.returncode == _EXPECTED_EXIT_CODE, (
+            f"'kanon repo gc --dry-run {_PROJECT_NAME}' exited {result.returncode}, "
+            f"expected {_EXPECTED_EXIT_CODE}.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
         )

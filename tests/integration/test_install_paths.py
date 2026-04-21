@@ -187,7 +187,9 @@ class TestInstallMissingKanonenv:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "No .kanon file found" in captured.err, f"Expected 'No .kanon file found' in stderr, got: {captured.err!r}"
+        assert "No .kanon file found" in captured.err, (
+            f"Expected 'No .kanon file found' in stderr, got: {captured.err!r}"
+        )
 
     def test_explicit_missing_path_exits_1_with_not_found_message(
         self,

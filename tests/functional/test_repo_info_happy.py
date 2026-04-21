@@ -166,9 +166,7 @@ class TestRepoInfoHappyPathDefaultArgs:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert "Manifest branch" in combined, (
             f"Expected 'Manifest branch' in 'kanon repo info' output.\n"
@@ -193,9 +191,7 @@ class TestRepoInfoHappyPathDefaultArgs:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert len(combined) > 0, (
             f"'kanon repo info' produced empty combined output.\n"
@@ -223,9 +219,7 @@ class TestRepoInfoPositionalArgHappyPath:
     These tests therefore run 'repo init' followed by 'repo sync' as setup.
     """
 
-    def test_repo_info_with_project_name_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_with_project_name_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo info <project>' with a valid project name exits 0.
 
         After a successful 'kanon repo init' and 'kanon repo sync', passes the
@@ -256,9 +250,7 @@ class TestRepoInfoPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_info_with_project_name_prints_project_heading(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_with_project_name_prints_project_heading(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo info <project>' must print the 'Project:' heading for that project.
 
         When a valid project name is passed as a positional argument, the
@@ -283,9 +275,7 @@ class TestRepoInfoPositionalArgHappyPath:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info {_PROJECT_NAME}' failed: {result.stderr!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info {_PROJECT_NAME}' failed: {result.stderr!r}"
         combined = result.stdout + result.stderr
         assert "Project" in combined, (
             f"Expected 'Project' in 'kanon repo info {_PROJECT_NAME}' output.\n"
@@ -293,9 +283,7 @@ class TestRepoInfoPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_info_with_project_path_alias_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_with_project_path_alias_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo info <path>' with the project path alias exits 0.
 
         Verifies that passing a project by its path alias (as an alternative
@@ -341,9 +329,7 @@ class TestRepoInfoChannelDiscipline:
     stderr does not contain Python exception tracebacks on a successful run.
     """
 
-    def test_repo_info_success_has_no_traceback_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_success_has_no_traceback_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo info' must not emit Python tracebacks to stdout.
 
         On success, stdout must not contain 'Traceback (most recent call last)'.
@@ -360,16 +346,12 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
-        assert (
-            "Traceback (most recent call last)" not in result.stdout
-        ), f"Python traceback found in stdout of successful 'kanon repo info'.\n  stdout: {result.stdout!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert "Traceback (most recent call last)" not in result.stdout, (
+            f"Python traceback found in stdout of successful 'kanon repo info'.\n  stdout: {result.stdout!r}"
+        )
 
-    def test_repo_info_success_has_no_error_keyword_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_success_has_no_error_keyword_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo info' must not emit 'Error:' prefix to stdout.
 
         Error-prefixed messages are a stderr-only concern. A successful
@@ -385,17 +367,13 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
         for line in result.stdout.splitlines():
-            assert not line.startswith(
-                "Error:"
-            ), f"'Error:' line found in stdout of successful 'kanon repo info': {line!r}\n  stdout: {result.stdout!r}"
+            assert not line.startswith("Error:"), (
+                f"'Error:' line found in stdout of successful 'kanon repo info': {line!r}\n  stdout: {result.stdout!r}"
+            )
 
-    def test_repo_info_success_has_no_traceback_on_stderr(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_info_success_has_no_traceback_on_stderr(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo info' must not emit Python tracebacks to stderr.
 
         On success, stderr must not contain 'Traceback (most recent call last)'.
@@ -412,9 +390,7 @@ class TestRepoInfoChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == 0
-        ), f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
-        assert (
-            "Traceback (most recent call last)" not in result.stderr
-        ), f"Python traceback found in stderr of successful 'kanon repo info'.\n  stderr: {result.stderr!r}"
+        assert result.returncode == 0, f"Prerequisite 'kanon repo info' failed: {result.stderr!r}"
+        assert "Traceback (most recent call last)" not in result.stderr, (
+            f"Python traceback found in stderr of successful 'kanon repo info'.\n  stderr: {result.stderr!r}"
+        )

@@ -109,9 +109,7 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
-        )
+        raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
 
 
 def _init_git_work_dir(
@@ -172,9 +170,7 @@ def _create_bare_content_repo(
     """
     work_dir = base / "content-work"
     work_dir.mkdir()
-    _init_git_work_dir(
-        work_dir, git_user_name=git_user_name, git_user_email=git_user_email
-    )
+    _init_git_work_dir(work_dir, git_user_name=git_user_name, git_user_email=git_user_email)
 
     readme = work_dir / content_file_name
     readme.write_text(content_file_text, encoding="utf-8")
@@ -214,9 +210,7 @@ def _create_manifest_repo(
     """
     work_dir = base / "manifest-work"
     work_dir.mkdir()
-    _init_git_work_dir(
-        work_dir, git_user_name=git_user_name, git_user_email=git_user_email
-    )
+    _init_git_work_dir(work_dir, git_user_name=git_user_name, git_user_email=git_user_email)
 
     manifest_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

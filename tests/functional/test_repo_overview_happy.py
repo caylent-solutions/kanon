@@ -74,9 +74,7 @@ class TestRepoOverviewHappyPathDefaultArgs:
     empty output -- this is the documented default behavior.
     """
 
-    def test_repo_overview_with_defaults_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_defaults_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview' with no extra args must exit 0.
 
         After a successful 'kanon repo init' and 'kanon repo sync', invokes
@@ -107,9 +105,7 @@ class TestRepoOverviewHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_empty_output_when_no_unmerged_branches(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_empty_output_when_no_unmerged_branches(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview' produces empty combined output in a clean repo.
 
         The 'overview' subcommand only emits output when there are unmerged
@@ -145,9 +141,7 @@ class TestRepoOverviewHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_with_no_current_branch_flag_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_no_current_branch_flag_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview --no-current-branch' exits 0 in a clean repo.
 
         The {flag} flag instructs the 'overview' subcommand to consider all
@@ -180,9 +174,7 @@ class TestRepoOverviewHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_with_current_branch_flag_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_current_branch_flag_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview --current-branch' exits 0 in a clean repo.
 
         The {flag} flag restricts output to branches currently checked out in
@@ -230,9 +222,7 @@ class TestRepoOverviewPositionalArgHappyPath:
     (no unmerged branches exist for that project either).
     """
 
-    def test_repo_overview_with_project_name_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_project_name_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview <project>' with a valid project name exits 0.
 
         After a successful 'kanon repo init' and 'kanon repo sync', passes the
@@ -265,9 +255,7 @@ class TestRepoOverviewPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_with_project_name_produces_no_output_in_clean_repo(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_project_name_produces_no_output_in_clean_repo(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview <project>' produces no output in a cleanly synced repo.
 
         When a valid project name is passed as a positional argument and that
@@ -292,9 +280,9 @@ class TestRepoOverviewPositionalArgHappyPath:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo overview {_PROJECT_NAME}' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, (
+            f"Prerequisite 'kanon repo overview {_PROJECT_NAME}' failed: {result.stderr!r}"
+        )
         combined = result.stdout + result.stderr
         assert combined == "", (
             f"'kanon repo overview {_PROJECT_NAME}' produced unexpected output.\n"
@@ -302,9 +290,7 @@ class TestRepoOverviewPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_with_project_path_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_project_path_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview <path>' with the project path alias exits 0.
 
         Verifies that passing a project by its path alias (as an alternative
@@ -336,17 +322,13 @@ class TestRepoOverviewPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_repo_overview_with_project_name_and_current_branch_flag_exits_zero(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_with_project_name_and_current_branch_flag_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview --current-branch <project>' exits 0 for a synced project.
 
         Combines the {flag} flag with a positional project name argument.
         In a cleanly synced repository the checked-out branch for the named
         project has no unmerged commits, so the command must exit 0.
-        """.format(
-            flag=_FLAG_CURRENT_BRANCH
-        )
+        """.format(flag=_FLAG_CURRENT_BRANCH)
         checkout_dir, repo_dir = _setup_synced_repo(
             tmp_path,
             git_user_name=_GIT_USER_NAME,
@@ -388,9 +370,7 @@ class TestRepoOverviewChannelDiscipline:
     stderr does not contain Python exception tracebacks on a successful run.
     """
 
-    def test_repo_overview_success_has_no_traceback_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_success_has_no_traceback_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo overview' must not emit Python tracebacks to stdout.
 
         On success, stdout must not contain '{marker}'. Tracebacks on stdout
@@ -413,16 +393,12 @@ class TestRepoOverviewChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
-        assert (
-            _TRACEBACK_MARKER not in result.stdout
-        ), f"Python traceback found in stdout of successful 'kanon repo overview'.\n  stdout: {result.stdout!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
+        assert _TRACEBACK_MARKER not in result.stdout, (
+            f"Python traceback found in stdout of successful 'kanon repo overview'.\n  stdout: {result.stdout!r}"
+        )
 
-    def test_repo_overview_success_has_no_error_keyword_on_stdout(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_success_has_no_error_keyword_on_stdout(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo overview' must not emit '{prefix}' prefix to stdout.
 
         Error-prefixed messages are a stderr-only concern. A successful
@@ -445,18 +421,14 @@ class TestRepoOverviewChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
         for line in result.stdout.splitlines():
             assert not line.startswith(_ERROR_PREFIX), (
                 f"'{_ERROR_PREFIX}' line found in stdout of successful "
                 f"'kanon repo overview': {line!r}\n  stdout: {result.stdout!r}"
             )
 
-    def test_repo_overview_success_has_no_traceback_on_stderr(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_repo_overview_success_has_no_traceback_on_stderr(self, tmp_path: pathlib.Path) -> None:
         """Successful 'kanon repo overview' must not emit Python tracebacks to stderr.
 
         On success, stderr must not contain '{marker}'. A traceback on stderr
@@ -480,9 +452,7 @@ class TestRepoOverviewChannelDiscipline:
             cwd=checkout_dir,
         )
 
-        assert (
-            result.returncode == _EXPECTED_EXIT_CODE
-        ), f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
-        assert (
-            _TRACEBACK_MARKER not in result.stderr
-        ), f"Python traceback found in stderr of successful 'kanon repo overview'.\n  stderr: {result.stderr!r}"
+        assert result.returncode == _EXPECTED_EXIT_CODE, f"Prerequisite 'kanon repo overview' failed: {result.stderr!r}"
+        assert _TRACEBACK_MARKER not in result.stderr, (
+            f"Python traceback found in stderr of successful 'kanon repo overview'.\n  stderr: {result.stderr!r}"
+        )

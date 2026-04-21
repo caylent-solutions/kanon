@@ -73,7 +73,7 @@ kanon validate marketplace
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `GITBASE` | Yes | Base Git URL for your organization (e.g., `https://github.com/your-org/`). Used by `repo envsubst` to resolve `${GITBASE}` placeholders in manifest XML files. |
+| `GITBASE` | Yes | Base Git URL for your organization (e.g., `https://github.com/your-org/`). Used by `kanon repo envsubst` to resolve `${GITBASE}` placeholders in manifest XML files. |
 | `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace plugin symlinks. Required when `KANON_MARKETPLACE_INSTALL=true`. Typically `${HOME}/.claude-marketplaces`. |
 | `KANON_MARKETPLACE_INSTALL` | No | Set to `true` to enable the marketplace plugin install/uninstall lifecycle during install and clean. Default: `false`. When `false`, marketplace-related operations are skipped entirely. |
 
@@ -95,9 +95,9 @@ You can define multiple sources. Add new source blocks in `.kanon` as needed.
 
 The Kanon CLI reads `.kanon` and for each source:
 
-1. `repo init` -- Clones the manifest repository
-2. `repo envsubst` -- Resolves `${VARIABLE}` placeholders in manifest XML
-3. `repo sync` -- Syncs packages into `.kanon-data/sources/<name>/.packages/`
+1. `kanon repo init` -- Clones the manifest repository
+2. `kanon repo envsubst` -- Resolves `${VARIABLE}` placeholders in manifest XML
+3. `kanon repo sync` -- Syncs packages into `.kanon-data/sources/<name>/.packages/`
 
 After all sources are synced, Kanon aggregates their packages into `.packages/` using symlinks, giving a unified view regardless of which source provided each package.
 
@@ -148,5 +148,5 @@ Then add a marketplace source and re-run `kanon install .kanon`. When `KANON_MAR
 
 - **`kanon: command not found`** -- Reinstall the Kanon CLI: `uv tool install kanon-cli`
 - **`kanon install` fails with ".kanon not found"** -- Pass the path: `kanon install .kanon`
-- **`repo envsubst` fails** -- Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`
+- **`kanon repo envsubst` fails** -- Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`
 - **Authentication errors during sync** -- If you use SSH for Git auth, ensure the HTTPS-to-SSH rewrite is configured globally: `git config --global url."git@github.com:".insteadOf "https://github.com/"`. If you use HTTPS, ensure your credential helper is configured.

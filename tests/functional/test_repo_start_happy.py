@@ -26,7 +26,7 @@ import subprocess
 
 import pytest
 
-from tests.functional.conftest import _git, _run_kanon
+from tests.functional.conftest import _git, _git_branch_list, _run_kanon
 
 # ---------------------------------------------------------------------------
 # Module-level constants (no hard-coded values in test logic)
@@ -467,36 +467,3 @@ class TestRepoStartChannelDiscipline:
         assert _TRACEBACK_MARKER not in channel_result.stderr, (
             f"Python traceback found in stderr of successful 'kanon repo start'.\n  stderr: {channel_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
-def _git_branch_list(project_dir: pathlib.Path) -> list[str]:
-    """Return a list of local branch names in project_dir.
-
-    Runs ``git branch`` in project_dir and parses the output into a flat list
-    of branch names (stripping the leading '*' and whitespace from git output).
-
-    Args:
-        project_dir: Path to a git working directory.
-
-    Returns:
-        A list of local branch name strings.
-
-    Raises:
-        RuntimeError: When git exits with a non-zero code.
-    """
-    result = subprocess.run(
-        ["git", "branch"],
-        cwd=str(project_dir),
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"git branch failed in {project_dir!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
-        )
-    return [line.strip().lstrip("* ") for line in result.stdout.splitlines() if line.strip()]

@@ -15,6 +15,8 @@ modules:
   content repo.
 - :func:`_setup_synced_repo` -- run ``kanon repo init`` + ``kanon repo sync``
   and return ``(checkout_dir, repo_dir)``.
+- :func:`_git_branch_list` -- return a list of local branch names in a git
+  working directory.
 """
 
 import os
@@ -110,6 +112,42 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
+
+
+def _git_branch_list(project_dir: pathlib.Path) -> list[str]:
+    """Return a list of local branch names in project_dir.
+
+    Runs ``git branch`` in project_dir and parses the output into a flat list
+    of branch names (stripping the leading ``*`` and whitespace from git output).
+    Git status indicators enclosed in parentheses (e.g. ``(no branch)``,
+    ``(HEAD detached at <hash>)``) are excluded because they are not real branch
+    names.
+
+    Args:
+        project_dir: Path to a git working directory.
+
+    Returns:
+        A list of local branch name strings. Empty when no real branches exist.
+
+    Raises:
+        RuntimeError: When git exits with a non-zero code.
+    """
+    result = subprocess.run(
+        ["git", "branch"],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"git branch failed in {project_dir!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
+        )
+    branches = []
+    for line in result.stdout.splitlines():
+        name = line.strip().lstrip("* ")
+        if name and not name.startswith("("):
+            branches.append(name)
+    return branches
 
 
 def _init_git_work_dir(

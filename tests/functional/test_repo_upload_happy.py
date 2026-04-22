@@ -60,194 +60,38 @@ import subprocess
 import pytest
 
 from tests.functional.conftest import (
-    _git,
+    _ENV_IGNORE_SSH_INFO,
+    _OK_MARKER,
+    _UPLOAD_PROJECT_PHRASE,
     _run_kanon,
-    _setup_synced_repo,
+    _setup_upload_repo,
 )
 
 # ---------------------------------------------------------------------------
 # Module-level constants -- no hard-coded domain literals in test logic
 # ---------------------------------------------------------------------------
 
-_GIT_USER_NAME = "Repo Upload Happy Test User"
-_GIT_USER_EMAIL = "repo-upload-happy@example.com"
-_MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "upload-test-project"
 
 # Topic branch for upload tests
 _TOPIC_BRANCH = "feature/upload-happy-path"
 
-# File committed to the topic branch to make it uploadable
-_UPLOAD_CONTENT_FILE = "upload-test-content.txt"
-_UPLOAD_CONTENT_TEXT = "upload happy path test content"
-_UPLOAD_COMMIT_MSG = "Add upload test content file"
-
-# Local bare git repo directory name acting as the Gerrit push target
-_REVIEW_BARE_DIR_NAME = "review.git"
-
-# Fake Gerrit review URL (not a real server -- redirected via insteadOf)
-_FAKE_REVIEW_BASE_URL = "http://fake.gerrit.example.com/"
-
 # CLI token constants
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_UPLOAD = "upload"
-_CLI_TOKEN_START = "start"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_DRY_RUN = "--dry-run"
 _CLI_FLAG_YES = "--yes"
-_CLI_FLAG_ALL = "--all"
-
-# Environment variable that suppresses SSH-info fetching in ReviewUrl
-_ENV_IGNORE_SSH_INFO = "REPO_IGNORE_SSH_INFO"
-
-# Git config keys for review and URL rewrite
-_GIT_CONFIG_REMOTE_REVIEW = "remote.local.review"
 
 # Expected exit code for all happy-path invocations
 _EXPECTED_EXIT_CODE = 0
-
-# Phrase expected in stdout when upload finds a reviewable branch
-_UPLOAD_PROJECT_PHRASE = "Upload project"
-
-# Success marker expected in stderr when upload completes normally
-_OK_MARKER = "[OK    ]"
 
 # Traceback indicator used in channel-discipline assertions
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
 # Error prefix that must not appear on stdout for successful runs
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Private setup helpers
-# ---------------------------------------------------------------------------
-
-
-def _build_insteadof_config_key(review_bare: pathlib.Path) -> str:
-    """Return the git config key for the insteadOf URL rewrite.
-
-    Formats the ``url.<local-path>.insteadOf`` key that redirects git push
-    operations from the fake Gerrit URL to the local bare repository.
-
-    Args:
-        review_bare: Absolute path to the local bare git repository used as
-            the Gerrit push target.
-
-    Returns:
-        A git config key string of the form
-        ``url.file://<path>.insteadOf``.
-    """
-    return f"url.file://{review_bare}.insteadOf"
-
-
-def _full_review_url() -> str:
-    """Return the full fake Gerrit review URL including the project name.
-
-    ReviewUrl appends ``remote.projectname`` to the base review URL.
-    This function constructs the full URL that matches what ReviewUrl
-    returns, so the insteadOf rewrite applies correctly.
-
-    Returns:
-        The concatenation of ``_FAKE_REVIEW_BASE_URL`` and
-        ``_PROJECT_NAME``.
-    """
-    return _FAKE_REVIEW_BASE_URL + _PROJECT_NAME
-
-
-def _setup_upload_repo(
-    tmp_path: pathlib.Path,
-    branch_name: str,
-) -> "tuple[pathlib.Path, pathlib.Path, pathlib.Path]":
-    """Create a synced repo with a reviewable topic branch and review config.
-
-    Performs the shared setup steps required by all upload happy-path tests:
-
-    1. Calls ``_setup_synced_repo`` to create bare repos, run
-       ``kanon repo init`` and ``kanon repo sync``, and return
-       ``(checkout_dir, repo_dir)``.
-    2. Runs ``kanon repo start <branch_name> --all`` to create the topic
-       branch across all manifest projects.
-    3. Commits one new file to the project worktree so the topic branch has
-       uploadable commits.
-    4. Creates a local bare git repository at
-       ``tmp_path / _REVIEW_BARE_DIR_NAME`` to act as the Gerrit push
-       target.
-    5. Configures ``remote.local.review`` in the project git config to
-       ``_FAKE_REVIEW_BASE_URL`` so that ``repo upload`` picks up the
-       review URL.
-    6. Configures the ``url.<local-bare>.insteadOf`` rewrite in the
-       project git config so that git redirects pushes from the fake
-       Gerrit URL to the local bare repo.
-
-    Args:
-        tmp_path: pytest-provided temporary directory root.
-        branch_name: Name of the topic branch to create via
-            ``kanon repo start``.
-
-    Returns:
-        A 3-tuple of ``(checkout_dir, repo_dir, review_bare)`` where
-        ``checkout_dir`` is the worktree root, ``repo_dir`` is the
-        ``.repo`` directory, and ``review_bare`` is the local bare repo
-        acting as the Gerrit push target.
-
-    Raises:
-        AssertionError: When any prerequisite step (init, sync, start)
-            exits with a non-zero code.
-    """
-    checkout_dir, repo_dir = _setup_synced_repo(
-        tmp_path,
-        git_user_name=_GIT_USER_NAME,
-        git_user_email=_GIT_USER_EMAIL,
-        project_name=_PROJECT_NAME,
-        project_path=_PROJECT_PATH,
-        manifest_filename=_MANIFEST_FILENAME,
-    )
-    project_dir = checkout_dir / _PROJECT_PATH
-
-    start_result = _run_kanon(
-        _CLI_TOKEN_REPO,
-        _CLI_FLAG_REPO_DIR,
-        str(repo_dir),
-        _CLI_TOKEN_START,
-        branch_name,
-        _CLI_FLAG_ALL,
-        cwd=checkout_dir,
-    )
-    assert start_result.returncode == _EXPECTED_EXIT_CODE, (
-        f"Prerequisite 'kanon repo start {branch_name} {_CLI_FLAG_ALL}' failed "
-        f"with exit {start_result.returncode}.\n"
-        f"  stdout: {start_result.stdout!r}\n"
-        f"  stderr: {start_result.stderr!r}"
-    )
-
-    (project_dir / _UPLOAD_CONTENT_FILE).write_text(_UPLOAD_CONTENT_TEXT, encoding="utf-8")
-    _git(["add", _UPLOAD_CONTENT_FILE], cwd=project_dir)
-    _git(["commit", "-m", _UPLOAD_COMMIT_MSG], cwd=project_dir)
-
-    review_bare = tmp_path / _REVIEW_BARE_DIR_NAME
-    _git(["init", "--bare", str(review_bare)], cwd=tmp_path)
-
-    subprocess.run(
-        ["git", "-C", str(project_dir), "config", _GIT_CONFIG_REMOTE_REVIEW, _FAKE_REVIEW_BASE_URL],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(project_dir),
-            "config",
-            _build_insteadof_config_key(review_bare),
-            _full_review_url(),
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    return checkout_dir, repo_dir, review_bare
 
 
 # ---------------------------------------------------------------------------

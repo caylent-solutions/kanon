@@ -51,6 +51,24 @@ Shared constants for smartsync test modules:
 - ``_PROJECT_PATH`` -- project path used in manifest.
 - ``_GIT_USER_EMAIL`` -- git user email for bare repo commits.
 - ``_GIT_USER_NAME`` -- git user name for bare repo commits.
+
+Shared constants for upload test modules (imported by
+``test_repo_upload_happy.py`` and ``test_repo_upload_flags.py``):
+
+- ``_FAKE_REVIEW_BASE_URL`` -- fake Gerrit review base URL used as
+  ``remote.local.review`` config value.
+- ``_OK_MARKER`` -- success marker written to stderr on successful upload.
+- ``_UPLOAD_PROJECT_PHRASE`` -- phrase expected in stdout when upload finds a
+  reviewable branch.
+- ``_ENV_IGNORE_SSH_INFO`` -- environment variable that suppresses SSH-info
+  fetching in ReviewUrl.
+- ``_GIT_CONFIG_REMOTE_REVIEW`` -- git config key for the review remote URL.
+
+Shared helpers for upload test modules:
+
+- :func:`_setup_upload_repo` -- create a synced repo with a reviewable topic
+  branch and Gerrit-redirect config; return
+  ``(checkout_dir, repo_dir, review_bare)``.
 """
 
 import os
@@ -142,6 +160,178 @@ _GIT_USER_EMAIL = "repo-smartsync@example.com"
 
 # Git user name for bare repo commits in smartsync tests.
 _GIT_USER_NAME = "Repo Smartsync Test User"
+
+
+# ---------------------------------------------------------------------------
+# Shared constants for upload test modules
+# ---------------------------------------------------------------------------
+
+# Fake Gerrit review base URL (not a real server -- redirected via git insteadOf).
+_FAKE_REVIEW_BASE_URL = "http://fake.gerrit.example.com/"
+
+# Success marker expected in stderr when 'kanon repo upload' completes normally.
+_OK_MARKER = "[OK    ]"
+
+# Phrase expected in stdout when upload finds a reviewable branch.
+_UPLOAD_PROJECT_PHRASE = "Upload project"
+
+# Environment variable that suppresses SSH-info fetching in ReviewUrl.
+_ENV_IGNORE_SSH_INFO = "REPO_IGNORE_SSH_INFO"
+
+# Git config key for the review remote URL.
+_GIT_CONFIG_REMOTE_REVIEW = "remote.local.review"
+
+# ---------------------------------------------------------------------------
+# Upload-specific internal defaults used by _setup_upload_repo.
+# Consumer test modules supply project_name and project_path explicitly or
+# rely on these defaults when their repo uses identical settings.
+# ---------------------------------------------------------------------------
+
+_UPLOAD_DEFAULT_GIT_USER_NAME = "Repo Upload Test User"
+_UPLOAD_DEFAULT_GIT_USER_EMAIL = "repo-upload@example.com"
+_UPLOAD_DEFAULT_MANIFEST_FILENAME = "default.xml"
+_UPLOAD_DEFAULT_PROJECT_NAME = "content-bare"
+_UPLOAD_DEFAULT_PROJECT_PATH = "upload-test-project"
+_UPLOAD_DEFAULT_TOPIC_BRANCH = "feature/upload-default"
+_UPLOAD_CONTENT_FILE = "upload-test-content.txt"
+_UPLOAD_CONTENT_TEXT = "upload test content"
+_UPLOAD_COMMIT_MSG = "Add upload test content file"
+_UPLOAD_REVIEW_BARE_DIR_NAME = "review.git"
+_UPLOAD_CLI_TOKEN_START = "start"
+_UPLOAD_CLI_FLAG_ALL = "--all"
+_UPLOAD_EXPECTED_EXIT_CODE = 0
+
+
+def _build_upload_insteadof_config_key(review_bare: "pathlib.Path") -> str:
+    """Return the git config key for the insteadOf URL rewrite used in upload tests.
+
+    Formats the ``url.<local-path>.insteadOf`` key that redirects git push
+    operations from the fake Gerrit URL to the local bare repository.
+
+    Args:
+        review_bare: Absolute path to the local bare git repository used as
+            the Gerrit push target.
+
+    Returns:
+        A git config key string of the form ``url.file://<path>.insteadOf``.
+    """
+    return f"url.file://{review_bare}.insteadOf"
+
+
+def _full_upload_review_url(project_name: str) -> str:
+    """Return the full fake Gerrit review URL for the given project name.
+
+    ReviewUrl appends the remote project name to the base review URL.
+    This function constructs the full URL that the insteadOf rewrite must
+    match so that git pushes are redirected to the local bare repo.
+
+    Args:
+        project_name: The manifest project name (used as the Gerrit project path).
+
+    Returns:
+        The concatenation of ``_FAKE_REVIEW_BASE_URL`` and ``project_name``.
+    """
+    return _FAKE_REVIEW_BASE_URL + project_name
+
+
+def _setup_upload_repo(
+    tmp_path: "pathlib.Path",
+    branch_name: str,
+    project_name: str = _UPLOAD_DEFAULT_PROJECT_NAME,
+    project_path: str = _UPLOAD_DEFAULT_PROJECT_PATH,
+) -> "tuple[pathlib.Path, pathlib.Path, pathlib.Path]":
+    """Create a synced repo with a reviewable topic branch and review config.
+
+    Performs the shared setup steps required by all upload test modules:
+
+    1. Calls ``_setup_synced_repo`` to create bare repos, run
+       ``kanon repo init`` and ``kanon repo sync``, and return
+       ``(checkout_dir, repo_dir)``.
+    2. Runs ``kanon repo start <branch_name> --all`` to create the topic
+       branch across all manifest projects.
+    3. Commits one new file to the project worktree so the topic branch has
+       uploadable commits.
+    4. Creates a local bare git repository at
+       ``tmp_path / _UPLOAD_REVIEW_BARE_DIR_NAME`` to act as the Gerrit push
+       target.
+    5. Configures ``remote.local.review`` (``_GIT_CONFIG_REMOTE_REVIEW``) in
+       the project git config to ``_FAKE_REVIEW_BASE_URL`` so that
+       ``repo upload`` picks up the review URL.
+    6. Configures the ``url.<local-bare>.insteadOf`` rewrite in the project
+       git config so that git redirects pushes from the fake Gerrit URL to
+       the local bare repo.
+
+    Args:
+        tmp_path: pytest-provided temporary directory root.
+        branch_name: Name of the topic branch to create via
+            ``kanon repo start``.
+        project_name: Manifest project name (default
+            ``_UPLOAD_DEFAULT_PROJECT_NAME``).
+        project_path: Manifest project path inside the checkout (default
+            ``_UPLOAD_DEFAULT_PROJECT_PATH``).
+
+    Returns:
+        A 3-tuple of ``(checkout_dir, repo_dir, review_bare)`` where
+        ``checkout_dir`` is the worktree root, ``repo_dir`` is the
+        ``.repo`` directory, and ``review_bare`` is the local bare repo
+        acting as the Gerrit push target.
+
+    Raises:
+        AssertionError: When any prerequisite step (init, sync, start)
+            exits with a non-zero code.
+    """
+    checkout_dir, repo_dir = _setup_synced_repo(
+        tmp_path,
+        git_user_name=_UPLOAD_DEFAULT_GIT_USER_NAME,
+        git_user_email=_UPLOAD_DEFAULT_GIT_USER_EMAIL,
+        project_name=project_name,
+        project_path=project_path,
+        manifest_filename=_UPLOAD_DEFAULT_MANIFEST_FILENAME,
+    )
+    project_dir = checkout_dir / project_path
+
+    start_result = _run_kanon(
+        "repo",
+        "--repo-dir",
+        str(repo_dir),
+        _UPLOAD_CLI_TOKEN_START,
+        branch_name,
+        _UPLOAD_CLI_FLAG_ALL,
+        cwd=checkout_dir,
+    )
+    assert start_result.returncode == _UPLOAD_EXPECTED_EXIT_CODE, (
+        f"Prerequisite 'kanon repo start {branch_name} {_UPLOAD_CLI_FLAG_ALL}' failed "
+        f"with exit {start_result.returncode}.\n"
+        f"  stdout: {start_result.stdout!r}\n"
+        f"  stderr: {start_result.stderr!r}"
+    )
+
+    (project_dir / _UPLOAD_CONTENT_FILE).write_text(_UPLOAD_CONTENT_TEXT, encoding="utf-8")
+    _git(["add", _UPLOAD_CONTENT_FILE], cwd=project_dir)
+    _git(["commit", "-m", _UPLOAD_COMMIT_MSG], cwd=project_dir)
+
+    review_bare = tmp_path / _UPLOAD_REVIEW_BARE_DIR_NAME
+    _git(["init", "--bare", str(review_bare)], cwd=tmp_path)
+
+    subprocess.run(
+        ["git", "-C", str(project_dir), "config", _GIT_CONFIG_REMOTE_REVIEW, _FAKE_REVIEW_BASE_URL],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(project_dir),
+            "config",
+            _build_upload_insteadof_config_key(review_bare),
+            _full_upload_review_url(project_name),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    return checkout_dir, repo_dir, review_bare
 
 
 def _run_kanon(

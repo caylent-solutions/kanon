@@ -17,12 +17,49 @@ modules:
   and return ``(checkout_dir, repo_dir)``.
 - :func:`_git_branch_list` -- return a list of local branch names in a git
   working directory.
+
+Shared helpers for smartsync test modules (imported by
+``test_repo_smartsync_happy.py`` and ``test_repo_smartsync_flags.py``):
+
+- :func:`_find_free_port` -- allocate a free TCP port for the XMLRPC server.
+- :func:`_resolve_fetch_base` -- extract the fetch-base URL from the manifest.
+- :func:`_patch_manifest_with_server` -- patch the manifest with a
+  manifest-server element.
+- :func:`_start_xmlrpc_server` -- start a ``SimpleXMLRPCServer`` in a daemon
+  thread.
+- :func:`_build_smartsync_state` -- construct a fully patched smartsync repo
+  with a live XMLRPC server and return
+  ``(checkout_dir, repo_dir, rpc_server)``.
+
+Shared constants for smartsync test modules:
+
+- ``_XMLRPC_HOST`` -- loopback address for XMLRPC bind.
+- ``_MANIFEST_SERVER_URL_TEMPLATE`` -- URL template formatted with host+port.
+- ``_REPO_MANIFESTS_SUBPATH`` -- path within ``.repo/`` to the manifest file.
+- ``_MANIFEST_XML_TEMPLATE`` -- manifest XML template with manifest-server.
+- ``_SUCCESS_PHRASE`` -- documented completion phrase emitted by repo sync.
+- ``_CLI_TOKEN_REPO`` -- first positional token for kanon repo commands.
+- ``_CLI_TOKEN_SMARTSYNC`` -- second positional token for smartsync.
+- ``_CLI_FLAG_REPO_DIR`` -- ``--repo-dir`` flag token.
+- ``_CLI_FLAG_JOBS_ONE`` -- ``--jobs=1`` flag shared between smartsync test modules.
+- ``_CLI_COMMAND_PHRASE`` -- human-readable command phrase for diagnostics.
+- ``_TRACEBACK_MARKER`` -- sentinel string indicating a Python traceback.
+- ``_ERROR_PREFIX`` -- ``"Error:"`` prefix that must not appear on stdout.
+- ``_GIT_BRANCH`` -- default branch name for bare repos.
+- ``_MANIFEST_FILENAME`` -- manifest XML file name.
+- ``_PROJECT_NAME`` -- project name used in manifest.
+- ``_PROJECT_PATH`` -- project path used in manifest.
+- ``_GIT_USER_EMAIL`` -- git user email for bare repo commits.
+- ``_GIT_USER_NAME`` -- git user name for bare repo commits.
 """
 
 import os
+import pathlib
+import socket
 import subprocess
 import sys
-import pathlib
+import threading
+import xmlrpc.server
 from typing import Union
 
 import pytest
@@ -41,6 +78,70 @@ _DEFAULT_CONTENT_FILE_NAME = "README.md"
 _DEFAULT_CONTENT_FILE_TEXT = "hello from shared conftest helper"
 _DEFAULT_MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _DEFAULT_GIT_BRANCH = "main"
+
+# ---------------------------------------------------------------------------
+# Shared constants for smartsync test modules
+# ---------------------------------------------------------------------------
+
+# Localhost bind address for the XMLRPC manifest server fixture.
+_XMLRPC_HOST = "127.0.0.1"
+
+# Manifest-server URL template (formatted with the port at fixture time).
+_MANIFEST_SERVER_URL_TEMPLATE = "http://{host}:{port}"
+
+# Path within the .repo directory to the checked-out manifest file.
+_REPO_MANIFESTS_SUBPATH = "manifests"
+
+# Manifest XML template that includes a manifest-server element.
+# Used both to patch the checked-out manifest and as the approved-manifest
+# response returned by the XMLRPC server.
+_MANIFEST_XML_TEMPLATE = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    "<manifest>\n"
+    '  <manifest-server url="{manifest_server_url}" />\n'
+    '  <remote name="local" fetch="{fetch_base}" />\n'
+    '  <default revision="{branch}" remote="local" />\n'
+    '  <project name="{project_name}" path="{project_path}" />\n'
+    "</manifest>\n"
+)
+
+# Phrase expected in the success output of 'kanon repo smartsync'.
+_SUCCESS_PHRASE = "repo sync has finished successfully."
+
+# CLI token constants shared between smartsync test modules.
+_CLI_TOKEN_REPO = "repo"
+_CLI_TOKEN_SMARTSYNC = "smartsync"
+_CLI_FLAG_REPO_DIR = "--repo-dir"
+
+# Jobs flag shared between smartsync happy-path and flag-coverage test modules.
+_CLI_FLAG_JOBS_ONE = "--jobs=1"
+
+# Composed CLI command phrase (no inline literals in diagnostic messages).
+_CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SMARTSYNC}"
+
+# Traceback marker used in channel-discipline assertions.
+_TRACEBACK_MARKER = "Traceback (most recent call last)"
+
+# Error-prefix that must not appear on stdout for successful runs.
+_ERROR_PREFIX = "Error:"
+
+# Default branch name for bare repos used in smartsync tests.
+_GIT_BRANCH = "main"
+
+# Manifest XML file name for smartsync tests.
+_MANIFEST_FILENAME = "default.xml"
+
+# Project name used in the manifest for smartsync tests.
+_PROJECT_NAME = "content-bare"
+
+# Project path used in the manifest for smartsync tests.
+_PROJECT_PATH = "smartsync-test-project"
+
+# Git user email for bare repo commits in smartsync tests.
+_GIT_USER_EMAIL = "repo-smartsync@example.com"
+
+# Git user name for bare repo commits in smartsync tests.
+_GIT_USER_NAME = "Repo Smartsync Test User"
 
 
 def _run_kanon(
@@ -358,6 +459,155 @@ def _setup_synced_repo(
         f"  stderr: {sync_result.stderr!r}"
     )
     return checkout_dir, repo_dir
+
+
+def _find_free_port() -> int:
+    """Return a free TCP port on localhost by binding and immediately releasing.
+
+    Uses the OS port-assignment mechanism to discover a free port, then
+    releases the socket so the XMLRPC server can bind to it.
+
+    Returns:
+        An integer port number that is currently free.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((_XMLRPC_HOST, 0))
+        return sock.getsockname()[1]
+
+
+def _resolve_fetch_base(repo_dir: pathlib.Path) -> str:
+    """Derive the fetch-base URL from the manifest file in a synced .repo dir.
+
+    Reads ``.repo/manifests/default.xml`` to extract the ``fetch`` attribute
+    from the first ``<remote>`` element.
+
+    Args:
+        repo_dir: Path to the ``.repo`` directory created by ``kanon repo init``.
+
+    Returns:
+        The fetch base URL string, e.g. ``"file:///tmp/.../repos"``.
+
+    Raises:
+        ValueError: When no ``<remote fetch="...">`` element is found in the
+            manifest.
+    """
+    import xml.etree.ElementTree as ET
+
+    manifest_path = repo_dir / _REPO_MANIFESTS_SUBPATH / _MANIFEST_FILENAME
+    tree = ET.parse(str(manifest_path))
+    root = tree.getroot()
+    for remote in root.findall("remote"):
+        fetch = remote.get("fetch")
+        if fetch:
+            return fetch
+    raise ValueError(f"No <remote fetch='...'> element found in {manifest_path!r}")
+
+
+def _patch_manifest_with_server(
+    repo_dir: pathlib.Path,
+    manifest_server_url: str,
+    fetch_base: str,
+) -> None:
+    """Overwrite the checked-out manifest to include a <manifest-server> element.
+
+    Writes a new manifest XML string (with the manifest-server element added)
+    over ``.repo/manifests/default.xml``.
+
+    Args:
+        repo_dir: Path to the ``.repo`` directory.
+        manifest_server_url: URL of the local XMLRPC server.
+        fetch_base: The fetch base URL from the original manifest remote element.
+    """
+    manifest_path = repo_dir / _REPO_MANIFESTS_SUBPATH / _MANIFEST_FILENAME
+    new_xml = _MANIFEST_XML_TEMPLATE.format(
+        manifest_server_url=manifest_server_url,
+        fetch_base=fetch_base,
+        branch=_GIT_BRANCH,
+        project_name=_PROJECT_NAME,
+        project_path=_PROJECT_PATH,
+    )
+    manifest_path.write_text(new_xml, encoding="utf-8")
+
+
+def _start_xmlrpc_server(port: int, approved_manifest_xml: str) -> xmlrpc.server.SimpleXMLRPCServer:
+    """Start a SimpleXMLRPCServer in a daemon thread and return it.
+
+    Registers a ``GetApprovedManifest`` function that returns
+    ``[True, approved_manifest_xml]`` for any call arguments.
+
+    Args:
+        port: The TCP port to bind to on localhost.
+        approved_manifest_xml: The manifest XML string to return from the
+            ``GetApprovedManifest`` XMLRPC method.
+
+    Returns:
+        The running ``SimpleXMLRPCServer`` instance.
+    """
+    rpc_server = xmlrpc.server.SimpleXMLRPCServer(
+        (_XMLRPC_HOST, port),
+        logRequests=False,
+        allow_none=False,
+    )
+
+    def get_approved_manifest(*_args: object) -> list:
+        return [True, approved_manifest_xml]
+
+    rpc_server.register_function(get_approved_manifest, "GetApprovedManifest")
+
+    server_thread = threading.Thread(target=rpc_server.serve_forever, daemon=True)
+    server_thread.start()
+    return rpc_server
+
+
+def _build_smartsync_state(
+    tmp_path: pathlib.Path,
+) -> "tuple[pathlib.Path, pathlib.Path, xmlrpc.server.SimpleXMLRPCServer]":
+    """Construct a synced kanon repo with manifest-server patched and XMLRPC server started.
+
+    Performs the shared setup steps required by the class-scoped smartsync
+    fixtures:
+      1. Creates bare repos and runs ``kanon repo init`` + ``kanon repo sync``
+         via ``_setup_synced_repo``.
+      2. Allocates a free TCP port and formats the manifest-server URL.
+      3. Reads the fetch-base URL from the synced manifest.
+      4. Builds the approved-manifest XML string using ``_MANIFEST_XML_TEMPLATE``.
+      5. Starts a ``SimpleXMLRPCServer`` in a daemon thread.
+      6. Patches ``.repo/manifests/default.xml`` to include the
+         ``<manifest-server>`` element.
+
+    Args:
+        tmp_path: A unique temporary directory used for bare repos and the checkout.
+
+    Returns:
+        A 3-tuple of ``(checkout_dir, repo_dir, rpc_server)`` where
+        ``checkout_dir`` is the worktree root, ``repo_dir`` is the ``.repo``
+        parent, and ``rpc_server`` is the running XMLRPC server instance.
+        Callers are responsible for calling ``rpc_server.shutdown()`` when done.
+    """
+    checkout_dir, repo_dir = _setup_synced_repo(
+        tmp_path,
+        git_user_name=_GIT_USER_NAME,
+        git_user_email=_GIT_USER_EMAIL,
+        project_name=_PROJECT_NAME,
+        project_path=_PROJECT_PATH,
+    )
+
+    port = _find_free_port()
+    server_url = _MANIFEST_SERVER_URL_TEMPLATE.format(host=_XMLRPC_HOST, port=port)
+
+    fetch_base = _resolve_fetch_base(repo_dir)
+    approved_manifest_xml = _MANIFEST_XML_TEMPLATE.format(
+        manifest_server_url=server_url,
+        fetch_base=fetch_base,
+        branch=_GIT_BRANCH,
+        project_name=_PROJECT_NAME,
+        project_path=_PROJECT_PATH,
+    )
+
+    rpc_server = _start_xmlrpc_server(port, approved_manifest_xml)
+    _patch_manifest_with_server(repo_dir, server_url, fetch_base)
+
+    return checkout_dir, repo_dir, rpc_server
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -1612,7 +1612,11 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
         docstrings work. In fact, the code is remarkably similar to here:
           http://www.python.org/dev/peps/pep-0257/
         """
-        # Get the data out of the node...
+        # Get the data out of the node. A <notice /> or <notice></notice> has
+        # no child text node; treat that as a parse error rather than letting
+        # an unhandled IndexError propagate to the caller.
+        if not node.childNodes:
+            raise ManifestParseError("empty <notice> element in %s; notice requires text content" % (self.manifestFile))
         notice = node.childNodes[0].data
 
         # Figure out minimum indentation, skipping the first line (the same line

@@ -1223,7 +1223,7 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
         """
         try:
             root = xml.dom.minidom.parse(path)
-        except (OSError, xml.parsers.expat.ExpatError) as e:
+        except (OSError, xml.parsers.expat.ExpatError, LookupError) as e:
             raise ManifestParseError(f"error parsing manifest {path}: {e}")
 
         if not root or not root.childNodes:

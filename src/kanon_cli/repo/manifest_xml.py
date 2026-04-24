@@ -1206,6 +1206,8 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
         parent_groups="",
         restrict_includes=True,
         parent_node=None,
+        _ancestors=None,
+        _include_depth=0,
     ):
         """Parse a manifest XML and return the computed nodes.
 
@@ -1217,10 +1219,21 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
                 includes.
             parent_node: The parent include node, to apply attribute to this
                 projects.
+            _ancestors: Frozenset of realpath strings for all manifest files
+                currently open in the include chain. Used for cycle detection.
+                Callers outside this method must not pass this argument.
+            _include_depth: Current nesting depth of <include> chains.
+                Callers outside this method must not pass this argument.
 
         Returns:
             List of XML nodes.
         """
+        if _ancestors is None:
+            _ancestors = frozenset()
+
+        abs_path = os.path.realpath(path)
+        current_ancestors = _ancestors | {abs_path}
+
         try:
             root = xml.dom.minidom.parse(path)
         except (OSError, xml.parsers.expat.ExpatError, LookupError) as e:
@@ -1251,8 +1264,25 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
                 fp = os.path.join(include_root, name)
                 if not os.path.isfile(fp):
                     raise ManifestParseError("include [%s/]%s doesn't exist or isn't a file" % (include_root, name))
+                abs_fp = os.path.realpath(fp)
+                if abs_fp in current_ancestors:
+                    raise ManifestParseError(f"include cycle detected: {name} is already in the include chain")
+                next_depth = _include_depth + 1
+                if next_depth > MAX_SUBMANIFEST_DEPTH:
+                    raise ManifestParseError(
+                        f"include depth {next_depth} exceeds maximum allowed depth {MAX_SUBMANIFEST_DEPTH} at {name}"
+                    )
                 try:
-                    nodes.extend(self._ParseManifestXml(fp, include_root, include_groups, parent_node=node))
+                    nodes.extend(
+                        self._ParseManifestXml(
+                            fp,
+                            include_root,
+                            include_groups,
+                            parent_node=node,
+                            _ancestors=current_ancestors,
+                            _include_depth=next_depth,
+                        )
+                    )
                 # should isolate this to the exact exception, but that's
                 # tricky.  actual parsing implementation may vary.
                 except (RuntimeError, ManifestParseError):

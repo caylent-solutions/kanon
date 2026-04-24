@@ -1721,19 +1721,21 @@ class MultipleCheckoutsSameRepoTests(ManifestParseTestCase):
 class CircularIncludeDetectionTests(ManifestParseTestCase):
     """Verification tests for circular <include> detection.
 
-    Spec reference: Section 17.3 — Existing behaviors to preserve.
+    Spec reference: Section 17.3 -- Existing behaviors to preserve.
     When a manifest includes itself (directly or indirectly), the parser
-    must detect the cycle via Python's recursion limit and raise an error
-    rather than recursing infinitely.
+    must detect the cycle explicitly and raise ManifestParseError rather
+    than recursing until Python's call stack is exhausted.
     """
 
     def test_spec_17_3_circular_include_detection(self):
-        """Verify circular <include> raises an error (spec 17.3).
+        """Verify circular <include> raises ManifestParseError (spec 17.3).
 
-        A manifest file that includes itself must trigger a RecursionError
-        (subclass of RuntimeError) when the manifest is loaded.
+        A manifest file that includes itself must trigger ManifestParseError
+        when the manifest is loaded. The parser detects the cycle via an
+        explicit ancestors set, raising ManifestParseError before Python's
+        recursion limit is reached.
         """
-        import sys
+        from kanon_cli.repo.error import ManifestParseError
 
         # Create a manifest that includes itself.
         inc_a = os.path.join(self.manifest_dir, "a.xml")
@@ -1749,15 +1751,9 @@ class CircularIncludeDetectionTests(ManifestParseTestCase):
             "</manifest>\n"
         )
 
-        # Lower the recursion limit to make the test fast, then restore it.
-        old_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(200)
-        try:
-            with self.assertRaises(RuntimeError):
-                # Accessing .projects forces _Load which triggers parsing.
-                _ = manifest.projects
-        finally:
-            sys.setrecursionlimit(old_limit)
+        with self.assertRaises(ManifestParseError):
+            # Accessing .projects forces _Load which triggers parsing.
+            _ = manifest.projects
 
 
 # ============================================================================

@@ -48,3 +48,7 @@ GIT_RETRY_DELAY_DEFAULT = 1
 # Patterns in ls-remote stderr that indicate authentication errors.
 # These errors must not be retried to avoid credential lockouts.
 GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")
+
+# -- Install concurrency lock --
+# File name for the per-project exclusive lock that serializes concurrent installs.
+INSTALL_LOCK_FILENAME = ".kanon-install.lock"

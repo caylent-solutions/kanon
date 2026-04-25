@@ -4,12 +4,19 @@ Parses .kanon, validates sources, creates isolated source workspaces
 under ``.kanon-data/sources/<name>/``, runs ``repo init``/``envsubst``/``sync``
 per source, aggregates symlinks into ``.packages/``, detects collisions,
 updates ``.gitignore``, and optionally installs marketplace plugins.
+
+Concurrent installs on the same project directory are serialized via an
+exclusive file lock on ``.kanon-install.lock`` in the project root. This
+prevents interleaved filesystem mutations when two ``kanon install`` processes
+are started simultaneously.
 """
 
+import fcntl
 import pathlib
 import shutil
 
 import kanon_cli.repo as _repo
+from kanon_cli.constants import INSTALL_LOCK_FILENAME
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.version import resolve_version
@@ -216,19 +223,14 @@ def _print_package_summary(
             print(f"    - {pkg}")
 
 
-def install(kanonenv_path: pathlib.Path) -> None:
-    """Execute the full Kanon install lifecycle.
+def _run_install(kanonenv_path: pathlib.Path) -> None:
+    """Execute the install lifecycle without acquiring the concurrency lock.
 
-    Steps:
-      1. Parse .kanon and validate sources
-      2. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir
-      3. For each source: mkdir, repo init, envsubst, sync
-      4. Aggregate symlinks into .packages/
-      5. Update .gitignore
-      6. If KANON_MARKETPLACE_INSTALL=true: run install script
+    This is the inner implementation called by install() after the exclusive
+    file lock is held. All filesystem mutations happen here.
 
     Args:
-        kanonenv_path: Path to the .kanon configuration file.
+        kanonenv_path: Resolved absolute path to the .kanon configuration file.
 
     Raises:
         ValueError: If marketplace install is requested but
@@ -236,7 +238,6 @@ def install(kanonenv_path: pathlib.Path) -> None:
         OSError: If a source directory cannot be created.
         RepoCommandError: If any repo sub-command exits non-zero.
     """
-    kanonenv_path = kanonenv_path.resolve()
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = kanonenv_path.parent
@@ -295,3 +296,50 @@ def install(kanonenv_path: pathlib.Path) -> None:
         install_marketplace_plugins(marketplace_dir)
 
     print("\nkanon install: done.")
+
+
+def install(kanonenv_path: pathlib.Path) -> None:
+    """Execute the full Kanon install lifecycle.
+
+    Acquires an exclusive file lock on ``.kanon-data/.kanon-install.lock``
+    before performing any filesystem mutations. This serializes concurrent
+    invocations so that two simultaneous ``kanon install`` runs on the same
+    project directory do not interleave their writes.
+
+    The ``.kanon-data/`` directory is created eagerly before the lock is
+    acquired, using the same error-wrapping convention as ``create_source_dirs``
+    so that a read-only project directory surfaces as an ``OSError`` with the
+    ``"Cannot create source directory"`` prefix.
+
+    Steps:
+      1. Resolve .kanon path
+      2. Create .kanon-data/ directory (fail fast on permission errors)
+      3. Acquire exclusive file lock inside .kanon-data/
+      4. Parse .kanon and validate sources
+      5. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir
+      6. For each source: mkdir, repo init, envsubst, sync
+      7. Aggregate symlinks into .packages/
+      8. Update .gitignore
+      9. If KANON_MARKETPLACE_INSTALL=true: run install script
+
+    Args:
+        kanonenv_path: Path to the .kanon configuration file.
+
+    Raises:
+        ValueError: If marketplace install is requested but
+            CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
+        OSError: If the managed data directory or a source directory cannot be
+            created, with the failing path and OS error message included.
+        RepoCommandError: If any repo sub-command exits non-zero.
+    """
+    kanonenv_path = kanonenv_path.resolve()
+    base_dir = kanonenv_path.parent
+    kanon_data_dir = base_dir / ".kanon-data"
+    try:
+        kanon_data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OSError(f"Cannot create source directory {kanon_data_dir}: {exc.strerror}") from exc
+    lock_file_path = kanon_data_dir / INSTALL_LOCK_FILENAME
+    with open(lock_file_path, "w") as _lock_fd:
+        fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
+        _run_install(kanonenv_path)

@@ -147,6 +147,15 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if constraint_str == "*":
         return max(versions, key=lambda pair: pair[1])[0]
 
+    # Strip standalone wildcard parts from compound constraints.
+    # A bare * combined with range specifiers (e.g. >=1.0.0,<2.0.0,*) is
+    # redundant -- it means "any version" within the range -- but is not a
+    # valid PEP 440 specifier for SpecifierSet. Remove it before parsing.
+    if "," in constraint_str:
+        parts = [p.strip() for p in constraint_str.split(",")]
+        filtered_parts = [p for p in parts if p != "*"]
+        constraint_str = ",".join(filtered_parts)
+
     try:
         specifier = SpecifierSet(constraint_str)
     except InvalidSpecifier:

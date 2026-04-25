@@ -19,7 +19,9 @@ Targets the following uncovered line groups:
 - Lines 1252, 1255-1256, 1260, 1263: UploadForReview dest_branch and dryrun paths
 """
 
+import atexit
 import os
+import shutil
 import tempfile
 from unittest import mock
 
@@ -35,14 +37,49 @@ from kanon_cli.repo.project import (
     ReviewableBranch,
 )
 
+# Track every temp directory created by module-level helpers so they can be
+# removed on interpreter exit, preventing inode exhaustion in long-running
+# devcontainers.
+_TRACKED_TEMPDIRS: list[str] = []
+
+
+def _mkdtemp_tracked(prefix: str) -> str:
+    """Create a temporary directory and register it for cleanup on exit.
+
+    Args:
+        prefix: Prefix forwarded to tempfile.mkdtemp.
+
+    Returns:
+        The absolute path of the newly created directory.
+    """
+    path = tempfile.mkdtemp(prefix=prefix)
+    _TRACKED_TEMPDIRS.append(path)
+    return path
+
+
+def _cleanup_tracked_tempdirs() -> None:
+    """Remove all directories recorded in _TRACKED_TEMPDIRS.
+
+    Uses shutil.rmtree with ignore_errors=True so that already-removed
+    entries are silently skipped (idempotent).  Registered via atexit so
+    temp directories are cleaned up even if individual tests do not
+    perform explicit teardown.
+    """
+    for path in _TRACKED_TEMPDIRS:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+atexit.register(_cleanup_tracked_tempdirs)
+
 
 def _make_project(**kwargs):
     """Create a minimal mock Project for testing.
 
     All path values are derived from a unique temporary directory created at
-    call time via tempfile.mkdtemp() so no hard-coded path literals are used.
+    call time via _mkdtemp_tracked() so no hard-coded path literals are used.
+    The directory is registered for cleanup on interpreter exit.
     """
-    base = tempfile.mkdtemp(prefix="kanon-test-")
+    base = _mkdtemp_tracked(prefix="kanon-test-")
     manifest = mock.MagicMock()
     manifest.IsMirror = False
     manifest.IsArchive = False
@@ -72,9 +109,11 @@ def _make_meta_project(manifest, name="repo", **kwargs):
     """Create a MetaProject with mocked manifest.
 
     Path defaults are derived from the manifest's repodir so no hard-coded
-    path literals are introduced.
+    path literals are introduced.  When manifest.repodir is falsy, a tracked
+    temp directory is created via _mkdtemp_tracked() so it is cleaned up on
+    interpreter exit.
     """
-    repodir = getattr(manifest, "repodir", None) or tempfile.mkdtemp(prefix="kanon-meta-")
+    repodir = getattr(manifest, "repodir", None) or _mkdtemp_tracked(prefix="kanon-meta-")
     gitdir = kwargs.pop("gitdir", os.path.join(repodir, name))
     worktree = kwargs.pop("worktree", os.path.join(repodir, f"{name}-wt"))
     with mock.patch("kanon_cli.repo.project.Project._LoadUserIdentity"):

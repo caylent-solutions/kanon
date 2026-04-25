@@ -114,10 +114,13 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         The full tag name of the highest version that satisfies the constraint.
 
     Raises:
-        ValueError: If no available tag matches the constraint, if the
-            constraint string is invalid, or if no parseable version tags
-            exist under the prefix.
+        ValueError: If the revision is empty or whitespace, if no available
+            tag matches the constraint, if the constraint string is invalid,
+            or if no parseable version tags exist under the prefix.
     """
+    if not revision or not revision.strip():
+        raise ValueError(f"revision must not be empty; received {revision!r}")
+
     # Split revision into prefix and constraint at the last '/'.
     if "/" in revision:
         prefix, constraint_str = revision.rsplit("/", 1)

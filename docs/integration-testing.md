@@ -828,7 +828,7 @@ cd "${EC04_DIR}"
 kanon install .kanon
 ```
 
-**Pass criteria:** Exit code 1. stderr contains `No sources found` (since source names are discovered from `_URL` keys, no sources are found).
+**Pass criteria:** Exit code 1. stderr contains `KANON_SOURCE_test_URL is required but not set` (kanon detects that `KANON_SOURCE_test_REVISION` and `KANON_SOURCE_test_PATH` are present but `KANON_SOURCE_test_URL` is missing, and names the missing variable directly).
 
 **Cleanup:**
 

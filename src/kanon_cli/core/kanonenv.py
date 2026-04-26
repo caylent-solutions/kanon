@@ -20,11 +20,17 @@ it to stderr verbatim.
 
 The parser reads the file, applies environment overrides, expands shell
 variables, validates required fields, and returns a structured dict.
+
+Security guards are applied before any data is returned:
+  - Symlink detection (TOCTOU mitigation): the .kanon file must not be a symlink.
+  - Permission check: the .kanon file must not be group-writable or world-writable.
+  - Path traversal rejection: KANON_SOURCE_<name>_PATH values must not contain '..'.
 """
 
 import os
 import pathlib
 import re
+import stat
 
 from kanon_cli.constants import (
     SHELL_VAR_PATTERN,
@@ -35,6 +41,13 @@ from kanon_cli.constants import (
     SUFFIX_TO_KEY,
 )
 
+# Permission bits that indicate group-write or world-write access.
+# These are rejected to prevent privilege escalation via tampered .kanon files.
+_UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
+
+# Suffix used to identify PATH variables for path-traversal checking.
+_PATH_SUFFIX = "_PATH"
+
 
 def parse_kanonenv(path: pathlib.Path) -> dict:
     """Parse a .kanon file into a structured configuration dict.
@@ -43,6 +56,11 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
     overrides, expands shell variables (``${VAR}``), auto-discovers
     source names from ``KANON_SOURCE_<name>_URL`` keys, and groups
     source-specific variables.
+
+    Security guards are applied before returning:
+      - Symlink TOCTOU: the file must not be a symlink.
+      - Permissions: the file must not have group-write or world-write bits.
+      - Path traversal: no KANON_SOURCE_<name>_PATH value may contain '..'.
 
     Args:
         path: Path to the .kanon file.
@@ -59,7 +77,10 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
 
     Raises:
         FileNotFoundError: If the file does not exist.
-        ValueError: If KANON_SOURCES is explicitly set (no longer supported),
+        ValueError: If the file is a symlink, if the file has unsafe
+            permissions (group-writable or world-writable), if any
+            KANON_SOURCE_<name>_PATH value contains '..', if
+            KANON_SOURCES is explicitly set (no longer supported),
             if no sources are discovered, if a named source is missing
             required variables (URL, REVISION, PATH), or if a shell
             variable reference cannot be resolved.
@@ -68,11 +89,87 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
         msg = f".kanon file not found: {path}"
         raise FileNotFoundError(msg)
 
+    _check_no_symlink(path)
+    _check_permissions(path)
+
     raw_vars = _read_key_value_pairs(path)
+    _check_no_path_traversal(raw_vars)
     merged = _apply_env_overrides(raw_vars)
     expanded = _expand_shell_variables(merged)
 
     return _build_result(expanded)
+
+
+def _check_no_symlink(path: pathlib.Path) -> None:
+    """Raise ValueError if the .kanon file is a symbolic link.
+
+    Any symlink introduces a TOCTOU (time-of-check/time-of-use) race
+    because the target can be replaced between the resolution check and
+    the open call. All symlinks are rejected regardless of target location.
+
+    Args:
+        path: Path to the .kanon file.
+
+    Raises:
+        ValueError: If the path is a symbolic link.
+    """
+    if path.is_symlink():
+        msg = (
+            f".kanon file must not be a symlink: {path}. "
+            "Symlinks introduce a TOCTOU race -- use a regular file instead."
+        )
+        raise ValueError(msg)
+
+
+def _check_permissions(path: pathlib.Path) -> None:
+    """Raise ValueError if the .kanon file has group-write or world-write bits set.
+
+    World-writable or group-writable .kanon files can be tampered with by
+    unprivileged users, which could lead to privilege escalation or supply
+    chain attacks. Only owner-write access is permitted.
+
+    Args:
+        path: Path to the .kanon file.
+
+    Raises:
+        ValueError: If the file has group-write or world-write permission bits.
+    """
+    mode = path.stat().st_mode
+    if mode & _UNSAFE_WRITE_BITS:
+        insecure_bits: list[str] = []
+        if mode & stat.S_IWGRP:
+            insecure_bits.append("group-writable")
+        if mode & stat.S_IWOTH:
+            insecure_bits.append("world-writable")
+        bits_description = " and ".join(insecure_bits)
+        msg = (
+            f".kanon file has insecure permissions ({bits_description}): {path}. "
+            "Remove group-write and world-write bits (e.g. chmod 600 or chmod 644)."
+        )
+        raise ValueError(msg)
+
+
+def _check_no_path_traversal(raw_vars: dict[str, str]) -> None:
+    """Raise ValueError if any KANON_SOURCE_<name>_PATH value contains '..'.
+
+    Path traversal sequences allow an attacker to reference files outside
+    the intended project directory. All PATH values are validated before
+    any further processing occurs.
+
+    Args:
+        raw_vars: Dict of raw KEY=VALUE pairs read from the .kanon file.
+
+    Raises:
+        ValueError: If any KANON_SOURCE_<name>_PATH value contains '..'.
+    """
+    for key, value in raw_vars.items():
+        if key.startswith(SOURCE_PREFIX) and key.endswith(_PATH_SUFFIX):
+            if ".." in value.split("/"):
+                msg = (
+                    f"Path traversal detected in {key}={value!r}. "
+                    "KANON_SOURCE_<name>_PATH values must not contain '..' components."
+                )
+                raise ValueError(msg)
 
 
 def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:

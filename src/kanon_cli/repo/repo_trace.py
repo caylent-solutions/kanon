@@ -16,7 +16,9 @@
 
 Activated via `repo --trace ...` or `REPO_TRACE=1 repo ...`.
 
-Temporary: Tracing is always on. Set `REPO_TRACE=0` to turn off.
+Set REPO_TRACE=1 to enable tracing. Any other value (including 0, unset,
+or unrecognized strings) disables tracing. This makes the control explicit
+and deterministic -- only the recognized value '1' enables tracing.
 To also include trace outputs in stderr do `repo --trace_to_stderr ...`
 """
 
@@ -29,11 +31,13 @@ import time
 from . import platform_utils
 
 
-# Env var to implicitly turn on tracing.
+# Env var to explicitly turn on tracing.
 REPO_TRACE = "REPO_TRACE"
 
-# Temporarily set tracing to always on unless user expicitly sets to 0.
-_TRACE = os.environ.get(REPO_TRACE) != "0"
+# Tracing is enabled only when REPO_TRACE is explicitly set to '1'.
+# Unset, '0', and any unrecognized value all disable tracing, making the
+# control deterministic and preventing accidental activation.
+_TRACE = os.environ.get(REPO_TRACE) == "1"
 _TRACE_TO_STDERR = False
 _TRACE_FILE = None
 _TRACE_FILE_NAME = "TRACE_FILE"

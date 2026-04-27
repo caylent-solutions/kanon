@@ -3892,11 +3892,11 @@ kanon repo list
 
 **Pass criteria:** Exit code 0; project paths printed.
 
-### RP-list-02: `--filter=<regex>`
+### RP-list-02: `--regex <pattern>`
 
 ```bash
 rp_ro_setup rp-list-02
-kanon repo list --filter=pkg-
+kanon repo list --regex pkg-
 ```
 
 **Pass criteria:** Exit code 0; only matching projects listed.
@@ -4147,11 +4147,11 @@ kanon repo start tmp-3 --all --rev=HEAD
 
 **Pass criteria:** Exit code 0.
 
-### RP-start-04: `--head` / `-H`
+### RP-start-04: `--head`
 
 ```bash
 rp_ro_setup rp-start-04
-kanon repo start tmp-4 --all -H
+kanon repo start tmp-4 --all --head
 ```
 
 **Pass criteria:** Exit code 0.
@@ -5588,7 +5588,7 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 234 | RP-branches-02 | repo-branches                     | project-filtered                                       |        |      |         |       |
 | 235 | RP-branches-03 | repo-branches                     | --current-branch                                       |        |      |         |       |
 | 236 | RP-list-01    | repo-list                          | bare                                                   |        |      |         |       |
-| 237 | RP-list-02    | repo-list                          | --filter                                               |        |      |         |       |
+| 237 | RP-list-02    | repo-list                          | --regex                                                |        |      |         |       |
 | 238 | RP-list-03    | repo-list                          | --regex                                                |        |      |         |       |
 | 239 | RP-list-04    | repo-list                          | --groups                                               |        |      |         |       |
 | 240 | RP-list-05    | repo-list                          | --all-manifests                                        |        |      |         |       |

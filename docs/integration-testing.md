@@ -3767,25 +3767,31 @@ kanon repo manifest --manifest-name=default.xml | head -1 | grep -q '<?xml'
 
 **Pass criteria:** Exit code 0.
 
-### RP-manifest-04: `--revision-as-tag` / `-r`
+### RP-manifest-04: `--revision-as-HEAD` / `-r`
+
+<!-- Flag source: manifest.py::_Options() p.add_option("-r", "--revision-as-HEAD", dest="peg_rev", ...) -->
 
 ```bash
 rp_ro_setup rp-manifest-04
-kanon repo manifest --revision-as-tag | grep -q "revision="
+kanon repo manifest --revision-as-HEAD | grep -q "revision="
 ```
 
 **Pass criteria:** Exit code 0; manifest carries `revision="..."` per project (resolved to current HEAD).
 
-### RP-manifest-05: `--suppress-upstream`
+### RP-manifest-05: `--suppress-upstream-revision`
+
+<!-- Flag source: manifest.py::_Options() p.add_option("--suppress-upstream-revision", dest="peg_rev_upstream", ...) -->
 
 ```bash
 rp_ro_setup rp-manifest-05
-kanon repo manifest -r --suppress-upstream | grep -v "upstream=" >/dev/null
+kanon repo manifest -r --suppress-upstream-revision | grep -v "upstream=" >/dev/null
 ```
 
 **Pass criteria:** Exit code 0; `upstream=` attribute omitted.
 
 ### RP-manifest-06: `--suppress-dest-branch`
+
+<!-- Flag source: manifest.py::_Options() p.add_option("--suppress-dest-branch", dest="peg_rev_dest_branch", ...) -->
 
 ```bash
 rp_ro_setup rp-manifest-06
@@ -3794,20 +3800,24 @@ kanon repo manifest -r --suppress-dest-branch | grep -v "dest-branch=" >/dev/nul
 
 **Pass criteria:** Exit code 0; `dest-branch=` omitted.
 
-### RP-manifest-07: `--formatted`
+### RP-manifest-07: `--pretty`
+
+<!-- Flag source: manifest.py::_Options() p.add_option("--pretty", default=False, action="store_true", ...) -->
 
 ```bash
 rp_ro_setup rp-manifest-07
-kanon repo manifest --formatted | head -2 | tail -1 | grep -q '^<manifest'
+kanon repo manifest --pretty | head -2 | tail -1 | grep -q '^<manifest'
 ```
 
 **Pass criteria:** Exit code 0; output is human-formatted.
 
-### RP-manifest-08: `--ignore-local-manifests`
+### RP-manifest-08: `--no-local-manifests`
+
+<!-- Flag source: manifest.py::_Options() p.add_option("--no-local-manifests", dest="ignore_local_manifests", ...) -->
 
 ```bash
 rp_ro_setup rp-manifest-08
-kanon repo manifest --ignore-local-manifests | head -1 | grep -q '<?xml'
+kanon repo manifest --no-local-manifests | head -1 | grep -q '<?xml'
 ```
 
 **Pass criteria:** Exit code 0.
@@ -5567,11 +5577,11 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 223 | RP-manifest-01 | repo-manifest                     | bare stdout                                            |        |      |         |       |
 | 224 | RP-manifest-02 | repo-manifest                     | --output                                               |        |      |         |       |
 | 225 | RP-manifest-03 | repo-manifest                     | --manifest-name                                        |        |      |         |       |
-| 226 | RP-manifest-04 | repo-manifest                     | --revision-as-tag                                      |        |      |         |       |
-| 227 | RP-manifest-05 | repo-manifest                     | --suppress-upstream                                    |        |      |         |       |
+| 226 | RP-manifest-04 | repo-manifest                     | --revision-as-HEAD                                     |        |      |         |       |
+| 227 | RP-manifest-05 | repo-manifest                     | --suppress-upstream-revision                           |        |      |         |       |
 | 228 | RP-manifest-06 | repo-manifest                     | --suppress-dest-branch                                 |        |      |         |       |
-| 229 | RP-manifest-07 | repo-manifest                     | --formatted                                            |        |      |         |       |
-| 230 | RP-manifest-08 | repo-manifest                     | --ignore-local-manifests                               |        |      |         |       |
+| 229 | RP-manifest-07 | repo-manifest                     | --pretty                                               |        |      |         |       |
+| 230 | RP-manifest-08 | repo-manifest                     | --no-local-manifests                                   |        |      |         |       |
 | 231 | RP-manifest-09 | repo-manifest                     | --outer-manifest                                       |        |      |         |       |
 | 232 | RP-manifest-10 | repo-manifest                     | --no-outer-manifest                                    |        |      |         |       |
 | 233 | RP-branches-01 | repo-branches                     | bare                                                   |        |      |         |       |

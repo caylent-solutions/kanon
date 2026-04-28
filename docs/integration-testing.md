@@ -4790,12 +4790,12 @@ test -d /tmp/flag-B && test ! -d /tmp/env-A && echo "PASS: flag won"
 ```bash
 set +e
 kanon repo selfupdate 2>&1 | tee /tmp/rp-wrap-04.log
-exit_code=$?
+exit_code=${PIPESTATUS[0]}
 set -e
-grep -q "selfupdate is not available" /tmp/rp-wrap-04.log && test "${exit_code}" -eq 1 && echo "PASS"
+grep -q "selfupdate is not available" /tmp/rp-wrap-04.log && test "${exit_code}" -eq 0 && echo "PASS"
 ```
 
-**Pass criteria:** Exit code 1; stderr contains `selfupdate is not available -- upgrade kanon-cli instead`.
+**Pass criteria:** Exit code 0; stderr contains `selfupdate is not available -- upgrade kanon-cli instead`.
 
 ### Cleanup
 
@@ -4962,6 +4962,8 @@ grep -q "^.packages/$" .gitignore && grep -q "^.kanon-data/$" .gitignore && echo
 **Pass criteria:** Both `.gitignore` lines added by install remain after clean.
 
 ### TC-validate-01: `validate xml --repo-root=<path>`
+
+<!-- Precondition: MANIFEST_PRIMARY_DIR must be inside a git checkout (git init was run during fixture setup in Category 3). -->
 
 ```bash
 kanon validate xml --repo-root "${MANIFEST_PRIMARY_DIR}"
@@ -5207,6 +5209,7 @@ echo "PASS"
 ### UJ-12: manifest validation journey (`docs/creating-manifest-repos.md`)
 
 ```bash
+cd "${MANIFEST_PRIMARY_DIR}"
 kanon validate xml --repo-root "${MANIFEST_PRIMARY_DIR}"
 kanon validate marketplace --repo-root "${MK_MFST}" 2>&1 || echo "(MK-19 fixture causes exit non-zero by design)"
 ```

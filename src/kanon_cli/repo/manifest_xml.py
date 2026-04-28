@@ -1542,6 +1542,8 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
     def _AddMetaProjectMirror(self, m):
         name = None
         m_url = m.GetRemote().url
+        if not m_url:
+            return
         if m_url.endswith("/.git"):
             raise ManifestParseError("refusing to mirror %s" % m_url)
 

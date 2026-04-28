@@ -5526,7 +5526,7 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 172 | RP-init-07    | repo-init                          | --reference                                            |        |      |         |       |
 | 173 | RP-init-08    | repo-init                          | --dissociate                                           |        |      |         |       |
 | 174 | RP-init-09    | repo-init                          | --no-clone-bundle                                      |        |      |         |       |
-| 175 | RP-init-10    | repo-init                          | --mirror                                               |        |      |         |       |
+| 175 | RP-init-10    | repo-init                          | --mirror                                               | PASS   |      |         |       |
 | 176 | RP-init-11    | repo-init                          | --worktree                                             |        |      |         |       |
 | 177 | RP-init-12    | repo-init                          | --submodules                                           |        |      |         |       |
 | 178 | RP-init-13    | repo-init                          | --partial-clone --clone-filter                         |        |      |         |       |

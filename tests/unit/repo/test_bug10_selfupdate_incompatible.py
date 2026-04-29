@@ -17,12 +17,12 @@
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 10 -- selfupdate subcommand
 incompatible with embedding. Tries to sync the "repo project" which does not
 exist when running embedded. Fix: print an informational message, skip the
-sync/update operations, and exit with zero status.
+sync/update operations, and exit with non-zero status (exit code 1).
 
 These tests verify the fix from the Bug 10 perspective:
 - selfupdate prints an informational message when running embedded
 - selfupdate does not attempt any sync or update operations when embedded
-- selfupdate exits with zero status when running embedded
+- selfupdate exits with non-zero status (exit code 1) when running embedded
 """
 
 import sys
@@ -251,21 +251,21 @@ def test_bug10_selfupdate_embedded_does_not_call_post_repo_upgrade(
 
 
 # ---------------------------------------------------------------------------
-# AC-TEST-003: selfupdate exits with zero status
+# AC-TEST-003: selfupdate exits with non-zero status (exit code 1) in embedded mode
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_bug10_selfupdate_embedded_exits_zero(
+def test_bug10_selfupdate_embedded_exits_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC-TEST-003: selfupdate exits with non-zero status in embedded mode.
 
     Bug 10 root cause: If selfupdate attempted to sync and failed, it would
     raise an exception or exit non-zero. The original fix returned 0 to
-    signal an informational skip. Updated per E2-F2-S2-T2: the exit code is
-    now 1 so callers receive a non-zero code signalling that selfupdate is
-    unavailable (disabled in embedded mode).
+    signal an informational skip. Updated per E2-F2-S2-T2, formally declared
+    in E2-F2-S2-T3: the exit code is now 1 so callers receive a non-zero code
+    signalling that selfupdate is unavailable (disabled in embedded mode).
 
     Arrange: Set EMBEDDED=True.
     Act: Call Execute() and capture the return value.

@@ -15,7 +15,7 @@ Verifies that:
   wording states that '.repo missing exits 1 with clear message.' The actual
   behaviour matches this wording: embedded-mode detection fires before any
   .repo lookup, so the command exits 1 with SELFUPDATE_EMBEDDED_MESSAGE even
-  when .repo is absent (updated per E2-F2-S2-T2). The tests in
+  when .repo is absent (updated per E2-F2-S2-T2, declared in E2-F2-S2-T3). The tests in
   TestRepoSelfupdatePreconditionFailure assert this actual behaviour.
 - All error paths are deterministic and actionable (AC-FUNC-001).
 - stdout vs stderr channel discipline is maintained for every case
@@ -542,7 +542,8 @@ class TestRepoSelfupdatePreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failure behavior.
 
     AC wording: '.repo missing exits 1 with clear message.' Updated per
-    E2-F2-S2-T2: 'kanon repo selfupdate' now exits 1 in embedded mode.
+    E2-F2-S2-T2 and formally declared in E2-F2-S2-T3: 'kanon repo selfupdate'
+    now exits 1 in embedded mode.
     The embedded-mode detection fires before any .repo lookup. The command
     prints SELFUPDATE_EMBEDDED_MESSAGE to stderr and exits 1, matching both
     the AC wording and the new exit-code contract. The tests below assert
@@ -552,13 +553,13 @@ class TestRepoSelfupdatePreconditionFailure:
 
     _EXIT_DISABLED = 1
 
-    def test_no_repo_dir_exits_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_no_repo_dir_exits_disabled(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo selfupdate' without a .repo directory exits 1.
 
         Embedded-mode detection fires before .repo lookup. The command exits 1
         with SELFUPDATE_EMBEDDED_MESSAGE on stderr even when .repo is absent.
-        Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode to
-        signal that selfupdate is unavailable (disabled).
+        Updated per E2-F2-S2-T2, declared in E2-F2-S2-T3: selfupdate exits 1
+        in embedded mode to signal that selfupdate is unavailable (disabled).
         """
         repo_dir = str(tmp_path / _NONEXISTENT_REPO_DIR_NAME)
         result = _run_kanon(
@@ -727,8 +728,9 @@ class TestRepoSelfupdateErrorChannelDiscipline:
     def test_embedded_mode_no_traceback_on_stderr(self, tmp_path: pathlib.Path) -> None:
         """Embedded-mode 'kanon repo selfupdate' must not emit tracebacks to stderr.
 
-        Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode.
-        Even with exit code 1, stderr must not contain a Python traceback.
+        Updated per E2-F2-S2-T2, declared in E2-F2-S2-T3: selfupdate exits 1
+        in embedded mode. Even with exit code 1, stderr must not contain a
+        Python traceback.
         The embedded message and the kanon error suffix are the only expected
         content on stderr; a traceback indicates an unhandled exception.
         """

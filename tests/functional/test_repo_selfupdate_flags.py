@@ -73,9 +73,9 @@ _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
 # Expected exit code for all valid-flag invocations in embedded mode.
-# Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode to signal
-# that selfupdate is unavailable (disabled).
-_EXPECTED_EXIT_ZERO = 1
+# Updated per E2-F2-S2-T2, formally declared in E2-F2-S2-T3: selfupdate
+# exits 1 in embedded mode to signal that selfupdate is unavailable (disabled).
+_EXPECTED_EXIT_DISABLED = 1
 
 # Nonexistent repo-dir name used in argument-parser acceptance tests that do
 # not require a real initialized repository (negative tests that fail at parse
@@ -147,12 +147,12 @@ class TestRepoSelfupdateFlagsValidValues:
         [flag for flag, _ in _BOOL_FLAGS],
         ids=[test_id for _, test_id in _BOOL_FLAGS],
     )
-    def test_boolean_flag_exits_zero_in_embedded_mode(self, tmp_path: pathlib.Path, flag: str) -> None:
+    def test_boolean_flag_exits_disabled_in_embedded_mode(self, tmp_path: pathlib.Path, flag: str) -> None:
         """Each boolean flag causes exit 1 in embedded mode.
 
         Embedded-mode detection fires before any flag-dependent logic. Both
         boolean flags must produce exit 1 in a valid synced repo (updated per
-        E2-F2-S2-T2: selfupdate exits 1 in embedded mode).
+        E2-F2-S2-T2, declared in E2-F2-S2-T3: selfupdate exits 1 in embedded mode).
         """
         checkout_dir, repo_dir = _setup_synced_repo(
             tmp_path,
@@ -168,9 +168,9 @@ class TestRepoSelfupdateFlagsValidValues:
             flag,
             cwd=checkout_dir,
         )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
+        assert result.returncode == _EXPECTED_EXIT_DISABLED, (
             f"'{_CLI_COMMAND_PHRASE} {flag}' exited {result.returncode}, "
-            f"expected {_EXPECTED_EXIT_ZERO}.\n"
+            f"expected {_EXPECTED_EXIT_DISABLED}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -366,16 +366,17 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
 
     Absence tests confirm that omitting every optional flag still produces a
     non-argparse-error invocation. Because embedded-mode detection fires before
-    flag-dependent logic, all invocations exit 1 (updated per E2-F2-S2-T2)
-    and emit the embedded message.
+    flag-dependent logic, all invocations exit 1 (updated per E2-F2-S2-T2,
+    declared in E2-F2-S2-T3) and emit the embedded message.
     """
 
-    def test_all_flags_omitted_exits_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_all_flags_omitted_exits_disabled(self, tmp_path: pathlib.Path) -> None:
         """``kanon repo selfupdate`` with all optional flags omitted exits 1.
 
         When no optional flags are supplied, embedded-mode detection fires
-        and the command exits 1. Updated per E2-F2-S2-T2: selfupdate exits
-        1 in embedded mode. Verifies that no flag is required and all
+        and the command exits 1. Updated per E2-F2-S2-T2, declared in
+        E2-F2-S2-T3: selfupdate exits 1 in embedded mode. Verifies that no
+        flag is required and all
         documented defaults reach the embedded-mode branch.
         """
         checkout_dir, repo_dir = _setup_synced_repo(
@@ -391,9 +392,9 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
             _CLI_TOKEN_SELFUPDATE,
             cwd=checkout_dir,
         )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
+        assert result.returncode == _EXPECTED_EXIT_DISABLED, (
             f"'{_CLI_COMMAND_PHRASE}' with all optional flags omitted exited "
-            f"{result.returncode}, expected {_EXPECTED_EXIT_ZERO}.\n"
+            f"{result.returncode}, expected {_EXPECTED_EXIT_DISABLED}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -496,7 +497,7 @@ class TestRepoSelfupdateFlagsChannelDiscipline:
             _CLI_FLAG_NO_REPO_VERIFY,
             cwd=checkout_dir,
         )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
+        assert result.returncode == _EXPECTED_EXIT_DISABLED, (
             f"Prerequisite '{_CLI_COMMAND_PHRASE} {_CLI_FLAG_NO_REPO_VERIFY}' failed "
             f"with exit {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"

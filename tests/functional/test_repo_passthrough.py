@@ -392,9 +392,9 @@ class TestKanonRepoDirEnvVar:
 
         Creates a minimal .repo structure at a custom path, sets KANON_REPO_DIR
         to that path, then invokes 'kanon repo selfupdate' without --repo-dir.
-        The command exits 1 (updated per E2-F2-S2-T2: selfupdate exits 1 in
-        embedded mode), confirming that the env var was picked up as the
-        default repo dir (the embedded message appears on stderr).
+        The command exits 1 (updated per E2-F2-S2-T2, declared in E2-F2-S2-T3:
+        selfupdate exits 1 in embedded mode), confirming that the env var was
+        picked up as the default repo dir (the embedded message appears on stderr).
         """
         repo_dot_dir = tmp_path / "env-var-dot-repo"
         manifests_dir = repo_dot_dir / "manifests"
@@ -569,8 +569,9 @@ class TestArgvVerbatimPassthrough:
         """'kanon repo selfupdate' forwards the 'selfupdate' subcommand verbatim.
 
         The 'selfupdate' subcommand is intercepted by the embedded mode handler
-        which exits 1 with an informational message (updated per E2-F2-S2-T2:
-        selfupdate exits 1 in embedded mode). Verifying it exits 1 confirms
+        which exits 1 with an informational message (updated per E2-F2-S2-T2,
+        declared in E2-F2-S2-T3: selfupdate exits 1 in embedded mode). Verifying
+        it exits 1 confirms
         that arbitrary subcommand names are forwarded without any kanon-side
         filtering or consumption.
         """

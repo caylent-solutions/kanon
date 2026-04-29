@@ -943,7 +943,7 @@ class TestRepoSelfupdateEmbeddedMessage:
         The selfupdate subcommand in embedded mode prints a message to stderr
         that tells users to use 'pipx upgrade kanon-cli' instead of running
         selfupdate. This test verifies:
-        - The command exits with code 1 (updated per E2-F2-S2-T2).
+        - The command exits with code 1 (updated per E2-F2-S2-T2, declared in E2-F2-S2-T3).
         - The combined output contains 'not available'.
         - The combined output contains 'pipx upgrade kanon-cli'.
 

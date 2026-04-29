@@ -78,11 +78,12 @@ def test_selfupdate_embedded_message_exact_text(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.unit
-def test_selfupdate_embedded_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_selfupdate_embedded_returns_one(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-FUNC-003, AC-TEST-002: Execute must return exit code 1 in embedded mode.
 
-    Updated per E2-F2-S2-T2: selfupdate.py Execute() now returns 1 instead
-    of 0 in the embedded branch, signalling that selfupdate is unavailable.
+    Updated per E2-F2-S2-T2, formally declared in E2-F2-S2-T3:
+    selfupdate.py Execute() now returns 1 instead of 0 in the embedded
+    branch, signalling that selfupdate is unavailable.
     """
     monkeypatch.setattr(repo_pager, "EMBEDDED", True)
 

@@ -250,15 +250,15 @@ def test_regression_selfupdate_embedded_does_not_call_post_sync_functions(
 
 
 @pytest.mark.unit
-def test_regression_selfupdate_embedded_returns_zero(
+def test_regression_selfupdate_embedded_returns_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC-TEST-003: selfupdate returns exit status 1 when EMBEDDED=True.
 
     The embedded-mode early return must yield exactly 1 so callers receive a
     non-zero exit code signalling that selfupdate is unavailable (disabled).
-    Updated per E2-F2-S2-T2: selfupdate.py Execute() now returns 1 instead
-    of 0 in the embedded branch.
+    Updated per E2-F2-S2-T2, formally declared in E2-F2-S2-T3:
+    selfupdate.py Execute() now returns 1 instead of 0 in the embedded branch.
 
     Arrange: Set EMBEDDED=True.
     Act: Call Execute() and capture the return value.

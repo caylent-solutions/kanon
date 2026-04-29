@@ -95,6 +95,7 @@ def test_output_xml_to_stdout():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -170,6 +171,7 @@ def test_output_to_file():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -194,6 +196,7 @@ def test_output_with_path_prefix():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = "sub/path"
@@ -219,6 +222,7 @@ def test_output_with_peg_rev():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -248,6 +252,7 @@ def test_output_suppress_upstream():
     opt.peg_rev_upstream = False
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -276,6 +281,7 @@ def test_output_suppress_dest_branch():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = False
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -304,6 +310,7 @@ def test_output_ignore_local_manifests():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = True
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -327,6 +334,7 @@ def test_output_override_manifest():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest = mock.MagicMock()
     manifest.path_prefix = None
@@ -350,6 +358,7 @@ def test_output_multiple_manifests():
     opt.peg_rev_upstream = True
     opt.peg_rev_dest_branch = True
     opt.ignore_local_manifests = False
+    opt.revision_as_tag = False
 
     manifest1 = mock.MagicMock()
     manifest1.path_prefix = None

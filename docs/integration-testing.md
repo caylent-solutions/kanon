@@ -3619,7 +3619,7 @@ done
 
 ---
 
-## 22. Category 21: `kanon repo` Read-Only Subcommands (status, info, manifest) (21 tests)
+## 22. Category 21: `kanon repo` Read-Only Subcommands (status, info, manifest) (22 tests)
 
 ### Common setup
 
@@ -3841,10 +3841,19 @@ kanon repo manifest --no-outer-manifest | head -1 | grep -q '<?xml'
 
 **Pass criteria:** Exit code 0.
 
+### RP-manifest-11: `--revision-as-tag`
+
+```bash
+rp_ro_setup rp-manifest-11
+kanon repo manifest --revision-as-tag | head -1 | grep -q '<?xml'
+```
+
+**Pass criteria:** Exit code 0; XML output present (first line matches `<?xml`); because `rp_ro_setup` initialises an untagged workspace, all projects take the warn-and-keep path — a warning is emitted to stderr for each project and each project's original revision is preserved unchanged in the output.
+
 ### Cleanup
 
 ```bash
-for d in rp-status-{01..04} rp-info-{01..07} rp-manifest-{01..10}; do
+for d in rp-status-{01..04} rp-info-{01..07} rp-manifest-{01..11}; do
     cd "${KANON_TEST_ROOT}" && rm -rf "${d}"
 done
 ```
@@ -5591,126 +5600,127 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 230 | RP-manifest-08 | repo-manifest                     | --no-local-manifests                                   |        |      |         |       |
 | 231 | RP-manifest-09 | repo-manifest                     | --outer-manifest                                       |        |      |         |       |
 | 232 | RP-manifest-10 | repo-manifest                     | --no-outer-manifest                                    |        |      |         |       |
-| 233 | RP-branches-01 | repo-branches                     | bare                                                   |        |      |         |       |
-| 234 | RP-branches-02 | repo-branches                     | project-filtered                                       |        |      |         |       |
-| 235 | RP-branches-03 | repo-branches                     | --current-branch                                       |        |      |         |       |
-| 236 | RP-list-01    | repo-list                          | bare                                                   |        |      |         |       |
-| 237 | RP-list-02    | repo-list                          | --regex                                                |        |      |         |       |
-| 238 | RP-list-03    | repo-list                          | --regex                                                |        |      |         |       |
-| 239 | RP-list-04    | repo-list                          | --groups                                               |        |      |         |       |
-| 240 | RP-list-05    | repo-list                          | --all-manifests                                        |        |      |         |       |
-| 241 | RP-list-06    | repo-list                          | --name-only                                            |        |      |         |       |
-| 242 | RP-list-07    | repo-list                          | --path-only                                            |        |      |         |       |
-| 243 | RP-list-08    | repo-list                          | --fullpath                                             |        |      |         |       |
-| 244 | RP-list-09    | repo-list                          | --outer-manifest                                       |        |      |         |       |
-| 245 | RP-list-10    | repo-list                          | --this-manifest-only                                   |        |      |         |       |
-| 246 | RP-forall-01  | repo-forall                        | bare -c                                                |        |      |         |       |
-| 247 | RP-forall-02  | repo-forall                        | --regex                                                |        |      |         |       |
-| 248 | RP-forall-03  | repo-forall                        | --inverse-regex                                        |        |      |         |       |
-| 249 | RP-forall-04  | repo-forall                        | --groups                                               |        |      |         |       |
-| 250 | RP-forall-05  | repo-forall                        | --abort-on-errors                                      |        |      |         |       |
-| 251 | RP-forall-06  | repo-forall                        | --ignore-missing                                       |        |      |         |       |
-| 252 | RP-forall-07  | repo-forall                        | --project-header                                       |        |      |         |       |
-| 253 | RP-forall-08  | repo-forall                        | --interactive                                          |        |      |         |       |
-| 254 | RP-forall-09  | repo-forall                        | env REPO_PROJECT/PATH/REMOTE/LREV/RREV                 |        |      |         |       |
-| 255 | RP-forall-10  | repo-forall                        | env REPO_COUNT                                         |        |      |         |       |
-| 256 | RP-grep-01    | repo-grep                          | basic                                                  |        |      |         |       |
-| 257 | RP-grep-02    | repo-grep                          | -i case-insensitive                                    |        |      |         |       |
-| 258 | RP-grep-03    | repo-grep                          | -e pattern                                             |        |      |         |       |
-| 259 | RP-grep-04    | repo-grep                          | project-filtered                                       |        |      |         |       |
-| 260 | RP-start-01   | repo-start                         | --all                                                  |        |      |         |       |
-| 261 | RP-start-02   | repo-start                         | branch+project                                         |        |      |         |       |
-| 262 | RP-start-03   | repo-start                         | --rev                                                  |        |      |         |       |
-| 263 | RP-start-04   | repo-start                         | --head                                                 |        |      |         |       |
-| 264 | RP-checkout-01 | repo-checkout                     | existing branch                                        |        |      |         |       |
-| 265 | RP-checkout-02 | repo-checkout                     | nonexistent error                                      |        |      |         |       |
-| 266 | RP-abandon-01 | repo-abandon                       | --all                                                  |        |      |         |       |
-| 267 | RP-abandon-02 | repo-abandon                       | branch+project                                         |        |      |         |       |
-| 268 | RP-abandon-03 | repo-abandon                       | delete all                                             |        |      |         |       |
-| 269 | RP-rebase-01  | repo-rebase                        | bare                                                   |        |      |         |       |
-| 270 | RP-rebase-02  | repo-rebase                        | --fail-fast                                            |        |      |         |       |
-| 271 | RP-rebase-03  | repo-rebase                        | --force-rebase                                         |        |      |         |       |
-| 272 | RP-rebase-04  | repo-rebase                        | --no-ff                                                |        |      |         |       |
-| 273 | RP-rebase-05  | repo-rebase                        | --autosquash                                           |        |      |         |       |
-| 274 | RP-rebase-06  | repo-rebase                        | --whitespace                                           |        |      |         |       |
-| 275 | RP-rebase-07  | repo-rebase                        | --stash                                                |        |      |         |       |
-| 276 | RP-rebase-08  | repo-rebase                        | -i interactive                                         |        |      |         |       |
-| 277 | RP-upload-01  | repo-upload                        | --dry-run basic                                        |        |      |         |       |
-| 278 | RP-upload-02  | repo-upload                        | -t auto-topic                                          |        |      |         |       |
-| 279 | RP-upload-03  | repo-upload                        | --topic                                                |        |      |         |       |
-| 280 | RP-upload-04  | repo-upload                        | --hashtag                                              |        |      |         |       |
-| 281 | RP-upload-05  | repo-upload                        | --add-hashtag                                          |        |      |         |       |
-| 282 | RP-upload-06  | repo-upload                        | --label                                                |        |      |         |       |
-| 283 | RP-upload-07  | repo-upload                        | --description                                          |        |      |         |       |
-| 284 | RP-upload-08  | repo-upload                        | --re                                                   |        |      |         |       |
-| 285 | RP-upload-09  | repo-upload                        | --cc                                                   |        |      |         |       |
-| 286 | RP-upload-10  | repo-upload                        | --private                                              |        |      |         |       |
-| 287 | RP-upload-11  | repo-upload                        | --wip                                                  |        |      |         |       |
-| 288 | RP-upload-12  | repo-upload                        | --current-branch                                       |        |      |         |       |
-| 289 | RP-upload-13  | repo-upload                        | --branch-exclude                                       |        |      |         |       |
-| 290 | RP-upload-14  | repo-upload                        | --auto-approve                                         |        |      |         |       |
-| 291 | RP-upload-15  | repo-upload                        | --receive-pack                                         |        |      |         |       |
-| 292 | RP-cherry-pick-01 | repo-cherry-pick               | happy-path                                             |        |      |         |       |
-| 293 | RP-cherry-pick-02 | repo-cherry-pick               | nonexistent SHA                                        |        |      |         |       |
-| 294 | RP-stage-01   | repo-stage                         | -i smoke                                               |        |      |         |       |
-| 295 | RP-download-01 | repo-download                     | bare (no-server skip)                                  |        |      |         |       |
-| 296 | RP-download-02 | repo-download                     | -c                                                     |        |      |         |       |
-| 297 | RP-download-03 | repo-download                     | -x                                                     |        |      |         |       |
-| 298 | RP-download-04 | repo-download                     | -r                                                     |        |      |         |       |
-| 299 | RP-download-05 | repo-download                     | -f                                                     |        |      |         |       |
-| 300 | RP-download-06 | repo-download                     | -b                                                     |        |      |         |       |
-| 301 | RP-diff-01    | repo-diff                          | bare                                                   |        |      |         |       |
-| 302 | RP-diff-02    | repo-diff                          | --absolute                                             |        |      |         |       |
-| 303 | RP-diff-03    | repo-diff                          | project-filtered                                       |        |      |         |       |
-| 304 | RP-diffmanifests-01 | repo-diffmanifests           | one-arg                                                |        |      |         |       |
-| 305 | RP-diffmanifests-02 | repo-diffmanifests           | two-arg                                                |        |      |         |       |
-| 306 | RP-diffmanifests-03 | repo-diffmanifests           | --raw                                                  |        |      |         |       |
-| 307 | RP-diffmanifests-04 | repo-diffmanifests           | --no-color                                             |        |      |         |       |
-| 308 | RP-diffmanifests-05 | repo-diffmanifests           | --pretty-format                                        |        |      |         |       |
-| 309 | RP-prune-01   | repo-prune                         | bare                                                   |        |      |         |       |
-| 310 | RP-prune-02   | repo-prune                         | project-filtered                                       |        |      |         |       |
-| 311 | RP-gc-01      | repo-gc                            | bare                                                   |        |      |         |       |
-| 312 | RP-gc-02      | repo-gc                            | --aggressive                                           |        |      |         |       |
-| 313 | RP-gc-03      | repo-gc                            | --all                                                  |        |      |         |       |
-| 314 | RP-gc-04      | repo-gc                            | --repack-full-clone                                    |        |      |         |       |
-| 315 | RP-overview-01 | repo-overview                     | bare                                                   |        |      |         |       |
-| 316 | RP-overview-02 | repo-overview                     | --current-branch                                       |        |      |         |       |
-| 317 | RP-smartsync-01 | repo-smartsync                   | smoke                                                  |        |      |         |       |
-| 318 | RP-envsubst-01 | repo-envsubst                     | in-place                                               |        |      |         |       |
-| 319 | RP-envsubst-02 | repo-envsubst                     | substitution check                                     |        |      |         |       |
-| 320 | RP-help-01    | repo-help                          | bare                                                   |        |      |         |       |
-| 321 | RP-help-02    | repo-help                          | --all                                                  |        |      |         |       |
-| 322 | RP-help-03    | repo-help                          | --help-all                                             |        |      |         |       |
-| 323 | RP-wrap-01    | repo-wrapper                       | --repo-dir                                             |        |      |         |       |
-| 324 | RP-wrap-02    | repo-wrapper                       | KANON_REPO_DIR env                                     |        |      |         |       |
-| 325 | RP-wrap-03    | repo-wrapper                       | flag overrides env                                     |        |      |         |       |
-| 326 | RP-wrap-04    | repo-wrapper                       | selfupdate disabled message                            |        |      |         |       |
-| 327 | TC-bootstrap-01 | top-level                         | --output-dir                                           |        |      |         |       |
-| 328 | TC-bootstrap-02 | top-level                         | --catalog-source flag                                  |        |      |         |       |
-| 329 | TC-bootstrap-03 | top-level                         | KANON_CATALOG_SOURCE env                               |        |      |         |       |
-| 330 | TC-bootstrap-04 | top-level                         | flag overrides env                                     |        |      |         |       |
-| 331 | TC-bootstrap-05 | top-level                         | missing parent                                         |        |      |         |       |
-| 332 | TC-install-01 | top-level                          | auto-discover                                          |        |      |         |       |
-| 333 | TC-install-02 | top-level                          | explicit path                                          |        |      |         |       |
-| 334 | TC-install-03 | top-level                          | REPO_URL deprecation                                   |        |      |         |       |
-| 335 | TC-install-04 | top-level                          | REPO_REV deprecation                                   |        |      |         |       |
-| 336 | TC-clean-01   | top-level                          | auto-discover clean                                    |        |      |         |       |
-| 337 | TC-clean-02   | top-level                          | .gitignore retention                                   |        |      |         |       |
-| 338 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
-| 339 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
-| 340 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
-| 341 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
-| 342 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
-| 343 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
-| 344 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
-| 345 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
-| 346 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
-| 347 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
-| 348 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
-| 349 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
-| 350 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
-| 351 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
-| 352 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
-| 353 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
-| 354 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
+| 233 | RP-manifest-11 | repo-manifest                     | --revision-as-tag                                      |        |      |         |       |
+| 234 | RP-branches-01 | repo-branches                     | bare                                                   |        |      |         |       |
+| 235 | RP-branches-02 | repo-branches                     | project-filtered                                       |        |      |         |       |
+| 236 | RP-branches-03 | repo-branches                     | --current-branch                                       |        |      |         |       |
+| 237 | RP-list-01    | repo-list                          | bare                                                   |        |      |         |       |
+| 238 | RP-list-02    | repo-list                          | --regex                                                |        |      |         |       |
+| 239 | RP-list-03    | repo-list                          | --regex                                                |        |      |         |       |
+| 240 | RP-list-04    | repo-list                          | --groups                                               |        |      |         |       |
+| 241 | RP-list-05    | repo-list                          | --all-manifests                                        |        |      |         |       |
+| 242 | RP-list-06    | repo-list                          | --name-only                                            |        |      |         |       |
+| 243 | RP-list-07    | repo-list                          | --path-only                                            |        |      |         |       |
+| 244 | RP-list-08    | repo-list                          | --fullpath                                             |        |      |         |       |
+| 245 | RP-list-09    | repo-list                          | --outer-manifest                                       |        |      |         |       |
+| 246 | RP-list-10    | repo-list                          | --this-manifest-only                                   |        |      |         |       |
+| 247 | RP-forall-01  | repo-forall                        | bare -c                                                |        |      |         |       |
+| 248 | RP-forall-02  | repo-forall                        | --regex                                                |        |      |         |       |
+| 249 | RP-forall-03  | repo-forall                        | --inverse-regex                                        |        |      |         |       |
+| 250 | RP-forall-04  | repo-forall                        | --groups                                               |        |      |         |       |
+| 251 | RP-forall-05  | repo-forall                        | --abort-on-errors                                      |        |      |         |       |
+| 252 | RP-forall-06  | repo-forall                        | --ignore-missing                                       |        |      |         |       |
+| 253 | RP-forall-07  | repo-forall                        | --project-header                                       |        |      |         |       |
+| 254 | RP-forall-08  | repo-forall                        | --interactive                                          |        |      |         |       |
+| 255 | RP-forall-09  | repo-forall                        | env REPO_PROJECT/PATH/REMOTE/LREV/RREV                 |        |      |         |       |
+| 256 | RP-forall-10  | repo-forall                        | env REPO_COUNT                                         |        |      |         |       |
+| 257 | RP-grep-01    | repo-grep                          | basic                                                  |        |      |         |       |
+| 258 | RP-grep-02    | repo-grep                          | -i case-insensitive                                    |        |      |         |       |
+| 259 | RP-grep-03    | repo-grep                          | -e pattern                                             |        |      |         |       |
+| 260 | RP-grep-04    | repo-grep                          | project-filtered                                       |        |      |         |       |
+| 261 | RP-start-01   | repo-start                         | --all                                                  |        |      |         |       |
+| 262 | RP-start-02   | repo-start                         | branch+project                                         |        |      |         |       |
+| 263 | RP-start-03   | repo-start                         | --rev                                                  |        |      |         |       |
+| 264 | RP-start-04   | repo-start                         | --head                                                 |        |      |         |       |
+| 265 | RP-checkout-01 | repo-checkout                     | existing branch                                        |        |      |         |       |
+| 266 | RP-checkout-02 | repo-checkout                     | nonexistent error                                      |        |      |         |       |
+| 267 | RP-abandon-01 | repo-abandon                       | --all                                                  |        |      |         |       |
+| 268 | RP-abandon-02 | repo-abandon                       | branch+project                                         |        |      |         |       |
+| 269 | RP-abandon-03 | repo-abandon                       | delete all                                             |        |      |         |       |
+| 270 | RP-rebase-01  | repo-rebase                        | bare                                                   |        |      |         |       |
+| 271 | RP-rebase-02  | repo-rebase                        | --fail-fast                                            |        |      |         |       |
+| 272 | RP-rebase-03  | repo-rebase                        | --force-rebase                                         |        |      |         |       |
+| 273 | RP-rebase-04  | repo-rebase                        | --no-ff                                                |        |      |         |       |
+| 274 | RP-rebase-05  | repo-rebase                        | --autosquash                                           |        |      |         |       |
+| 275 | RP-rebase-06  | repo-rebase                        | --whitespace                                           |        |      |         |       |
+| 276 | RP-rebase-07  | repo-rebase                        | --stash                                                |        |      |         |       |
+| 277 | RP-rebase-08  | repo-rebase                        | -i interactive                                         |        |      |         |       |
+| 278 | RP-upload-01  | repo-upload                        | --dry-run basic                                        |        |      |         |       |
+| 279 | RP-upload-02  | repo-upload                        | -t auto-topic                                          |        |      |         |       |
+| 280 | RP-upload-03  | repo-upload                        | --topic                                                |        |      |         |       |
+| 281 | RP-upload-04  | repo-upload                        | --hashtag                                              |        |      |         |       |
+| 282 | RP-upload-05  | repo-upload                        | --add-hashtag                                          |        |      |         |       |
+| 283 | RP-upload-06  | repo-upload                        | --label                                                |        |      |         |       |
+| 284 | RP-upload-07  | repo-upload                        | --description                                          |        |      |         |       |
+| 285 | RP-upload-08  | repo-upload                        | --re                                                   |        |      |         |       |
+| 286 | RP-upload-09  | repo-upload                        | --cc                                                   |        |      |         |       |
+| 287 | RP-upload-10  | repo-upload                        | --private                                              |        |      |         |       |
+| 288 | RP-upload-11  | repo-upload                        | --wip                                                  |        |      |         |       |
+| 289 | RP-upload-12  | repo-upload                        | --current-branch                                       |        |      |         |       |
+| 290 | RP-upload-13  | repo-upload                        | --branch-exclude                                       |        |      |         |       |
+| 291 | RP-upload-14  | repo-upload                        | --auto-approve                                         |        |      |         |       |
+| 292 | RP-upload-15  | repo-upload                        | --receive-pack                                         |        |      |         |       |
+| 293 | RP-cherry-pick-01 | repo-cherry-pick               | happy-path                                             |        |      |         |       |
+| 294 | RP-cherry-pick-02 | repo-cherry-pick               | nonexistent SHA                                        |        |      |         |       |
+| 295 | RP-stage-01   | repo-stage                         | -i smoke                                               |        |      |         |       |
+| 296 | RP-download-01 | repo-download                     | bare (no-server skip)                                  |        |      |         |       |
+| 297 | RP-download-02 | repo-download                     | -c                                                     |        |      |         |       |
+| 298 | RP-download-03 | repo-download                     | -x                                                     |        |      |         |       |
+| 299 | RP-download-04 | repo-download                     | -r                                                     |        |      |         |       |
+| 300 | RP-download-05 | repo-download                     | -f                                                     |        |      |         |       |
+| 301 | RP-download-06 | repo-download                     | -b                                                     |        |      |         |       |
+| 302 | RP-diff-01    | repo-diff                          | bare                                                   |        |      |         |       |
+| 303 | RP-diff-02    | repo-diff                          | --absolute                                             |        |      |         |       |
+| 304 | RP-diff-03    | repo-diff                          | project-filtered                                       |        |      |         |       |
+| 305 | RP-diffmanifests-01 | repo-diffmanifests           | one-arg                                                |        |      |         |       |
+| 306 | RP-diffmanifests-02 | repo-diffmanifests           | two-arg                                                |        |      |         |       |
+| 307 | RP-diffmanifests-03 | repo-diffmanifests           | --raw                                                  |        |      |         |       |
+| 308 | RP-diffmanifests-04 | repo-diffmanifests           | --no-color                                             |        |      |         |       |
+| 309 | RP-diffmanifests-05 | repo-diffmanifests           | --pretty-format                                        |        |      |         |       |
+| 310 | RP-prune-01   | repo-prune                         | bare                                                   |        |      |         |       |
+| 311 | RP-prune-02   | repo-prune                         | project-filtered                                       |        |      |         |       |
+| 312 | RP-gc-01      | repo-gc                            | bare                                                   |        |      |         |       |
+| 313 | RP-gc-02      | repo-gc                            | --aggressive                                           |        |      |         |       |
+| 314 | RP-gc-03      | repo-gc                            | --all                                                  |        |      |         |       |
+| 315 | RP-gc-04      | repo-gc                            | --repack-full-clone                                    |        |      |         |       |
+| 316 | RP-overview-01 | repo-overview                     | bare                                                   |        |      |         |       |
+| 317 | RP-overview-02 | repo-overview                     | --current-branch                                       |        |      |         |       |
+| 318 | RP-smartsync-01 | repo-smartsync                   | smoke                                                  |        |      |         |       |
+| 319 | RP-envsubst-01 | repo-envsubst                     | in-place                                               |        |      |         |       |
+| 320 | RP-envsubst-02 | repo-envsubst                     | substitution check                                     |        |      |         |       |
+| 321 | RP-help-01    | repo-help                          | bare                                                   |        |      |         |       |
+| 322 | RP-help-02    | repo-help                          | --all                                                  |        |      |         |       |
+| 323 | RP-help-03    | repo-help                          | --help-all                                             |        |      |         |       |
+| 324 | RP-wrap-01    | repo-wrapper                       | --repo-dir                                             |        |      |         |       |
+| 325 | RP-wrap-02    | repo-wrapper                       | KANON_REPO_DIR env                                     |        |      |         |       |
+| 326 | RP-wrap-03    | repo-wrapper                       | flag overrides env                                     |        |      |         |       |
+| 327 | RP-wrap-04    | repo-wrapper                       | selfupdate disabled message                            |        |      |         |       |
+| 328 | TC-bootstrap-01 | top-level                         | --output-dir                                           |        |      |         |       |
+| 329 | TC-bootstrap-02 | top-level                         | --catalog-source flag                                  |        |      |         |       |
+| 330 | TC-bootstrap-03 | top-level                         | KANON_CATALOG_SOURCE env                               |        |      |         |       |
+| 331 | TC-bootstrap-04 | top-level                         | flag overrides env                                     |        |      |         |       |
+| 332 | TC-bootstrap-05 | top-level                         | missing parent                                         |        |      |         |       |
+| 333 | TC-install-01 | top-level                          | auto-discover                                          |        |      |         |       |
+| 334 | TC-install-02 | top-level                          | explicit path                                          |        |      |         |       |
+| 335 | TC-install-03 | top-level                          | REPO_URL deprecation                                   |        |      |         |       |
+| 336 | TC-install-04 | top-level                          | REPO_REV deprecation                                   |        |      |         |       |
+| 337 | TC-clean-01   | top-level                          | auto-discover clean                                    |        |      |         |       |
+| 338 | TC-clean-02   | top-level                          | .gitignore retention                                   |        |      |         |       |
+| 339 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
+| 340 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
+| 341 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
+| 342 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
+| 343 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
+| 344 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
+| 345 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
+| 346 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
+| 347 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
+| 348 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
+| 349 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
+| 350 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
+| 351 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
+| 352 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
+| 353 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
+| 354 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
+| 355 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
 |     | TOTAL         | -                                  | -                                                      |        |      |         | aggregate summary populated post-run |

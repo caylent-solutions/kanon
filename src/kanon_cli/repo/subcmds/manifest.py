@@ -13,15 +13,85 @@
 # limitations under the License.
 
 import enum
+import functools
 import json
 import optparse
 import sys
+from typing import Callable
 
 from ..command import PagedCommand
+from ..git_command import GitCommandError
 from ..repo_logging import RepoLogger
 
 
 logger = RepoLogger(__file__)
+
+# Prefix applied to tag names when building the revision string for the
+# ``--revision-as-tag`` output.
+_REFS_TAGS_PREFIX = "refs/tags/"
+
+
+def _lookup_exact_tag(project: object) -> str:
+    """Return ``refs/tags/<name>`` for the exact tag at the project's HEAD.
+
+    Calls ``git describe --exact-match HEAD`` on the project's working
+    directory.  Raises :exc:`GitCommandError` when no tag points exactly
+    at HEAD so callers can decide how to handle untagged commits.
+
+    Args:
+        project: A ``kanon_cli.repo.project.Project`` instance.
+
+    Returns:
+        A string of the form ``refs/tags/<tag-name>``.
+
+    Raises:
+        GitCommandError: When ``git describe --exact-match`` exits non-zero
+            (i.e. no exact tag for HEAD).
+    """
+    tag_name = project.work_git.describe("--exact-match", "HEAD")
+    return _REFS_TAGS_PREFIX + tag_name
+
+
+def _apply_revision_as_tag(
+    doc: object,
+    project_relpath: str,
+    lookup_fn: Callable[[], str],
+) -> None:
+    """Set or replace the ``revision`` attribute for the ``<project>`` matching *project_relpath*.
+
+    Finds the ``<project>`` element in *doc* whose ``path`` attribute (or
+    ``name`` attribute when ``path`` is absent) equals *project_relpath*.
+    Calls ``lookup_fn()`` to obtain the tag reference string and sets or
+    updates the ``revision`` attribute.  This ensures that even projects that
+    inherit the default revision (no explicit ``revision`` attribute) get a
+    tag reference written when an exact tag exists.
+
+    If ``lookup_fn()`` raises :exc:`GitCommandError` (no exact tag at HEAD),
+    a structured warning is emitted to stderr identifying the project by its
+    relative path before continuing.  The ``revision`` attribute is left
+    unchanged (or remains absent) so the manifest stays valid for untagged
+    projects.
+
+    Args:
+        doc: A ``xml.dom.minidom.Document`` produced by ``manifest.ToXml()``.
+        project_relpath: The relative path of the project within the checkout;
+            used to locate the correct ``<project>`` DOM element.
+        lookup_fn: A zero-argument callable returning ``refs/tags/<name>``.
+            Expected to raise :exc:`GitCommandError` when no exact tag is found.
+    """
+    for element in doc.getElementsByTagName("project"):
+        elem_path = element.getAttribute("path") or element.getAttribute("name")
+        if elem_path != project_relpath:
+            continue
+        try:
+            tag_ref = lookup_fn()
+        except GitCommandError:
+            print(
+                f"warning: {project_relpath}: no exact tag at HEAD; revision unchanged",
+                file=sys.stderr,
+            )
+            continue
+        element.setAttribute("revision", tag_ref)
 
 
 class OutputFormat(enum.Enum):
@@ -134,6 +204,13 @@ human-readable variations.
             help="file to save the manifest to. (Filename prefix for multi-tree.)",
             metavar="-|NAME.xml",
         )
+        p.add_option(
+            "--revision-as-tag",
+            default=False,
+            action="store_true",
+            help="replace each project's revision with the nearest exact git tag "
+            "(refs/tags/<name>); projects with no exact tag keep their original revision",
+        )
 
     def _Output(self, opt):
         # If alternate manifest is specified, override the manifest file that
@@ -171,6 +248,19 @@ human-readable variations.
                     "sort_keys": True,
                 }
                 fd.write(json.dumps(doc, **json_settings) + "\n")
+            elif opt.revision_as_tag:
+                xml_doc = manifest.ToXml(
+                    peg_rev=opt.peg_rev,
+                    peg_rev_upstream=opt.peg_rev_upstream,
+                    peg_rev_dest_branch=opt.peg_rev_dest_branch,
+                )
+                for project in manifest.projects:
+                    _apply_revision_as_tag(
+                        xml_doc,
+                        project.relpath,
+                        functools.partial(_lookup_exact_tag, project),
+                    )
+                xml_doc.writexml(fd, "", "  ", "\n", "UTF-8")
             else:
                 manifest.Save(
                     fd,

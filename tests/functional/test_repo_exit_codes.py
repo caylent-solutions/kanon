@@ -235,11 +235,13 @@ class TestRepoExitCodePropagation:
         )
 
     def test_successful_subcommand_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """A successful repo subcommand must exit with code 0 through kanon.
+        """A disabled-in-embedded-mode subcommand exits with code 1 through kanon.
 
         Runs 'kanon repo selfupdate' which is intercepted by the embedded mode
-        handler and exits 0 with an informational message. Verifies that exit
-        code 0 surfaces unchanged through the kanon layer.
+        handler and exits 1 with an informational message. Updated per
+        E2-F2-S2-T2: selfupdate exits 1 (not 0) in embedded mode to signal
+        that selfupdate is unavailable. Verifies that exit code 1 surfaces
+        unchanged through the kanon layer.
         """
         repo_dot_dir = _create_minimal_repo_dot_dir(tmp_path)
 
@@ -251,8 +253,8 @@ class TestRepoExitCodePropagation:
             cwd=tmp_path,
         )
 
-        assert result.returncode == 0, (
-            f"Expected exit code 0 for 'selfupdate', got {result.returncode}.\n"
+        assert result.returncode == 1, (
+            f"Expected exit code 1 for 'selfupdate', got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -324,11 +326,12 @@ class TestSentinelForwarding:
     """AC-TEST-002: '--' sentinel forwards trailing argv to the underlying repo tool."""
 
     def test_sentinel_before_known_subcommand_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """'kanon repo -- selfupdate' must exit 0 with the sentinel present.
+        """'kanon repo -- selfupdate' must exit 1 with the sentinel present.
 
         Places '--' before the subcommand to simulate a user who wants to
         prevent kanon's arg parser from consuming the subcommand name. The
-        selfupdate subcommand is intercepted in embedded mode and exits 0.
+        selfupdate subcommand is intercepted in embedded mode and exits 1
+        (updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode).
         Verifies the sentinel is passed through without causing an error.
         """
         repo_dot_dir = _create_minimal_repo_dot_dir(tmp_path)
@@ -342,8 +345,8 @@ class TestSentinelForwarding:
             cwd=tmp_path,
         )
 
-        assert result.returncode == 0, (
-            f"Expected exit code 0 for 'kanon repo -- selfupdate', got {result.returncode}.\n"
+        assert result.returncode == 1, (
+            f"Expected exit code 1 for 'kanon repo -- selfupdate', got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -566,11 +569,12 @@ class TestExitCodeChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for exit-code scenarios."""
 
     def test_successful_subcommand_error_prefix_absent_from_stderr(self, tmp_path: pathlib.Path) -> None:
-        """After a successful repo subcommand, the kanon 'Error:' prefix must not appear on stderr.
+        """'kanon repo selfupdate' exits 1 in embedded mode; kanon emits 'Error:' on stderr.
 
-        Runs 'kanon repo selfupdate' which exits 0 in embedded mode. Verifies
-        that the kanon-level 'Error:' prefix is absent from stderr, confirming
-        the kanon layer does not emit spurious error messages on success.
+        Updated per E2-F2-S2-T2: selfupdate now exits 1 in embedded mode.
+        When the embedded repo tool exits non-zero, the kanon layer appends
+        'Error: repo command failed with exit code 1' to stderr. This test
+        verifies the exit code is 1 and that the disabled-message is on stderr.
         """
         repo_dot_dir = _create_minimal_repo_dot_dir(tmp_path)
 
@@ -582,15 +586,15 @@ class TestExitCodeChannelDiscipline:
             cwd=tmp_path,
         )
 
-        assert result.returncode == 0, (
-            f"Expected exit code 0 for 'selfupdate', got {result.returncode}.\n"
+        assert result.returncode == 1, (
+            f"Expected exit code 1 for 'selfupdate', got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-        kanon_error_prefix = "Error:"
-        assert kanon_error_prefix not in result.stderr, (
-            f"Kanon error prefix {kanon_error_prefix!r} found on stderr after a "
-            f"successful subcommand.\n  stderr: {result.stderr!r}"
+        from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
+
+        assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
+            f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} on stderr.\n  stderr: {result.stderr!r}"
         )
 
     def test_unknown_subcommand_error_appears_on_stderr(self, tmp_path: pathlib.Path) -> None:
@@ -621,11 +625,12 @@ class TestExitCodeChannelDiscipline:
         )
 
     def test_sentinel_success_has_no_kanon_error_on_stderr(self, tmp_path: pathlib.Path) -> None:
-        """After 'kanon repo -- selfupdate' succeeds, the kanon 'Error:' prefix must not appear.
+        """'kanon repo -- selfupdate' exits 1 in embedded mode; kanon emits 'Error:' on stderr.
 
-        Confirms channel discipline is maintained even when the '--' sentinel
-        is used to forward the subcommand: a successful result must not produce
-        kanon-level error output on stderr.
+        Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode.
+        When the '--' sentinel forwards 'selfupdate' to the embedded repo tool,
+        the tool exits 1 and the kanon layer appends 'Error:' to stderr.
+        This test verifies the exit code is 1 and the disabled-message is present.
         """
         repo_dot_dir = _create_minimal_repo_dot_dir(tmp_path)
 
@@ -638,14 +643,15 @@ class TestExitCodeChannelDiscipline:
             cwd=tmp_path,
         )
 
-        assert result.returncode == 0, (
-            f"Expected exit code 0 for 'kanon repo -- selfupdate', "
+        assert result.returncode == 1, (
+            f"Expected exit code 1 for 'kanon repo -- selfupdate', "
             f"got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-        kanon_error_prefix = "Error:"
-        assert kanon_error_prefix not in result.stderr, (
-            f"Kanon error prefix {kanon_error_prefix!r} found on stderr after a "
-            f"successful '--' sentinel invocation.\n  stderr: {result.stderr!r}"
+        from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
+
+        assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
+            f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} on stderr for sentinel invocation.\n"
+            f"  stderr: {result.stderr!r}"
         )

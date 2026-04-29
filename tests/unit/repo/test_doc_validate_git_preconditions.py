@@ -20,7 +20,8 @@ documents the required ``cd`` step so that the directory is inside a git
 checkout before ``kanon validate xml`` is invoked.
 
 AC-TEST-002: RP-wrap-04 documents correct stderr capture via PIPESTATUS and
-documents the actual exit code of ``kanon repo selfupdate`` (exit 0, not 1).
+documents the actual exit code of ``kanon repo selfupdate`` (exit 1, updated
+per E2-F2-S2-T2: selfupdate exits 1 in embedded mode).
 """
 
 import pathlib
@@ -192,7 +193,7 @@ class TestRpWrap04StderrCapture:
     2>&1 | tee ...``).  Using ``$?`` after a pipe captures the exit code of
     ``tee``, not of ``kanon``.  The scenario block must use ``${PIPESTATUS[0]}``
     to capture the kanon exit code correctly, and the documented exit code must
-    match the actual behaviour (exit 0, not exit 1).
+    match the actual behaviour (exit 1, updated per E2-F2-S2-T2).
     """
 
     @pytest.mark.unit
@@ -253,28 +254,28 @@ class TestRpWrap04StderrCapture:
 
     @pytest.mark.unit
     def test_block_exit_code_check_matches_actual_behavior(self) -> None:
-        """RP-wrap-04 block must document exit code 0 for selfupdate.
+        """RP-wrap-04 block must document exit code 1 for selfupdate.
 
-        ``kanon repo selfupdate`` exits 0 when selfupdate is disabled (the
-        disabled message is informational, not an error).  The scenario block
-        must assert ``exit_code -eq 0``, and the Pass-criteria line must also
-        document exit code 0.
+        ``kanon repo selfupdate`` exits 1 when selfupdate is disabled (the
+        disabled state is an error condition, updated per E2-F2-S2-T2).
+        The scenario block must assert ``exit_code -eq 1``, and the
+        Pass-criteria line must also document exit code 1.
 
         Arrange: Read docs/integration-testing.md and extract the RP-wrap-04
         section.
-        Act: Search the block for the pattern 'eq 0'.
-        Assert: 'eq 0' is present in the block.
+        Act: Search the block for the pattern 'eq 1'.
+        Assert: 'eq 1' is present in the block.
 
-        This assertion fails if the block asserts 'eq 1' (i.e., the doc has
-        been reverted to its pre-T3 state).
+        This assertion fails if the block asserts 'eq 0' (i.e., the doc
+        reflects the pre-T2 behaviour where selfupdate returned exit 0).
         """
         content = _read_doc()
         block = _extract_scenario_block(content, "RP-wrap-04")
-        assert "eq 0" in block, (
-            "RP-wrap-04 block does not assert exit code 0. "
-            "'kanon repo selfupdate' exits 0 when selfupdate is disabled; "
-            "the scenario must use 'test \"${exit_code}\" -eq 0' and the "
-            "Pass-criteria line must document 'Exit code 0'. "
-            "Found block does not contain 'eq 0'.\n"
+        assert "eq 1" in block, (
+            "RP-wrap-04 block does not assert exit code 1. "
+            "'kanon repo selfupdate' exits 1 when selfupdate is disabled; "
+            "the scenario must use 'test \"${exit_code}\" -eq 1' and the "
+            "Pass-criteria line must document 'Exit code 1'. "
+            "Found block does not contain 'eq 1'.\n"
             f"Block content:\n{block}"
         )

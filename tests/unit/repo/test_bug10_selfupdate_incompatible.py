@@ -259,15 +259,17 @@ def test_bug10_selfupdate_embedded_does_not_call_post_repo_upgrade(
 def test_bug10_selfupdate_embedded_exits_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC-TEST-003: selfupdate exits with zero status in embedded mode.
+    """AC-TEST-003: selfupdate exits with non-zero status in embedded mode.
 
     Bug 10 root cause: If selfupdate attempted to sync and failed, it would
-    raise an exception or exit non-zero. The fix must return 0 so that
-    callers treating selfupdate as informational do not see an error.
+    raise an exception or exit non-zero. The original fix returned 0 to
+    signal an informational skip. Updated per E2-F2-S2-T2: the exit code is
+    now 1 so callers receive a non-zero code signalling that selfupdate is
+    unavailable (disabled in embedded mode).
 
     Arrange: Set EMBEDDED=True.
     Act: Call Execute() and capture the return value.
-    Assert: Return value is exactly 0.
+    Assert: Return value is exactly 1 (non-zero, signals disabled state).
     """
     monkeypatch.setattr(repo_pager, "EMBEDDED", True)
 
@@ -278,4 +280,4 @@ def test_bug10_selfupdate_embedded_exits_zero(
     with patch.object(sys, "stderr", captured_stderr):
         result = instance.Execute(opt, [])
 
-    assert result == 0, f"Bug 10 fix: Execute() must return 0 in embedded mode, got {result!r}"
+    assert result == 1, f"Bug 10 fix: Execute() must return 1 in embedded mode, got {result!r}"

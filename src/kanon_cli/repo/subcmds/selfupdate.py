@@ -65,7 +65,7 @@ need to be performed by an end-user.
     def Execute(self, opt, args):
         if _pager_module.EMBEDDED:
             print(SELFUPDATE_EMBEDDED_MESSAGE, file=sys.stderr)
-            return 0
+            return 1
 
         rp = self.manifest.repoProject
         rp.PreSync()

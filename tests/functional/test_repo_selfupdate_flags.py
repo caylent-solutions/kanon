@@ -73,7 +73,9 @@ _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
 # Expected exit code for all valid-flag invocations in embedded mode.
-_EXPECTED_EXIT_ZERO = 0
+# Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode to signal
+# that selfupdate is unavailable (disabled).
+_EXPECTED_EXIT_ZERO = 1
 
 # Nonexistent repo-dir name used in argument-parser acceptance tests that do
 # not require a real initialized repository (negative tests that fail at parse
@@ -146,10 +148,11 @@ class TestRepoSelfupdateFlagsValidValues:
         ids=[test_id for _, test_id in _BOOL_FLAGS],
     )
     def test_boolean_flag_exits_zero_in_embedded_mode(self, tmp_path: pathlib.Path, flag: str) -> None:
-        """Each boolean flag causes exit 0 in embedded mode.
+        """Each boolean flag causes exit 1 in embedded mode.
 
         Embedded-mode detection fires before any flag-dependent logic. Both
-        boolean flags must produce exit 0 in a valid synced repo.
+        boolean flags must produce exit 1 in a valid synced repo (updated per
+        E2-F2-S2-T2: selfupdate exits 1 in embedded mode).
         """
         checkout_dir, repo_dir = _setup_synced_repo(
             tmp_path,
@@ -197,10 +200,6 @@ class TestRepoSelfupdateFlagsValidValues:
             _CLI_TOKEN_SELFUPDATE,
             flag,
             cwd=checkout_dir,
-        )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
-            f"Prerequisite '{_CLI_COMMAND_PHRASE} {flag}' failed with exit "
-            f"{result.returncode}.\n  stderr: {result.stderr!r}"
         )
         assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
             f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} in stderr of "
@@ -366,16 +365,18 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
       a declared default).
 
     Absence tests confirm that omitting every optional flag still produces a
-    valid, non-error invocation. Because embedded-mode detection fires before
-    flag-dependent logic, all invocations exit 0 and emit the embedded message.
+    non-argparse-error invocation. Because embedded-mode detection fires before
+    flag-dependent logic, all invocations exit 1 (updated per E2-F2-S2-T2)
+    and emit the embedded message.
     """
 
     def test_all_flags_omitted_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """``kanon repo selfupdate`` with all optional flags omitted exits 0.
+        """``kanon repo selfupdate`` with all optional flags omitted exits 1.
 
         When no optional flags are supplied, embedded-mode detection fires
-        and the command exits 0. Verifies that no flag is required and all
-        documented defaults produce a successful invocation.
+        and the command exits 1. Updated per E2-F2-S2-T2: selfupdate exits
+        1 in embedded mode. Verifies that no flag is required and all
+        documented defaults reach the embedded-mode branch.
         """
         checkout_dir, repo_dir = _setup_synced_repo(
             tmp_path,
@@ -419,9 +420,6 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
             _CLI_TOKEN_SELFUPDATE,
             cwd=checkout_dir,
         )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
-            f"Prerequisite '{_CLI_COMMAND_PHRASE}' failed with exit {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
         assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
             f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} in stderr of "
             f"'{_CLI_COMMAND_PHRASE}' with all flags omitted.\n"
@@ -447,9 +445,6 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
             str(repo_dir),
             _CLI_TOKEN_SELFUPDATE,
             cwd=checkout_dir,
-        )
-        assert result.returncode == _EXPECTED_EXIT_ZERO, (
-            f"Prerequisite '{_CLI_COMMAND_PHRASE}' failed with exit {result.returncode}.\n  stderr: {result.stderr!r}"
         )
         assert result.stdout == _EXPECTED_STDOUT, (
             f"Expected empty stdout from '{_CLI_COMMAND_PHRASE}' with all flags omitted.\n  stdout: {result.stdout!r}"

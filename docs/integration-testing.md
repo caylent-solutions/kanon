@@ -4792,10 +4792,10 @@ set +e
 kanon repo selfupdate 2>&1 | tee /tmp/rp-wrap-04.log
 exit_code=${PIPESTATUS[0]}
 set -e
-grep -q "selfupdate is not available" /tmp/rp-wrap-04.log && test "${exit_code}" -eq 0 && echo "PASS"
+grep -q "selfupdate is not available" /tmp/rp-wrap-04.log && test "${exit_code}" -eq 1 && echo "PASS"
 ```
 
-**Pass criteria:** Exit code 0; stderr contains `selfupdate is not available -- upgrade kanon-cli instead`.
+**Pass criteria:** Exit code 1; stderr contains `selfupdate is not available -- upgrade kanon-cli instead`.
 
 ### Cleanup
 

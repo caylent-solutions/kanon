@@ -392,8 +392,9 @@ class TestKanonRepoDirEnvVar:
 
         Creates a minimal .repo structure at a custom path, sets KANON_REPO_DIR
         to that path, then invokes 'kanon repo selfupdate' without --repo-dir.
-        The command must succeed (exit 0), confirming that the env var was
-        picked up as the default repo dir.
+        The command exits 1 (updated per E2-F2-S2-T2: selfupdate exits 1 in
+        embedded mode), confirming that the env var was picked up as the
+        default repo dir (the embedded message appears on stderr).
         """
         repo_dot_dir = tmp_path / "env-var-dot-repo"
         manifests_dir = repo_dot_dir / "manifests"
@@ -425,10 +426,17 @@ class TestKanonRepoDirEnvVar:
             extra_env={KANON_REPO_DIR_ENV: str(repo_dot_dir)},
         )
 
-        assert result.returncode == 0, (
+        assert result.returncode == 1, (
             f"'kanon repo selfupdate' with {KANON_REPO_DIR_ENV}={repo_dot_dir!r} "
-            f"exited {result.returncode}, expected 0.\n"
+            f"exited {result.returncode}, expected 1.\n"
             f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+        from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
+
+        assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
+            f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} in stderr, confirming the "
+            f"env var was picked up as the default repo dir.\n"
             f"  stderr: {result.stderr!r}"
         )
 
@@ -561,9 +569,10 @@ class TestArgvVerbatimPassthrough:
         """'kanon repo selfupdate' forwards the 'selfupdate' subcommand verbatim.
 
         The 'selfupdate' subcommand is intercepted by the embedded mode handler
-        which exits 0 with an informational message. Verifying it exits 0
-        confirms that arbitrary subcommand names are forwarded without any
-        kanon-side filtering or consumption.
+        which exits 1 with an informational message (updated per E2-F2-S2-T2:
+        selfupdate exits 1 in embedded mode). Verifying it exits 1 confirms
+        that arbitrary subcommand names are forwarded without any kanon-side
+        filtering or consumption.
         """
         repos_dir = tmp_path / "repos"
         repos_dir.mkdir()
@@ -586,8 +595,8 @@ class TestArgvVerbatimPassthrough:
             cwd=checkout_dir,
         )
 
-        assert result.returncode == 0, (
-            f"'kanon repo selfupdate' exited {result.returncode}, expected 0.\n"
+        assert result.returncode == 1, (
+            f"'kanon repo selfupdate' exited {result.returncode}, expected 1.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )

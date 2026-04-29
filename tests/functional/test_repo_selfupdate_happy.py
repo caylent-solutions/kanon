@@ -1,15 +1,15 @@
-"""Happy-path functional tests for 'kanon repo selfupdate'.
+"""Functional tests for 'kanon repo selfupdate' in embedded mode.
 
-Exercises the happy path of the 'repo selfupdate' subcommand by invoking
+Exercises the behavior of the 'repo selfupdate' subcommand by invoking
 ``kanon repo selfupdate`` as a subprocess against a real initialized repo
 directory created in a temporary directory. No mocking -- these tests use
 the full CLI stack against actual git operations.
 
-The 'repo selfupdate' subcommand upgrades the embedded repo tool to its
-latest version. When invoked through the kanon CLI (EMBEDDED mode), the
-command detects that selfupdate is unavailable in embedded mode, emits
-``SELFUPDATE_EMBEDDED_MESSAGE`` to stderr, and exits 0. stdout is empty
-on all successful invocations.
+The 'repo selfupdate' subcommand is disabled in embedded mode. When invoked
+through the kanon CLI (EMBEDDED mode), the command detects that selfupdate
+is unavailable, emits ``SELFUPDATE_EMBEDDED_MESSAGE`` to stderr, and exits 1.
+Updated per E2-F2-S2-T2: exit code is 1 (not 0) to signal selfupdate is
+disabled. stdout is empty on all invocations.
 
 AC wording note: AC-TEST-002 states "every positional argument of 'repo
 selfupdate' has a happy-path test." The upstream 'repo selfupdate'
@@ -18,16 +18,16 @@ with no positional tokens. To satisfy AC-TEST-002 in spirit, this file
 exercises both of the two distinct invocation forms created by the
 optional ``--no-repo-verify`` flag: the default form (repo_verify=True)
 and the explicit ``--no-repo-verify`` form (repo_verify=False). Both
-forms exit 0 and emit the embedded message to stderr; the parametrized
+forms exit 1 and emit the embedded message to stderr; the parametrized
 class asserts this for each form.
 
 Covers:
-- AC-TEST-001: 'kanon repo selfupdate' with default args exits 0 in a
-  valid repo.
+- AC-TEST-001: 'kanon repo selfupdate' with default args exits 1 in a
+  valid repo (disabled in embedded mode).
 - AC-TEST-002: Every invocation form of 'repo selfupdate' has a
-  happy-path test (default args and --no-repo-verify).
-- AC-FUNC-001: 'kanon repo selfupdate' executes successfully with
-  documented default behavior (exit 0, embedded message on stderr).
+  test (default args and --no-repo-verify).
+- AC-FUNC-001: 'kanon repo selfupdate' exits 1 with documented behavior
+  (embedded message on stderr, non-zero exit code).
 - AC-CHANNEL-001: stdout vs stderr channel discipline (no cross-channel
   leakage).
 
@@ -61,8 +61,9 @@ _CLI_TOKEN_SELFUPDATE = "selfupdate"
 # Option flag for skipping repo source code verification
 _CLI_FLAG_NO_REPO_VERIFY = "--no-repo-verify"
 
-# Expected exit code for all happy-path invocations
-_EXPECTED_EXIT = 0
+# Expected exit code for all embedded-mode invocations.
+# Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode.
+_EXPECTED_EXIT = 1
 
 # Composed CLI command phrase for diagnostic messages (no inline literals)
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
@@ -86,17 +87,17 @@ _INVOCATION_FORMS = [
 
 @pytest.mark.functional
 class TestRepoSelfupdateInvocationFormHappyPath:
-    """AC-TEST-001 / AC-TEST-002: happy-path tests for distinct invocation forms of 'repo selfupdate'.
+    """AC-TEST-001 / AC-TEST-002: tests for distinct invocation forms of 'repo selfupdate'.
 
     'repo selfupdate' accepts no positional arguments (helpUsage is '%%prog').
     To satisfy AC-TEST-001 and AC-TEST-002, this class exercises the two
     distinct invocation forms created by the optional ``--no-repo-verify``
     flag: the default form (repo_verify=True implicitly) and the explicit
     ``--no-repo-verify`` form. Both forms enter embedded-mode detection and
-    exit 0 with empty stdout.
+    exit 1 (updated per E2-F2-S2-T2) with empty stdout.
 
     The [default-args] parametrize variant covers AC-TEST-001: 'kanon repo
-    selfupdate' with default args exits 0 in a valid repo.
+    selfupdate' with default args exits 1 in embedded mode (selfupdate disabled).
     """
 
     @pytest.mark.parametrize("extra_args", _INVOCATION_FORMS)
@@ -105,12 +106,13 @@ class TestRepoSelfupdateInvocationFormHappyPath:
         tmp_path: pathlib.Path,
         extra_args: tuple,
     ) -> None:
-        """'kanon repo selfupdate [--no-repo-verify]' exits 0 for each invocation form.
+        """'kanon repo selfupdate [--no-repo-verify]' exits 1 for each invocation form.
 
         Parametrized over the two forms: (default-args) no extra flags, and
         (no-repo-verify) with the ``--no-repo-verify`` flag. Both forms must
-        exit 0 in a valid initialized repo because embedded-mode detection
+        exit 1 in a valid initialized repo because embedded-mode detection
         short-circuits before any flag-dependent logic is reached.
+        Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode.
         """
         checkout_dir, repo_dir = _setup_synced_repo(
             tmp_path,
@@ -180,9 +182,9 @@ class TestRepoSelfupdateInvocationFormHappyPath:
 class TestRepoSelfupdateChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for 'kanon repo selfupdate'.
 
-    Verifies that successful 'kanon repo selfupdate' invocations do not write
-    Python tracebacks or 'Error:' prefixed messages to stdout, and that stderr
-    does not contain Python exception tracebacks on a successful run.
+    Verifies that 'kanon repo selfupdate' invocations in embedded mode do not write
+    Python tracebacks or content to stdout, and that stderr contains the embedded
+    message but no traceback. Updated per E2-F2-S2-T2: exit code is 1.
 
     stdout discipline: stdout is exactly the empty string (all output routes to stderr
     in embedded mode).
@@ -223,34 +225,34 @@ class TestRepoSelfupdateChannelDiscipline:
         )
 
         assert result.returncode == _EXPECTED_EXIT, (
-            f"Prerequisite '{_CLI_COMMAND_PHRASE}' failed with exit {result.returncode}.\n"
+            f"Prerequisite '{_CLI_COMMAND_PHRASE}' exited {result.returncode}, "
+            f"expected {_EXPECTED_EXIT}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
         return result
 
     def test_repo_selfupdate_success_stdout_is_empty(self, channel_result: subprocess.CompletedProcess) -> None:
-        """Successful 'kanon repo selfupdate' must produce empty stdout.
+        """'kanon repo selfupdate' in embedded mode must produce empty stdout.
 
         In embedded mode all output routes to stderr. stdout must equal the
         empty string -- any non-empty stdout indicates output leaked to the
         wrong channel.
         """
         assert channel_result.stdout == _EXPECTED_STDOUT, (
-            f"Expected empty stdout from successful '{_CLI_COMMAND_PHRASE}'.\n  stdout: {channel_result.stdout!r}"
+            f"Expected empty stdout from '{_CLI_COMMAND_PHRASE}'.\n  stdout: {channel_result.stdout!r}"
         )
 
     def test_repo_selfupdate_success_has_no_traceback_on_stderr(
         self, channel_result: subprocess.CompletedProcess
     ) -> None:
-        """Successful 'kanon repo selfupdate' must not emit Python tracebacks to stderr.
+        """'kanon repo selfupdate' in embedded mode must not emit Python tracebacks to stderr.
 
-        On success, stderr must not contain 'Traceback (most recent call last)'.
-        The embedded message is the only expected content on stderr; a traceback
-        alongside it would indicate an unhandled exception escaped alongside
-        the expected output.
+        stderr must not contain 'Traceback (most recent call last)'.
+        The embedded message (and kanon error suffix) are the expected content
+        on stderr; a traceback would indicate an unhandled exception escaped.
         """
         assert _TRACEBACK_MARKER not in channel_result.stderr, (
-            f"Python traceback found in stderr of successful '{_CLI_COMMAND_PHRASE}'.\n"
+            f"Python traceback found in stderr of '{_CLI_COMMAND_PHRASE}'.\n"
             f"  stderr: {channel_result.stderr!r}"
         )

@@ -245,7 +245,7 @@ def test_regression_selfupdate_embedded_does_not_call_post_sync_functions(
 
 
 # ---------------------------------------------------------------------------
-# AC-TEST-003 -- selfupdate exits with zero status in embedded mode
+# AC-TEST-003 -- selfupdate exits with non-zero status in embedded mode
 # ---------------------------------------------------------------------------
 
 
@@ -253,16 +253,16 @@ def test_regression_selfupdate_embedded_does_not_call_post_sync_functions(
 def test_regression_selfupdate_embedded_returns_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC-TEST-003: selfupdate returns exit status 0 when EMBEDDED=True.
+    """AC-TEST-003: selfupdate returns exit status 1 when EMBEDDED=True.
 
-    Before the fix, selfupdate either raised an exception or propagated a
-    non-zero exit code when it failed during the sync path. After the fix,
-    the embedded-mode early return must yield exactly 0 so callers do not
-    treat the informational skip as an error.
+    The embedded-mode early return must yield exactly 1 so callers receive a
+    non-zero exit code signalling that selfupdate is unavailable (disabled).
+    Updated per E2-F2-S2-T2: selfupdate.py Execute() now returns 1 instead
+    of 0 in the embedded branch.
 
     Arrange: Set EMBEDDED=True.
     Act: Call Execute() and capture the return value.
-    Assert: Return value is exactly 0 (not None, not non-zero).
+    Assert: Return value is exactly 1 (non-zero, signals disabled state).
     """
     monkeypatch.setattr(repo_pager, "EMBEDDED", True)
 
@@ -273,10 +273,10 @@ def test_regression_selfupdate_embedded_returns_zero(
     with patch.object(sys, "stderr", captured_stderr):
         result = instance.Execute(opt, [])
 
-    assert result == 0, (
-        f"E0-F6-S2-T6 regression: Execute() must return 0 in embedded mode, "
+    assert result == 1, (
+        f"E0-F6-S2-T6 regression: Execute() must return 1 in embedded mode, "
         f"got {result!r}. The early-return guard in selfupdate.py must explicitly "
-        "return 0 after printing the informational message."
+        "return 1 after printing the informational message."
     )
 
 

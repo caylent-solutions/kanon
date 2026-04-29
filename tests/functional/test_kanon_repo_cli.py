@@ -465,7 +465,11 @@ class TestRepoSelfupdateEmbeddedMode:
     """AC-FUNC-007: 'kanon repo selfupdate' prints the embedded mode message."""
 
     def test_repo_selfupdate_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """'kanon repo selfupdate' in embedded mode must exit with code 0."""
+        """'kanon repo selfupdate' in embedded mode must exit with code 1.
+
+        Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode to
+        signal that selfupdate is unavailable (disabled).
+        """
         repo_dot_dir = _create_minimal_repo_dot_dir(tmp_path)
 
         result = _run_kanon(
@@ -476,8 +480,8 @@ class TestRepoSelfupdateEmbeddedMode:
             cwd=tmp_path,
         )
 
-        assert result.returncode == 0, (
-            f"'kanon repo selfupdate' exited {result.returncode}, expected 0.\n"
+        assert result.returncode == 1, (
+            f"'kanon repo selfupdate' exited {result.returncode}, expected 1.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )

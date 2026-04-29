@@ -2,7 +2,7 @@
 
 Verifies that:
 - selfupdate.Execute() prints the informational message to stderr in embedded mode.
-- selfupdate.Execute() returns exit code 0 in embedded mode.
+- selfupdate.Execute() returns exit code 1 in embedded mode.
 - selfupdate.Execute() does not call sync, download, or update operations in embedded mode.
 - Normal (non-embedded) selfupdate behavior is not affected.
 """
@@ -73,13 +73,17 @@ def test_selfupdate_embedded_message_exact_text(monkeypatch: pytest.MonkeyPatch)
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-TEST-002: embedded mode returns exit code 0
+# AC-FUNC-003 / AC-TEST-002: embedded mode returns exit code 1
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 def test_selfupdate_embedded_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC-FUNC-003, AC-TEST-002: Execute must return exit code 0 in embedded mode."""
+    """AC-FUNC-003, AC-TEST-002: Execute must return exit code 1 in embedded mode.
+
+    Updated per E2-F2-S2-T2: selfupdate.py Execute() now returns 1 instead
+    of 0 in the embedded branch, signalling that selfupdate is unavailable.
+    """
     monkeypatch.setattr(repo_pager, "EMBEDDED", True)
 
     instance = _make_selfupdate_instance()
@@ -89,7 +93,7 @@ def test_selfupdate_embedded_returns_zero(monkeypatch: pytest.MonkeyPatch) -> No
     with patch.object(sys, "stderr", captured_stderr):
         result = instance.Execute(opt, [])
 
-    assert result == 0, f"Execute must return 0 in embedded mode, got {result!r}"
+    assert result == 1, f"Execute must return 1 in embedded mode, got {result!r}"
 
 
 # ---------------------------------------------------------------------------

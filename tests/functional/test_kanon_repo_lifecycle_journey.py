@@ -938,12 +938,12 @@ class TestRepoSelfupdateEmbeddedMessage:
     """AC-TEST-011: kanon repo selfupdate output contains the embedded-mode message."""
 
     def test_repo_selfupdate_embedded_message(self, tmp_path: pathlib.Path) -> None:
-        """kanon repo selfupdate emits the 'not available' message and exits 0.
+        """kanon repo selfupdate emits the 'not available' message and exits 1.
 
         The selfupdate subcommand in embedded mode prints a message to stderr
         that tells users to use 'pipx upgrade kanon-cli' instead of running
         selfupdate. This test verifies:
-        - The command exits with code 0.
+        - The command exits with code 1 (updated per E2-F2-S2-T2).
         - The combined output contains 'not available'.
         - The combined output contains 'pipx upgrade kanon-cli'.
 
@@ -962,8 +962,8 @@ class TestRepoSelfupdateEmbeddedMessage:
             cwd=tmp_path,
         )
 
-        assert selfupdate_result.returncode == 0, (
-            f"kanon repo selfupdate exited {selfupdate_result.returncode}, expected 0.\n"
+        assert selfupdate_result.returncode == 1, (
+            f"kanon repo selfupdate exited {selfupdate_result.returncode}, expected 1.\n"
             f"  stdout: {selfupdate_result.stdout!r}\n"
             f"  stderr: {selfupdate_result.stderr!r}"
         )

@@ -3,14 +3,50 @@
 Delegates all trailing arguments to repo_run() from the Python API layer.
 Supports the full repo subcommand surface (init, sync, envsubst, etc.) by
 forwarding arbitrary argv to the repo dispatcher without interpretation.
+
+The repo directory is resolved using documented precedence:
+
+1. ``--repo-dir=<flag>`` wins when present.
+2. ``KANON_REPO_DIR`` env var is used when the flag is absent.
+3. Falls back to the compiled-in default when neither is set.
 """
 
 import argparse
 import os
 import sys
+from typing import Optional
 
 from kanon_cli.constants import KANON_REPO_DIR_ENV, KANONENV_REPO_DIR_DEFAULT
 from kanon_cli.repo import RepoCommandError, repo_run
+
+
+def resolve_repo_dir(
+    flag_value: Optional[str],
+    env: Optional[dict] = None,
+) -> str:
+    """Resolve the repo directory using documented flag-wins-over-env precedence.
+
+    Applies the following resolution order:
+
+    1. If ``flag_value`` is not ``None``, return it unchanged (flag wins).
+    2. If ``KANON_REPO_DIR`` is present in ``env``, return its value.
+    3. Return :data:`~kanon_cli.constants.KANONENV_REPO_DIR_DEFAULT`.
+
+    Args:
+        flag_value: The value supplied to ``--repo-dir``, or ``None`` when the
+            flag was not provided.
+        env: Mapping used for environment-variable lookup. When ``None``,
+            :data:`os.environ` is used. Pass an explicit dict in unit tests to
+            avoid reading the real process environment.
+
+    Returns:
+        The resolved absolute or relative path to the ``.repo`` directory.
+    """
+    if env is None:
+        env = os.environ
+    if flag_value is not None:
+        return flag_value
+    return env.get(KANON_REPO_DIR_ENV, KANONENV_REPO_DIR_DEFAULT)
 
 
 def register(subparsers) -> None:
@@ -38,11 +74,10 @@ def register(subparsers) -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    default_repo_dir = os.environ.get(KANON_REPO_DIR_ENV, KANONENV_REPO_DIR_DEFAULT)
     parser.add_argument(
         "--repo-dir",
         dest="repo_dir",
-        default=default_repo_dir,
+        default=None,
         help=(
             "Path to the .repo directory for the repo tool "
             f"(default: ${{KANON_REPO_DIR}} or {KANONENV_REPO_DIR_DEFAULT!r})"
@@ -59,16 +94,18 @@ def register(subparsers) -> None:
 def _run(args) -> None:
     """Execute the repo passthrough command.
 
-    Extracts the trailing arguments from ``args.repo_args`` and delegates them
-    to repo_run(). Propagates the exit code from repo_run() directly via
+    Resolves the repo directory via :func:`resolve_repo_dir`, extracts the
+    trailing arguments from ``args.repo_args``, and delegates them to
+    repo_run(). Propagates the exit code from repo_run() directly via
     sys.exit().
 
     Args:
         args: Parsed arguments with repo_args (list of trailing argv) and
-            repo_dir (path to the .repo directory).
+            repo_dir (``--repo-dir`` flag value, or ``None`` when not supplied).
     """
+    repo_dir = resolve_repo_dir(flag_value=args.repo_dir)
     try:
-        exit_code = repo_run(args.repo_args, repo_dir=args.repo_dir)
+        exit_code = repo_run(args.repo_args, repo_dir=repo_dir)
     except RepoCommandError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(exc.exit_code if exc.exit_code is not None else 1)

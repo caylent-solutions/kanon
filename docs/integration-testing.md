@@ -4789,13 +4789,16 @@ test -d /tmp/flag-B && test ! -d /tmp/env-A && echo "PASS: flag won"
 
 ```bash
 set +e
-kanon repo selfupdate 2>&1 | tee /tmp/rp-wrap-04.log
-exit_code=${PIPESTATUS[0]}
+kanon repo selfupdate 2>/tmp/rp-wrap-04-stderr.log 1>/tmp/rp-wrap-04-stdout.log
+exit_code=$?
 set -e
-grep -q "selfupdate is not available" /tmp/rp-wrap-04.log && test "${exit_code}" -eq 1 && echo "PASS"
+grep -q "selfupdate is not available" /tmp/rp-wrap-04-stderr.log \
+  && test "$(wc -c < /tmp/rp-wrap-04-stdout.log)" -eq 0 \
+  && test "${exit_code}" -eq 1 \
+  && echo "PASS"
 ```
 
-**Pass criteria:** Exit code 1; stderr contains `selfupdate is not available -- upgrade kanon-cli instead`.
+**Pass criteria:** Exit code 1; stderr contains `selfupdate is not available -- upgrade kanon-cli instead: pipx upgrade kanon-cli`; stdout is empty.
 
 ### Cleanup
 

@@ -19,9 +19,9 @@ AC-TEST-001: TC-validate-01 documents a git-checkout precondition, and UJ-12
 documents the required ``cd`` step so that the directory is inside a git
 checkout before ``kanon validate xml`` is invoked.
 
-AC-TEST-002: RP-wrap-04 documents correct stderr capture via PIPESTATUS and
-documents the actual exit code of ``kanon repo selfupdate`` (exit 1, updated
-per E2-F2-S2-T2: selfupdate exits 1 in embedded mode).
+AC-TEST-002: RP-wrap-04 documents correct stderr capture by redirecting stdout
+and stderr to separate log files, and documents the actual exit code of
+``kanon repo selfupdate`` (exit 1: selfupdate is disabled in embedded mode).
 """
 
 import pathlib
@@ -189,11 +189,11 @@ class TestUj12GitPrecondition:
 class TestRpWrap04StderrCapture:
     """AC-TEST-002: RP-wrap-04 documents correct stderr capture and exit code.
 
-    ``kanon repo selfupdate`` is a piped command (``kanon repo selfupdate
-    2>&1 | tee ...``).  Using ``$?`` after a pipe captures the exit code of
-    ``tee``, not of ``kanon``.  The scenario block must use ``${PIPESTATUS[0]}``
-    to capture the kanon exit code correctly, and the documented exit code must
-    match the actual behaviour (exit 1, updated per E2-F2-S2-T2).
+    ``kanon repo selfupdate`` must redirect stdout and stderr to separate log
+    files (``2>/tmp/rp-wrap-04-stderr.log 1>/tmp/rp-wrap-04-stdout.log``) so
+    that the grep assertion targets stderr exclusively.  The block must also
+    assert that stdout is empty and that the exit code is 1 (selfupdate is
+    disabled in embedded mode).
     """
 
     @pytest.mark.unit
@@ -208,47 +208,54 @@ class TestRpWrap04StderrCapture:
         _extract_scenario_block(content, "RP-wrap-04")
 
     @pytest.mark.unit
-    def test_block_uses_tee_for_output_capture(self) -> None:
-        """RP-wrap-04 block must redirect output through tee.
+    def test_block_captures_stderr_separately(self) -> None:
+        """RP-wrap-04 block must redirect stderr to a dedicated log file.
+
+        To assert that the disabled message appears on stderr (not stdout),
+        the block must redirect stderr (``2>``) and stdout (``1>``) to
+        separate log files rather than merging them with ``2>&1``.
 
         Arrange: Read docs/integration-testing.md and extract the RP-wrap-04
         section.
-        Act: Search the block for 'tee'.
-        Assert: 'tee' is present, confirming the combined stdout+stderr
-        capture pattern is documented.
+        Act: Search the block for a ``2>`` stderr redirect.
+        Assert: ``2>`` is present, confirming stderr is captured separately.
         """
         content = _read_doc()
         block = _extract_scenario_block(content, "RP-wrap-04")
-        assert "tee" in block, (
-            "RP-wrap-04 block does not contain 'tee'. "
-            "The scenario must redirect kanon output through 'tee' so that "
-            "both the log file and the terminal receive the output.\n"
+        assert "2>" in block, (
+            "RP-wrap-04 block does not redirect stderr separately (expected '2>'). "
+            "The scenario must capture stdout and stderr to separate log files "
+            "so that the grep assertion targets stderr exclusively.\n"
             f"Block content:\n{block}"
         )
 
     @pytest.mark.unit
-    def test_block_exit_code_uses_pipestatus_or_avoids_pipe(self) -> None:
-        """RP-wrap-04 block must use PIPESTATUS to capture the kanon exit code.
+    def test_block_exit_code_avoids_pipe(self) -> None:
+        """RP-wrap-04 block must capture the kanon exit code without a pipe.
 
-        When a command is piped (``cmd | tee``), ``$?`` captures the exit code
-        of ``tee``, not of ``cmd``.  The block must use ``${PIPESTATUS[0]}``
-        so that the kanon exit code is tested, not tee's.
+        The block uses direct file redirection (``kanon ... 2>... 1>...``)
+        rather than a pipe, so ``exit_code=$?`` captures kanon's exit code
+        directly.  The block must NOT use a bare ``$?`` after a pipe
+        (which would capture the pipe tail's exit code instead).
 
         Arrange: Read docs/integration-testing.md and extract the RP-wrap-04
         section.
-        Act: Search the block for 'PIPESTATUS'.
-        Assert: 'PIPESTATUS' is present.
-
-        This assertion fails if the block uses ``exit_code=$?`` without
-        PIPESTATUS (i.e., the doc has been reverted to its pre-T3 state).
+        Act: Search the block for ``exit_code=$?``.
+        Assert: ``exit_code=$?`` is present and the block does NOT contain
+        ``2>&1 |`` (the old merged-pipe form).
         """
         content = _read_doc()
         block = _extract_scenario_block(content, "RP-wrap-04")
-        assert "PIPESTATUS" in block, (
-            "RP-wrap-04 block does not use PIPESTATUS to capture the kanon "
-            "exit code. After a pipe ('kanon repo selfupdate 2>&1 | tee ...'), "
-            "'$?' captures tee's exit code, not kanon's. "
-            "The block must use '${PIPESTATUS[0]}' to get the kanon exit code.\n"
+        assert "exit_code=$?" in block, (
+            "RP-wrap-04 block does not capture the exit code with 'exit_code=$?'. "
+            "The block should use direct redirection so that '$?' reflects "
+            "kanon's exit code without an intervening pipe.\n"
+            f"Block content:\n{block}"
+        )
+        assert "2>&1 |" not in block, (
+            "RP-wrap-04 block uses '2>&1 |' pipe merge. "
+            "The block must redirect stdout and stderr to separate files "
+            "so that assertions target stderr exclusively.\n"
             f"Block content:\n{block}"
         )
 
@@ -277,5 +284,53 @@ class TestRpWrap04StderrCapture:
             "the scenario must use 'test \"${exit_code}\" -eq 1' and the "
             "Pass-criteria line must document 'Exit code 1'. "
             "Found block does not contain 'eq 1'.\n"
+            f"Block content:\n{block}"
+        )
+
+    @pytest.mark.unit
+    def test_block_asserts_stdout_is_empty(self) -> None:
+        """RP-wrap-04 block must assert that stdout is empty via ``wc -c``.
+
+        Because stdout is captured to a separate file, the block must verify
+        that the file contains zero bytes using ``wc -c``.  This confirms the
+        disabled message appears only on stderr.
+
+        Arrange: Read docs/integration-testing.md and extract the RP-wrap-04
+        section.
+        Act: Search the block for ``wc -c``.
+        Assert: ``wc -c`` is present, confirming the stdout-empty assertion
+        is documented.
+        """
+        content = _read_doc()
+        block = _extract_scenario_block(content, "RP-wrap-04")
+        assert "wc -c" in block, (
+            "RP-wrap-04 block does not assert that stdout is empty using 'wc -c'. "
+            "The block must verify the stdout log file is empty "
+            "(e.g., 'test \"$(wc -c < /tmp/rp-wrap-04-stdout.log)\" -eq 0') "
+            "to confirm the disabled message appears only on stderr.\n"
+            f"Block content:\n{block}"
+        )
+
+    @pytest.mark.unit
+    def test_pass_criteria_includes_pipx_suffix(self) -> None:
+        """RP-wrap-04 pass criteria must include the full pipx upgrade message.
+
+        The Pass-criteria line must document the full value of the disabled
+        message including the ``pipx upgrade kanon-cli`` suffix, so testers
+        can grep for the complete string.
+
+        Arrange: Read docs/integration-testing.md and extract the RP-wrap-04
+        section.
+        Act: Search the block for ``pipx upgrade kanon-cli``.
+        Assert: ``pipx upgrade kanon-cli`` is present, confirming the full
+        message is documented in the pass criteria.
+        """
+        content = _read_doc()
+        block = _extract_scenario_block(content, "RP-wrap-04")
+        assert "pipx upgrade kanon-cli" in block, (
+            "RP-wrap-04 pass criteria does not include the full pipx upgrade suffix. "
+            "Expected 'pipx upgrade kanon-cli' to appear in the pass criteria line "
+            "(e.g., 'stderr contains selfupdate is not available -- upgrade kanon-cli "
+            "instead: pipx upgrade kanon-cli').\n"
             f"Block content:\n{block}"
         )

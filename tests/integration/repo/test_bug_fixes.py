@@ -621,11 +621,11 @@ def test_bug9_constraint_resolved_only_once_across_two_calls(monkeypatch: pytest
 
 
 @pytest.mark.integration
-def test_bug10_selfupdate_embedded_prints_message_and_returns_success() -> None:
-    """Bug 10: selfupdate is a no-op when running embedded, printing a message.
+def test_bug10_selfupdate_embedded_prints_message_and_exits_disabled() -> None:
+    """Bug 10: selfupdate is disabled in embedded mode, exiting with code 1.
 
-    Patches the EMBEDDED flag to True and verifies that Execute() returns 0
-    (success) without attempting any git sync or update operations.
+    Patches the EMBEDDED flag to True and verifies that Execute() returns 1
+    (disabled) without attempting any git sync or update operations.
 
     Covers: Bug 10 -- selfupdate subcommand incompatible with embedding.
     """
@@ -650,10 +650,10 @@ def test_bug10_selfupdate_embedded_prints_message_and_returns_success() -> None:
     finally:
         _pager_module.EMBEDDED = original_embedded
 
-    assert result == 0, (
-        f"Expected selfupdate.Execute() to return 0 (success) when running embedded, "
+    assert result == 1, (
+        f"Expected selfupdate.Execute() to return 1 (disabled) when running embedded, "
         f"but got {result!r}. "
-        f"Bug 10: selfupdate must be a no-op when repo project does not exist."
+        f"Bug 10: selfupdate is disabled in embedded mode and must exit non-zero."
     )
     # Verify no sync was attempted.
     instance.manifest.repoProject.Sync_NetworkHalf.assert_not_called()

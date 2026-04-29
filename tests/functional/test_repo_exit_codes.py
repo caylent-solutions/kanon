@@ -652,6 +652,5 @@ class TestExitCodeChannelDiscipline:
         from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 
         assert SELFUPDATE_EMBEDDED_MESSAGE in result.stderr, (
-            f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} on stderr for sentinel invocation.\n"
-            f"  stderr: {result.stderr!r}"
+            f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} on stderr for sentinel invocation.\n  stderr: {result.stderr!r}"
         )

@@ -253,6 +253,5 @@ class TestRepoSelfupdateChannelDiscipline:
         on stderr; a traceback would indicate an unhandled exception escaped.
         """
         assert _TRACEBACK_MARKER not in channel_result.stderr, (
-            f"Python traceback found in stderr of '{_CLI_COMMAND_PHRASE}'.\n"
-            f"  stderr: {channel_result.stderr!r}"
+            f"Python traceback found in stderr of '{_CLI_COMMAND_PHRASE}'.\n  stderr: {channel_result.stderr!r}"
         )

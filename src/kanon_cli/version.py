@@ -27,11 +27,18 @@ def is_version_constraint(rev_spec: str) -> bool:
     Examines only the last path component (after the final ``/``) so that
     prefixed constraints like ``refs/tags/~=1.0.0`` are detected correctly.
 
+    Also detects malformed constraints that start with a single ``=`` (which
+    is not a valid PEP 440 operator but is a common typo for ``==``). These
+    are returned as True so that the resolution path can reject them with an
+    ``invalid version constraint`` error rather than silently passing them
+    through as plain branch names.
+
     Args:
         rev_spec: A revision string, possibly containing path separators.
 
     Returns:
-        True if the last path component contains PEP 440 constraint syntax.
+        True if the last path component contains PEP 440 constraint syntax
+        (valid or recognisably malformed).
     """
     last_component = rev_spec.rsplit("/", 1)[-1]
 
@@ -41,6 +48,13 @@ def is_version_constraint(rev_spec: str) -> bool:
     for op in PEP440_OPERATORS:
         if last_component.startswith(op):
             return True
+
+    # Detect malformed single-equals constraints (e.g. ``=*``, ``=1.0.0``).
+    # The single ``=`` operator is not valid PEP 440; ``==`` is the equality
+    # operator. Treat these as constraint attempts so the caller receives
+    # ``invalid version constraint`` instead of a misleading git error.
+    if last_component.startswith("=") and not last_component.startswith("=="):
+        return True
 
     # Range constraints: comma-separated specifiers (e.g. ">=1.0.0,<2.0.0").
     if "," in last_component:

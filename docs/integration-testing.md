@@ -2474,6 +2474,7 @@ XMLEOF
 
 git add .
 git commit -q -m "init mk manifests"
+git tag 1.0.0
 
 mk_run() {
     local id="$1" rev_kanon="$2"

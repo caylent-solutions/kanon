@@ -5724,3 +5724,19 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 354 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
 | 355 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
 |     | TOTAL         | -                                  | -                                                      |        |      |         | aggregate summary populated post-run |
+
+---
+
+## Appendix: Known Fixes and Behaviour Notes
+
+### `--repo-dir` / `KANON_REPO_DIR` path resolution (E2-F3-S1-T2)
+
+`resolve_repo_dir()` in `src/kanon_cli/commands/repo.py` converts all resolved
+paths to absolute paths using `os.path.abspath()` before forwarding them to
+`repo_run()`.  This prevents `ManifestParseError: manifest_file must be abspath`
+when the default `.repo` relative path is used by `RepoClient`.
+
+**Impact:** All `kanon repo *` subcommands that rely on the default `--repo-dir`
+(i.e. invocations that do not pass an explicit absolute path) are affected.
+Scenarios RP-init-01 through RP-init-18, and every scenario in this document that
+runs `kanon repo init` without an explicit `--repo-dir`, benefit from this fix.

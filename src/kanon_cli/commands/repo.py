@@ -26,11 +26,18 @@ def resolve_repo_dir(
 ) -> str:
     """Resolve the repo directory using documented flag-wins-over-env precedence.
 
-    Applies the following resolution order:
+    Applies the following resolution order, then converts the result to an
+    absolute path via :func:`os.path.abspath`:
 
-    1. If ``flag_value`` is not ``None``, return it unchanged (flag wins).
-    2. If ``KANON_REPO_DIR`` is present in ``env``, return its value.
-    3. Return :data:`~kanon_cli.constants.KANONENV_REPO_DIR_DEFAULT`.
+    1. If ``flag_value`` is not ``None``, use it (flag wins).
+    2. If ``KANON_REPO_DIR`` is present in ``env``, use its value.
+    3. Use :data:`~kanon_cli.constants.KANONENV_REPO_DIR_DEFAULT`.
+
+    The absolute-path conversion is required because
+    :class:`~kanon_cli.repo.manifest_xml.RepoClient` (and its parent
+    :class:`~kanon_cli.repo.manifest_xml.XmlManifest`) enforce that the
+    derived ``manifest_file`` path is absolute, raising
+    :class:`~kanon_cli.repo.error.ManifestParseError` otherwise.
 
     Args:
         flag_value: The value supplied to ``--repo-dir``, or ``None`` when the
@@ -40,13 +47,13 @@ def resolve_repo_dir(
             avoid reading the real process environment.
 
     Returns:
-        The resolved absolute or relative path to the ``.repo`` directory.
+        The resolved absolute path to the ``.repo`` directory.
     """
     if env is None:
         env = os.environ
     if flag_value is not None:
-        return flag_value
-    return env.get(KANON_REPO_DIR_ENV, KANONENV_REPO_DIR_DEFAULT)
+        return os.path.abspath(flag_value)
+    return os.path.abspath(env.get(KANON_REPO_DIR_ENV, KANONENV_REPO_DIR_DEFAULT))
 
 
 def register(subparsers) -> None:

@@ -3704,7 +3704,7 @@ rp_ro_setup() {
     local id="$1"
     mkdir -p "${KANON_TEST_ROOT}/${id}"
     cd "${KANON_TEST_ROOT}/${id}"
-    kanon repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m default.xml
+    kanon repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m repo-specs/packages.xml
     kanon repo sync
 }
 ```
@@ -4843,7 +4843,7 @@ kanon repo help --help-all
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/rp-wrap-01"
 cd "${KANON_TEST_ROOT}/rp-wrap-01"
-kanon repo --repo-dir=/tmp/custom-repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m default.xml
+kanon repo --repo-dir=/tmp/custom-repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m repo-specs/packages.xml
 test -d /tmp/custom-repo && echo "PASS"
 ```
 
@@ -4854,7 +4854,7 @@ test -d /tmp/custom-repo && echo "PASS"
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/rp-wrap-02"
 cd "${KANON_TEST_ROOT}/rp-wrap-02"
-KANON_REPO_DIR=/tmp/env-repo kanon repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m default.xml
+KANON_REPO_DIR=/tmp/env-repo kanon repo init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m repo-specs/packages.xml
 test -d /tmp/env-repo && echo "PASS"
 ```
 
@@ -4865,7 +4865,7 @@ test -d /tmp/env-repo && echo "PASS"
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/rp-wrap-03"
 cd "${KANON_TEST_ROOT}/rp-wrap-03"
-KANON_REPO_DIR=/tmp/env-A kanon repo --repo-dir=/tmp/flag-B init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m default.xml
+KANON_REPO_DIR=/tmp/env-A kanon repo --repo-dir=/tmp/flag-B init -u "file://${MANIFEST_PRIMARY_DIR}" -b main -m repo-specs/packages.xml
 test -d /tmp/flag-B && test ! -d /tmp/env-A && echo "PASS: flag won"
 ```
 
@@ -4954,7 +4954,7 @@ cd "${KANON_TEST_ROOT}/tc-inst-01"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 cd sub/deep
 kanon install
@@ -4972,7 +4972,7 @@ cd "${KANON_TEST_ROOT}/tc-inst-02"
 cat > my.kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 kanon install my.kanon
 test -L .packages/pkg-alpha && echo "PASS"
@@ -4989,7 +4989,7 @@ cd "${KANON_TEST_ROOT}/tc-inst-03"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 REPO_URL=https://example.com/repo.git kanon install .kanon 2>&1 | tee /tmp/tc-inst-03.log
 grep -qi "deprecat" /tmp/tc-inst-03.log && echo "PASS"
@@ -5006,7 +5006,7 @@ cd "${KANON_TEST_ROOT}/tc-inst-04"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 REPO_REV=v1.2.3 kanon install .kanon 2>&1 | tee /tmp/tc-inst-04.log
 grep -qi "deprecat" /tmp/tc-inst-04.log && echo "PASS"
@@ -5023,7 +5023,7 @@ cd "${KANON_TEST_ROOT}/tc-cln-01"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 kanon install
 kanon clean
@@ -5040,7 +5040,7 @@ cd "${KANON_TEST_ROOT}/tc-cln-02"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 kanon install
 grep -q "^.packages/$" .gitignore || (echo "FAIL: install did not add"; exit 1)
@@ -5147,10 +5147,10 @@ cd "${KANON_TEST_ROOT}/uj-03"
 cat > .kanon << KANONEOF
 KANON_SOURCE_alpha_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_alpha_REVISION=main
-KANON_SOURCE_alpha_PATH=alpha-only.xml
+KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
 KANON_SOURCE_bravo_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_bravo_REVISION=main
-KANON_SOURCE_bravo_PATH=bravo-only.xml
+KANON_SOURCE_bravo_PATH=repo-specs/bravo-only.xml
 KANONEOF
 kanon install .kanon
 test -L .packages/pkg-alpha && test -L .packages/pkg-bravo && echo "PASS: both"
@@ -5169,7 +5169,7 @@ cat > .kanon << KANONEOF
 GITBASE=https://default.example.com
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 GITBASE="file:///tmp/override-base/" kanon install .kanon
 test -L .packages/pkg-alpha && echo "PASS"
@@ -5197,10 +5197,10 @@ cd "${KANON_TEST_ROOT}/uj-06"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
-KANON_SOURCE_b_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
+KANON_SOURCE_b_URL=file://${MANIFEST_COLLISION_DIR}
 KANON_SOURCE_b_REVISION=main
-KANON_SOURCE_b_PATH=collision.xml
+KANON_SOURCE_b_PATH=repo-specs/collision.xml
 KANONEOF
 set +e
 kanon install .kanon 2>&1 | tee /tmp/uj-06.log
@@ -5230,7 +5230,7 @@ cd "${KANON_TEST_ROOT}/uj-08"
 cat > .kanon << KANONEOF
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 kanon install .kanon
 # Simulate cache save/restore: archive .packages and .kanon-data, restore.
@@ -5251,7 +5251,7 @@ cd "${KANON_TEST_ROOT}/uj-09"
 cat > .kanon << 'KANONEOF'
 KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 HOME_NOTE=${HOME}
 KANONEOF
 MANIFEST_PRIMARY_DIR="${MANIFEST_PRIMARY_DIR}" kanon install .kanon
@@ -5262,7 +5262,7 @@ kanon clean .kanon
 cat > .kanon << 'KANONEOF'
 KANON_SOURCE_a_URL=${UNDEFINED_KANON_VAR}
 KANON_SOURCE_a_REVISION=main
-KANON_SOURCE_a_PATH=alpha-only.xml
+KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 set +e
 kanon install .kanon 2>&1 | tee /tmp/uj-09.log

@@ -44,6 +44,9 @@ test-functional: SMOKE_TEST_TIMEOUT ?= 300
 test-functional: ## Run functional tests only
 	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m functional
 
+test-scenarios: ## Run end-to-end scenario tests (mirrors docs/integration-testing.md)
+	uv run pytest -m scenario
+
 test-cov: ## Run tests with coverage report
 	uv run pytest --cov=kanon_cli --cov-report=term-missing
 

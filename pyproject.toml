@@ -69,6 +69,7 @@ markers = [
     "unit: Unit tests -- fast, isolated, no external dependencies",
     "functional: Functional tests -- exercise CLI via subprocess",
     "integration: Integration tests -- verify modules load and run end-to-end",
+    "scenario: End-to-end scenario tests mirroring docs/integration-testing.md",
 ]
 
 [tool.coverage.run]

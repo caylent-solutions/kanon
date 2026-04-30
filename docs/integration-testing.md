@@ -3245,12 +3245,21 @@ git -C .repo/manifests.git config --get branch.default.merge | grep -q "main" &&
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/rp-init-06"
 cd "${KANON_TEST_ROOT}/rp-init-06"
-cp "${MANIFEST_PRIMARY_DIR}/default.xml" /tmp/standalone-manifest.xml 2>/dev/null || true
+# Build a self-contained standalone manifest with no <include> directives.
+# A standalone manifest is parsed in isolation, so any <include> reference would fail to resolve.
+cat > /tmp/standalone-manifest.xml << 'STANDALONE'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="local" fetch="${MANIFEST_PRIMARY_DIR}" />
+  <default revision="main" remote="local" />
+  <project name="content-repos/pkg-alpha" path="pkg-alpha" />
+</manifest>
+STANDALONE
 kanon repo init -u "file:///tmp/standalone-manifest.xml" --standalone-manifest
 test -f .repo/manifest.xml && echo "PASS"
 ```
 
-**Pass criteria:** Exit code 0; `.repo/manifest.xml` is a static file (no `.repo/manifests.git`).
+**Pass criteria:** Exit code 0; `.repo/manifest.xml` is a static file (no `.repo/manifests.git`). The standalone manifest must be self-contained: no `<include>` directives (they cannot resolve from a static file context).
 
 ### RP-init-07: `--reference=<mirror>`
 
@@ -4282,10 +4291,10 @@ set -e
 ```bash
 rp_ro_setup rp-abandon-01
 kanon repo start tmp-a --all
-kanon repo abandon tmp-a --all
+kanon repo abandon tmp-a
 ```
 
-**Pass criteria:** Exit code 0; `tmp-a` removed in every project.
+**Pass criteria:** Exit code 0; `tmp-a` removed in every project. The `--all` flag and the positional `<branch>` argument are mutually exclusive (see `kanon repo abandon --help`); to remove a named branch from every project, pass only the branch name (kanon iterates all projects by default for `repo abandon`).
 
 ### RP-abandon-02: `<branch> <project>`
 
@@ -4361,15 +4370,15 @@ kanon repo rebase --whitespace=fix
 
 **Pass criteria:** Exit code 0.
 
-### RP-rebase-07: `--stash` / `-s`
+### RP-rebase-07: `--auto-stash`
 
 ```bash
 rp_ro_setup rp-rebase-07
 echo "dirty" >> .packages/pkg-alpha/README.md 2>/dev/null || true
-kanon repo rebase -s
+kanon repo rebase --auto-stash
 ```
 
-**Pass criteria:** Exit code 0; uncommitted changes stashed and re-applied.
+**Pass criteria:** Exit code 0; uncommitted changes stashed and re-applied. The flag is `--auto-stash` (no short alias such as `-s`).
 
 ### RP-rebase-08: `-i <project>` interactive
 
@@ -4551,11 +4560,12 @@ kanon repo upload --dry-run --receive-pack="git-receive-pack --custom"
 
 ```bash
 rp_ro_setup rp-cherry-pick-01
+cd "${KANON_TEST_ROOT}/rp-cherry-pick-01"
 sha=$(git -C .packages/pkg-alpha rev-parse HEAD 2>/dev/null) || sha=$(git -C .kanon-data/sources/*/.packages/pkg-alpha rev-parse HEAD 2>/dev/null)
 test -n "${sha}" && kanon repo cherry-pick "${sha}" || echo "(no SHA available; skip)"
 ```
 
-**Pass criteria:** Exit code 0 OR documented skip.
+**Pass criteria:** Exit code 0 OR documented skip. Note: the `cd` into the rp-cherry-pick-01 workspace is required because `kanon repo cherry-pick` runs `git rev-parse --verify` from the cwd; running from a directory without a `.git` ancestor fails with `fatal: not a git repository`.
 
 ### RP-cherry-pick-02: nonexistent SHA errors
 
@@ -4754,32 +4764,32 @@ kanon repo gc
 
 **Pass criteria:** Exit code 0.
 
-### RP-gc-02: `--aggressive`
+### RP-gc-02: `--dry-run`
 
 ```bash
 rp_ro_setup rp-gc-02
-kanon repo gc --aggressive
+kanon repo gc --dry-run
 ```
 
-**Pass criteria:** Exit code 0.
+**Pass criteria:** Exit code 0; no actual gc work performed (kanon repo gc supports `-n`/`--dry-run`, `-y`/`--yes`, and `--repack`; flags like `--aggressive`, `-a`/`--all`, and `--repack-full-clone` do NOT exist on this subcommand).
 
-### RP-gc-03: `--all` / `-a`
+### RP-gc-03: `--yes` / `-y` (auto-confirm)
 
 ```bash
 rp_ro_setup rp-gc-03
-kanon repo gc -a
+kanon repo gc --yes --dry-run
 ```
 
-**Pass criteria:** Exit code 0.
+**Pass criteria:** Exit code 0; `--yes` accepted (auto-confirm). Combined with `--dry-run` so no destructive work runs.
 
-### RP-gc-04: `--repack-full-clone`
+### RP-gc-04: `--repack`
 
 ```bash
 rp_ro_setup rp-gc-04
-kanon repo gc --repack-full-clone
+kanon repo gc --repack --dry-run
 ```
 
-**Pass criteria:** Exit code 0.
+**Pass criteria:** Exit code 0; `--repack` accepted (the only repack flag that exists on `kanon repo gc`; no `--repack-full-clone` or similar variant). Combined with `--dry-run` so no destructive work runs.
 
 ### RP-overview-01: bare overview
 
@@ -5076,10 +5086,12 @@ kanon validate xml --repo-root "${MANIFEST_PRIMARY_DIR}"
 ### TC-validate-02: `validate marketplace --repo-root=<path>`
 
 ```bash
-kanon validate marketplace --repo-root "${MK_MFST}"
+# kanon validate marketplace expects manifests under repo-specs/*-marketplace.xml.
+# Use a fixture root with that layout (the MK-19 fixture build creates it).
+kanon validate marketplace --repo-root "${KANON_TEST_ROOT}/fixtures/mk19-validate"
 ```
 
-**Pass criteria:** Exit code 0 (or non-zero only for MK-19's invalid `dest=` row, which is documented separately).
+**Pass criteria:** Exit code 0 (or non-zero only for MK-19's invalid `dest=` row, which is documented separately). Note: the MK_MFST fixture (`fixtures/mk-manifest`) stores `mk01.xml`..`mk22.xml` at the root, which is the kanon-source layout — NOT the validate-marketplace layout. The fixture under `${KANON_TEST_ROOT}/fixtures/mk19-validate` provides `repo-specs/mk19-marketplace.xml` which matches the validator's expected layout.
 
 ### TC-validate-03: auto-detect via `git rev-parse`
 

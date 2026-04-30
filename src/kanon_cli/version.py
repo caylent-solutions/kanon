@@ -12,6 +12,7 @@ revision attributes:
 - Prefixed: refs/tags/~=1.0.0 or refs/tags/prefix/~=1.0.0
 """
 
+import re
 import subprocess
 import sys
 
@@ -88,7 +89,12 @@ def resolve_version(url: str, rev_spec: str) -> str:
     The returned value is a full tag ref (e.g. ``refs/tags/1.1.2``) suitable
     for use with ``repo init -b``.
 
-    Plain branch or tag names (no PEP 440 operators) pass through unchanged.
+    Plain branch or tag names (no PEP 440 operators) pass through unchanged,
+    EXCEPT bare semver-style values (e.g. ``1.0.0`` or ``1.0``) which are
+    automatically prefixed with ``refs/tags/`` so the underlying ``git
+    fetch`` resolves them as tags rather than branch names. Use the
+    ``refs/heads/<branch>`` form explicitly to force branch resolution
+    of a numeric branch name.
 
     Args:
         url: Git repository URL.
@@ -101,7 +107,7 @@ def resolve_version(url: str, rev_spec: str) -> str:
         SystemExit: If no matching version is found or git ls-remote fails.
     """
     if not is_version_constraint(rev_spec):
-        return rev_spec
+        return _normalize_bare_semver_to_tag(rev_spec)
 
     tags = _list_tags(url)
     if not tags:
@@ -113,6 +119,38 @@ def resolve_version(url: str, rev_spec: str) -> str:
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+_BARE_SEMVER_RE = re.compile(r"^\d+(?:\.\d+){1,2}$")
+
+
+def _normalize_bare_semver_to_tag(rev_spec: str) -> str:
+    """Prepend ``refs/tags/`` to bare semver-style values.
+
+    Detects bare ``X.Y`` or ``X.Y.Z`` (digits-and-dots only, no operators,
+    no path prefix) and rewrites them as ``refs/tags/X.Y.Z``. All other
+    inputs (branch names, SHAs, already-prefixed refs) pass through
+    unchanged.
+
+    Examples:
+
+    - ``1.0.0``           -> ``refs/tags/1.0.0``
+    - ``1.0``             -> ``refs/tags/1.0``
+    - ``main``            -> ``main`` (no change)
+    - ``refs/tags/1.0.0`` -> ``refs/tags/1.0.0`` (no change)
+    - ``refs/heads/1.0``  -> ``refs/heads/1.0`` (no change)
+    - ``abcdef0``         -> ``abcdef0`` (no change)
+
+    Rationale: when a `.kanon` REVISION (or `<project revision="...">`)
+    declares a bare semver value, the user almost always means "the tag
+    with this version". Without the prefix, the underlying git fetch
+    resolves it as ``refs/heads/X.Y.Z`` (a branch lookup) which fails.
+    """
+    if "/" in rev_spec:
+        return rev_spec
+    if _BARE_SEMVER_RE.match(rev_spec):
+        return "refs/tags/" + rev_spec
+    return rev_spec
 
 
 def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> str:

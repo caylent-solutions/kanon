@@ -55,10 +55,6 @@ def _scenario_ids_referenced_in_tests() -> set[str]:
 
 
 @pytest.mark.scenario
-@pytest.mark.xfail(
-    reason="E2-F4 per-category scenario tests are landing incrementally; this guard flips strict after the last Story",
-    strict=False,
-)
 def test_every_in_scope_scenario_has_a_test() -> None:
     in_scope = _doc_scenario_ids() - _EXCLUDED
     covered = _scenario_ids_referenced_in_tests()

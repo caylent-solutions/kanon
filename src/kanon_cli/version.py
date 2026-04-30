@@ -27,6 +27,13 @@ def is_version_constraint(rev_spec: str) -> bool:
     Examines only the last path component (after the final ``/``) so that
     prefixed constraints like ``refs/tags/~=1.0.0`` are detected correctly.
 
+    The literal ``latest`` is treated as a constraint that resolves to the
+    highest available semver tag (equivalent to wildcard ``*``). This
+    matches the catalog-source resolution behaviour in
+    ``kanon_cli.core.catalog`` and lets the repo sync path resolve
+    ``revision="refs/tags/latest"`` (and the bare form) to a concrete tag
+    instead of passing the literal string ``latest`` to ``git fetch``.
+
     Also detects malformed constraints that start with a single ``=`` (which
     is not a valid PEP 440 operator but is a common typo for ``==``). These
     are returned as True so that the resolution path can reject them with an
@@ -38,11 +45,14 @@ def is_version_constraint(rev_spec: str) -> bool:
 
     Returns:
         True if the last path component contains PEP 440 constraint syntax
-        (valid or recognisably malformed).
+        (valid or recognisably malformed) or is the literal ``latest``.
     """
     last_component = rev_spec.rsplit("/", 1)[-1]
 
     if last_component == "*":
+        return True
+
+    if last_component == "latest":
         return True
 
     for op in PEP440_OPERATORS:
@@ -160,8 +170,12 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if not versions:
         raise ValueError(f"No parseable version tags found under '{prefix or 'refs/tags'}'")
 
-    # Wildcard: return highest version.
-    if constraint_str == "*":
+    # Wildcard or 'latest': return highest version. The literal ``latest``
+    # is treated as an alias for ``*`` so that ``refs/tags/latest`` and the
+    # bare form ``latest`` both resolve to the highest available semver
+    # tag, matching the catalog-source contract in
+    # ``kanon_cli.core.catalog``.
+    if constraint_str in ("*", "latest"):
         return max(versions, key=lambda pair: pair[1])[0]
 
     # Strip standalone wildcard parts from compound constraints.

@@ -1970,7 +1970,12 @@ rx_run rx13 "3.0.0"
 rx_run rx14 "3.0.0"
 ```
 
-**Pass criteria:** Exit code 0; resolved tag is `3.0.0`.
+**Pass criteria:** Exit code 0; resolved tag is `3.0.0`. The literal
+``latest`` is treated as an alias for ``*`` (highest semver tag) by
+``kanon_cli.version.is_version_constraint``; both bare ``latest`` and
+``refs/tags/latest`` flow through the constraint-resolution path used
+for ``==``/``!=``/``<=``/``>=`` and pick the highest available semver
+tag. See ``tests/unit/test_revision_resolve.py::TestLatestResolution``.
 
 ### RX-15: prefixed `refs/tags/1.0.0`
 

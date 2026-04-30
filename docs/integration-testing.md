@@ -4301,10 +4301,15 @@ kanon repo start tmp-4 --all --head
 
 ### RP-checkout-01: existing branch
 
+`kanon repo checkout` only switches projects to a branch that was previously
+created by `kanon repo start` -- i.e. it operates on repo-tracked topic
+branches, not arbitrary upstream branches such as `main`. To verify the
+checkout flow, start a topic branch in every project and then check it out.
+
 ```bash
 rp_ro_setup rp-checkout-01
 kanon repo start mybr --all
-kanon repo checkout main --all 2>&1 || kanon repo checkout main
+kanon repo checkout mybr
 ```
 
 **Pass criteria:** Exit code 0.

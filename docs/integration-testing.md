@@ -2087,6 +2087,19 @@ cat > default.xml << XMLEOF
 XMLEOF
 git add .
 git commit -m "init ks fixtures"
+git tag 1.0.0
+git commit --allow-empty -m "1.0.1"
+git tag 1.0.1
+git commit --allow-empty -m "1.1.0"
+git tag 1.1.0
+git commit --allow-empty -m "1.2.0"
+git tag 1.2.0
+git commit --allow-empty -m "2.0.0"
+git tag 2.0.0
+git commit --allow-empty -m "2.1.0"
+git tag 2.1.0
+git commit --allow-empty -m "3.0.0"
+git tag 3.0.0
 
 ks_run() {
     local id="$1" rev="$2" expected_tag="$3"
@@ -2475,6 +2488,18 @@ XMLEOF
 git add .
 git commit -q -m "init mk manifests"
 git tag 1.0.0
+git commit --allow-empty -q -m "1.0.1"
+git tag 1.0.1
+git commit --allow-empty -q -m "1.1.0"
+git tag 1.1.0
+git commit --allow-empty -q -m "1.2.0"
+git tag 1.2.0
+git commit --allow-empty -q -m "2.0.0"
+git tag 2.0.0
+git commit --allow-empty -q -m "2.1.0"
+git tag 2.1.0
+git commit --allow-empty -q -m "3.0.0"
+git tag 3.0.0
 
 mk_run() {
     local id="$1" rev_kanon="$2"
@@ -2904,6 +2929,19 @@ cat > pk11.xml << XMLEOF
 </manifest>
 XMLEOF
 git add . && git commit -q -m "init pk manifests"
+git tag 1.0.0
+git commit --allow-empty -q -m "1.0.1"
+git tag 1.0.1
+git commit --allow-empty -q -m "1.1.0"
+git tag 1.1.0
+git commit --allow-empty -q -m "1.2.0"
+git tag 1.2.0
+git commit --allow-empty -q -m "2.0.0"
+git tag 2.0.0
+git commit --allow-empty -q -m "2.1.0"
+git tag 2.1.0
+git commit --allow-empty -q -m "3.0.0"
+git tag 3.0.0
 
 pk_run() {
     local id="$1" rev_kanon="$2"

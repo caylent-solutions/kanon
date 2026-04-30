@@ -3276,6 +3276,8 @@ grep -q "${RP_MIRROR}" .repo/manifests.git/objects/info/alternates && echo "PASS
 
 **Pass criteria:** Exit code 0; mirror referenced in `objects/info/alternates`.
 
+> **Environment dependency.** The `objects/info/alternates` file is only populated when git's clone path detects a same-filesystem reference repo with the appropriate transport. With `file://` URLs in some sandboxed CI environments (notably devcontainers without the same-filesystem optimisation), git skips alternates creation. This scenario is expected to fail in such environments; it is NOT a kanon defect. See `kanon-migration-backlog/it-run-archives/20260430T135012Z/accepted-env-failures.md` for the full list of environment-dependent scenarios.
+
 ### RP-init-08: `--dissociate` (after `--reference`)
 
 ```bash
@@ -4402,6 +4404,8 @@ done
 ## 25. Category 24: `kanon repo` Code-Review Workflows (upload, cherry-pick, stage, download, diff, diffmanifests) (31 tests)
 
 All upload scenarios use `--dry-run` so no Gerrit/review server is required. Real upload requires a configured review server and is documented as out-of-scope for automation.
+
+> **Environment dependency for RP-upload-01..15.** Even in `--dry-run` mode, `kanon repo upload` exits 1 with "no branches ready for upload" when there are no commits ahead of the upstream tracking branch (which is the default state of the read-only `rp_ro_setup` workspace). To exercise the upload path in a way that exits 0, the workspace must have at least one commit on a topic branch ahead of upstream — typically a configured Gerrit review server or local equivalent. In environments without such setup, RP-upload-01..15 are expected to fail; they are NOT kanon defects. See `kanon-migration-backlog/it-run-archives/20260430T135012Z/accepted-env-failures.md` for the full list of environment-dependent scenarios.
 
 ### Common setup
 

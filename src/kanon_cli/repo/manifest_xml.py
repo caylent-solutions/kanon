@@ -818,7 +818,19 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
         return ret
 
     def Save(self, fd, **kwargs):
-        """Write the current manifest out to the given file descriptor."""
+        """Write the current manifest out to the given file descriptor.
+
+        Serialization goes through :mod:`xml.dom.minidom`, whose
+        ``setAttribute`` + ``writexml`` automatically escape ``<``, ``>``,
+        ``&``, and ``"`` in attribute values. This is required for
+        ``revision`` attributes that carry PEP 440 constraints such as
+        ``refs/tags/<=1.1.0`` or ``refs/tags/>=1.0.0,<2.0.0`` -- the
+        operators are XML special characters and would otherwise produce
+        ill-formed XML. Any future refactor that replaces minidom with
+        manual string formatting MUST preserve this escape contract; see
+        ``tests/unit/repo/test_manifest_xml_pep440.py`` for the
+        regression-guard tests pinning the round-trip behaviour.
+        """
         doc = self.ToXml(**kwargs)
         doc.writexml(fd, "", "  ", "\n", "UTF-8")
 

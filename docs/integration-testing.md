@@ -2630,7 +2630,15 @@ claude plugin list 2>/dev/null | grep -q "mk09"
 kanon clean .kanon
 ```
 
-**Pass criteria:** Resolves to 1.1.0; appears then disappears.
+**Pass criteria:** Resolves to 1.1.0; appears then disappears. Note: the
+`<` and `>` characters embedded in PEP 440 constraints (e.g.
+`refs/tags/<=1.1.0` in upper-bound scenarios) are XML special characters
+and must be escaped as `&lt;`/`&gt;` in any hand-authored XML manifest;
+kanon writes manifests via :mod:`xml.dom.minidom`, which escapes
+attribute values automatically, and reads them back with the same
+parser, which decodes the entities transparently. Tests in
+``tests/unit/repo/test_manifest_xml_pep440.py`` pin this round-trip
+contract for `<=`, `>=`, `<`, and range forms.
 
 ### MK-10: upper-bound .kanon
 

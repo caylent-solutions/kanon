@@ -2106,7 +2106,21 @@ These tests verify that PEP 440 constraints in `.kanon` REVISION values resolve 
 
 Reuses the cs-catalog fixture from Category 13. Each KS scenario writes a tiny `.kanon` whose `_REVISION` carries the constraint and points at a single XML manifest with a fixed `<project revision="main">` (so only the `.kanon`-level constraint is exercised).
 
+> **CS-catalog HEAD reset (required).** The Category 13 CS scenarios may
+> have advanced `${CS_CATALOG_DIR}` `main` HEAD past the last semver tag
+> (`3.0.0`). The KS pass-check uses
+> `kanon repo manifest --revision-as-tag` on the catalog project, which
+> only emits a `refs/tags/<ver>` form when HEAD is exactly at a tag —
+> otherwise it warns "no exact tag at HEAD; revision unchanged" and the
+> grep fails. Reset the catalog repo to `refs/tags/3.0.0` before running
+> any KS scenario so `--revision-as-tag` resolves cleanly.
+
 ```bash
+# Reset cs-catalog HEAD to the highest semver tag so KS's --revision-as-tag
+# pass-check can match. CS-* scenarios may have advanced main past the last tag.
+git -C "${CS_CATALOG_DIR}" checkout main
+git -C "${CS_CATALOG_DIR}" reset --hard refs/tags/3.0.0
+
 export KS_FIX="${KANON_TEST_ROOT}/fixtures/ks-manifest"
 mkdir -p "${KS_FIX}"
 cd "${KS_FIX}"

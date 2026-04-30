@@ -1772,6 +1772,11 @@ Create the bare catalog content repo at `fixtures/cs-catalog/catalog` before cre
 # The RX XML uses fetch="file://.../cs-catalog" + name="catalog", so the
 # repo tool resolves the project URL to .../cs-catalog/catalog -- a bare
 # git repo must exist at that sub-path.
+#
+# Category 13's fixture setup creates fixtures/cs-catalog/catalog/test-entry
+# as a regular (non-bare) directory.  Remove it before cloning so that
+# git clone --bare can create the bare repo at that path without error.
+rm -rf "${KANON_TEST_ROOT}/fixtures/cs-catalog/catalog"
 git clone --bare "${KANON_TEST_ROOT}/fixtures/cs-catalog" \
     "${KANON_TEST_ROOT}/fixtures/cs-catalog/catalog"
 ```

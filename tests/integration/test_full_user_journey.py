@@ -431,14 +431,12 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
             mp_dir.mkdir(parents=True, exist_ok=True)
             cp_dir = mp_dir / ".claude-plugin"
             cp_dir.mkdir(exist_ok=True)
+            manifest = {
+                "name": _MARKETPLACE_NAME,
+                "plugins": [{"name": _PLUGIN_NAME}],
+            }
             (cp_dir / "marketplace.json").write_text(
-                json.dumps({"name": _MARKETPLACE_NAME}),
-                encoding="utf-8",
-            )
-            plugin_dir = mp_dir / _PLUGIN_NAME / ".claude-plugin"
-            plugin_dir.mkdir(parents=True, exist_ok=True)
-            (plugin_dir / "plugin.json").write_text(
-                json.dumps({"name": _PLUGIN_NAME}),
+                json.dumps(manifest),
                 encoding="utf-8",
             )
 
@@ -774,14 +772,12 @@ class TestFullJourneyMultiSourceWithMarketplace:
                 mp_dir.mkdir(parents=True, exist_ok=True)
                 cp_dir = mp_dir / ".claude-plugin"
                 cp_dir.mkdir(exist_ok=True)
+                manifest = {
+                    "name": _MARKETPLACE_NAME,
+                    "plugins": [{"name": _PLUGIN_NAME}],
+                }
                 (cp_dir / "marketplace.json").write_text(
-                    json.dumps({"name": _MARKETPLACE_NAME}),
-                    encoding="utf-8",
-                )
-                plugin_dir = mp_dir / _PLUGIN_NAME / ".claude-plugin"
-                plugin_dir.mkdir(parents=True, exist_ok=True)
-                (plugin_dir / "plugin.json").write_text(
-                    json.dumps({"name": _PLUGIN_NAME}),
+                    json.dumps(manifest),
                     encoding="utf-8",
                 )
             else:

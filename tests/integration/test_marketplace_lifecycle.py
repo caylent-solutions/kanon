@@ -37,16 +37,19 @@ def _create_marketplace(
     name: str,
     plugins: list[str] | None = None,
 ) -> pathlib.Path:
-    """Create a marketplace directory structure with marketplace.json."""
+    """Create a marketplace directory whose marketplace.json declares plugins.
+
+    Writes ``.claude-plugin/marketplace.json`` containing the marketplace
+    ``name`` and a ``plugins`` array with one entry per name in ``plugins``.
+    Returns ``parent/name``. The plugin discovery contract reads names
+    from the array, not from per-plugin subdirectories.
+    """
     mp_dir = parent / name
     mp_dir.mkdir(parents=True, exist_ok=True)
     claude_plugin = mp_dir / ".claude-plugin"
     claude_plugin.mkdir(exist_ok=True)
-    (claude_plugin / "marketplace.json").write_text(json.dumps({"name": name}))
-    for plugin_name in plugins or []:
-        plugin_dir = mp_dir / plugin_name / ".claude-plugin"
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "plugin.json").write_text(json.dumps({"name": plugin_name}))
+    manifest = {"name": name, "plugins": [{"name": p} for p in (plugins or [])]}
+    (claude_plugin / "marketplace.json").write_text(json.dumps(manifest))
     return mp_dir
 
 
@@ -134,8 +137,13 @@ class TestDiscoverPlugins:
         assert "plugin-a" in names
         assert "plugin-b" in names
 
-    def test_skips_dirs_without_plugin_json(self, tmp_path: pathlib.Path) -> None:
+    def test_only_named_plugins_in_array_are_returned(self, tmp_path: pathlib.Path) -> None:
+        """Discovery only returns entries declared in marketplace.json's plugins[]
+        array. Sibling directories without a corresponding array entry are NOT
+        discovered (the previous plugin.json-subdirectory pattern is gone)."""
         mp = _create_marketplace(tmp_path, "mp", plugins=["real"])
+        # A bare directory next to the manifest must NOT be picked up by
+        # discover_plugins now that the contract is array-driven.
         (mp / "not-a-plugin").mkdir()
         plugins = discover_plugins(mp)
         assert len(plugins) == 1

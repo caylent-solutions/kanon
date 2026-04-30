@@ -2687,6 +2687,19 @@ kanon clean .kanon
 
 **Pass criteria:** Both `mk13-alpha` and `mk13-beta` appear in `claude plugin list`; both removed after clean.
 
+#### Plugin discovery mechanism (kanon contract)
+
+`kanon`'s `discover_plugins` (in `src/kanon_cli/core/marketplace.py`) reads the
+top-level `plugins` array from `<marketplace>/.claude-plugin/marketplace.json`.
+Each entry's `name` field becomes a plugin name. After registering the
+marketplace via `claude plugin marketplace add`, `kanon` issues
+`claude plugin install <name>@<marketplace> --scope user` for every name
+in that array. Per-plugin `plugin.json` files are metadata consumed by
+the `claude` CLI itself; `kanon` does **not** scan subdirectories for
+`plugin.json` to determine which plugins to install. This means a
+marketplace fixture's `marketplace.json` MUST include the `plugins[]`
+array for any plugin a test expects `kanon install` to register.
+
 ### MK-14: plugin.json minimal (no `keywords` field)
 
 ```bash
@@ -2700,7 +2713,7 @@ claude plugin list 2>/dev/null | grep -q "mk14"
 kanon clean .kanon
 ```
 
-**Pass criteria:** Install accepts the minimal plugin.json; plugin appears in list.
+**Pass criteria:** Claude CLI accepts the minimal `plugin.json` metadata; the plugin appears in `claude plugin list` because it is declared in the marketplace's `marketplace.json` `plugins[]` array (kanon's `discover_plugins` reads names from that array; `plugin.json` is metadata consumed by the claude CLI itself).
 
 ### MK-15: plugin.json with full metadata
 
@@ -2718,7 +2731,7 @@ claude plugin list 2>/dev/null | grep -q "mk15"
 kanon clean .kanon
 ```
 
-**Pass criteria:** Install accepts; plugin appears.
+**Pass criteria:** Claude CLI accepts the full-metadata `plugin.json`; the plugin appears in `claude plugin list` because the marketplace's `marketplace.json plugins[]` array names it (`discover_plugins` reads from the array, not from per-plugin `plugin.json` files).
 
 ### MK-16: cascading `<include>` chain
 

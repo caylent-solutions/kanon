@@ -33,19 +33,18 @@ from kanon_cli.core.marketplace import (
 
 
 def _create_marketplace(parent_dir: pathlib.Path, name: str, plugins: list[str] | None = None) -> pathlib.Path:
-    """Helper to create a marketplace directory structure with marketplace.json and optional plugins.
+    """Helper to create a marketplace directory with marketplace.json declaring plugins.
 
-    Creates parent_dir/name/.claude-plugin/marketplace.json and returns parent_dir/name.
+    Writes ``.claude-plugin/marketplace.json`` containing the marketplace
+    ``name`` and a ``plugins`` array with one entry per name in ``plugins``.
+    Returns ``parent_dir/name``.
     """
     mp_dir = parent_dir / name
     mp_dir.mkdir(parents=True, exist_ok=True)
     claude_plugin = mp_dir / ".claude-plugin"
     claude_plugin.mkdir(exist_ok=True)
-    (claude_plugin / "marketplace.json").write_text(json.dumps({"name": name}))
-    for plugin_name in plugins or []:
-        plugin_dir = mp_dir / plugin_name / ".claude-plugin"
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "plugin.json").write_text(json.dumps({"name": plugin_name}))
+    manifest = {"name": name, "plugins": [{"name": p} for p in (plugins or [])]}
+    (claude_plugin / "marketplace.json").write_text(json.dumps(manifest))
     return mp_dir
 
 
@@ -128,10 +127,21 @@ class TestDiscoverPlugins:
         assert "plugin-a" in names
         assert "plugin-b" in names
 
-    def test_skips_non_plugin_dirs(self, tmp_path: pathlib.Path) -> None:
-        mp = _create_marketplace(tmp_path, "mp", plugins=["real-plugin"])
-        (mp / "not-a-plugin").mkdir()
-        plugins = discover_plugins(mp)
+    def test_only_named_plugins_in_array_are_returned(self, tmp_path: pathlib.Path) -> None:
+        """Entries in the plugins[] array without a 'name' field are skipped silently."""
+        mp_dir = tmp_path / "mp"
+        (mp_dir / ".claude-plugin").mkdir(parents=True)
+        manifest = {
+            "name": "mp",
+            "plugins": [
+                {"name": "real-plugin"},
+                {"description": "no name field"},
+                {"name": ""},
+                "not-a-dict",
+            ],
+        }
+        (mp_dir / ".claude-plugin" / "marketplace.json").write_text(json.dumps(manifest))
+        plugins = discover_plugins(mp_dir)
         assert len(plugins) == 1
         assert plugins[0][0] == "real-plugin"
 
@@ -139,6 +149,29 @@ class TestDiscoverPlugins:
         mp = _create_marketplace(tmp_path, "mp")
         plugins = discover_plugins(mp)
         assert plugins == []
+
+    def test_missing_manifest_returns_empty(self, tmp_path: pathlib.Path) -> None:
+        """When marketplace.json is absent, discover_plugins returns []."""
+        mp_dir = tmp_path / "mp"
+        mp_dir.mkdir()
+        plugins = discover_plugins(mp_dir)
+        assert plugins == []
+
+    def test_missing_plugins_key_returns_empty(self, tmp_path: pathlib.Path) -> None:
+        """When marketplace.json lacks a 'plugins' key, discover_plugins returns []."""
+        mp_dir = tmp_path / "mp"
+        (mp_dir / ".claude-plugin").mkdir(parents=True)
+        (mp_dir / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"name": "mp"}))
+        plugins = discover_plugins(mp_dir)
+        assert plugins == []
+
+    def test_invalid_json_raises(self, tmp_path: pathlib.Path) -> None:
+        """A malformed marketplace.json surfaces as JSONDecodeError, not silent empty."""
+        mp_dir = tmp_path / "mp"
+        (mp_dir / ".claude-plugin").mkdir(parents=True)
+        (mp_dir / ".claude-plugin" / "marketplace.json").write_text("not json")
+        with pytest.raises(json.JSONDecodeError):
+            discover_plugins(mp_dir)
 
 
 @pytest.mark.unit

@@ -358,7 +358,20 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        marketplace_name = read_marketplace_name(entry)
+        # An entry whose .claude-plugin/marketplace.json is absent (e.g. a
+        # linkfile target pointing into a subdirectory of a plugin repo
+        # rather than at the marketplace root) is not a real marketplace.
+        # Skip it with a warning rather than crashing on FileNotFoundError.
+        try:
+            marketplace_name = read_marketplace_name(entry)
+        except FileNotFoundError:
+            print(
+                f"Warning: Skipping non-marketplace entry {entry}: "
+                f".claude-plugin/marketplace.json is absent. "
+                f"This is expected for linkfile targets that do not point at a marketplace root.",
+                file=sys.stderr,
+            )
+            continue
 
         reg_success = register_marketplace(claude_bin, entry)
         if reg_success:
@@ -419,7 +432,18 @@ def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        marketplace_name = read_marketplace_name(entry)
+        # Same skip-and-warn behaviour as install: a linkfile target without
+        # a marketplace.json is not a real marketplace and can be skipped.
+        try:
+            marketplace_name = read_marketplace_name(entry)
+        except FileNotFoundError:
+            print(
+                f"Warning: Skipping non-marketplace entry {entry}: "
+                f".claude-plugin/marketplace.json is absent. "
+                f"Nothing to uninstall.",
+                file=sys.stderr,
+            )
+            continue
 
         plugins = discover_plugins(entry)
         for plugin_name, _plugin_path in plugins:

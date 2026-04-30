@@ -1273,7 +1273,7 @@ Create a local catalog repo with multiple semver tags:
 export CS_CATALOG_DIR="${KANON_TEST_ROOT}/fixtures/cs-catalog"
 mkdir -p "${CS_CATALOG_DIR}/catalog/test-entry"
 cd "${CS_CATALOG_DIR}"
-git init
+git init -b main
 
 cat > catalog/test-entry/.kanon << 'KANONEOF'
 KANON_MARKETPLACE_INSTALL=false

@@ -1798,14 +1798,19 @@ git init
 git branch -m main
 
 # Helper: create one manifest XML per scenario.
+# `<`, `>`, and `&` in PEP 440 revision constraints are XML special
+# characters; the helper escapes them to `&lt;`, `&gt;`, `&amp;` before
+# emission so the resulting XML is well-formed.
 mk_rx_xml() {
     local id="$1" rev="$2"
+    local rev_xml
+    rev_xml=$(printf '%s' "${rev}" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     cat > "${id}.xml" << XMLEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="local" fetch="file://${KANON_TEST_ROOT}/fixtures/cs-catalog" />
   <default remote="local" revision="main" />
-  <project name="catalog" path=".packages/catalog" remote="local" revision="${rev}" />
+  <project name="catalog" path=".packages/catalog" remote="local" revision="${rev_xml}" />
 </manifest>
 XMLEOF
 }
@@ -2454,12 +2459,16 @@ git branch -m main 2>/dev/null || true
 
 mk_mfst_xml() {
     local id="$1" plugin="$2" rev="$3"
+    # `<`, `>`, `&` in PEP 440 revision constraints are XML special
+    # characters; escape before emission so the file is well-formed.
+    local rev_xml
+    rev_xml=$(printf '%s' "${rev}" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     cat > "${id}.xml" << XMLEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="local" fetch="file://${MK_FIX}" />
   <default remote="local" revision="main" />
-  <project name="${plugin}" path=".packages/${plugin}" remote="local" revision="${rev}">
+  <project name="${plugin}" path=".packages/${plugin}" remote="local" revision="${rev_xml}">
     <linkfile src="." dest="\${CLAUDE_MARKETPLACES_DIR}/${plugin}" />
   </project>
 </manifest>
@@ -2794,11 +2803,17 @@ cat > mk17.xml << XMLEOF
 XMLEOF
 git add mk17.xml && git commit -q -m "mk17 multi-project"
 mk_run mk17 "main"
-claude plugin list 2>/dev/null | grep -E "mk17-(a|b)" | wc -l | grep -q "^2$"
+# Both <project> entries must materialize as filesystem linkfiles. The plugin name
+# inside marketplace.json is shared (single source repo `mk17`), so `claude plugin
+# list` shows ONE plugin entry; verify the two linkfiles instead, which is the
+# unique observable output of the multi-<project> doc test.
+test -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-a" || (echo "FAIL: mk17-a linkfile missing"; exit 1)
+test -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-b" || (echo "FAIL: mk17-b linkfile missing"; exit 1)
 kanon clean .kanon
+test ! -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-a" && test ! -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-b" && echo "PASS: both linkfiles cleaned"
 ```
 
-**Pass criteria:** Both project entries materialize as distinct plugin entries.
+**Pass criteria:** Both `<project>` entries materialize as distinct linkfiles in `${KANON_TEST_ROOT}/mk17-mpl/`. After `kanon clean .kanon`, both linkfiles are removed. (The single plugin name in `marketplace.json` means `claude plugin list` shows one plugin entry, not two; the multi-`<project>` scenario tests filesystem linkfile distinctness, not plugin-list distinctness.)
 
 ### MK-18: bare wildcard `*` both surfaces
 
@@ -2929,12 +2944,16 @@ git init -q
 git branch -m main 2>/dev/null || true
 pk_xml() {
     local id="$1" pkg="$2" rev="$3"
+    # `<`, `>`, `&` in PEP 440 revision constraints are XML special
+    # characters; escape before emission so the file is well-formed.
+    local rev_xml
+    rev_xml=$(printf '%s' "${rev}" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
     cat > "${id}.xml" << XMLEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remote name="local" fetch="file://${PK_FIX}" />
   <default remote="local" revision="main" />
-  <project name="${pkg}" path=".packages/${pkg}" remote="local" revision="${rev}" />
+  <project name="${pkg}" path=".packages/${pkg}" remote="local" revision="${rev_xml}" />
 </manifest>
 XMLEOF
 }

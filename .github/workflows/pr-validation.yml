@@ -10,6 +10,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -25,6 +29,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -38,6 +46,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -51,6 +63,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -64,6 +80,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -77,6 +97,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -98,6 +122,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -111,6 +139,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -124,6 +156,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}
@@ -145,6 +181,10 @@ jobs:
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
         with:
           base-ref: ${{ github.base_ref }}

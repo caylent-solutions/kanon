@@ -27,11 +27,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-
+    # NOTE: callers MUST run `actions/checkout@v6` BEFORE `uses: ./...setup-kanon`
+    # because GitHub Actions resolves the composite action path against the
+    # runner's working directory; without a prior checkout the action file
+    # is not yet on disk. Every job in pr-validation.yml / main-validation.yml
+    # does its own `actions/checkout@v6` step explicitly.
     - name: Simulate merge
       if: inputs.base-ref != ''
       shell: bash

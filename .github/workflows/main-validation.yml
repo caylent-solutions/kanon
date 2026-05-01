@@ -73,6 +73,12 @@ jobs:
           make install-dev
         shell: bash
 
+      - name: Install uv
+        # `tests/unit/repo/test_wheel_contents.py` shells out to `uv build`
+        # to produce the wheel under test; uv must therefore be on PATH for
+        # the unit-test step in this job.
+        uses: astral-sh/setup-uv@v6
+
       - name: Run pre-commit checks
         run: |
           source $HOME/.asdf/asdf.sh

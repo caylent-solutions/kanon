@@ -129,13 +129,18 @@ class TestRPRebase:
 
         # Accept exit 0 (ran without tty interaction) or any exit code that
         # indicates a tty/interactive skip.  The doc says "Exit code 0 OR
-        # skipped (no-tty)".
+        # skipped (no-tty)". "Terminal is dumb, but EDITOR unset" is git's
+        # canonical no-tty diagnostic emitted in headless CI runners
+        # (TERM=dumb, no $EDITOR), so it is also acceptable here.
         combined = result.stdout + result.stderr
+        combined_lower = combined.lower()
         acceptable = (
             result.returncode == 0
-            or "no-tty" in combined
-            or "not a tty" in combined.lower()
-            or "tty" in combined.lower()
+            or "no-tty" in combined_lower
+            or "not a tty" in combined_lower
+            or "tty" in combined_lower
+            or "terminal is dumb" in combined_lower
+            or "editor unset" in combined_lower
         )
         assert acceptable, (
             f"repo rebase -i unexpectedly exited {result.returncode} with no tty hint\n"

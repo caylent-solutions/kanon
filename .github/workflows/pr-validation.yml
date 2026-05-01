@@ -222,5 +222,5 @@ jobs:
 
       - name: Run integration tests
         run: |
-          uv run pytest -m integration
+          python -m pytest -m integration
         shell: bash

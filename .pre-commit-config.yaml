@@ -22,6 +22,11 @@ repos:
       - id: yamllint
         args: [-c=.yamllint]
         types: [yaml]
+        # `linter-test-bad.yml` fixtures are *deliberately* malformed -- the
+        # repo subsystem's own linter unit tests assert that yamllint flags
+        # them. Excluding them from the pre-commit hook prevents the
+        # known-bad files from failing the lint pass.
+        exclude: ^tests/(unit/repo/)?fixtures/repo/linter-test-bad\.yml$
 
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.26.0

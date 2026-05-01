@@ -22,6 +22,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from typing import Iterable
 
 import pytest
@@ -328,6 +329,54 @@ def kanon_clean(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProc
 # ---------------------------------------------------------------------------
 # Shared pytest fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _scenarios_clear_session_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-test removal of session-scoped env vars set by other suites.
+
+    The ``tests/functional/conftest.py::functional_repo_dir`` fixture is
+    session-scoped + autouse and sets ``KANON_REPO_DIR`` to a fixture path
+    whose ``.repo/manifests/default.xml`` declares
+    ``<remote fetch="https://github.com/caylent-solutions/">``. Without
+    explicit cleanup, this env var leaks into every scenario subprocess
+    that runs after any functional test in the same pytest session, so
+    ``kanon repo manifest --revision-as-tag`` reads the wrong manifest
+    and KS/RX/UJ scenario assertions fail.
+
+    Each scenario test runs against its own freshly-built repo checkout
+    and never expects an inherited ``KANON_REPO_DIR``. The function-scope
+    delenv complements the module-scope cleanup below so per-test
+    subprocess invocations see a clean environment.
+    """
+    monkeypatch.delenv("KANON_REPO_DIR", raising=False)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _scenarios_clear_session_env_module() -> Iterator[None]:
+    """Module-scope removal of cross-suite leaked env vars.
+
+    Module-scoped fixtures (e.g. ``rp_ro_checkout`` in
+    ``tests/scenarios/test_rp_*.py``) build their checkouts via
+    ``kanon repo init`` BEFORE any function-scoped autouse fixture fires.
+    If ``KANON_REPO_DIR`` is set when ``repo init`` runs, the init
+    subprocess writes its ``.repo`` artefacts to the inherited path
+    (the functional suite's tmp dir) instead of the per-fixture checkout
+    dir, leaving ``<checkout>/.repo/manifest.xml`` missing and every
+    downstream RP-* test failing with ``error parsing manifest ...
+    [Errno 2] No such file or directory``.
+
+    Removing ``KANON_REPO_DIR`` at module setup ensures the init
+    subprocess writes to the expected per-test checkout dir. The
+    original value is restored on module teardown so other suites'
+    fixtures keep working.
+    """
+    previous = os.environ.pop("KANON_REPO_DIR", None)
+    try:
+        yield
+    finally:
+        if previous is not None:
+            os.environ["KANON_REPO_DIR"] = previous
 
 
 @pytest.fixture()

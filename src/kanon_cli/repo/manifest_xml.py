@@ -119,11 +119,17 @@ def normalize_url(url: str) -> str:
     * convert SCP-like syntax to SSH URL
 
     Args:
-        url: URL to modify
+        url: URL to modify, or ``None``.
 
     Returns:
-        The normalized URL.
+        The normalized URL, or an empty string when ``url`` is ``None``.
+        ``None`` arises when a manifest does not declare a ``manifestUrl``
+        attribute on a ``<remote>`` element; downstream callers (e.g.
+        :func:`_resolveFetchUrl`) treat an empty string the same as the
+        absent-manifest-URL case.
     """
+    if url is None:
+        return ""
 
     url = url.rstrip("/")
     parsed_url = urllib.parse.urlparse(url)

@@ -51,6 +51,8 @@ Covers:
 Tests are decorated with @pytest.mark.functional.
 """
 
+import os
+import pathlib
 import subprocess
 
 import pytest
@@ -335,6 +337,19 @@ class TestRepoSmartSyncChannelDiscipline:
         """
         tmp_path = tmp_path_factory.mktemp("smartsync_channel")
         checkout_dir, repo_dir, rpc_server = _build_smartsync_state(tmp_path)
+
+        # The credentials-lookup notice (`No credentials found for
+        # <host> in .netrc`) is only emitted when `~/.netrc` opens
+        # successfully but lacks an entry for the manifest-server host.
+        # When `HOME` points at a fresh tmp dir with no `.netrc`,
+        # `netrc.netrc()` raises OSError and the lookup branch is
+        # skipped silently. Seed an empty `.netrc` in `HOME` so the
+        # netrc.netrc() succeeds and the no-entry branch runs,
+        # producing the documented stderr line.
+        netrc_seed = pathlib.Path(os.environ["HOME"]) / ".netrc"
+        netrc_seed.parent.mkdir(parents=True, exist_ok=True)
+        netrc_seed.touch(exist_ok=True)
+        os.chmod(netrc_seed, 0o600)
 
         result = _run_kanon(
             _CLI_TOKEN_REPO,

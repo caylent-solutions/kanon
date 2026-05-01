@@ -560,6 +560,15 @@ class Remote:
         self._review_url = None
 
     def _InsteadOf(self):
+        if self.url is None:
+            # Remote has no `url` configured (e.g. an embedded meta-project
+            # whose `remote.<name>.url` was never written into local
+            # `.git/config`). With no URL there is no insteadOf rewrite to
+            # apply; return None and let callers decide. Without this
+            # guard the `self.url.startswith(insteadOf)` call below
+            # crashes with AttributeError whenever the user's
+            # `~/.gitconfig` declares any `[url "..."]` section.
+            return None
         globCfg = GitConfig.ForUser()
         urlList = globCfg.GetSubSections("url")
         longest = ""
@@ -595,6 +604,15 @@ class Remote:
             return True
 
         connectionUrl = self._InsteadOf()
+        if connectionUrl is None:
+            # Remote has no URL configured (e.g. an embedded meta-project
+            # whose `remote.<name>.url` was never written into local
+            # `.git/config`). With no URL there is nothing to pre-connect,
+            # so report success and let downstream sync code handle the
+            # missing URL on its own. Without this guard ssh.preconnect()
+            # crashes with `TypeError: expected string or bytes-like object,
+            # got 'NoneType'` from `URI_ALL.match(url)`.
+            return True
         return ssh_proxy.preconnect(connectionUrl)
 
     def ReviewUrl(self, userEmail, validate_certs):

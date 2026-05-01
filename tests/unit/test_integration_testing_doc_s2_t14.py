@@ -62,17 +62,13 @@ class TestT14EnvDependencyNotes:
             "§25 env note must reference the archive's accepted-env-failures.md"
         )
 
-    def test_archive_accepted_env_failures_file_exists_in_repo(self) -> None:
-        """The doc cross-references this file; assert it exists alongside the
-        kanon-migration-backlog archive."""
-        # DOC_PATH is .../kanon/docs/integration-testing.md
-        # parents: 0=docs, 1=kanon, 2=rpm-migration (workspace root)
-        workspace_root = DOC_PATH.resolve().parents[2]
-        archive_path = (
-            workspace_root
-            / "kanon-migration-backlog"
-            / "it-run-archives"
-            / "20260430T135012Z"
-            / "accepted-env-failures.md"
-        )
-        assert archive_path.is_file(), f"Expected archive file {archive_path} not found; T14 must produce it"
+    # The third assertion that originally lived here checked for the archive
+    # file `kanon-migration-backlog/it-run-archives/.../accepted-env-failures.md`.
+    # That file lives in a *sibling* repo (`kanon-migration-backlog`), not in
+    # the `kanon` repository checked out by CI. Asserting on a sibling-repo
+    # path made the kanon test suite fail in any environment where the
+    # sibling clone is absent. The integrity of that archive is the
+    # responsibility of the `kanon-migration-backlog` repository's own CI;
+    # the cross-reference in `docs/integration-testing.md` is verified by
+    # the assertions above (presence of the `accepted-env-failures.md`
+    # filename string in the env-dependency note).

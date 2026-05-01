@@ -95,7 +95,10 @@ All constraints follow [PEP 440](https://peps.python.org/pep-0440/) via the `pac
 
 ## Branch/Tag Passthrough
 
-Plain strings without PEP 440 operators are returned unchanged:
+Plain strings without PEP 440 operators are returned unchanged, with one
+exception: **bare semver values** (`X.Y.Z` or `X.Y` -- digits and dots only,
+no `refs/` prefix, no `v`) are normalized to `refs/tags/<value>` so that
+`repo init -b <value>` resolves the version as a tag rather than a branch.
 
 | Input | Returns |
 |---|---|
@@ -103,6 +106,9 @@ Plain strings without PEP 440 operators are returned unchanged:
 | `refs/tags/1.1.2` | `refs/tags/1.1.2` |
 | `v1.0.0` | `v1.0.0` |
 | `feat/my-feature` | `feat/my-feature` |
+| `1.0.0` (bare semver) | `refs/tags/1.0.0` (normalized) |
+| `2.5` (bare semver) | `refs/tags/2.5` (normalized) |
+| `1` (single digit) | `1` (unchanged -- ambiguous) |
 
 ---
 

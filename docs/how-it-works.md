@@ -26,9 +26,9 @@ kanon_cli/
 
 `kanon_cli.repo` exposes a stable Python API used directly by `kanon_cli.core.install`:
 
-- `repo_init(repo_dir, url, revision, manifest_path, repo_rev)` -- Initialize a repo checkout
+- `repo_init(repo_dir, url, revision, manifest_path, repo_rev="")` -- Initialize a repo checkout (`repo_rev` is optional)
 - `repo_envsubst(repo_dir, env_vars)` -- Substitute environment variables in manifest XML files
-- `repo_sync(repo_dir)` -- Clone and fetch all projects defined in the manifest
+- `repo_sync(repo_dir, *, groups=..., platform=..., jobs=...)` -- Clone and fetch all projects defined in the manifest
 - `repo_run(argv, repo_dir=...)` -- General-purpose dispatcher for arbitrary repo subcommands
 - `RepoCommandError` -- Exception raised when a repo command exits with a non-zero exit code
 

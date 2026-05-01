@@ -738,7 +738,7 @@ kanon install .kanon
 **Pass criteria:**
 - Exit code 0
 - `.packages/pkg-linked` exists (symlink into `.kanon-data/sources/`)
-- `.kanon-data/sources/linked/app-config.json` exists as a symlink (created by the repo tool linkfile element inside the source directory)
+- `.kanon-data/sources/linked/app-config.json` exists as a symlink (created by the kanon repo linkfile element inside the source directory)
 - `.kanon-data/sources/linked/lint.toml` exists as a symlink
 - Symlinks resolve to valid files
 
@@ -1763,14 +1763,14 @@ These tests verify that the same PEP 440 constraint parser used for `--catalog-s
 
 Reuse the catalog-source fixture from Category 13 (`${KANON_TEST_ROOT}/fixtures/cs-catalog`). It already carries 7 semver tags (`1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0`).
 
-The RX manifest XML files use `fetch="file://${KANON_TEST_ROOT}/fixtures/cs-catalog"` and `name="catalog"`. The repo tool resolves each project URL as `fetch + "/" + name`, i.e., `file://${KANON_TEST_ROOT}/fixtures/cs-catalog/catalog`. A separate bare git repo must exist at that sub-path; the Category 13 fixture at `fixtures/cs-catalog` is the _parent_ directory, not the project repo.
+The RX manifest XML files use `fetch="file://${KANON_TEST_ROOT}/fixtures/cs-catalog"` and `name="catalog"`. The kanon repo subsystem resolves each project URL as `fetch + "/" + name`, i.e., `file://${KANON_TEST_ROOT}/fixtures/cs-catalog/catalog`. A separate bare git repo must exist at that sub-path; the Category 13 fixture at `fixtures/cs-catalog` is the _parent_ directory, not the project repo.
 
 Create the bare catalog content repo at `fixtures/cs-catalog/catalog` before creating the manifest repo:
 
 ```bash
 # Create the bare content repo that the RX manifests point at.
 # The RX XML uses fetch="file://.../cs-catalog" + name="catalog", so the
-# repo tool resolves the project URL to .../cs-catalog/catalog -- a bare
+# kanon repo resolves the project URL to .../cs-catalog/catalog -- a bare
 # git repo must exist at that sub-path.
 #
 # Category 13's fixture setup creates fixtures/cs-catalog/catalog/test-entry

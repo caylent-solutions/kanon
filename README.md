@@ -104,15 +104,27 @@ Ensure the same testing, linting, security scanning, and deployment automation a
 ### Prerequisites
 
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) on PATH
+- [pipx](https://pipx.pypa.io/) on PATH (`python3 -m pip install --user pipx && pipx ensurepath`)
 - Git
 - If authenticating with Git via SSH, see [SSH Authentication Setup](#ssh-authentication-setup)
 
 ### Install the Kanon CLI
 
+`kanon-cli` is published to [PyPI](https://pypi.org/project/kanon-cli/). The recommended install method depends on the use case:
+
+**Production / general use** -- isolated CLI install via pipx:
+
 ```bash
-uv tool install kanon-cli
+pipx install kanon-cli
 ```
+
+**Local development on this repository** -- editable install into the project's virtualenv:
+
+```bash
+pip install -e .
+```
+
+(Editable mode lets local source edits take effect immediately without reinstalling. CI uses `pip install kanon-cli` for ephemeral runners; see `docs/pipeline-integration.md`.)
 
 ### Standalone Usage (No Task Runner Required)
 
@@ -753,9 +765,12 @@ make install-hooks
 ### Run Tests
 
 ```bash
-make test          # All tests
-make test-unit     # Unit tests only
-make test-cov      # Tests with coverage report
+make test            # All tests with coverage
+make test-unit       # Unit tests only
+make test-integration  # Integration tests (modules end-to-end)
+make test-functional   # Functional tests (CLI via subprocess)
+make test-scenarios    # End-to-end scenario tests (mirrors docs/integration-testing.md)
+make test-cov          # Tests with coverage report
 ```
 
 ### Build

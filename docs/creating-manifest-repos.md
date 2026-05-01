@@ -79,6 +79,14 @@ Key attributes:
 - `remote` — name of the remote defined in `remote.xml`
 - `revision` — Git ref to checkout (tag, branch, or PEP 440 constraint)
 
+> **XML escaping for PEP 440 operators:** When `revision` carries PEP 440
+> range or comparison operators (`<`, `<=`, `>`, `>=`, ranges that mix
+> them), the `<` and `>` characters MUST be XML-escaped as `&lt;` / `&gt;`
+> so the parser sees the original constraint string. For example,
+> `revision="refs/tags/&lt;=1.1.0"` (not `revision="refs/tags/<=1.1.0"`).
+> Equality (`==`), exclusion (`!=`), compatible release (`~=`), `*`, and
+> `latest` need no escaping.
+
 > **Platform path separator note (Bug 17):** Manifest `path`, `src`, and `dest`
 > attribute values use forward slashes (`/`) as path separators regardless of
 > the host operating system. Some internal path operations in the sync engine

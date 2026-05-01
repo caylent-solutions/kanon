@@ -122,7 +122,7 @@ These variables control runtime behavior of the kanon library API.
 
 | Variable | Purpose | Format | Required |
 |----------|---------|--------|----------|
-| `KANON_MAX_REPO_RESTART_RETRIES` | Controls the maximum number of times `run_from_args()` will retry a command when `RepoChangedException` triggers an internal repo restart. The retry loop intercepts the `os.execv` call that the repo tool uses to restart itself after an upgrade, so the calling process is never replaced. When the limit is exhausted, `RepoCommandError` is raised with a descriptive message. Read on every `run_from_args()` call so changes take effect without a process restart. | Non-negative integer; `0` disables retries, e.g. `3` | Optional -- defaults to `3` |
+| `KANON_MAX_REPO_RESTART_RETRIES` | Controls the maximum number of times `run_from_args()` will retry a command when `RepoChangedException` triggers an internal repo-subsystem restart. The retry loop intercepts the `os.execv` call that `kanon repo` uses to restart itself after an upgrade, so the calling process is never replaced. When the limit is exhausted, `RepoCommandError` is raised with a descriptive message. Read on every `run_from_args()` call so changes take effect without a process restart. | Non-negative integer; `0` disables retries, e.g. `3` | Optional -- defaults to `3` |
 
 ## Testing
 
@@ -134,6 +134,14 @@ Unit tests are located in the `tests/unit` directory. They test individual compo
 make test-unit
 ```
 
+### Integration Tests
+
+Integration tests live in `tests/integration` and verify modules load and run end-to-end with real internal collaborators.
+
+```bash
+make test-integration
+```
+
 ### Functional Tests
 
 Functional tests are located in the `tests/functional` directory. They test the CLI commands as used by actual users.
@@ -142,10 +150,21 @@ Functional tests are located in the `tests/functional` directory. They test the 
 make test-functional
 ```
 
+### Scenario Tests
+
+Scenario tests live in `tests/scenarios` and automate every in-scope scenario from `docs/integration-testing.md`. Each test invokes `kanon` / `git` as real subprocesses against on-disk fixtures (no mocks, no network), mirroring exactly what a human would type. The harness lives in `tests/scenarios/conftest.py`.
+
+```bash
+make test-scenarios
+```
+
+A coverage meta test (`tests/scenarios/test_scenario_coverage_meta.py`) fails CI if any in-scope scenario in `docs/integration-testing.md` lacks a matching pytest test. To add a new scenario: add the `### XX-NN: <title>` heading + bash block to `docs/integration-testing.md`, then add a `@pytest.mark.scenario` test under `tests/scenarios/test_<category>.py` that references the scenario ID in its function name or docstring.
+
 ### Test Requirements
 
-- **Unit Tests**: Must maintain at least 85% code coverage
+- **Unit Tests**: Must maintain at least 90% code coverage (CI threshold)
 - **Functional Tests**: Must test all CLI commands and common error scenarios
+- **Scenario Tests**: Every in-scope scenario from `docs/integration-testing.md` must have a matching pytest test (enforced by the coverage meta test)
 - All tests must pass before merging
 
 ### Running All Tests

@@ -219,13 +219,13 @@ class Requirements(RepoWrapperTestCase):
     def test_valid_data(self):
         """Make sure we can parse the file we ship."""
         self.assertIsNotNone(self.wrapper.Requirements.from_data(b"{}"))
-        # requirements.json lives at src/kanon_cli/repo/requirements.json;
+        # requirements.jsonc lives at src/kanon_cli/repo/requirements.jsonc;
         # this test file is at tests/unit/repo/test_wrapper.py, so 4 dirname
         # calls reach the repo root, then append the source subpackage path.
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
         rootdir = os.path.join(repo_root, "src", "kanon_cli", "repo")
         self.assertIsNotNone(self.wrapper.Requirements.from_dir(rootdir))
-        self.assertIsNotNone(self.wrapper.Requirements.from_file(os.path.join(rootdir, "requirements.json")))
+        self.assertIsNotNone(self.wrapper.Requirements.from_file(os.path.join(rootdir, "requirements.jsonc")))
 
     def test_format_ver(self):
         """Check format_ver can format."""

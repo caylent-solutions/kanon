@@ -8,6 +8,7 @@ build/
 .ruff_cache/
 .coverage-data/
 .coverage
+coverage.json
 htmlcov/
 
 # Environment files

@@ -22,7 +22,7 @@ REQUIRED_PACKAGES = [
 REQUIRED_ARTIFACTS = [
     "repo",
     "git_ssh",
-    "requirements.json",
+    "requirements.jsonc",
 ]
 
 REQUIRED_ARTIFACT_GLOBS = [

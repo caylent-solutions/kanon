@@ -8,10 +8,12 @@ Golden reference files for git-repo test suite.
 |---|---|---|
 | `sample-manifest.xml` | XML | Representative repo tool manifest with remotes, defaults, and projects. Used by `conftest.py::mock_manifest_xml` and manifest parsing tests. |
 | `sample-project-config.json` | JSON | Representative project configuration with name, path, remote, and revision fields. Used by `conftest.py::mock_project_config` and project config tests. |
-| `linter-test-bad.md` | Markdown | Intentionally invalid Markdown for markdownlint config testing (E0-F1-S2-T2). |
-| `linter-test-bad.yml` | YAML | Intentionally invalid YAML for yamllint config testing (E0-F1-S2-T3). |
-| `linter-test-bad.py` | Python | Intentionally invalid Python for ruff config testing (E0-F1-S2-T1). |
 | `test.gitconfig` | Git config | Git configuration fixture for upstream tests. |
+
+The `linter-test-bad.{md,yml,py}` fixtures live exclusively under
+`tests/fixtures/repo/` (single source of truth). The
+`tests/unit/repo/fixtures/` copies were deleted as part of CLAUDE.md
+DRY enforcement.
 
 ## Conventions
 

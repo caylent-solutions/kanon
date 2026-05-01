@@ -106,7 +106,7 @@ _NON_PYTHON_RUNTIME_FILES = [
     "git_ssh",
     "hooks/commit-msg",
     "hooks/pre-auto-gc",
-    "requirements.json",
+    "requirements.jsonc",
 ]
 
 
@@ -463,7 +463,7 @@ def test_wheel_repo_non_python_files_present(built_wheel_path: pathlib.Path) -> 
     """Verify the built wheel includes non-Python runtime files from kanon_cli/repo/.
 
     Inspects the wheel archive and confirms that the required non-Python
-    runtime files (git hooks, git_ssh script, requirements.json) are bundled
+    runtime files (git hooks, git_ssh script, requirements.jsonc) are bundled
     inside the wheel.
 
     AC-TEST-003
@@ -479,5 +479,5 @@ def test_wheel_repo_non_python_files_present(built_wheel_path: pathlib.Path) -> 
         f"The following non-Python runtime files are missing from the wheel:\n"
         f"  {missing_runtime}\n"
         f"Check [tool.hatch.build.targets.wheel] include list in pyproject.toml "
-        f"contains patterns for 'repo', 'git_ssh', 'hooks/*', 'requirements.json'."
+        f"contains patterns for 'repo', 'git_ssh', 'hooks/*', 'requirements.jsonc'."
     )

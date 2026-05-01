@@ -103,7 +103,7 @@ NON_PYTHON_RUNTIME_FILES = [
     "git_ssh",
     "hooks/commit-msg",
     "hooks/pre-auto-gc",
-    "requirements.json",
+    "requirements.jsonc",
 ]
 
 
@@ -346,7 +346,7 @@ def test_wheel_contains_non_python_runtime_file(wheel_names: set[str], relative_
     """Verify each non-Python runtime file is present in the wheel.
 
     AC-TEST-004: Test verifies non-Python runtime files are in the wheel
-    (repo, git_ssh, hooks/commit-msg, hooks/pre-auto-gc, requirements.json).
+    (repo, git_ssh, hooks/commit-msg, hooks/pre-auto-gc, requirements.jsonc).
 
     Given: The wheel was built from the current project configuration
     When: The wheel contents are inspected

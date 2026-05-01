@@ -39,7 +39,7 @@ def test_yamllint_catches_known_bad_yaml():
     When: yamllint is run against it
     Then: It reports errors and exits non-zero
     """
-    bad_file = os.path.join(REPO_ROOT, "tests", "fixtures", "repo", "linter-test-bad.yml")
+    bad_file = os.path.join(REPO_ROOT, "tests", "fixtures", "repo", "linter-test-bad.invalid-yaml")
     assert os.path.isfile(bad_file), f"Known-bad fixture must exist: {bad_file}"
     config_path = os.path.join(REPO_ROOT, ".yamllint")
     result = subprocess.run(

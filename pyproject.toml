@@ -45,7 +45,7 @@ include = [
     "repo",
     "git_ssh",
     "hooks/*",
-    "requirements.json",
+    "requirements.jsonc",
 ]
 
 [tool.ruff]

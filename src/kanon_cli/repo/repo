@@ -1177,7 +1177,7 @@ def _ParseArguments(args):
 class Requirements:
     """Helper for checking repo's system requirements."""
 
-    REQUIREMENTS_NAME = "requirements.json"
+    REQUIREMENTS_NAME = "requirements.jsonc"
 
     def __init__(self, requirements):
         """Initialize.

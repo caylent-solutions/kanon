@@ -10,17 +10,37 @@ AC-FUNC-001: Concurrent or repeated installs behave deterministically
 AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 """
 
+import contextlib
 import fcntl
 import os
 import pathlib
 import subprocess
 import sys
 import threading
+from collections.abc import Callable, Iterator
 from unittest.mock import patch
 
 import pytest
 
 from kanon_cli.core.install import install
+
+
+# ---------------------------------------------------------------------------
+# Thread-safe patching helper
+# ---------------------------------------------------------------------------
+#
+# `unittest.mock.patch` is NOT thread-safe: when two threads enter and exit
+# overlapping `with patch(...)` blocks for the same attribute, the cleanup
+# step races on the saved "original" reference, which can permanently leave
+# a Mock object as the module attribute. Tests that previously paired
+# `with patch(...)` *inside* a thread body therefore leaked the Mock into
+# every later test that imported the patched name.
+#
+# The helpers below open the patch context ONCE in the main test thread,
+# spawn the worker threads inside it (which call the unpatched
+# `install()` directly), and exit the patch context after every thread
+# joined -- restoration is single-threaded and the original repo_*
+# functions are guaranteed to be back in place when the test returns.
 
 
 # ---------------------------------------------------------------------------
@@ -86,25 +106,78 @@ def _write_two_source_kanonenv(
     return kanonenv.resolve()
 
 
-def _patched_install(kanonenv: pathlib.Path) -> None:
-    """Run install() with all repo operations patched to no-ops.
+@pytest.fixture(autouse=True)
+def _patch_kanon_cli_repo_for_each_test() -> Iterator[None]:
+    """Auto-patch kanon_cli.repo.repo_{init,envsubst,sync} for every test.
 
-    Args:
-        kanonenv: Path to the .kanon configuration file.
+    The patches are opened in the SINGLE-THREADED test setup phase and
+    closed in the single-threaded teardown phase. Tests inside this
+    module spawn threads that call ``install()`` -- those threads never
+    enter or exit a patch context themselves, so the well-known
+    `unittest.mock.patch` thread-safety hazard (overlapping enter/exit
+    races on the saved "original" attribute and permanently leaks a
+    Mock into the patched module) cannot occur here.
+
+    Tests that wire a custom ``side_effect`` for ``repo_sync`` use
+    ``_use_repo_sync_side_effect`` below; that helper restarts the
+    ``repo_sync`` patch with the requested side_effect, still in the
+    single-threaded test body.
     """
-    with (
+    patches = [
         patch("kanon_cli.repo.repo_init"),
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
-    ):
-        install(kanonenv)
+    ]
+    try:
+        for p in patches:
+            p.start()
+        yield
+    finally:
+        for p in reversed(patches):
+            p.stop()
+
+
+@contextlib.contextmanager
+def _use_repo_sync_side_effect(side_effect: Callable[..., object]) -> Iterator[None]:
+    """Temporarily attach a ``side_effect`` to the auto-patched repo_sync.
+
+    The autouse fixture above already replaces ``kanon_cli.repo.repo_sync``
+    with a Mock for every test. Tests that need a non-trivial fake (one
+    that materialises ``.packages/`` directories so the install
+    aggregation step has something to work with) call this helper inside
+    a ``with`` block; on exit the side_effect is removed but the Mock
+    itself is left in place (the autouse fixture restores the real
+    function in teardown).
+    """
+    import kanon_cli.repo as _repo_pkg
+
+    target = _repo_pkg.repo_sync
+    previous = getattr(target, "side_effect", None)
+    target.side_effect = side_effect
+    try:
+        yield
+    finally:
+        target.side_effect = previous
+
+
+def _patched_install(kanonenv: pathlib.Path) -> None:
+    """Call the real install(); the autouse fixture handles the mocks.
+
+    Retained as a thin shim because every call site in this module
+    invokes it directly. The autouse fixture in this module mocks out
+    every ``kanon_cli.repo.repo_*`` function once per test (in single-
+    threaded setup), so threads that run this function concurrently
+    only execute the production install() code path -- they do not
+    set up or tear down their own patch contexts.
+    """
+    install(kanonenv)
 
 
 def _patched_install_with_packages(
     kanonenv: pathlib.Path,
     packages_by_source: dict[str, list[str]],
 ) -> None:
-    """Run install() with a fake repo_sync that creates .packages/ entries.
+    """Run install() with a fake repo_sync side_effect that creates .packages/.
 
     Args:
         kanonenv: Path to the .kanon configuration file.
@@ -119,11 +192,7 @@ def _patched_install_with_packages(
             pkg_dir.mkdir(parents=True, exist_ok=True)
             (pkg_dir / "README.md").write_text(f"# {pkg_name}\n", encoding="utf-8")
 
-    with (
-        patch("kanon_cli.repo.repo_init"),
-        patch("kanon_cli.repo.repo_envsubst"),
-        patch("kanon_cli.repo.repo_sync", side_effect=_fake_repo_sync),
-    ):
+    with _use_repo_sync_side_effect(_fake_repo_sync):
         install(kanonenv)
 
 

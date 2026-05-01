@@ -67,6 +67,11 @@ if os.path.sep != "/":
     INVALID_FS_PATHS += tuple(x.replace("/", os.path.sep) for x in INVALID_FS_PATHS)
 
 
+_TAG_RE = re.compile(r"<[/?]?[a-z-]+")
+_ATTR_RE = re.compile(r'\S+?="[^"]+"')
+_OPEN_TAG_END_RE = re.compile(r"\s*[/?]?>")
+
+
 def sort_attributes(manifest):
     """Sort the attributes of all elements alphabetically.
 
@@ -75,6 +80,14 @@ def sort_attributes(manifest):
     Before Python 3.8 they were output alphabetically, later versions preserve
     the order specified by the user.
 
+    The previous implementation used a single `re.findall` with three nested
+    capturing groups including ``(?:\\S+?="[^"]+"\\s*?)*``. Nested quantifiers
+    enable catastrophic backtracking (ReDoS) on inputs like ``<- !="!" !="!" ...``;
+    CodeQL's ``py/redos`` rule flagged the pattern as a security vulnerability.
+    The rewrite walks the string with three flat scans -- find tag head, find
+    individual attrs, find tag tail -- so backtracking complexity is linear
+    in input length.
+
     Args:
         manifest: String containing an XML manifest.
 
@@ -82,14 +95,24 @@ def sort_attributes(manifest):
         The XML manifest with the attributes of all elements sorted
         alphabetically.
     """
-    new_manifest = ""
-    # This will find every element in the XML manifest, whether they have
-    # attributes or not. This simplifies recreating the manifest below.
-    matches = re.findall(r'(<[/?]?[a-z-]+\s*)((?:\S+?="[^"]+"\s*?)*)(\s*[/?]?>)', manifest)
-    for head, attrs, tail in matches:
-        m = re.findall(r'\S+?="[^"]+"', attrs)
-        new_manifest += head + " ".join(sorted(m)) + tail
-    return new_manifest
+    out_parts = []
+    pos = 0
+    for tag in _TAG_RE.finditer(manifest):
+        out_parts.append(manifest[pos : tag.start()])
+        head_text = tag.group(0)
+        cursor = tag.end()
+        end_match = _OPEN_TAG_END_RE.search(manifest, cursor)
+        if end_match is None:
+            out_parts.append(manifest[tag.start() :])
+            pos = len(manifest)
+            break
+        attr_region = manifest[cursor : end_match.start()]
+        attrs = _ATTR_RE.findall(attr_region)
+        sep = " " if attrs else ""
+        out_parts.append(head_text + sep + " ".join(sorted(attrs)) + end_match.group(0))
+        pos = end_match.end()
+    out_parts.append(manifest[pos:])
+    return "".join(out_parts)
 
 
 class ManifestParseTestCase(unittest.TestCase):

@@ -262,7 +262,11 @@ def test_envsubst_restores_os_environ_after_call(tmp_path: pathlib.Path) -> None
 
     env_before = copy.deepcopy(dict(os.environ))
     # Use a key that is unlikely to be set in the actual environment.
-    test_key = "KANON_TEST_ENVSUBST_SENTINEL_VAR_39275"
+    # The literal must have low Shannon entropy so the project's gitleaks
+    # `generic-api-key` rule does not classify it as a hardcoded secret;
+    # uppercase + underscore (no digits, no mixed case-and-digits) keeps
+    # entropy well below the rule's threshold.
+    test_key = "KANON_TEST_ENVSUBST_SENTINEL_VAR"
     assert test_key not in env_before, (
         f"Test sentinel key {test_key!r} is already in os.environ -- choose a different key."
     )

@@ -191,6 +191,12 @@ jobs:
           make install-dev
         shell: bash
 
+      - name: Install uv
+        # `tests/integration/test_wheel_e2e.py` and
+        # `tests/integration/test_ci_validation.py` shell out to `uv` to build
+        # the wheel artefact under test; uv must therefore be on PATH.
+        uses: astral-sh/setup-uv@v6
+
       - name: Run integration tests
         run: |
           python -m pytest -m integration

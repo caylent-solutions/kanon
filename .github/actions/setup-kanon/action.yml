@@ -11,16 +11,16 @@ description: |
 
 inputs:
   base-ref:
-    description: |
+    description: >-
       Base ref to simulate-merge against. Leave empty to skip the
-      simulate-merge step (e.g. for push-to-main runs); set to
-      `${{ github.base_ref }}` for pull_request runs.
+      simulate-merge step (e.g. for push-to-main runs); set to the
+      pull-request base ref for pull_request runs.
     required: false
     default: ''
   head-sha:
-    description: |
-      Head SHA to merge into the base ref. Required when
-      `base-ref` is non-empty; ignored otherwise.
+    description: >-
+      Head SHA to merge into the base ref. Required when base-ref is
+      non-empty; ignored otherwise.
     required: false
     default: ''
 

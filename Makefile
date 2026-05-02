@@ -8,10 +8,10 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install runtime dependencies
-	pip install -r requirements.txt
+	uv pip install -r requirements.txt
 
 install-dev: ## Install development dependencies (editable + ruff + pytest)
-	pip install -r requirements-dev.txt
+	uv pip install -r requirements-dev.txt
 
 lint: lint-check format-check ## Run all lint checks (ruff check + ruff format --check)
 

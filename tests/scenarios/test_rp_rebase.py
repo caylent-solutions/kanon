@@ -116,6 +116,14 @@ class TestRPRebase:
 
         A topic branch must exist so the project is not in detached HEAD state.
         The doc accepts exit 0 OR a "skipped no-tty" indication.
+
+        On systems where git's editor fallback (vim/vi/nano) is installed, an
+        unset EDITOR does not produce a "no editor" diagnostic — git launches
+        the fallback editor against the non-tty subprocess and the test hangs
+        forever waiting for the editor to exit. Pin GIT_SEQUENCE_EDITOR (and
+        the broader editor envs) to a no-op so the rebase completes
+        deterministically as an identity-pick, regardless of which editor
+        binaries happen to be on PATH in the test environment.
         """
         manifest_bare = build_rp_ro_manifest(tmp_path / "fixtures")
         ws = tmp_path / "ws"
@@ -125,7 +133,13 @@ class TestRPRebase:
         start_result = run_kanon("repo", "start", "rebr-i", "--all", cwd=ws)
         assert start_result.returncode == 0, f"repo start rebr-i --all failed: {start_result.stderr!r}"
 
-        result = run_kanon("repo", "rebase", "-i", "pkg-alpha", cwd=ws)
+        no_tty_editor_env = {
+            "GIT_SEQUENCE_EDITOR": ":",
+            "GIT_EDITOR": ":",
+            "EDITOR": ":",
+            "VISUAL": ":",
+        }
+        result = run_kanon("repo", "rebase", "-i", "pkg-alpha", cwd=ws, extra_env=no_tty_editor_env)
 
         # Accept exit 0 (ran without tty interaction) or any exit code that
         # indicates a tty/interactive skip.  The doc says "Exit code 0 OR

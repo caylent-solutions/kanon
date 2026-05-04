@@ -32,12 +32,27 @@ runs:
     # runner's working directory; without a prior checkout the action file
     # is not yet on disk. Every job in pr-validation.yml / main-validation.yml
     # does its own `actions/checkout@v6` step explicitly.
-    - name: Simulate merge
-      if: inputs.base-ref != ''
+    # Configure a global git identity unconditionally so the runner
+    # environment is identical for pull_request and push-to-main runs.
+    # Previously this was nested inside the `if: inputs.base-ref != ''`
+    # Simulate-merge step, which fires only on PR runs; push-to-main
+    # runs ran with no global identity, so any test that depended on
+    # one passed on PR validation but failed on Main Branch Validation.
+    # Tests should not depend on this baseline (each test fixture
+    # configures identity locally on its own repos) but having a
+    # consistent environment across both workflows prevents the same
+    # class of divergence from masking future test fixture bugs at PR
+    # time.
+    - name: Configure default git identity
       shell: bash
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
+
+    - name: Simulate merge
+      if: inputs.base-ref != ''
+      shell: bash
+      run: |
         git fetch origin ${{ inputs.base-ref }}
         git checkout -b pr-validation origin/${{ inputs.base-ref }}
         git merge --no-commit --no-ff ${{ inputs.head-sha }}

@@ -461,18 +461,38 @@ def _init_git_work_dir(
     _git(["config", "user.email", git_user_email], cwd=work_dir)
 
 
-def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Path:
+def _clone_as_bare(
+    work_dir: pathlib.Path,
+    bare_dir: pathlib.Path,
+    *,
+    git_user_name: str = _DEFAULT_GIT_USER_NAME,
+    git_user_email: str = _DEFAULT_GIT_USER_EMAIL,
+) -> pathlib.Path:
     """Clone work_dir into bare_dir and return the resolved bare_dir path.
 
     Args:
         work_dir: The source non-bare working directory.
         bare_dir: The destination path for the bare clone.
+        git_user_name: Git ``user.name`` configured locally on the bare repo.
+        git_user_email: Git ``user.email`` configured locally on the bare repo.
 
     Returns:
         The resolved absolute path to the bare clone.
     """
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
-    return bare_dir.resolve()
+    resolved = bare_dir.resolve()
+    # `git clone --bare` does not copy local config from the source work_dir,
+    # so the resulting bare repo has no user.name/user.email. Tests that run
+    # commit / annotated-tag operations directly against the bare repo (e.g.
+    # `_setup_tagged_synced_repo` does `git tag -a` against the bare content
+    # repo) would otherwise fall back to global gitconfig and fail with
+    # "Committer identity unknown" / "empty ident name" on hosts without one
+    # (e.g. clean GitHub-hosted runners on push-to-main, where the
+    # `setup-kanon` Simulate-merge step that sets a global identity is
+    # skipped).
+    _git(["config", "user.name", git_user_name], cwd=resolved)
+    _git(["config", "user.email", git_user_email], cwd=resolved)
+    return resolved
 
 
 def _create_bare_content_repo(
@@ -506,7 +526,12 @@ def _create_bare_content_repo(
     _git(["add", content_file_name], cwd=work_dir)
     _git(["commit", "-m", "Initial commit"], cwd=work_dir)
 
-    return _clone_as_bare(work_dir, base / f"{project_name}.git")
+    return _clone_as_bare(
+        work_dir,
+        base / f"{project_name}.git",
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
+    )
 
 
 def _create_manifest_repo(
@@ -553,7 +578,12 @@ def _create_manifest_repo(
     _git(["add", manifest_filename], cwd=work_dir)
     _git(["commit", "-m", "Add manifest"], cwd=work_dir)
 
-    return _clone_as_bare(work_dir, base / manifest_bare_dir_name)
+    return _clone_as_bare(
+        work_dir,
+        base / manifest_bare_dir_name,
+        git_user_name=git_user_name,
+        git_user_email=git_user_email,
+    )
 
 
 def _setup_synced_repo(

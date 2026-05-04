@@ -16,6 +16,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 from collections.abc import Generator
 
@@ -28,7 +29,22 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).parents[3]
 """Root of the kanon repository (3 levels up from tests/unit/repo/)."""
 
-EXPECTED_WHEEL_VERSION = "1.2.0"
+
+def _expected_wheel_version() -> str:
+    """Read the project version from pyproject.toml.
+
+    Resolved at import time so the test docstring's promise -- "the wheel
+    version matches pyproject.toml" -- is actually enforced by the
+    assertion. Previously a static constant that lagged behind every
+    semantic-release version bump (release commits skip CI via the
+    ``actor != 'caylent-platform-bot[bot]'`` gate, so the constant
+    drifted silently).
+    """
+    with (REPO_ROOT / "pyproject.toml").open("rb") as fh:
+        return tomllib.load(fh)["project"]["version"]
+
+
+EXPECTED_WHEEL_VERSION = _expected_wheel_version()
 
 # Wheel package prefix for kanon_cli.repo files
 _REPO_PREFIX = "kanon_cli/repo/"

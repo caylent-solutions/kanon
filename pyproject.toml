@@ -38,8 +38,6 @@ Issues = "https://github.com/caylent-solutions/kanon/issues"
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/kanon_cli",
-    "src/kanon_cli/repo",
-    "src/kanon_cli/repo/subcmds",
 ]
 include = [
     "repo",

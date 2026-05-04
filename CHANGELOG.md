@@ -2,7 +2,96 @@
 
 
 
+## v1.3.1 (2026-05-04)
+
+### Fix
+
+* fix(build): drop nested hatch packages, add wheel duplicate-name guard (#57)
+
+Publish to PyPI #21 (run 25336228014) failed at the upload step on tag
+1.3.0:
+
+    400 Invalid distribution file. ZIP archive not accepted: Duplicate
+    filename in local headers.
+
+PyPI&#39;s archive-integrity policy rejects wheels whose ZIP archive contains
+the same path in multiple local headers
+(https://docs.pypi.org/archives/). `python -m build` emits a non-fatal
+`UserWarning: Duplicate name: ...` for every duplicate but still produces
+the wheel, so the failure surfaces only at upload time.
+
+Root cause: pyproject.toml [tool.hatch.build.targets.wheel] listed
+nested packages alongside their parent:
+
+    packages = [
+        &#34;src/kanon_cli&#34;,                  # walks the whole tree
+        &#34;src/kanon_cli/repo&#34;,             # walks subtree AGAIN
+        &#34;src/kanon_cli/repo/subcmds&#34;,     # walks A THIRD TIME
+    ]
+
+Hatchling walks each entry independently and emits a local header for
+every file it encounters, so every file under kanon_cli/repo/ ended up
+in the wheel 2-3 times (58 duplicated paths across 171 entries on the
+1.3.0 build). Trimming `packages` to just `src/kanon_cli` lets
+hatchling auto-discover sub-packages and produces a clean wheel (86
+entries, 0 duplicates).
+
+CI did not catch this: `make publish` calls `make distcheck` which runs
+`twine check dist/*`, and twine validates metadata + README rendering
+but does not detect duplicate ZIP entries. Only the actual PyPI upload
+exercises archive-integrity, and that runs after the version is tagged.
+
+Fix:
+
+- pyproject.toml: drop the nested `src/kanon_cli/repo` and
+  `src/kanon_cli/repo/subcmds` entries from `[tool.hatch.build.targets.wheel] packages`.
+- scripts/check_archive_no_duplicates.py: new stdlib-only check that
+  scans every dist/*.whl + dist/*.tar.gz for duplicate archive paths
+  and exits non-zero with the offending list. Demonstrated to catch
+  the pre-fix wheel deterministically (FAIL: 58 duplicated paths).
+- Makefile distcheck: invoke the new script after `twine check`. Since
+  pr-validation.yml and main-validation.yml both run `make publish` in
+  their `Build wheel` job, the regression test fires in PR validation,
+  main validation, and on every developer&#39;s local `make publish` --
+  no workflow YAML edit needed.
+- tests/unit/test_pyproject_build_config.py: REQUIRED_PACKAGES was
+  encoding the bug as a requirement; trim to match the new pyproject.
+- tests/unit/repo/test_wheel_contents.py: EXPECTED_WHEEL_VERSION was a
+  hardcoded &#34;1.2.0&#34; constant that the test docstring claimed equalled
+  &#34;pyproject.toml&#34;. Resolve dynamically from pyproject so the test
+  enforces what its name says (also fixes a latent failure introduced
+  by the 1.3.0 release, which slipped because release commits skip CI
+  via `actor != &#39;caylent-platform-bot[bot]&#39;`).
+
+Verified locally:
+
+- `python -m build`: 0 Duplicate name warnings (58 before).
+- `python scripts/check_archive_no_duplicates.py dist/`:
+  OK: kanon_cli-1.3.0-py3-none-any.whl -- 86 entries, no duplicates
+  OK: kanon_cli-1.3.0.tar.gz -- 667 entries, no duplicates
+- Demonstrated pre-fix: same script on a build of the broken
+  pyproject.toml exits 1 and prints all 58 duplicated paths.
+- Wheel still contains kanon_cli/repo/{repo,git_ssh,requirements.jsonc,
+  hooks/commit-msg,hooks/pre-auto-gc} (data files preserved).
+- `pytest -m unit`: 7513 passed, 1 skipped.
+- `ruff check` + `ruff format --check`: clean on every changed Python
+  file.
+
+Out of scope: republishing 1.3.0 (PyPI permanently reserves the
+filename even on rejected uploads -- next release will be 1.3.1).
+The dead `include = [&#34;repo&#34;, &#34;git_ssh&#34;, &#34;hooks/*&#34;, &#34;requirements.jsonc&#34;]`
+block in pyproject.toml is left alone; it&#39;s a silent no-op (those
+paths no longer exist at the project root after #49) but not the
+cause of the duplicate-name failure.
+
+Fixes #56 ([`6157f87`](https://github.com/caylent-solutions/kanon/commit/6157f8755767d3e66307ba8023399b791b3735b7))
+
+
 ## v1.3.0 (2026-05-04)
+
+### Chore
+
+* chore(release): 1.3.0 ([`0136090`](https://github.com/caylent-solutions/kanon/commit/013609075c943a40a1188abc9320f2a7602ee4d1))
 
 ### Feature
 
@@ -1681,6 +1770,12 @@ test_repo_cherry_pick_happy.py tests/functional/test_repo_upload_happy.py
 tests/functional/test_repo_upload_flags.py -q` -- 106/106 pass; the same
 invocation against `main` reproduces 17 failures + 9 errors with the
 &#34;Author identity unknown&#34; signature. ([`af6e653`](https://github.com/caylent-solutions/kanon/commit/af6e65352810ddf6bb7b264cf81cf8983049695a))
+
+### Unknown
+
+* Merge pull request #55 from caylent-solutions/release-1.3.0
+
+Release 1.3.0 ([`f79a9b0`](https://github.com/caylent-solutions/kanon/commit/f79a9b06ab0f172c242f48fc21e5c7b783033102))
 
 
 ## v1.2.0 (2026-04-14)

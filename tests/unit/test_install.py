@@ -1,10 +1,12 @@
 """Tests for install core business logic."""
 
+import argparse
 import pathlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kanon_cli.commands.install import _run
 from kanon_cli.core.install import (
     aggregate_symlinks,
     create_source_dirs,
@@ -15,6 +17,7 @@ from kanon_cli.core.install import (
     run_repo_sync,
     update_gitignore,
 )
+from kanon_cli.repo import RepoCommandError
 
 
 @pytest.mark.unit
@@ -31,39 +34,64 @@ class TestSourceDirectoryCreation:
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         assert result["build"] == tmp_path / ".kanon-data" / "sources" / "build"
 
+    def test_oserror_propagates_with_path_context(self, tmp_path: pathlib.Path) -> None:
+        """create_source_dirs raises OSError with path context when mkdir fails."""
+        with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
+            with pytest.raises(OSError) as exc_info:
+                create_source_dirs(["src"], tmp_path)
+        assert "Cannot create source directory" in str(exc_info.value)
+
+    def test_oserror_message_contains_strerror(self, tmp_path: pathlib.Path) -> None:
+        """OSError raised by create_source_dirs includes the OS error message."""
+        with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
+            with pytest.raises(OSError) as exc_info:
+                create_source_dirs(["src"], tmp_path)
+        assert "Permission denied" in str(exc_info.value)
+
 
 @pytest.mark.unit
 class TestRepoInit:
     def test_calls_repo_init(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("kanon_cli.repo.repo_init") as mock_init:
             run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml")
-            mock_run.assert_called_once()
-            cmd = mock_run.call_args[0][0]
-            assert "repo" in cmd
-            assert "init" in cmd
-            assert "--no-repo-verify" in cmd
+            mock_init.assert_called_once()
+            args, kwargs = mock_init.call_args
+            all_args = args + tuple(kwargs.values())
+            assert "https://example.com/r.git" in all_args
+            assert "main" in all_args
+            assert "meta.xml" in all_args
+
+    def test_passes_correct_source_dir(self, tmp_path: pathlib.Path) -> None:
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
+        source_dir.mkdir(parents=True)
+        with patch("kanon_cli.repo.repo_init") as mock_init:
+            run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml")
+            args, kwargs = mock_init.call_args
+            all_args = args + tuple(kwargs.values())
+            assert str(source_dir) in all_args
 
     def test_includes_repo_rev(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("kanon_cli.repo.repo_init") as mock_init:
             run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml", "v2.0.0")
-            cmd = mock_run.call_args[0][0]
-            assert "--repo-rev" in cmd
-            assert "v2.0.0" in cmd
+            args, kwargs = mock_init.call_args
+            all_args = args + tuple(kwargs.values())
+            assert "v2.0.0" in all_args
 
-    def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            mock_run.return_value.stderr = "failed"
-            with pytest.raises(SystemExit):
+        with patch("kanon_cli.repo.repo_init") as mock_init:
+            mock_init.side_effect = RepoCommandError(
+                exit_code=1,
+                message="repo init failed: connection refused",
+            )
+            with pytest.raises(RepoCommandError):
                 run_repo_init(source_dir, "https://example.com/r.git", "main", "meta.xml")
+            mock_init.assert_called_once()
 
 
 @pytest.mark.unit
@@ -71,20 +99,34 @@ class TestRepoEnvsubst:
     def test_calls_envsubst(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("kanon_cli.repo.repo_envsubst") as mock_envsubst:
             run_repo_envsubst(source_dir, {"GITBASE": "https://example.com/"})
-            call_env = mock_run.call_args[1]["env"]
-            assert call_env["GITBASE"] == "https://example.com/"
+            mock_envsubst.assert_called_once()
+            args, kwargs = mock_envsubst.call_args
+            all_args = args + tuple(kwargs.values())
+            assert {"GITBASE": "https://example.com/"} in all_args
 
-    def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_passes_correct_source_dir(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            mock_run.return_value.stderr = "failed"
-            with pytest.raises(SystemExit):
+        with patch("kanon_cli.repo.repo_envsubst") as mock_envsubst:
+            run_repo_envsubst(source_dir, {})
+            mock_envsubst.assert_called_once()
+            args, kwargs = mock_envsubst.call_args
+            all_args = args + tuple(kwargs.values())
+            assert str(source_dir) in all_args
+
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
+        source_dir = tmp_path / ".kanon-data" / "sources" / "build"
+        source_dir.mkdir(parents=True)
+        with patch("kanon_cli.repo.repo_envsubst") as mock_envsubst:
+            mock_envsubst.side_effect = RepoCommandError(
+                exit_code=1,
+                message="repo envsubst failed: manifest not found",
+            )
+            with pytest.raises(RepoCommandError):
                 run_repo_envsubst(source_dir, {})
+            mock_envsubst.assert_called_once()
 
 
 @pytest.mark.unit
@@ -92,19 +134,24 @@ class TestRepoSync:
     def test_calls_sync(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+        with patch("kanon_cli.repo.repo_sync") as mock_sync:
             run_repo_sync(source_dir)
-            assert mock_run.call_args[0][0] == ["repo", "sync"]
+            mock_sync.assert_called_once()
+            args, kwargs = mock_sync.call_args
+            all_args = args + tuple(kwargs.values())
+            assert str(source_dir) in all_args
 
-    def test_failure_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_failure_raises_repo_command_error(self, tmp_path: pathlib.Path) -> None:
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
-        with patch("kanon_cli.core.install.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            mock_run.return_value.stderr = "failed"
-            with pytest.raises(SystemExit):
+        with patch("kanon_cli.repo.repo_sync") as mock_sync:
+            mock_sync.side_effect = RepoCommandError(
+                exit_code=1,
+                message="repo sync failed: network timeout",
+            )
+            with pytest.raises(RepoCommandError):
                 run_repo_sync(source_dir)
+            mock_sync.assert_called_once()
 
 
 @pytest.mark.unit
@@ -117,12 +164,12 @@ class TestSymlinkAggregation:
         link = tmp_path / ".packages" / "test-lint"
         assert link.is_symlink()
 
-    def test_collision_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ["a", "b"]:
             pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "dup").mkdir()
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError):
             aggregate_symlinks(["a", "b"], tmp_path)
 
 
@@ -158,7 +205,24 @@ class TestMarketplace:
 
 @pytest.mark.unit
 class TestInstallLifecycle:
-    def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
+    def test_create_source_dirs_oserror_causes_system_exit(self, tmp_path: pathlib.Path) -> None:
+        """install() exits 1 when create_source_dirs raises OSError."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        args = argparse.Namespace(kanonenv_path=kanonenv)
+        with patch(
+            "kanon_cli.core.install.create_source_dirs",
+            side_effect=OSError("Cannot create source directory /x: Permission denied"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                _run(args)
+        assert exc_info.value.code == 1
+
+    def test_marketplace_true_missing_dir_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_MARKETPLACE_INSTALL=true\n"
@@ -166,7 +230,7 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError):
             install(kanonenv)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
@@ -183,16 +247,44 @@ class TestInstallLifecycle:
         )
 
         with (
-            patch("kanon_cli.core.install.subprocess.run") as mock_run,
+            patch("kanon_cli.repo.repo_init") as mock_init,
+            patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
+            patch("kanon_cli.repo.repo_sync") as mock_sync,
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_install,
         ):
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stderr = ""
             install(kanonenv)
 
         assert mp_dir.is_dir()
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
+        mock_init.assert_called_once()
+        mock_envsubst.assert_called_once()
+        mock_sync.assert_called_once()
         mock_install.assert_called_once_with(mp_dir)
+
+    def test_api_calls_in_correct_sequence(self, tmp_path: pathlib.Path) -> None:
+        """init, envsubst, and sync must be called in order for each source."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        manager = MagicMock()
+        with (
+            patch("kanon_cli.repo.repo_init") as mock_init,
+            patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
+            patch("kanon_cli.repo.repo_sync") as mock_sync,
+        ):
+            manager.attach_mock(mock_init, "repo_init")
+            manager.attach_mock(mock_envsubst, "repo_envsubst")
+            manager.attach_mock(mock_sync, "repo_sync")
+            install(kanonenv)
+
+        call_names = [c[0] for c in manager.mock_calls]
+        assert call_names == ["repo_init", "repo_envsubst", "repo_sync"], (
+            f"Expected API calls in sequence [repo_init, repo_envsubst, repo_sync], got {call_names!r}"
+        )
 
     def test_wildcard_revision_resolved_before_repo_init(self, tmp_path: pathlib.Path) -> None:
         """resolve_version must be called for source revisions with PEP 440 specifiers."""
@@ -204,14 +296,16 @@ class TestInstallLifecycle:
         )
 
         with (
-            patch("kanon_cli.core.install.subprocess.run") as mock_run,
+            patch("kanon_cli.repo.repo_init") as mock_init,
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", return_value="3.0.0") as mock_resolve,
         ):
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stderr = ""
             install(kanonenv)
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
-        # Confirm the resolved tag was used in the repo init command
-        repo_init_call = mock_run.call_args_list[0]
-        assert "3.0.0" in repo_init_call.kwargs.get("args", repo_init_call.args[0])
+        args, kwargs = mock_init.call_args
+        all_args = args + tuple(kwargs.values())
+        assert "3.0.0" in all_args, (
+            f"repo_init must be called with the resolved revision '3.0.0', but call args were: {mock_init.call_args!r}"
+        )

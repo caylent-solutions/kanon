@@ -1,0 +1,9 @@
+{
+  "name": "platform/build",
+  "path": "build",
+  "remote": "origin",
+  "revision": "main",
+  "groups": ["pdk"],
+  "sync-c": false,
+  "sync-s": false
+}

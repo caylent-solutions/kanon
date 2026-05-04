@@ -1,8 +1,52 @@
 """Shared fixtures for kanon-cli tests."""
 
+import os
 import pathlib
 
 import pytest
+
+# Minimal valid .kanon content used across integration and functional tests.
+MINIMAL_KANONENV = (
+    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+)
+
+
+def write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
+    """Write a minimal valid .kanon file in directory and return its path."""
+    kanonenv = directory / ".kanon"
+    kanonenv.write_text(MINIMAL_KANONENV)
+    return kanonenv
+
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_SRC_DIR = _REPO_ROOT / "src"
+
+# Disable kanon_cli.repo tracing for all tests. Tracing defaults to ON and
+# writes to <cwd>/TRACE_FILE, which races across tests, grows unbounded, and
+# breaks any test whose cwd is the repo root. Tests never need tracing; setting
+# REPO_TRACE=0 at conftest import time (before any kanon_cli.repo import) turns
+# it off at the module level so every Trace() call short-circuits.
+os.environ.setdefault("REPO_TRACE", "0")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _subprocess_pythonpath_points_at_source_tree() -> None:
+    """Ensure subprocesses spawned by tests import kanon_cli from the current source tree.
+
+    Several test helpers invoke the CLI in a subprocess via
+    ``[sys.executable, "-m", "kanon_cli", ...]``. The child Python resolves
+    ``import kanon_cli`` against its own site-packages, which in some
+    development environments contains a stale ``kanon_cli`` version. Prepending
+    the source tree to ``PYTHONPATH`` makes ``import kanon_cli`` in the child
+    resolve to the current source regardless of which venv pytest runs in.
+
+    The fixture is session-scoped and autouse so every spawned subprocess
+    inherits the modified environment without per-test opt-in.
+    """
+    existing = os.environ.get("PYTHONPATH", "")
+    src_str = str(_SRC_DIR)
+    entries = [src_str] + [p for p in existing.split(os.pathsep) if p and p != src_str]
+    os.environ["PYTHONPATH"] = os.pathsep.join(entries)
 
 
 @pytest.fixture()
@@ -35,3 +79,39 @@ def mock_git_ls_remote_output() -> str:
         "jkl012\trefs/tags/2.0.0\n"
         "mno345\trefs/tags/2.0.0^{}\n"
     )
+
+
+@pytest.fixture()
+def make_install_args():
+    """Factory fixture that returns a MagicMock with kanonenv_path set.
+
+    Returns a callable that accepts a kanonenv path and returns a MagicMock
+    suitable for passing to the install CLI handler _run(args). This allows
+    integration and functional tests to invoke the CLI boundary without
+    duplicating the argparse namespace setup inline.
+
+    Args: (none -- use the returned factory)
+
+    Returns:
+        A factory function that accepts kanonenv_path (Path) and returns a
+        MagicMock with kanonenv_path attribute set to that value.
+
+    Example::
+
+        def test_something(tmp_path, make_install_args):
+            from kanon_cli.commands.install import _run
+            kanonenv = tmp_path / ".kanon"
+            kanonenv.write_text("...")
+            args = make_install_args(kanonenv.resolve())
+            with pytest.raises(SystemExit) as exc_info:
+                _run(args)
+            assert exc_info.value.code == 1
+    """
+    from unittest.mock import MagicMock
+
+    def _factory(kanonenv_path: pathlib.Path) -> MagicMock:
+        args = MagicMock()
+        args.kanonenv_path = kanonenv_path
+        return args
+
+    return _factory

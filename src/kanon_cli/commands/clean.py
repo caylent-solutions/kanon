@@ -49,6 +49,16 @@ def _run(args) -> None:
             sys.exit(1)
         print(f"kanon clean: found {args.kanonenv_path}")
 
+    # The downstream repo manifest parser enforces an absolute `manifest_file`
+    # at src/kanon_cli/repo/manifest_xml.py:410. Resolve here at the CLI
+    # boundary so `kanon clean .kanon` (relative argument) behaves identically
+    # to auto-discovery, and fail-fast with a clear message if the file is
+    # missing.
+    args.kanonenv_path = args.kanonenv_path.resolve()
+    if not args.kanonenv_path.is_file():
+        print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         clean(args.kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:

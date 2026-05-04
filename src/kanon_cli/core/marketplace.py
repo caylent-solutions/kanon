@@ -98,30 +98,41 @@ def read_marketplace_name(marketplace_path: pathlib.Path) -> str:
 
 
 def discover_plugins(marketplace_path: pathlib.Path) -> list[tuple[str, pathlib.Path]]:
-    """Discover plugins within a marketplace directory.
+    """Discover plugins declared in a marketplace's marketplace.json.
 
-    Scans immediate subdirectories for .claude-plugin/plugin.json files.
+    Reads the top-level ``plugins`` array from
+    ``.claude-plugin/marketplace.json``. Each entry's ``name`` field becomes
+    the plugin name. Entries that are not dicts or that lack a ``name``
+    field are skipped silently so that future schema additions do not
+    break existing marketplaces.
 
     Args:
         marketplace_path: Path to the marketplace directory.
 
     Returns:
-        List of (plugin_name, plugin_path) tuples for each discovered plugin.
+        List of ``(plugin_name, marketplace_path)`` tuples for each
+        declared plugin. Returns an empty list when ``marketplace.json``
+        is absent, has no ``plugins`` key, or has an empty ``plugins``
+        array.
 
     Raises:
-        json.JSONDecodeError: If plugin.json exists but contains invalid JSON.
-        KeyError: If plugin.json exists but lacks the 'name' field.
+        json.JSONDecodeError: If ``marketplace.json`` exists but contains
+            invalid JSON.
     """
-    plugins = []
-    for entry in sorted(marketplace_path.iterdir()):
-        if not entry.is_dir():
+    manifest_path = marketplace_path / ".claude-plugin" / "marketplace.json"
+    if not manifest_path.is_file():
+        return []
+    with manifest_path.open() as f:
+        data = json.load(f)
+    plugin_entries = data.get("plugins") or []
+    plugins: list[tuple[str, pathlib.Path]] = []
+    for entry in plugin_entries:
+        if not isinstance(entry, dict):
             continue
-        plugin_json = entry / ".claude-plugin" / "plugin.json"
-        if not plugin_json.is_file():
+        name = entry.get("name")
+        if not name:
             continue
-        with plugin_json.open() as f:
-            data = json.load(f)
-        plugins.append((data["name"], entry))
+        plugins.append((name, marketplace_path))
     return plugins
 
 
@@ -199,7 +210,8 @@ def install_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -> 
 
     Args:
         claude_bin: Path to claude binary.
-        plugin_name: Name of the plugin (from plugin.json).
+        plugin_name: Name of the plugin (from the ``plugins`` array in
+            ``marketplace.json``).
         marketplace_name: Name of the marketplace (from marketplace.json).
 
     Returns:
@@ -237,7 +249,8 @@ def uninstall_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -
 
     Args:
         claude_bin: Path to claude binary.
-        plugin_name: Name of the plugin (from plugin.json).
+        plugin_name: Name of the plugin (from the ``plugins`` array in
+            ``marketplace.json``).
         marketplace_name: Name of the marketplace (from marketplace.json).
 
     Returns:
@@ -345,7 +358,20 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        marketplace_name = read_marketplace_name(entry)
+        # An entry whose .claude-plugin/marketplace.json is absent (e.g. a
+        # linkfile target pointing into a subdirectory of a plugin repo
+        # rather than at the marketplace root) is not a real marketplace.
+        # Skip it with a warning rather than crashing on FileNotFoundError.
+        try:
+            marketplace_name = read_marketplace_name(entry)
+        except FileNotFoundError:
+            print(
+                f"Warning: Skipping non-marketplace entry {entry}: "
+                f".claude-plugin/marketplace.json is absent. "
+                f"This is expected for linkfile targets that do not point at a marketplace root.",
+                file=sys.stderr,
+            )
+            continue
 
         reg_success = register_marketplace(claude_bin, entry)
         if reg_success:
@@ -406,7 +432,18 @@ def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        marketplace_name = read_marketplace_name(entry)
+        # Same skip-and-warn behaviour as install: a linkfile target without
+        # a marketplace.json is not a real marketplace and can be skipped.
+        try:
+            marketplace_name = read_marketplace_name(entry)
+        except FileNotFoundError:
+            print(
+                f"Warning: Skipping non-marketplace entry {entry}: "
+                f".claude-plugin/marketplace.json is absent. "
+                f"Nothing to uninstall.",
+                file=sys.stderr,
+            )
+            continue
 
         plugins = discover_plugins(entry)
         for plugin_name, _plugin_path in plugins:

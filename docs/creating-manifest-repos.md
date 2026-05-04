@@ -6,7 +6,7 @@ How to create a top-level manifest repository that orchestrates Kanon packages.
 
 A manifest repository is a Git repository that contains XML manifest files defining which packages to sync, from which repositories, at which versions. It acts as the central registry for an organization's automation packages.
 
-The Kanon CLI reads `.kanon` configurations that point to manifest files in these repositories. When `kanon install` runs, it uses the [repo tool](https://gerrit.googlesource.com/git-repo/) to clone and sync packages according to the manifest definitions.
+The Kanon CLI reads `.kanon` configurations that point to manifest files in these repositories. When `kanon install` runs, kanon clones and syncs packages according to the manifest definitions.
 
 ## Repository Structure
 
@@ -78,6 +78,22 @@ Key attributes:
 - `path` — local directory where the repo is cloned (always under `.packages/`)
 - `remote` — name of the remote defined in `remote.xml`
 - `revision` — Git ref to checkout (tag, branch, or PEP 440 constraint)
+
+> **XML escaping for PEP 440 operators:** When `revision` carries PEP 440
+> range or comparison operators (`<`, `<=`, `>`, `>=`, ranges that mix
+> them), the `<` and `>` characters MUST be XML-escaped as `&lt;` / `&gt;`
+> so the parser sees the original constraint string. For example,
+> `revision="refs/tags/&lt;=1.1.0"` (not `revision="refs/tags/<=1.1.0"`).
+> Equality (`==`), exclusion (`!=`), compatible release (`~=`), `*`, and
+> `latest` need no escaping.
+
+> **Platform path separator note (Bug 17):** Manifest `path`, `src`, and `dest`
+> attribute values use forward slashes (`/`) as path separators regardless of
+> the host operating system. Some internal path operations in the sync engine
+> use `os.sep` or `pathlib`, which may produce backslashes on Windows. If you
+> encounter path-related issues on Windows, use `pathlib.Path` or
+> `os.path.join()` in any custom tooling that processes manifest paths rather
+> than hard-coding `/` separators.
 
 ## Entry-Point Manifests (meta.xml / build-meta.xml)
 

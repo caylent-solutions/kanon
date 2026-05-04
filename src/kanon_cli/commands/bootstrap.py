@@ -8,8 +8,9 @@ catalog sources via ``--catalog-source`` flag or
 
 import argparse
 import pathlib
+import sys
 
-from kanon_cli.core.bootstrap import bootstrap_package, list_packages
+from kanon_cli.core.bootstrap import BootstrapOutputDirError, bootstrap_package, list_packages
 from kanon_cli.core.catalog import resolve_catalog_dir
 
 
@@ -67,4 +68,8 @@ def _run(args) -> None:
             print(f"  {pkg}")
         return
 
-    bootstrap_package(args.package, args.output_dir, catalog_dir)
+    try:
+        bootstrap_package(args.package, args.output_dir, catalog_dir)
+    except BootstrapOutputDirError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)

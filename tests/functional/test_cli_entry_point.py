@@ -1,20 +1,9 @@
 """End-to-end CLI invocation tests via subprocess."""
 
-import subprocess
-import sys
-
 import pytest
 
 from kanon_cli import __version__
-
-
-def _run_kanon(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "kanon_cli", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+from tests.functional.conftest import _run_kanon
 
 
 @pytest.mark.functional
@@ -126,3 +115,18 @@ class TestKanonBadSubcommand:
     def test_validate_no_target_exits_2(self) -> None:
         result = _run_kanon("validate")
         assert result.returncode == 2
+
+
+@pytest.mark.functional
+class TestKanonRepo:
+    def test_repo_is_registered_as_subcommand(self) -> None:
+        """'kanon repo' must be a registered subcommand accessible from the CLI."""
+        result = _run_kanon("repo", "--help")
+        assert result.returncode == 0
+        assert "repo" in result.stdout.lower()
+
+    def test_repo_help_output_not_empty(self) -> None:
+        """'kanon repo --help' must produce non-empty help text."""
+        result = _run_kanon("repo", "--help")
+        assert result.returncode == 0
+        assert len(result.stdout) > 0

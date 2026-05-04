@@ -1,248 +1,42 @@
 """Tests for the install command handler."""
 
 import argparse
-import json
+import pathlib
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 @pytest.mark.unit
-class TestCheckPipx:
-    def test_pipx_missing_exits(self) -> None:
-        from kanon_cli.commands.install import _check_pipx
+class TestRunNoPipx:
+    def test_run_does_not_invoke_pipx(self, tmp_path) -> None:
+        """_run() must never invoke pipx at any point during execution."""
+        from kanon_cli.commands.install import _run
 
-        with patch("kanon_cli.commands.install.shutil.which", return_value=None):
-            with pytest.raises(SystemExit):
-                _check_pipx()
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "GITBASE=https://example.com/\n"
+            "KANON_MARKETPLACE_INSTALL=false\n"
+            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+        )
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
 
-    def test_pipx_present_ok(self) -> None:
-        from kanon_cli.commands.install import _check_pipx
-
-        with patch("kanon_cli.commands.install.shutil.which", return_value="/usr/bin/pipx"):
-            _check_pipx()
-
-
-@pytest.mark.unit
-class TestInstallRepoToolFromGit:
-    def test_success(self) -> None:
-        from kanon_cli.commands.install import _install_repo_tool_from_git
-
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stderr="")
-            _install_repo_tool_from_git("https://example.com/repo.git", "v2.0.0")
-            cmd = mock_run.call_args[0][0]
-            assert "pipx" in cmd
-            assert "--force" in cmd
-            assert "git+https://example.com/repo.git@v2.0.0" in cmd
-
-    def test_failure_exits(self) -> None:
-        from kanon_cli.commands.install import _install_repo_tool_from_git
-
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stderr="error")
-            with pytest.raises(SystemExit):
-                _install_repo_tool_from_git("https://example.com/repo.git", "v2.0.0")
-
-
-@pytest.mark.unit
-class TestIsRepoToolInstalled:
-    def test_installed_returns_true(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        pipx_json = json.dumps({"venvs": {"rpm-git-repo": {}}})
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=pipx_json)
-            assert _is_repo_tool_installed() is True
-
-    def test_not_installed_returns_false(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        pipx_json = json.dumps({"venvs": {"some-other-package": {}}})
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=pipx_json)
-            assert _is_repo_tool_installed() is False
-
-    def test_empty_venvs_returns_false(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        pipx_json = json.dumps({"venvs": {}})
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=pipx_json)
-            assert _is_repo_tool_installed() is False
-
-    def test_pipx_failure_exits(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="err")
-            with pytest.raises(SystemExit):
-                _is_repo_tool_installed()
-
-    def test_invalid_json_exits(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="not json")
-            with pytest.raises(SystemExit):
-                _is_repo_tool_installed()
-
-    def test_missing_venvs_key_exits(self) -> None:
-        from kanon_cli.commands.install import _is_repo_tool_installed
-
-        pipx_json = json.dumps({"unexpected": "structure"})
-        with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=pipx_json)
-            with pytest.raises(SystemExit):
-                _is_repo_tool_installed()
-
-
-@pytest.mark.unit
-class TestEnsureRepoToolFromPypi:
-    def test_already_installed_calls_pipx_upgrade(self) -> None:
-        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
-
-        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
-            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stderr="")
-                _ensure_repo_tool_from_pypi()
-                cmd = mock_run.call_args[0][0]
-                assert "pipx" in cmd
-                assert "upgrade" in cmd
-                assert "rpm-git-repo" in cmd
-
-    def test_already_installed_upgrade_at_latest(self) -> None:
-        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
-
-        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
-            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=1, stderr="already at latest")
-                _ensure_repo_tool_from_pypi()
-                cmd = mock_run.call_args[0][0]
-                assert "upgrade" in cmd
-
-    def test_already_installed_does_not_call_install(self) -> None:
-        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
-
-        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=True):
-            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stderr="")
-                _ensure_repo_tool_from_pypi()
-                assert mock_run.call_count == 1
-                cmd = mock_run.call_args[0][0]
-                assert "install" not in cmd
-
-    def test_not_installed_calls_pipx_install(self) -> None:
-        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
-
-        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=False):
-            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stderr="")
-                _ensure_repo_tool_from_pypi()
-                cmd = mock_run.call_args[0][0]
-                assert "pipx" in cmd
-                assert "install" in cmd
-                assert "rpm-git-repo" in cmd
-                assert "--force" not in cmd
-
-    def test_install_failure_exits(self) -> None:
-        from kanon_cli.commands.install import _ensure_repo_tool_from_pypi
-
-        with patch("kanon_cli.commands.install._is_repo_tool_installed", return_value=False):
-            with patch("kanon_cli.commands.install.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=1, stderr="error")
-                with pytest.raises(SystemExit):
-                    _ensure_repo_tool_from_pypi()
+        with (
+            patch("kanon_cli.commands.install.install"),
+            patch("subprocess.run") as mock_subprocess,
+        ):
+            _run(args)
+            for actual_call in mock_subprocess.call_args_list:
+                cmd = actual_call[0][0] if actual_call[0] else actual_call[1].get("args", [])
+                assert "pipx" not in cmd, f"_run() invoked pipx unexpectedly: {actual_call}"
 
 
 @pytest.mark.unit
 class TestRunPartialConfig:
-    def test_repo_url_without_rev_exits(self, tmp_path) -> None:
-        from kanon_cli.commands.install import _run
-
-        kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text(
-            "REPO_URL=https://example.com/repo.git\n"
-            "GITBASE=https://example.com/\n"
-            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
-            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
-        )
-        args = MagicMock()
-        args.kanonenv_path = kanonenv
-
-        with (
-            patch("kanon_cli.commands.install._check_pipx"),
-            pytest.raises(SystemExit),
-        ):
-            _run(args)
-
-    def test_repo_rev_without_url_exits(self, tmp_path) -> None:
-        from kanon_cli.commands.install import _run
-
-        kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text(
-            "REPO_REV=main\n"
-            "GITBASE=https://example.com/\n"
-            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
-            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
-        )
-        args = MagicMock()
-        args.kanonenv_path = kanonenv
-
-        with (
-            patch("kanon_cli.commands.install._check_pipx"),
-            pytest.raises(SystemExit),
-        ):
-            _run(args)
-
-    def test_both_repo_url_and_rev_installs_from_git(self, tmp_path) -> None:
-        from kanon_cli.commands.install import _run
-
-        kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text(
-            "REPO_URL=https://example.com/repo.git\n"
-            "REPO_REV=~=1.0.0\n"
-            "GITBASE=https://example.com/\n"
-            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
-            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
-        )
-        args = MagicMock()
-        args.kanonenv_path = kanonenv
-
-        with (
-            patch("kanon_cli.commands.install._check_pipx"),
-            patch("kanon_cli.commands.install.resolve_version", return_value="1.0.5") as mock_resolve,
-            patch("kanon_cli.commands.install._install_repo_tool_from_git") as mock_git_install,
-            patch("kanon_cli.commands.install.install"),
-        ):
-            _run(args)
-            mock_resolve.assert_called_once_with("https://example.com/repo.git", "~=1.0.0")
-            mock_git_install.assert_called_once_with("https://example.com/repo.git", "1.0.5")
-
-    def test_no_repo_url_or_rev_installs_from_pypi(self, tmp_path) -> None:
-        from kanon_cli.commands.install import _run
-
-        kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text(
-            "GITBASE=https://example.com/\n"
-            "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
-            "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
-        )
-        args = MagicMock()
-        args.kanonenv_path = kanonenv
-
-        with (
-            patch("kanon_cli.commands.install._check_pipx"),
-            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi") as mock_pypi,
-            patch("kanon_cli.commands.install.install"),
-        ):
-            _run(args)
-            mock_pypi.assert_called_once()
-
     def test_missing_kanonenv_file_exits(self, tmp_path) -> None:
         from kanon_cli.commands.install import _run
 
@@ -262,6 +56,95 @@ class TestRunPartialConfig:
 
         with pytest.raises(SystemExit):
             _run(args)
+
+
+_VALID_KANONENV = (
+    "GITBASE=https://example.com/\n"
+    "KANON_MARKETPLACE_INSTALL=false\n"
+    "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
+    "KANON_SOURCE_test_REVISION=main\n"
+    "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+)
+
+
+@pytest.mark.unit
+class TestRunResolvesExplicitPath:
+    """``_run`` must resolve an explicit ``kanonenv_path`` to an absolute path.
+
+    The downstream repo manifest parser at
+    ``src/kanon_cli/repo/manifest_xml.py:410`` enforces
+    ``manifest_file == os.path.abspath(manifest_file)``. When a user invokes
+    ``kanon install .kanon`` from the containing directory, argparse stores
+    ``pathlib.Path('.kanon')`` as-is (relative) and the repo parser later
+    raises ``ManifestParseError: manifest_file must be abspath``. ``_run`` must
+    normalize the argument at the CLI boundary -- matching the resolution
+    behavior of ``find_kanonenv()`` used by auto-discovery -- and fail-fast
+    with a clear message if the file does not exist.
+    """
+
+    def test_relative_kanonenv_path_is_resolved_to_abspath(self, tmp_path, monkeypatch) -> None:
+        """``_run`` must resolve ``PosixPath('.kanon')`` to an absolute path before install()."""
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_VALID_KANONENV)
+        monkeypatch.chdir(tmp_path)
+
+        args = MagicMock()
+        args.kanonenv_path = pathlib.Path(".kanon")
+
+        received: list[pathlib.Path] = []
+
+        def _capture_install(path):
+            received.append(path)
+
+        with patch("kanon_cli.commands.install.install", side_effect=_capture_install):
+            _run(args)
+
+        assert len(received) == 1, f"install() must be called exactly once, got {len(received)} calls"
+        resolved = received[0]
+        assert resolved.is_absolute(), f"install() must receive an absolute path, got {resolved!r}"
+        assert resolved == kanonenv.resolve(), (
+            f"install() must receive the resolved .kanon path {kanonenv.resolve()!r}, got {resolved!r}"
+        )
+
+    def test_absolute_kanonenv_path_is_unchanged(self, tmp_path) -> None:
+        """``_run`` must pass an already-absolute path through to install() unchanged."""
+        from kanon_cli.commands.install import _run
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_VALID_KANONENV)
+        args = MagicMock()
+        args.kanonenv_path = kanonenv
+
+        received: list[pathlib.Path] = []
+
+        def _capture_install(path):
+            received.append(path)
+
+        with patch("kanon_cli.commands.install.install", side_effect=_capture_install):
+            _run(args)
+
+        assert received == [kanonenv.resolve()], f"install() must receive the resolved absolute path, got {received!r}"
+
+    def test_missing_relative_kanonenv_fails_fast_with_clear_message(self, tmp_path, monkeypatch, capsys) -> None:
+        """``_run`` must fail-fast with an actionable message when the .kanon file does not exist."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.chdir(tmp_path)
+        args = MagicMock()
+        args.kanonenv_path = pathlib.Path(".kanon")
+
+        with patch("kanon_cli.commands.install.install") as mock_install:
+            with pytest.raises(SystemExit) as exc_info:
+                _run(args)
+
+        assert exc_info.value.code == 1, f"missing .kanon must exit 1, got {exc_info.value.code!r}"
+        mock_install.assert_not_called()
+        captured = capsys.readouterr()
+        assert ".kanon file not found" in captured.err, (
+            f"stderr must mention '.kanon file not found', got {captured.err!r}"
+        )
 
 
 @pytest.mark.unit
@@ -306,8 +189,6 @@ class TestAutoDiscovery:
 
         with (
             patch("kanon_cli.commands.install.find_kanonenv", return_value=kanonenv) as mock_find,
-            patch("kanon_cli.commands.install._check_pipx"),
-            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi"),
             patch("kanon_cli.commands.install.install"),
         ):
             _run(args)
@@ -329,8 +210,6 @@ class TestAutoDiscovery:
 
         with (
             patch("kanon_cli.commands.install.find_kanonenv") as mock_find,
-            patch("kanon_cli.commands.install._check_pipx"),
-            patch("kanon_cli.commands.install._ensure_repo_tool_from_pypi"),
             patch("kanon_cli.commands.install.install"),
         ):
             _run(args)
@@ -350,3 +229,139 @@ class TestAutoDiscovery:
             pytest.raises(SystemExit),
         ):
             _run(args)
+
+
+@pytest.mark.unit
+class TestDeprecationWarnings:
+    """AC-TEST-001..005: DeprecationWarning emission for legacy REPO_URL / REPO_REV env vars."""
+
+    @pytest.fixture()
+    def valid_kanonenv(self, tmp_path):
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_VALID_KANONENV)
+        return kanonenv
+
+    def test_repo_url_set_emits_deprecation_warning_naming_repo_url_and_catalog_source(
+        self, valid_kanonenv, monkeypatch
+    ) -> None:
+        """AC-TEST-001: REPO_URL set => DeprecationWarning naming REPO_URL and --catalog-source."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.setenv("REPO_URL", "https://example.com/repo.git")
+        monkeypatch.delenv("REPO_REV", raising=False)
+        args = MagicMock()
+        args.kanonenv_path = valid_kanonenv
+
+        with (
+            patch("kanon_cli.commands.install.install"),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            _run(args)
+
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) >= 1, (
+            f"Expected at least one DeprecationWarning when REPO_URL is set, got {len(deprecation_warnings)}"
+        )
+        message = str(deprecation_warnings[0].message)
+        assert "REPO_URL" in message, f"Warning must name REPO_URL, got: {message!r}"
+        assert "--catalog-source" in message, f"Warning must recommend --catalog-source, got: {message!r}"
+
+    def test_repo_rev_set_emits_deprecation_warning_naming_repo_rev(self, valid_kanonenv, monkeypatch) -> None:
+        """AC-TEST-002: REPO_REV set => DeprecationWarning naming REPO_REV."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.delenv("REPO_URL", raising=False)
+        monkeypatch.setenv("REPO_REV", "v2.0.0")
+        args = MagicMock()
+        args.kanonenv_path = valid_kanonenv
+
+        with (
+            patch("kanon_cli.commands.install.install"),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            _run(args)
+
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) >= 1, (
+            f"Expected at least one DeprecationWarning when REPO_REV is set, got {len(deprecation_warnings)}"
+        )
+        message = str(deprecation_warnings[0].message)
+        assert "REPO_REV" in message, f"Warning must name REPO_REV, got: {message!r}"
+
+    def test_both_repo_url_and_repo_rev_emit_single_combined_warning(self, valid_kanonenv, monkeypatch) -> None:
+        """AC-TEST-003: Both REPO_URL and REPO_REV set => exactly one combined DeprecationWarning."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.setenv("REPO_URL", "https://example.com/repo.git")
+        monkeypatch.setenv("REPO_REV", "v2.0.0")
+        args = MagicMock()
+        args.kanonenv_path = valid_kanonenv
+
+        with (
+            patch("kanon_cli.commands.install.install"),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            _run(args)
+
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 1, (
+            f"Expected exactly one combined DeprecationWarning when both REPO_URL and REPO_REV are set, "
+            f"got {len(deprecation_warnings)}: {[str(w.message) for w in deprecation_warnings]}"
+        )
+        message = str(deprecation_warnings[0].message)
+        assert "REPO_URL" in message, f"Combined warning must name REPO_URL, got: {message!r}"
+        assert "REPO_REV" in message, f"Combined warning must name REPO_REV, got: {message!r}"
+
+    def test_neither_repo_url_nor_repo_rev_emits_no_deprecation_warning(self, valid_kanonenv, monkeypatch) -> None:
+        """AC-TEST-004: Neither env var set => no DeprecationWarning emitted."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.delenv("REPO_URL", raising=False)
+        monkeypatch.delenv("REPO_REV", raising=False)
+        args = MagicMock()
+        args.kanonenv_path = valid_kanonenv
+
+        with (
+            patch("kanon_cli.commands.install.install"),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            _run(args)
+
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0, (
+            f"Expected no DeprecationWarning when neither REPO_URL nor REPO_REV is set, "
+            f"got: {[str(w.message) for w in deprecation_warnings]}"
+        )
+
+    def test_warning_uses_warnings_warn_with_stacklevel_2(self, valid_kanonenv, monkeypatch) -> None:
+        """AC-TEST-005: warnings.warn called with stacklevel=2 and DeprecationWarning category."""
+        from kanon_cli.commands.install import _run
+
+        monkeypatch.setenv("REPO_URL", "https://example.com/repo.git")
+        monkeypatch.delenv("REPO_REV", raising=False)
+        args = MagicMock()
+        args.kanonenv_path = valid_kanonenv
+
+        with patch("kanon_cli.commands.install.install"):
+            with patch("kanon_cli.commands.install.warnings") as mock_warnings:
+                mock_warnings.warn = MagicMock()
+                _run(args)
+
+        assert mock_warnings.warn.called, "warnings.warn must be called when REPO_URL is set"
+        call_kwargs = mock_warnings.warn.call_args
+        assert call_kwargs is not None, "warnings.warn was not called"
+        # Check category argument (second positional or keyword)
+        positional = call_kwargs[0]
+        keyword = call_kwargs[1]
+        category = positional[1] if len(positional) > 1 else keyword.get("category")
+        assert category is DeprecationWarning, (
+            f"warnings.warn must be called with category=DeprecationWarning, got: {category!r}"
+        )
+        stacklevel = keyword.get("stacklevel") if keyword else None
+        if stacklevel is None and len(positional) > 2:
+            stacklevel = positional[2]
+        assert stacklevel == 2, f"warnings.warn must be called with stacklevel=2, got stacklevel={stacklevel!r}"

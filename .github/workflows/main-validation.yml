@@ -13,81 +13,90 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate:
-    name: Validate Main
+  pre-commit:
+    name: Pre-commit hooks
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.14'
-
-      - name: Cache ASDF installation
-        uses: actions/cache@v5
-        with:
-          path: ~/.asdf
-          key: ${{ runner.os }}-asdf-v0.15.0-${{ hashFiles('.tool-versions') }}
-          restore-keys: |
-            ${{ runner.os }}-asdf-v0.15.0-
-
-      - name: Install ASDF
-        run: |
-          if [ ! -d ~/.asdf ]; then
-            git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
-          fi
-          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
-          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
-          source $HOME/.asdf/asdf.sh
-        shell: bash
-
-      - name: Install ASDF plugins and tools
-        run: |
-          cd $GITHUB_WORKSPACE
-          source $HOME/.asdf/asdf.sh
-          cut -d' ' -f1 .tool-versions | xargs -I{} asdf plugin add {} || true
-          asdf plugin remove python 2>/dev/null || true
-          asdf install
-          asdf reshim
-        shell: bash
-
-      - name: Cache Python dependencies
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.local/lib/python*/site-packages
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          make install-dev
-        shell: bash
-
+      - uses: ./.github/actions/setup-kanon
       - name: Run pre-commit checks
+        shell: bash
         run: |
           source $HOME/.asdf/asdf.sh
           make pre-commit-check
-        shell: bash
 
-      - name: Lint
-        run: make lint
+  lint-check:
+    name: Lint (ruff check)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run ruff check
         shell: bash
+        run: make lint-check
 
-      - name: Build
+  format-check:
+    name: Format check (ruff format --check)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run ruff format --check
+        shell: bash
+        run: make format-check
+
+  security-scan:
+    name: Security scan (bandit)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run bandit
+        shell: bash
+        run: make security-scan
+
+  build:
+    name: Build wheel
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Build distribution
+        shell: bash
         run: make publish
-        shell: bash
 
-      - name: Run unit tests with coverage threshold
+  unit-tests:
+    name: Unit tests (with coverage gate)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run unit tests with 90% coverage gate
+        shell: bash
         run: |
           python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
           coverage json
@@ -97,16 +106,62 @@ jobs:
             echo "Error: Code coverage is below 90% threshold ($coverage_percent%)"
             exit 1
           fi
-        shell: bash
 
+  integration-tests:
+    name: Integration tests
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run integration tests
+        shell: bash
+        run: python -m pytest -m integration
+
+  functional-tests:
+    name: Functional tests
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
       - name: Run functional tests
+        shell: bash
         run: make test-functional
-        shell: bash
 
-      - name: Print coverage summary
-        run: |
-          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
+  scenario-tests:
+    name: Scenario tests (docs/integration-testing.md)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run scenario tests
         shell: bash
+        run: make test-scenarios
+
+  full-suite-regression:
+    name: Full suite regression (cross-suite isolation guard)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run the full suite together
+        shell: bash
+        run: make test
 
   codeql:
     name: CodeQL Analysis
@@ -134,7 +189,18 @@ jobs:
   manual-approval:
     name: Manual QA Approval
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    needs: [validate, codeql]
+    needs:
+      - pre-commit
+      - lint-check
+      - format-check
+      - security-scan
+      - build
+      - unit-tests
+      - integration-tests
+      - functional-tests
+      - scenario-tests
+      - full-suite-regression
+      - codeql
     runs-on: ubuntu-24.04
     environment:
       name: qa-approval
@@ -142,6 +208,7 @@ jobs:
 
     steps:
       - name: QA Approval
+        shell: bash
         run: echo "QA has been approved"
 
   create-release:
@@ -180,6 +247,7 @@ jobs:
             ${{ runner.os }}-asdf-v0.15.0-
 
       - name: Install ASDF
+        shell: bash
         run: |
           if [ ! -d ~/.asdf ]; then
             git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
@@ -187,9 +255,9 @@ jobs:
           echo "$HOME/.asdf/bin" >> $GITHUB_PATH
           echo "$HOME/.asdf/shims" >> $GITHUB_PATH
           source $HOME/.asdf/asdf.sh
-        shell: bash
 
       - name: Install ASDF plugins and tools
+        shell: bash
         run: |
           cd $GITHUB_WORKSPACE
           source $HOME/.asdf/asdf.sh
@@ -197,7 +265,6 @@ jobs:
           asdf plugin remove python 2>/dev/null || true
           asdf install
           asdf reshim
-        shell: bash
 
       - name: Cache Python dependencies for release
         uses: actions/cache@v5
@@ -211,15 +278,16 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
+        shell: bash
         run: |
           pip install --upgrade pip
           make install-dev
-        shell: bash
 
       - name: Compute next version
         id: semantic-release
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        shell: bash
         run: |
           NEW_VERSION=$(python -m semantic_release version --print | sed 's/^v//')
           echo "New version: $NEW_VERSION"
@@ -229,11 +297,11 @@ jobs:
             echo "Current version: $NEW_VERSION"
           fi
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-        shell: bash
 
       - name: Generate changelog and update version files
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        shell: bash
         run: |
           python -m semantic_release version --no-push --no-vcs-release --no-commit
 
@@ -246,12 +314,12 @@ jobs:
           sed -i 's/[[:space:]]*$//' CHANGELOG.md pyproject.toml src/kanon_cli/__init__.py
 
           rm -rf dist/ build/ src/kanon_cli.egg-info/
-        shell: bash
 
       - name: Commit changelog and version bump
         id: commit-changes
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        shell: bash
         run: |
           VERSION=$(grep '^version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
           echo "VERSION: $VERSION"
@@ -275,7 +343,7 @@ jobs:
           echo "$STAGED"
 
           if [[ -z "$STAGED" ]]; then
-            echo "No file changes detected — no version bump needed. Skipping release."
+            echo "No file changes detected -- no version bump needed. Skipping release."
             echo "skip_release=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -297,12 +365,12 @@ jobs:
 
           gh pr merge ${PR_URL} --admin --merge
           echo "Pull request merged successfully"
-        shell: bash
 
       - name: Wait for PR to merge and create Git tag
         if: steps.commit-changes.outputs.skip_release != 'true'
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -341,13 +409,12 @@ jobs:
 
           echo "Cleaning up release branch: release-$NEW_VERSION"
           git push origin --delete release-$NEW_VERSION || echo "Branch already deleted or doesn't exist"
-        shell: bash
 
       - name: Trigger publish workflow
         if: steps.commit-changes.outputs.skip_release != 'true'
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        shell: bash
         run: |
           NEW_VERSION=$(grep '^version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
           gh workflow run publish.yml -f tag="$NEW_VERSION"
-        shell: bash

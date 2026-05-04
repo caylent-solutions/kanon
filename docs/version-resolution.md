@@ -1,6 +1,34 @@
 # Version Resolution
 
-The `kanon` CLI resolves PEP 440 version specifiers against git tags using `git ls-remote`. This applies to both `REPO_REV` and `KANON_SOURCE_<name>_REVISION` values in `.kanon`.
+The `kanon` CLI resolves PEP 440 version specifiers against git tags using `git ls-remote`. This
+applies to `KANON_SOURCE_<name>_REVISION` values in `.kanon` and to `--catalog-source` revision
+arguments.
+
+---
+
+## Implementation
+
+Version constraint logic is consolidated in `kanon_cli.version`, which is the canonical
+implementation. All constraint detection and resolution routes through the two public functions
+in that module:
+
+- `kanon_cli.version.is_version_constraint(rev_spec)` -- returns `True` when the last path
+  component of `rev_spec` contains a PEP 440 constraint operator
+- `kanon_cli.version.resolve_version(url, rev_spec)` -- fetches tags via `git ls-remote` and
+  returns the highest tag satisfying the constraint
+
+The `kanon_cli.repo.version_constraints` module at `kanon_cli/repo/version_constraints.py`
+delegates to `kanon_cli.version` rather than maintaining its own independent implementation.
+Specifically:
+
+- `repo/version_constraints.is_version_constraint` delegates to
+  `kanon_cli.version.is_version_constraint`
+- `repo/version_constraints.resolve_version_constraint` delegates to
+  `kanon_cli.version._resolve_constraint_from_tags`, converting `ValueError` to
+  `ManifestInvalidRevisionError` as required by the repo module's error contract
+
+This delegation ensures there is a single consolidated implementation of PEP 440 constraint
+logic throughout `kanon-cli`.
 
 ---
 
@@ -67,7 +95,10 @@ All constraints follow [PEP 440](https://peps.python.org/pep-0440/) via the `pac
 
 ## Branch/Tag Passthrough
 
-Plain strings without PEP 440 operators are returned unchanged:
+Plain strings without PEP 440 operators are returned unchanged, with one
+exception: **bare semver values** (`X.Y.Z` or `X.Y` -- digits and dots only,
+no `refs/` prefix, no `v`) are normalized to `refs/tags/<value>` so that
+`repo init -b <value>` resolves the version as a tag rather than a branch.
 
 | Input | Returns |
 |---|---|
@@ -75,18 +106,13 @@ Plain strings without PEP 440 operators are returned unchanged:
 | `refs/tags/1.1.2` | `refs/tags/1.1.2` |
 | `v1.0.0` | `v1.0.0` |
 | `feat/my-feature` | `feat/my-feature` |
+| `1.0.0` (bare semver) | `refs/tags/1.0.0` (normalized) |
+| `2.5` (bare semver) | `refs/tags/2.5` (normalized) |
+| `1` (single digit) | `1` (unchanged -- ambiguous) |
 
 ---
 
 ## Where Resolution Applies
-
-### REPO_REV (git override only)
-
-When both `REPO_URL` and `REPO_REV` are set in `.kanon`, resolves the repo tool version before `pipx install --force`. When both are omitted, the repo tool is installed from PyPI and this resolution does not apply.
-
-```properties
-REPO_REV=~=1.0.0
-```
 
 ### KANON_SOURCE_\<name\>_REVISION
 
@@ -126,9 +152,9 @@ export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@2.2.0'
 
 ## Error Cases
 
-- No tags found for the URL → fail with error
-- No tags under the specified prefix → fail with error
-- No parseable version tags → fail with error
-- No tags matching the specifier → fail with available versions listed
-- Invalid constraint syntax → fail with error
-- `git ls-remote` failure → fail with stderr
+- No tags found for the URL -- fail with error
+- No tags under the specified prefix -- fail with error
+- No parseable version tags -- fail with error
+- No tags matching the specifier -- fail with available versions listed
+- Invalid constraint syntax -- fail with error
+- `git ls-remote` failure -- fail with stderr

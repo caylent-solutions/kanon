@@ -87,13 +87,24 @@ def _resolve_repo_root(provided: Path | None) -> Path:
         provided: Explicitly provided repo root, or None for auto-detect.
 
     Returns:
-        The resolved repository root path.
+        The resolved repository root path, always absolute.
 
     Raises:
-        SystemExit: If auto-detection fails.
+        SystemExit: If auto-detection fails or the provided directory does not
+            exist.
     """
+    # Normalize to an absolute path at the CLI boundary so downstream
+    # pathlib operations (rglob, relative_to, joinpath) work identically
+    # whether the user invoked `kanon validate xml --repo-root .` (relative)
+    # or `kanon validate xml --repo-root /abs/path` (absolute) or omitted the
+    # flag (auto-detect via `git rev-parse --show-toplevel`, which always
+    # produces an absolute path). Fail-fast if an explicit path does not exist.
     if provided is not None:
-        return provided
+        resolved = provided.resolve()
+        if not resolved.is_dir():
+            print(f"Error: --repo-root directory not found: {resolved}", file=sys.stderr)
+            sys.exit(1)
+        return resolved
 
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],

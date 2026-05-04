@@ -48,7 +48,7 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
   - [Key Requirements](#key-requirements)
   - [Cascading Hierarchy](#cascading-hierarchy)
   - [Validation](#validation)
-- [Fork Features (PEP 440 Constraints)](#fork-features-pep-440-constraints)
+- [Manifest Features (PEP 440 Constraints)](#manifest-features-pep-440-constraints)
   - [PEP 440 Version Constraints in Manifests](#pep-440-version-constraints-in-manifests)
   - [PEP 440 Version Resolution in .kanon](#pep-440-version-resolution-in-kanon)
   - [Absolute Linkfile Destinations](#absolute-linkfile-destinations)
@@ -104,15 +104,27 @@ Ensure the same testing, linting, security scanning, and deployment automation a
 ### Prerequisites
 
 - Python 3.11+
-- [pipx](https://pipx.pypa.io/) on PATH
+- [pipx](https://pipx.pypa.io/) on PATH (`python3 -m pip install --user pipx && pipx ensurepath`)
 - Git
 - If authenticating with Git via SSH, see [SSH Authentication Setup](#ssh-authentication-setup)
 
 ### Install the Kanon CLI
 
+`kanon-cli` is published to [PyPI](https://pypi.org/project/kanon-cli/). The recommended install method depends on the use case:
+
+**Production / general use** -- isolated CLI install via pipx:
+
 ```bash
 pipx install kanon-cli
 ```
+
+**Local development on this repository** -- editable install into the project's virtualenv:
+
+```bash
+pip install -e .
+```
+
+(Editable mode lets local source edits take effect immediately without reinstalling. CI uses `pip install kanon-cli` for ephemeral runners; see `docs/pipeline-integration.md`.)
 
 ### Standalone Usage (No Task Runner Required)
 
@@ -196,7 +208,7 @@ kanon bootstrap <entry> --catalog-source 'https://github.com/org/repo.git@>=2.0.
 
 | Option | Description |
 |---|---|
-| `--output-dir DIR` | Target directory (default: current directory) |
+| `--output-dir DIR` | Target directory (default: current directory). The parent of `DIR` must already exist; bootstrap fails fast if it does not. |
 | `--catalog-source SOURCE` | Remote catalog as `<git_url>@<ref>` (branch, tag, `latest`, or PEP 440 constraint). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled catalog. |
 
 ### kanon install
@@ -210,13 +222,11 @@ kanon install .kanon              # Explicit path to .kanon file
 
 **Steps performed:**
 
-1. Checks prerequisites (pipx on PATH)
-2. Installs the repo tool (from PyPI by default; from git when `REPO_URL` and `REPO_REV` are both set)
-3. For each source (alphabetical order): `repo init` / `repo envsubst` / `repo sync`
-5. Aggregates symlinks from `.kanon-data/sources/<name>/.packages/` into `.packages/`
-6. Detects package name collisions across sources (fail-fast)
-7. Updates `.gitignore`
-8. If `KANON_MARKETPLACE_INSTALL=true`: runs marketplace install lifecycle
+1. For each source (alphabetical order): `kanon repo init`, `kanon repo envsubst`, `kanon repo sync`
+2. Aggregates symlinks from `.kanon-data/sources/<name>/.packages/` into `.packages/`
+3. Detects package name collisions across sources (fail-fast)
+4. Updates `.gitignore`
+5. If `KANON_MARKETPLACE_INSTALL=true`: runs the marketplace install lifecycle
 
 ### kanon clean
 
@@ -229,9 +239,10 @@ kanon clean .kanon                # Explicit path to .kanon file
 
 **Steps performed:**
 
-1. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
-2. Removes `.packages/` directory
-3. Removes `.kanon-data/` directory
+1. Resolves `.kanon` symlinks so teardown targets the real project directory even when `.kanon` is a symlink
+2. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes marketplace directory
+3. Removes `.packages/` directory
+4. Removes `.kanon-data/` directory
 
 The order is critical: plugins are uninstalled before files are removed to ensure the registry is cleaned while paths are still resolvable.
 
@@ -277,9 +288,7 @@ The `.kanon` file is a shell-compatible `KEY=VALUE` configuration file that driv
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `REPO_URL` | No | Git URL of the repo tool. Optional — omit to install from PyPI (default). Set both `REPO_URL` and `REPO_REV` to override with a git source. |
-| `REPO_REV` | No | Repo tool version for git override — branch, exact tag, or PEP 440 specifier (e.g. `~=1.0.0`). Only used when `REPO_URL` is also set. |
-| `GITBASE` | Yes | Base Git URL for `repo envsubst` (e.g., `https://github.com/your-org/`) |
+| `GITBASE` | Yes | Base Git URL for `kanon repo envsubst` (e.g., `https://github.com/your-org/`) |
 | `CLAUDE_MARKETPLACES_DIR` | Conditional | Directory for marketplace symlinks (required when `KANON_MARKETPLACE_INSTALL=true`) |
 | `KANON_MARKETPLACE_INSTALL` | No | Boolean toggle for marketplace lifecycle (default: `false`) |
 
@@ -302,12 +311,6 @@ Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns and
 ### Example .kanon
 
 ```properties
-# Repo Tool
-# By default, kanon installs the latest rpm-git-repo from PyPI.
-# To override (e.g., test an unreleased version), uncomment both lines:
-# REPO_URL=https://github.com/your-org/git-repo.git
-# REPO_REV=v2.0.0
-
 # Shared env vars for envsubst
 GITBASE=https://github.com/your-org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
@@ -359,9 +362,9 @@ KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
                                  │
                                  v
                    ┌────────────────────────────┐
-                   │  Gerrit `repo` Tool Fork   │
-                   │ (git-repo with envsubst +  │
-                   │  PEP 440 constraints)      │
+                   │   kanon repo subsystem     │
+                   │ (manifest-driven sync with │
+                   │  envsubst + PEP 440)       │
                    │ Executes manifests, syncs  │
                    │ repos, manages workspace   │
                    └────────────────────────────┘
@@ -369,13 +372,13 @@ KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
 
 ### How It Works
 
-Kanon uses [a fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) (with `envsubst` support) to orchestrate dependencies across Git repositories. Manifests define what to clone, where to place it, and how to wire it together.
+Kanon's `kanon repo` subsystem orchestrates dependencies across Git repositories via XML manifests. Manifests define what to clone, where to place it, and how to wire it together.
 
 The install lifecycle follows three steps per source:
 
-1. **`repo init`** -- Clones the manifest repository. `${VARIABLE}` placeholders remain as-is in the XML.
-2. **`repo envsubst`** -- Reads variables from `.kanon` (e.g., `GITBASE`) and replaces `${VARIABLE}` placeholders in all manifest XML files.
-3. **`repo sync`** -- Clones packages using the now-resolved URLs into `.packages/`.
+1. **`kanon repo init`** -- Clones the manifest repository. `${VARIABLE}` placeholders remain as-is in the XML.
+2. **`kanon repo envsubst`** -- Reads variables from `.kanon` (e.g., `GITBASE`) and replaces `${VARIABLE}` placeholders in all manifest XML files.
+3. **`kanon repo sync`** -- Clones packages using the now-resolved URLs into `.packages/`.
 
 After all sources are synced, Kanon aggregates their packages into a single `.packages/` directory using symlinks, giving consumers a unified view regardless of which source provided each package.
 
@@ -402,7 +405,7 @@ project/
 
 ### Multi-Source Isolation
 
-Each source is initialized and synced in its own isolated directory under `.kanon-data/sources/<name>/`. Sources cannot interfere with each other -- each gets its own `repo init` / `repo sync` cycle. If two sources produce a package with the same name, Kanon detects the collision and fails immediately with an actionable error message.
+Each source is initialized and synced in its own isolated directory under `.kanon-data/sources/<name>/`. Sources cannot interfere with each other -- each gets its own `kanon repo init` / `kanon repo sync` cycle. If two sources produce a package with the same name, Kanon detects the collision and fails immediately with an actionable error message.
 
 ### Environment Variable Portability (envsubst)
 
@@ -431,7 +434,7 @@ For full documentation, see [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Creating a Manifest Repository
 
-A manifest repository contains `repo-specs/` with XML manifests that define what packages to sync, from which repositories, and at which versions. It uses the [git-repo manifest format](https://gerrit.googlesource.com/git-repo/+/HEAD/docs/manifest-format.md).
+A manifest repository contains `repo-specs/` with XML manifests that define what packages to sync, from which repositories, and at which versions. See [docs/repo/manifest-format.md](docs/repo/manifest-format.md) for the full XML schema.
 
 ### Structure
 
@@ -565,7 +568,7 @@ Some packages contain assets (configuration files, templates) that tools expect 
 </project>
 ```
 
-After `repo sync`, the project has `config/checkstyle/checkstyle.xml` as a symlink pointing into `.packages/`. These symlinked paths should be gitignored since they are regenerated by `kanon install`.
+After `kanon repo sync`, the project has `config/checkstyle/checkstyle.xml` as a symlink pointing into `.packages/`. These symlinked paths should be gitignored since they are regenerated by `kanon install`.
 
 ---
 
@@ -618,13 +621,13 @@ For full documentation, see [docs/claude-marketplaces-guide.md](docs/claude-mark
 
 ---
 
-## Fork Features (PEP 440 Constraints)
+## Manifest Features (PEP 440 Constraints)
 
-Kanon uses a [fork of the Gerrit `repo` tool](https://github.com/caylent-solutions/git-repo) that adds two features beyond upstream:
+Kanon adds the following capabilities to manifest-driven sync:
 
 ### PEP 440 Version Constraints in Manifests
 
-Standard `repo` requires `<project revision>` to be a branch, tag, or commit SHA. The fork accepts [PEP 440](https://peps.python.org/pep-0440/) version constraint syntax, resolving the best matching tag at sync time.
+`<project revision>` accepts [PEP 440](https://peps.python.org/pep-0440/) version constraint syntax in addition to a branch, tag, or commit SHA. Constraints resolve to the best matching tag at sync time.
 
 #### How It Works
 
@@ -675,7 +678,7 @@ Example with range constraint:
 
 ### PEP 440 Version Resolution in .kanon
 
-The CLI supports PEP 440 constraint syntax in both `REPO_REV` and `KANON_SOURCE_<name>_REVISION` in `.kanon`. Constraints are resolved against available git tags before being passed to the underlying tools.
+The CLI supports PEP 440 constraint syntax in `KANON_SOURCE_<name>_REVISION` entries in `.kanon`. Constraints are resolved against available git tags before being passed to the sync engine.
 
 #### Supported Operators
 
@@ -692,16 +695,16 @@ Plain strings without PEP 440 operators pass through unchanged.
 
 #### Prefixed Constraints (KANON_SOURCE_\<name\>_REVISION)
 
-Source revisions support an optional `refs/tags/` prefix. This is recommended because the resolved value is passed to `repo init -b`, which accepts full ref paths:
+Source revisions support an optional `refs/tags/` prefix. This is recommended because the resolved value is passed to `kanon repo init -b`, which accepts full ref paths:
 
 ```properties
-# Resolves to refs/tags/1.1.2 — works directly with repo init -b
+# Resolves to refs/tags/1.1.2 -- works directly with kanon repo init -b
 KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
 
-# Namespaced — only considers tags under that path
+# Namespaced -- only considers tags under that path
 KANON_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
 
-# Also supported — resolves against all tags
+# Also supported -- resolves against all tags
 KANON_SOURCE_build_REVISION=~=1.1.0
 ```
 
@@ -709,7 +712,7 @@ For full details, see [docs/version-resolution.md](docs/version-resolution.md).
 
 ### Absolute Linkfile Destinations
 
-Standard `repo` restricts `<linkfile dest>` to relative paths within the workspace. The fork accepts absolute paths after `envsubst` expansion, enabling marketplace symlinks to directories outside the project (e.g., `${CLAUDE_MARKETPLACES_DIR}/...`).
+`<linkfile dest>` accepts absolute paths after `envsubst` expansion, enabling marketplace symlinks to directories outside the project (e.g., `${CLAUDE_MARKETPLACES_DIR}/...`).
 
 ---
 
@@ -721,9 +724,9 @@ Kanon uses HTTPS Git URLs internally. If you authenticate with GitHub via SSH in
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-This tells Git to use SSH for all `github.com` requests, which Kanon's `git clone`, `git ls-remote`, and `repo` commands will then use automatically.
+This tells Git to use SSH for all `github.com` requests, which Kanon's `git clone`, `git ls-remote`, and `kanon repo` commands will then use automatically.
 
-**Note:** The `--global` flag is required. Using `--local` will not work because Kanon uses the `repo` tool under the hood, which operates in its own working directories with their own local Git configuration.
+**Note:** The `--global` flag is required. Using `--local` will not work because `kanon repo` operates in its own working directories with their own local Git configuration.
 
 For other Git hosts, adjust the URL accordingly:
 
@@ -745,7 +748,7 @@ git config --global --get-regexp url
 ### Prerequisites
 
 - Python 3.11+
-- pipx
+- [uv](https://docs.astral.sh/uv/)
 
 ### Install from Source
 
@@ -762,9 +765,12 @@ make install-hooks
 ### Run Tests
 
 ```bash
-make test          # All tests
-make test-unit     # Unit tests only
-make test-cov      # Tests with coverage report
+make test            # All tests with coverage
+make test-unit       # Unit tests only
+make test-integration  # Integration tests (modules end-to-end)
+make test-functional   # Functional tests (CLI via subprocess)
+make test-scenarios    # End-to-end scenario tests (mirrors docs/integration-testing.md)
+make test-cov          # Tests with coverage report
 ```
 
 ### Build
@@ -781,6 +787,7 @@ src/kanon_cli/
   commands/            # Subcommand implementations (bootstrap, install, clean, validate)
   core/                # Core logic (install, clean, kanon parsing, version resolution)
   catalog/             # Bundled catalog (fallback templates for kanon bootstrap)
+  repo/                # kanon repo subsystem (manifest sync, PEP 440 resolution). See docs/repo/README.md
 tests/                 # Unit and functional tests
 docs/                  # Configuration, lifecycle, version resolution documentation
 pyproject.toml         # Package config (hatchling build, entry point: kanon)
@@ -808,13 +815,17 @@ PR titles must follow [Conventional Commits](https://www.conventionalcommits.org
 
 - [How It Works](docs/how-it-works.md) -- Technical deep-dive into Kanon internals
 - [Setup Guide](docs/setup-guide.md) -- Step-by-step setup for new and existing projects
+- [Configuration](docs/configuration.md) -- `.kanon` format and variable expansion
+- [Lifecycle](docs/lifecycle.md) -- Install and clean lifecycle step-by-step
 - [Multi-Source Guide](docs/multi-source-guide.md) -- Configuring multiple manifest sources
+- [Version Resolution](docs/version-resolution.md) -- PEP 440 resolver details
+- [Creating Manifest Repos](docs/creating-manifest-repos.md) -- Authoring manifest repositories
+- [Creating Packages](docs/creating-packages.md) -- Authoring individual package repositories
 - [Claude Marketplaces Guide](docs/claude-marketplaces-guide.md) -- Marketplace architecture and plugin lifecycle
 - [Pipeline Integration](docs/pipeline-integration.md) -- Using Kanon tasks in CI/CD pipelines
+- [Integration Testing](docs/integration-testing.md) -- End-to-end CLI test plan
+- [kanon repo reference](docs/repo/README.md) -- Manifest format, `.repo/` layout, hooks, smart sync, Python support, Windows notes
 - [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon packages and marketplaces
-- [Version Resolution](docs/version-resolution.md) -- PEP 440 resolver details
-- [Configuration](docs/configuration.md) -- .kanon format and variable expansion
-- [Lifecycle](docs/lifecycle.md) -- Install and clean lifecycle step-by-step
 
 ---
 

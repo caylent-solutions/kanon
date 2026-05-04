@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample repo tool manifest XML for testing.
+  This is a golden fixture file representing a typical multi-project manifest.
+  See tests/fixtures/README.md for details.
+-->
+<manifest>
+  <remote name="origin"
+          fetch="https://example.com"
+          review="https://example.com/review" />
+
+  <default revision="main"
+           remote="origin"
+           sync-j="4" />
+
+  <project name="platform/build"
+           path="build"
+           groups="pdk" />
+
+  <project name="platform/tools"
+           path="tools"
+           revision="refs/tags/v1.0.0" />
+</manifest>

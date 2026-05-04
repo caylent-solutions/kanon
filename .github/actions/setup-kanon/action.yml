@@ -1,0 +1,101 @@
+name: Setup kanon CI environment
+description: |
+  Composite action shared by every job in pr-validation.yml and
+  main-validation.yml. Handles checkout, optional simulate-merge,
+  Python install, asdf bootstrap (plus plugin install per
+  .tool-versions), pip dependency cache, dev dependency install via
+  `make install-dev`, and uv install. Each parallel CI job calls this
+  action once before invoking its own singular Make target / pytest
+  invocation, so the per-job step list stays minimal and the setup
+  drift between jobs is impossible.
+
+inputs:
+  base-ref:
+    description: >-
+      Base ref to simulate-merge against. Leave empty to skip the
+      simulate-merge step (e.g. for push-to-main runs); set to the
+      pull-request base ref for pull_request runs.
+    required: false
+    default: ''
+  head-sha:
+    description: >-
+      Head SHA to merge into the base ref. Required when base-ref is
+      non-empty; ignored otherwise.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # NOTE: callers MUST run `actions/checkout@v6` BEFORE `uses: ./...setup-kanon`
+    # because GitHub Actions resolves the composite action path against the
+    # runner's working directory; without a prior checkout the action file
+    # is not yet on disk. Every job in pr-validation.yml / main-validation.yml
+    # does its own `actions/checkout@v6` step explicitly.
+    - name: Simulate merge
+      if: inputs.base-ref != ''
+      shell: bash
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git fetch origin ${{ inputs.base-ref }}
+        git checkout -b pr-validation origin/${{ inputs.base-ref }}
+        git merge --no-commit --no-ff ${{ inputs.head-sha }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+
+    - name: Cache ASDF installation
+      uses: actions/cache@v5
+      with:
+        path: ~/.asdf
+        key: ${{ runner.os }}-asdf-v0.15.0-${{ hashFiles('.tool-versions') }}
+        restore-keys: |
+          ${{ runner.os }}-asdf-v0.15.0-
+
+    - name: Install ASDF
+      shell: bash
+      run: |
+        if [ ! -d ~/.asdf ]; then
+          git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
+        fi
+        echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+        echo "$HOME/.asdf/shims" >> $GITHUB_PATH
+        source $HOME/.asdf/asdf.sh
+
+    - name: Install ASDF plugins and tools
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        source $HOME/.asdf/asdf.sh
+        cut -d' ' -f1 .tool-versions | xargs -I{} asdf plugin add {} || true
+        asdf plugin remove python 2>/dev/null || true
+        asdf install
+        asdf reshim
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.local/lib/python*/site-packages
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        make install-dev
+
+    - name: Install uv
+      # `tests/unit/repo/test_wheel_contents.py`,
+      # `tests/integration/test_wheel_e2e.py`, and
+      # `tests/integration/test_ci_validation.py` shell out to
+      # `uv build` to produce the wheel under test; uv must be on
+      # PATH for any job that runs those suites (including the
+      # full-suite regression job that runs every test together).
+      uses: astral-sh/setup-uv@v6

@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install kanon-cli
         shell: bash
-        run: pip install kanon-cli
+        run: pipx install kanon-cli
       - name: Kanon Install
         shell: bash
         run: kanon install .kanon
@@ -32,7 +32,7 @@ jobs:
         with:
           path: |
             .packages
-            .repo
+            .kanon-data
           key: kanon-packages-${{ hashFiles('.kanon') }}
 
   build:
@@ -44,7 +44,7 @@ jobs:
         with:
           path: |
             .packages
-            .repo
+            .kanon-data
           key: kanon-packages-${{ hashFiles('.kanon') }}
       - name: Run tests
         shell: bash
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install kanon-cli
         shell: bash
-        run: pip install kanon-cli
+        run: pipx install kanon-cli
       - name: Kanon Clean
         shell: bash
         run: kanon clean .kanon

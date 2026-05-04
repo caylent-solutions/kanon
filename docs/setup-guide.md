@@ -6,16 +6,32 @@ Step-by-step instructions for setting up Kanon in new and existing projects.
 
 - Git
 - Bash shell
-- Python 3 (`command -v python3`)
-- Internet access (to install the repo tool and clone packages)
+- Python 3.11+
+- Internet access (to clone package repositories)
 
-**For all projects:** The `kanon` CLI tool must be installed first:
+**For all projects:** The `kanon` CLI tool must be installed first.
+
+For end-user / production use (isolated CLI from PyPI):
 
 ```bash
 pipx install kanon-cli
 ```
 
-The `kanon` CLI installs the repo tool automatically during `kanon install`. See the [Kanon README](../README.md) for full CLI documentation.
+For local development on the kanon-cli repository itself, install it
+in editable mode against the local source tree:
+
+```bash
+pip install -e .
+```
+
+(`pipx` keeps the CLI isolated in its own venv. Install it with
+`python3 -m pip install --user pipx && pipx ensurepath` if it is not
+already on your PATH. Editable mode is documented for kanon
+contributors; see `CONTRIBUTING.md`.)
+
+The `kanon repo` subsystem (`kanon repo init`, `kanon repo sync`, etc.)
+is part of the `kanon` CLI. See the [Kanon README](../README.md) for
+full CLI documentation.
 
 ## New Project Setup
 

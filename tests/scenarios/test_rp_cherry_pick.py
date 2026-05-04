@@ -10,7 +10,25 @@ import pathlib
 import pytest
 
 from tests.scenarios._rp_helpers import build_rp_ro_manifest, rp_ro_setup
-from tests.scenarios.conftest import run_kanon, run_git
+from tests.scenarios.conftest import (
+    _DEFAULT_GIT_USER_EMAIL,
+    _DEFAULT_GIT_USER_NAME,
+    run_git,
+    run_kanon,
+)
+
+
+def _configure_git_identity(repo: pathlib.Path) -> None:
+    """Set local user.name/user.email on `repo`.
+
+    `kanon repo cherry-pick` shells out to `git cherry-pick` and
+    `git commit --amend`, both of which require a committer identity.
+    Worktrees materialised by `kanon repo sync` inherit no local identity,
+    so without this the test depends on the host's global gitconfig and
+    fails on clean GitHub-hosted runners with "Committer identity unknown".
+    """
+    run_git(["config", "user.name", _DEFAULT_GIT_USER_NAME], repo)
+    run_git(["config", "user.email", _DEFAULT_GIT_USER_EMAIL], repo)
 
 
 @pytest.mark.scenario
@@ -35,6 +53,8 @@ class TestRPCherryPick:
         if not pkg_alpha.exists():
             pytest.skip("pkg-alpha not checked out; cannot resolve SHA")
 
+        _configure_git_identity(pkg_alpha)
+
         # Start a topic branch so the project is on a named branch.
         start_result = run_kanon("repo", "start", "cp-topic", "--all", cwd=ws)
         assert start_result.returncode == 0, f"repo start cp-topic failed: {start_result.stderr!r}"
@@ -45,18 +65,7 @@ class TestRPCherryPick:
             run_git(["checkout", "-b", "cp-source"], pkg_alpha)
             (pkg_alpha / "cherry.txt").write_text("cherry content\n")
             run_git(["add", "cherry.txt"], pkg_alpha)
-            run_git(
-                [
-                    "-c",
-                    "user.name=Test",
-                    "-c",
-                    "user.email=test@example.com",
-                    "commit",
-                    "-m",
-                    "cherry commit",
-                ],
-                pkg_alpha,
-            )
+            run_git(["commit", "-m", "cherry commit"], pkg_alpha)
             rev_result = run_git(["rev-parse", "HEAD"], pkg_alpha)
             sha = rev_result.stdout.strip()
             # Switch back to the topic branch before cherry-picking.
@@ -84,6 +93,8 @@ class TestRPCherryPick:
         pkg_alpha = ws / ".packages" / "pkg-alpha"
         if not pkg_alpha.exists():
             pytest.skip("pkg-alpha not checked out")
+
+        _configure_git_identity(pkg_alpha)
 
         result = run_kanon(
             "repo",

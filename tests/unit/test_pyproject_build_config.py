@@ -15,8 +15,6 @@ PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 REQUIRED_PACKAGES = [
     "src/kanon_cli",
-    "src/kanon_cli/repo",
-    "src/kanon_cli/repo/subcmds",
 ]
 
 REQUIRED_ARTIFACTS = [

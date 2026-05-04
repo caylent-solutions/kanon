@@ -62,6 +62,7 @@ build: ## Build the package
 
 distcheck: ## Check the built distribution
 	twine check dist/*
+	python scripts/check_archive_no_duplicates.py dist/
 
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 

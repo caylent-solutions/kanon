@@ -397,6 +397,8 @@ def claude_marketplaces_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 __all__ = [
     "INTEGRATION_DOC",
+    "_DEFAULT_GIT_USER_NAME",
+    "_DEFAULT_GIT_USER_EMAIL",
     "all_scenario_ids",
     "scenario_block",
     "run_kanon",

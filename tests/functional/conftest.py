@@ -648,6 +648,18 @@ def _setup_synced_repo(
         f"  stdout: {sync_result.stdout!r}\n"
         f"  stderr: {sync_result.stderr!r}"
     )
+
+    # Configure git identity locally on the synced project worktree. `kanon
+    # repo sync` materialises this worktree without inheriting any
+    # user.name/user.email, so fixtures that subsequently run `git commit`
+    # against it (e.g. upload + cherry-pick) would otherwise fall back to
+    # global gitconfig and fail with "Author identity unknown" on hosts
+    # without one (e.g. clean GitHub-hosted runners).
+    project_dir = checkout_dir / project_path
+    if project_dir.is_dir():
+        _git(["config", "user.name", git_user_name], cwd=project_dir)
+        _git(["config", "user.email", git_user_email], cwd=project_dir)
+
     return checkout_dir, repo_dir
 
 

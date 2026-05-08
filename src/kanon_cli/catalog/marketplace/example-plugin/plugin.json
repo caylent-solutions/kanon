@@ -1,0 +1,10 @@
+{
+  "name": "example-plugin",
+  "description": "A brief description of what this plugin does",
+  "author": {
+    "name": "your-github-username",
+    "url": "https://github.com/your-github-username"
+  },
+  "version": "0.1.0",
+  "keywords": []
+}

@@ -68,7 +68,7 @@ class TestKanonBootstrapList:
         assert result.returncode == 0
         assert "kanon" in result.stdout
 
-    def test_bootstrap_list_contains_only_kanon(self) -> None:
+    def test_bootstrap_list_contains_expected_packages(self) -> None:
         result = _run_kanon("bootstrap", "list")
         assert result.returncode == 0
         lines = [
@@ -76,7 +76,7 @@ class TestKanonBootstrapList:
             for line in result.stdout.splitlines()
             if line.strip() and line.strip() != "Available packages:"
         ]
-        assert lines == ["kanon"]
+        assert lines == ["kanon", "marketplace"]
 
 
 @pytest.mark.functional

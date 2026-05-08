@@ -48,30 +48,35 @@ def bootstrap_package(package: str, output_dir: pathlib.Path, catalog_dir: pathl
         )
         sys.exit(1)
 
-    all_files = [f.name for f in package_dir.iterdir() if f.is_file() and f.name != ".gitkeep"]
+    all_items = [f.name for f in package_dir.iterdir() if f.name != ".gitkeep"]
 
-    _check_no_conflicts(all_files, output_dir)
+    _check_no_conflicts(all_items, output_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for src_file in package_dir.iterdir():
-        if src_file.is_file() and src_file.name != ".gitkeep":
-            shutil.copy2(src_file, output_dir / src_file.name)
+    for src in package_dir.iterdir():
+        if src.name == ".gitkeep":
+            continue
+        dest = output_dir / src.name
+        if src.is_dir():
+            shutil.copytree(src, dest)
+        else:
+            shutil.copy2(src, dest)
 
-    _print_next_steps(package, output_dir, all_files)
+    _print_next_steps(package, output_dir, all_items)
 
 
-def _check_no_conflicts(files: list[str], output_dir: pathlib.Path) -> None:
-    """Verify no target files already exist in the output directory.
+def _check_no_conflicts(items: list[str], output_dir: pathlib.Path) -> None:
+    """Verify no target files or directories already exist in the output directory.
 
     Args:
-        files: List of filenames to check.
+        items: List of filenames or directory names to check.
         output_dir: Target directory.
 
     Raises:
-        SystemExit: If any file already exists, listing all conflicts.
+        SystemExit: If any item already exists, listing all conflicts.
     """
-    conflicts = [f for f in files if (output_dir / f).exists()]
+    conflicts = [f for f in items if (output_dir / f).exists()]
     if conflicts:
         print("Error: The following files already exist:", file=sys.stderr)
         for f in conflicts:
@@ -86,18 +91,18 @@ def _check_no_conflicts(files: list[str], output_dir: pathlib.Path) -> None:
 def _print_next_steps(
     package: str,
     output_dir: pathlib.Path,
-    files: list[str],
+    items: list[str],
 ) -> None:
     """Print post-bootstrap instructions.
 
     Args:
         package: Catalog entry package name.
         output_dir: Directory where files were created.
-        files: List of created filenames.
+        items: List of created file and directory names.
     """
     print(f"kanon bootstrap: created {package} project in {output_dir}/")
     print("\nFiles created:")
-    for f in sorted(files):
+    for f in sorted(items):
         print(f"  {output_dir / f}")
 
     print("\nNext steps:")

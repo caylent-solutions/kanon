@@ -1,5 +1,6 @@
 """Tests for the bootstrap module."""
 
+import json
 import pathlib
 
 import pytest
@@ -26,10 +27,10 @@ class TestListPackages:
         packages = list_packages(catalog_dir)
         assert packages == sorted(packages)
 
-    def test_only_contains_kanon(self) -> None:
+    def test_returns_expected_packages(self) -> None:
         catalog_dir = _get_bundled_catalog_dir()
         packages = list_packages(catalog_dir)
-        assert packages == ["kanon"]
+        assert packages == ["kanon", "marketplace"]
 
 
 @pytest.mark.unit
@@ -124,3 +125,35 @@ class TestPrintNextSteps:
         assert "Edit .kanon" in output
         assert "kanon install .kanon" in output
         assert "Commit .kanon" in output
+
+
+@pytest.mark.unit
+class TestBootstrapMarketplace:
+    """Verify marketplace catalog entry scaffolds correctly."""
+
+    def test_creates_readme_and_example_plugin(self, tmp_path: pathlib.Path) -> None:
+        output = tmp_path / "project"
+        catalog_dir = _get_bundled_catalog_dir()
+        bootstrap_package("marketplace", output, catalog_dir)
+        assert (output / "marketplace-readme.md").is_file()
+        assert (output / "example-plugin" / "plugin.json").is_file()
+        assert (output / ".github" / "workflows" / "validate.yml.template").is_file()
+
+    def test_readme_mentions_plugin_json(self, tmp_path: pathlib.Path) -> None:
+        output = tmp_path / "project"
+        catalog_dir = _get_bundled_catalog_dir()
+        bootstrap_package("marketplace", output, catalog_dir)
+        content = (output / "marketplace-readme.md").read_text()
+        assert "plugin.json" in content
+
+    def test_example_plugin_json_is_valid_json(self, tmp_path: pathlib.Path) -> None:
+        output = tmp_path / "project"
+        catalog_dir = _get_bundled_catalog_dir()
+        bootstrap_package("marketplace", output, catalog_dir)
+        plugin_json_path = output / "example-plugin" / "plugin.json"
+        data = json.loads(plugin_json_path.read_text())
+        assert "name" in data
+        assert "description" in data
+        assert "author" in data
+        assert "version" in data
+        assert "keywords" in data

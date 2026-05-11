@@ -7,6 +7,9 @@ Resolves the catalog directory from multiple sources in priority order:
 
 Remote catalog sources use the format ``<git_url>@<ref>`` where ref
 can be a branch name, tag, or ``latest`` (resolves to highest semver tag).
+The ``@`` delimiter is always the LAST ``@`` in the source string, which
+allows SSH URLs containing a user-info ``@`` (e.g. ``git@host:org/repo.git@main``)
+to be parsed unambiguously.
 """
 
 import os
@@ -62,7 +65,11 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
         Tuple of (url, ref).
 
     Raises:
-        ValueError: If the format is invalid (no ``@`` or empty ref).
+        ValueError: If the format is invalid (no ``@`` or empty ref), if the
+            ref or URL component is empty, or if the URL portion contains
+            neither ``://`` nor ``@`` (indicating the source is an SSH-shorthand
+            URL with no ref separator, e.g. ``git@host:org/repo.git`` with no
+            trailing ``@<ref>``).
     """
     idx = source.rfind("@")
     if idx == -1:
@@ -84,6 +91,19 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
 
     if not url:
         msg = f"Empty URL in catalog source: '{source}'"
+        raise ValueError(msg)
+
+    # Guard: if the URL portion contains neither '://' (scheme separator) nor '@'
+    # (user-info separator), the rfind hit a user-info '@' that is part of the URL
+    # itself (e.g. 'git@host:org/repo.git' with no ref), not a ref delimiter.
+    # Spec Section 4.0: the ref separator is always the LAST '@'; if no unambiguous
+    # ref delimiter exists, the source is malformed.
+    if "://" not in url and "@" not in url:
+        msg = (
+            f"Invalid catalog source format: '{source}'. "
+            "No ref separator '@' found after the URL -- "
+            "expected '<git_url>@<ref>' (e.g. 'git@host:org/repo.git@main')"
+        )
         raise ValueError(msg)
 
     return url, ref

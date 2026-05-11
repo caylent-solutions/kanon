@@ -18,8 +18,9 @@ Scenarios covered:
 8. monorepo-prefixed-ref            -- ``https://h/r.git@subpackage/==1.0.0`` splits to
                                        ``(https://h/r.git, subpackage/==1.0.0)``
 
-The end-to-end cycle (AC-CYCLE-001) runs the three valid SSH/HTTPS-with-user-info inputs
-through the public ``resolve_catalog_dir`` against a real ``file://`` fixture git repo.
+The end-to-end cycle (AC-CYCLE-001) verifies the ``resolve_catalog_dir`` pipeline using
+plain ``file://`` fixture git repos, confirming the URL/ref produced by
+``_parse_catalog_source`` flows correctly into the resolver.
 """
 
 import pathlib
@@ -180,28 +181,26 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
 @pytest.mark.parametrize(
     "build_source,branch",
     [
-        # Case 1: SSH-shorthand -- user-info ``@`` is in the host part; branch is plain name.
-        # We substitute the ``file://`` path for the SSH host so git can actually clone it.
-        # The parametrize label describes the ORIGINAL source shape being exercised.
+        # Case 1: Plain file:// URL with a branch name ref.
         (
             lambda repo_url: f"{repo_url}@main",
             "main",
         ),
-        # Case 2: HTTPS URL with embedded user-info -- branch is a plain name.
+        # Case 2: Plain file:// URL with a different branch name ref.
         (
             lambda repo_url: f"{repo_url}@feature",
             "feature",
         ),
-        # Case 3: Explicit ref as refs/tags/<tag> -- we use a tag on the fixture repo.
+        # Case 3: Plain file:// URL with a tag ref.
         (
             lambda repo_url: f"{repo_url}@v1.0.0",
             "v1.0.0",
         ),
     ],
     ids=[
-        "ssh-shorthand-user-info-branch-main",
-        "https-user-info-plain-branch",
-        "explicit-refs-tags-ref",
+        "plain-file-url-branch-main",
+        "plain-file-url-branch-feature",
+        "plain-file-url-tag-ref",
     ],
 )
 def test_round_trip_through_catalog_resolver(
@@ -216,9 +215,9 @@ def test_round_trip_through_catalog_resolver(
     resolver returns a path under the expected clone directory that contains the
     ``catalog/`` subtree.
 
-    Each parametrised case exercises one of the three valid SSH/HTTPS user-info
-    scenarios by verifying that the resolver ends up cloning the right URL at the
-    right ref.
+    Each parametrised case uses a plain ``file://`` URL pointing at the fixture
+    repo and verifies that the resolver clones the repo at the correct ref,
+    returning a path containing the expected ``catalog/`` subtree.
     """
     fixture_base = tmp_path / "fixture"
     fixture_base.mkdir()

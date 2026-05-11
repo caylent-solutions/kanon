@@ -1,0 +1,32 @@
+# Provider-agnosticism allowlist.
+#
+# Format: <path>:<justification>
+#   - <path>: repo-relative path of the file to exempt from the
+#     provider-agnostic grep test.
+#   - <justification>: non-empty free-text reason a human reviewer
+#     accepted this exemption.
+#
+# Lines starting with `#` and blank lines are ignored.
+#
+# Adding an entry here requires a code review. The intent is that
+# multi-provider parity test fixtures (per spec Section 10) and similar
+# explicitly-labeled cross-provider cases live here with a clear
+# justification. Production source code MUST NOT appear in this list.
+#
+# The always-allowlisted prefixes (docs/, tests/fixtures/, .git/) are
+# built into the test module (AC-FUNC-005). All other exemptions must
+# appear below with a justification.
+# The allowlist file itself is automatically self-exempt.
+#
+# CI infrastructure
+.devcontainer/:DevContainer configuration is intentionally platform-specific and not kanon production source
+.github/:GitHub Actions workflow files are CI infrastructure that reference provider tooling by necessity
+# Vendored third-party code (CLAUDE.md carve-out)
+src/kanon_cli/repo/:Vendored Android repo tool subtree contains upstream references that are not kanon production source
+tests/unit/repo/:Unit tests for the vendored repo tool companion; upstream references are not kanon production source
+# Historical documentation
+CHANGELOG.md:Historical changelog may reference maintainer-run CLI invocations from past releases; these are documentation not executable source
+# Dependency lock file
+uv.lock:uv.lock may contain PyPI package-path fragments (e.g. /bb/) that match word-boundary patterns but are not provider-CLI references
+# This test module lists forbidden token strings as Python string literals
+tests/functional/test_provider_agnostic.py:The test module itself contains the forbidden token strings as quoted literals; AC-SEC-001 verifies every occurrence is inside a string literal

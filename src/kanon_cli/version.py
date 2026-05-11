@@ -12,7 +12,6 @@ revision attributes:
 - Prefixed: refs/tags/~=1.0.0 or refs/tags/prefix/~=1.0.0
 """
 
-import re
 import subprocess
 import sys
 
@@ -90,11 +89,13 @@ def resolve_version(url: str, rev_spec: str) -> str:
     for use with ``repo init -b``.
 
     Plain branch or tag names (no PEP 440 operators) pass through unchanged,
-    EXCEPT bare semver-style values (e.g. ``1.0.0`` or ``1.0``) which are
-    automatically prefixed with ``refs/tags/`` so the underlying ``git
-    fetch`` resolves them as tags rather than branch names. Use the
-    ``refs/heads/<branch>`` form explicitly to force branch resolution
-    of a numeric branch name.
+    EXCEPT bare PEP 440 version strings (e.g. ``1.0.0``, ``1.0.0a1``,
+    ``1.0.0.post1``, ``2026.4.1``, ``1!2.0.0``) which are automatically
+    prefixed with ``refs/tags/`` so the underlying ``git fetch`` resolves
+    them as tags rather than branch names. Any string that parses cleanly
+    via ``packaging.version.Version`` and contains no ``/`` is treated as a
+    bare PEP 440 version. Use the ``refs/heads/<branch>`` form explicitly to
+    force branch resolution of a numeric branch name.
 
     Args:
         url: Git repository URL.
@@ -121,34 +122,72 @@ def resolve_version(url: str, rev_spec: str) -> str:
         sys.exit(1)
 
 
-_BARE_SEMVER_RE = re.compile(r"^\d+(?:\.\d+){1,2}$")
+def _is_bare_pep440_version(spec: str) -> bool:
+    """Return True if spec parses as a PEP 440 Version and contains no '/'.
+
+    Used to detect bare version strings (e.g. ``1.0.0a1``, ``1!2.0.0``,
+    ``1.0.0+local``) that should be normalized to ``refs/tags/<spec>``.
+    Inputs containing ``/`` are never bare versions -- they are either
+    already-prefixed refs or monorepo-prefixed tags.
+
+    Args:
+        spec: A revision string with no leading whitespace.
+
+    Returns:
+        True if spec contains no ``/`` and parses cleanly as a
+        ``packaging.version.Version``.
+    """
+    if "/" in spec:
+        return False
+    try:
+        Version(spec)
+        return True
+    except InvalidVersion:
+        return False
 
 
 def _normalize_bare_semver_to_tag(rev_spec: str) -> str:
-    """Prepend ``refs/tags/`` to bare semver-style values.
+    """Prepend ``refs/tags/`` to bare PEP 440 version strings.
 
-    Detects bare ``X.Y`` or ``X.Y.Z`` (digits-and-dots only, no operators,
-    no path prefix) and rewrites them as ``refs/tags/X.Y.Z``. All other
-    inputs (branch names, SHAs, already-prefixed refs) pass through
-    unchanged.
+    Accepts any input that (a) contains no ``/`` and (b) parses cleanly
+    via ``packaging.version.Version``. This widens the previous
+    digits-and-dots-only regex to cover all PEP 440 version shapes,
+    per spec Section 4.0 rule 3.
+
+    Accepted shapes include (but are not limited to):
+
+    - Plain semver: ``1.0.0``, ``1.0``, ``1``
+    - Prereleases: ``1.0.0a1``, ``1.0.0b3``, ``1.0.0rc2``
+    - Local versions: ``1.0.0+local``, ``1.0.0+local.build``
+    - Calendar versions: ``2026.4.1``
+    - Epochs: ``1!2.0.0``
+    - Post-releases: ``1.0.0.post1``
+    - Dev-releases: ``1.0.0.dev0``
+
+    All other inputs pass through unchanged:
+
+    - Already-prefixed refs: ``refs/tags/1.0.0``, ``refs/heads/main``
+    - Branch names that fail PEP 440: ``main``, ``develop``
+    - Hex SHAs (40- or 64-char): passed through unchanged
+    - Any input containing ``/``: ``feature/foo``, ``subpackage/1.0.0``
 
     Examples:
 
     - ``1.0.0``           -> ``refs/tags/1.0.0``
-    - ``1.0``             -> ``refs/tags/1.0``
+    - ``1.0.0a1``         -> ``refs/tags/1.0.0a1``
+    - ``1!2.0.0``         -> ``refs/tags/1!2.0.0``
     - ``main``            -> ``main`` (no change)
     - ``refs/tags/1.0.0`` -> ``refs/tags/1.0.0`` (no change)
-    - ``refs/heads/1.0``  -> ``refs/heads/1.0`` (no change)
-    - ``abcdef0``         -> ``abcdef0`` (no change)
+    - ``feature/foo``     -> ``feature/foo`` (no change)
 
-    Rationale: when a `.kanon` REVISION (or `<project revision="...">`)
-    declares a bare semver value, the user almost always means "the tag
-    with this version". Without the prefix, the underlying git fetch
-    resolves it as ``refs/heads/X.Y.Z`` (a branch lookup) which fails.
+    Args:
+        rev_spec: A revision string (branch, tag, SHA, or version spec).
+
+    Returns:
+        ``refs/tags/<rev_spec>`` when rev_spec is a bare PEP 440 version;
+        otherwise ``rev_spec`` unchanged.
     """
-    if "/" in rev_spec:
-        return rev_spec
-    if _BARE_SEMVER_RE.match(rev_spec):
+    if _is_bare_pep440_version(rev_spec):
         return "refs/tags/" + rev_spec
     return rev_spec
 

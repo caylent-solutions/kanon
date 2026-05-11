@@ -96,19 +96,37 @@ All constraints follow [PEP 440](https://peps.python.org/pep-0440/) via the `pac
 ## Branch/Tag Passthrough
 
 Plain strings without PEP 440 operators are returned unchanged, with one
-exception: **bare semver values** (`X.Y.Z` or `X.Y` -- digits and dots only,
-no `refs/` prefix, no `v`) are normalized to `refs/tags/<value>` so that
-`repo init -b <value>` resolves the version as a tag rather than a branch.
+exception: **bare PEP 440 version values** (any string accepted by
+`packaging.version.Version` that contains no `/`) are normalized to
+`refs/tags/<value>` so that `repo init -b <value>` resolves the version
+as a tag rather than a branch.
 
-| Input | Returns |
-|---|---|
-| `main` | `main` |
-| `refs/tags/1.1.2` | `refs/tags/1.1.2` |
-| `v1.0.0` | `v1.0.0` |
-| `feat/my-feature` | `feat/my-feature` |
-| `1.0.0` (bare semver) | `refs/tags/1.0.0` (normalized) |
-| `2.5` (bare semver) | `refs/tags/2.5` (normalized) |
-| `1` (single digit) | `1` (unchanged -- ambiguous) |
+This widens the previous narrow acceptance set (digits and dots only) to
+cover all PEP 440 version shapes per spec Section 4.0 rule 3:
+
+| Input | Returns | Notes |
+|---|---|---|
+| `main` | `main` | not a PEP 440 version |
+| `refs/tags/1.1.2` | `refs/tags/1.1.2` | already prefixed (contains `/`) |
+| `feat/my-feature` | `feat/my-feature` | contains `/` |
+| `subpackage/1.0.0` | `subpackage/1.0.0` | contains `/` |
+| `1.0.0` | `refs/tags/1.0.0` | plain semver |
+| `2.5` | `refs/tags/2.5` | two-part semver |
+| `1` | `refs/tags/1` | single-digit PEP 440 version |
+| `v1.0.0` | `refs/tags/v1.0.0` | v-prefixed PEP 440 version |
+| `1.0.0a1` | `refs/tags/1.0.0a1` | PEP 440 prerelease |
+| `1.0.0b3` | `refs/tags/1.0.0b3` | PEP 440 beta prerelease |
+| `1.0.0rc2` | `refs/tags/1.0.0rc2` | PEP 440 release candidate |
+| `1.0.0+local.build` | `refs/tags/1.0.0+local.build` | PEP 440 local version |
+| `2026.4.1` | `refs/tags/2026.4.1` | calendar version |
+| `1!2.0.0` | `refs/tags/1!2.0.0` | PEP 440 epoch |
+| `1.0.0.post1` | `refs/tags/1.0.0.post1` | PEP 440 post-release |
+| `1.0.0.dev0` | `refs/tags/1.0.0.dev0` | PEP 440 dev-release |
+
+**Pass-through rule:** any input that (a) contains `/` OR (b) fails
+`packaging.version.Version` parsing is returned unchanged. Branch names
+such as `main`, `develop`, and hex SHAs all fail PEP 440 parsing and
+pass through unmodified.
 
 ---
 

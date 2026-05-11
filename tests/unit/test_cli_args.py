@@ -9,6 +9,8 @@ import pathlib
 
 import pytest
 
+from kanon_cli.constants import CATALOG_ENV_VAR
+
 # Source file paths for import-from-source assertions (AC-TEST-003).
 _BOOTSTRAP_PY = pathlib.Path(__file__).parent.parent.parent / "src" / "kanon_cli" / "commands" / "bootstrap.py"
 
@@ -60,7 +62,7 @@ class TestAddCatalogSourceArgDefault:
     """add_catalog_source_arg reads the default from KANON_CATALOG_SOURCE at parser-build time."""
 
     def test_default_none_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -69,7 +71,7 @@ class TestAddCatalogSourceArgDefault:
         assert args.catalog_source is None
 
     def test_default_from_env_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://h/r.git@v1")
+        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         # Re-import to pick up env at parser-build time.
@@ -84,7 +86,7 @@ class TestAddCatalogSourceArgPrecedence:
     """CLI flag wins over KANON_CATALOG_SOURCE env var (spec Section 4 header)."""
 
     def test_cli_flag_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://h/r.git@env-ref")
+        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -93,7 +95,7 @@ class TestAddCatalogSourceArgPrecedence:
         assert args.catalog_source == "https://h/r.git@cli-ref"
 
     def test_env_used_when_flag_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://h/r.git@env-ref")
+        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -102,7 +104,7 @@ class TestAddCatalogSourceArgPrecedence:
         assert args.catalog_source == "https://h/r.git@env-ref"
 
     def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -119,15 +121,20 @@ class TestAddCatalogSourceArgHelpText:
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         # After the refactor, the canonical help text lives in cli_args.py.
-        # Load the factory's parser and verify the help text is a non-empty
-        # string -- the snapshot test in test_bootstrap.py asserts byte-identity
-        # with the committed fixture for full regression coverage.
+        # Load bootstrap.py source and extract the help text passed to
+        # add_catalog_source_arg -- since bootstrap.py now delegates to the
+        # factory, the factory's action.help IS the canonical text.
+        # We verify byte-identity by reading both definitions from source.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
-        # Help text must be a non-empty string (the canonical text lives in cli_args.py).
-        assert isinstance(action.help, str)
-        assert len(action.help) > 0
+        # The canonical help text defined in cli_args.py (the single source of truth):
+        expected_help = (
+            "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
+            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
+            "Default: bundled catalog."
+        )
+        assert action.help == expected_help
 
     def test_help_text_mentions_git_url_at_ref_format(self) -> None:
         from kanon_cli.core.cli_args import add_catalog_source_arg
@@ -176,7 +183,7 @@ class TestCycleEndToEnd:
         assert args.catalog_source == "https://h/r.git@main"
 
     def test_cycle_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://h/r.git@v1")
+        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()

@@ -93,6 +93,9 @@ changelog_file = "CHANGELOG.md"
 changelog_scope = false
 exclude_commit_patterns = []
 
+[tool.mypy]
+exclude = ["src/kanon_cli/repo/"]
+
 [tool.semantic_release.commit_parser_options]
 allowed_tags = [
   "build",

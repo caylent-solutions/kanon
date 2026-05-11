@@ -1,6 +1,7 @@
 """Tests for the bootstrap module."""
 
 import pathlib
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +13,12 @@ from kanon_cli.core.bootstrap import (
     list_packages,
 )
 from kanon_cli.core.catalog import _get_bundled_catalog_dir
+
+_PROJECT_ROOT = pathlib.Path(__file__).parent.parent.parent
+_BOOTSTRAP_PY = _PROJECT_ROOT / "src" / "kanon_cli" / "commands" / "bootstrap.py"
+_BOOTSTRAP_HELP_FIXTURE = pathlib.Path(__file__).parent.parent / "fixtures" / "help" / "bootstrap.txt"
+# The installed kanon CLI binary lives in the project venv alongside the test runner's python.
+_KANON_BIN = _PROJECT_ROOT / ".venv" / "bin" / "kanon"
 
 
 @pytest.mark.unit
@@ -238,3 +245,45 @@ class TestPrintNextSteps:
         assert "Edit .kanon" in output
         assert "kanon install .kanon" in output
         assert "Commit .kanon" in output
+
+
+@pytest.mark.unit
+class TestBootstrapHelpSnapshot:
+    """Assert that kanon bootstrap --help output is byte-identical to the committed fixture (AC-FUNC-005, AC-TEST-002)."""
+
+    def test_bootstrap_help_matches_fixture(self) -> None:
+        result = subprocess.run(
+            [str(_KANON_BIN), "bootstrap", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"kanon bootstrap --help exited {result.returncode}: {result.stderr}"
+        expected = _BOOTSTRAP_HELP_FIXTURE.read_text()
+        assert result.stdout == expected, (
+            "kanon bootstrap --help output has drifted from the fixture at "
+            f"{_BOOTSTRAP_HELP_FIXTURE}. Update the fixture if the change is "
+            "intentional."
+        )
+
+
+@pytest.mark.unit
+class TestBootstrapDelegatesFlag:
+    """Assert bootstrap.py imports and delegates --catalog-source to add_catalog_source_arg (AC-TEST-003)."""
+
+    def test_bootstrap_imports_add_catalog_source_arg(self) -> None:
+        source = _BOOTSTRAP_PY.read_text()
+        assert "from kanon_cli.core.cli_args import add_catalog_source_arg" in source, (
+            "bootstrap.py must import add_catalog_source_arg from kanon_cli.core.cli_args"
+        )
+
+    def test_bootstrap_does_not_define_catalog_source_inline(self) -> None:
+        source = _BOOTSTRAP_PY.read_text()
+        # After the refactor the inline add_argument block must be gone.
+        assert 'add_argument(\n        "--catalog-source"' not in source, (
+            "bootstrap.py still contains an inline add_argument('--catalog-source', ...) call; "
+            "it must be replaced with add_catalog_source_arg(parser)"
+        )
+        assert 'add_argument("--catalog-source"' not in source, (
+            'bootstrap.py still contains an inline add_argument("--catalog-source", ...) call; '
+            "it must be replaced with add_catalog_source_arg(parser)"
+        )

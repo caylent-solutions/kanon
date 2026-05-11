@@ -12,6 +12,7 @@ import sys
 
 from kanon_cli.core.bootstrap import BootstrapOutputDirError, bootstrap_package, list_packages
 from kanon_cli.core.catalog import resolve_catalog_dir
+from kanon_cli.core.cli_args import add_catalog_source_arg
 
 
 def register(subparsers) -> None:
@@ -41,15 +42,7 @@ def register(subparsers) -> None:
         default=pathlib.Path("."),
         help="Target directory for bootstrapped files (default: current directory)",
     )
-    parser.add_argument(
-        "--catalog-source",
-        default=None,
-        help=(
-            "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
-            "Default: bundled catalog."
-        ),
-    )
+    add_catalog_source_arg(parser)
     parser.set_defaults(func=_run)
 
 

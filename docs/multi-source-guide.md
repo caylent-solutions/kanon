@@ -6,17 +6,45 @@ and organizations.
 
 ---
 
+> **Recommended: use `kanon add` to create `KANON_SOURCE_*` triples.**
+> Running `kanon add <name>@<spec> --catalog-source <url>@<ref>`
+> is the preferred way to add a new `KANON_SOURCE_<name>_{URL,REVISION,PATH}`
+> triple to `.kanon`. The command handles source-name normalization
+> (lowercase, replace `-` with `_`) automatically, resolves the default
+> spec to the manifest repo's latest PEP 440 tag when no `@<spec>` is
+> given, and performs collision detection before writing the file --
+> all of which are error-prone to reproduce by hand.
+>
+> See `docs/list-and-add.md` (forthcoming) for the full `kanon add`
+> reference, and `docs/catalogs-explained.md` (forthcoming)
+> for a first-time on-ramp to finding a catalog source.
+>
+> **When hand-writing remains valid:** hand-editing the `KANON_SOURCE_*`
+> triples directly is still appropriate for two edge cases:
+>
+> - You need a `KANON_SOURCE_<name>_PATH` that overrides the default
+>   path declared in `<catalog-metadata>` (for example, pointing at a
+>   secondary manifest file inside the same repo).
+> - You are pinning a bare branch name to a project that is not tracked
+>   by any `<catalog-metadata>`-aware manifest repo, so `kanon list`
+>   cannot discover it.
+>
+> Outside these cases, prefer `kanon add` to keep `.kanon` consistent
+> and free of normalization or collision errors.
+
+---
+
 ## Named Source Format (.kanon)
 
-Kanon auto-discovers sources from `KANON_SOURCE_<name>_URL` variable patterns in `.kanon`.
-Each source is defined by a set of three variables following the
-`KANON_SOURCE_<name>_<property>` naming convention:
+Kanon auto-discovers sources from `KANON_SOURCE_<name>_URL` variable
+patterns in `.kanon`. Each source is defined by a set of three variables
+following the `KANON_SOURCE_<name>_<property>` naming convention:
 
-| Suffix | Purpose |
+|Suffix|Purpose|
 |---|---|
-| `_URL` | Git repository URL for the manifest source |
-| `_REVISION` | Branch name, exact tag ref, or PEP 440 version constraint |
-| `_PATH` | Path to the entry-point manifest XML within the repository |
+|`_URL`|Git repository URL for the manifest source|
+|`_REVISION`|Branch name, exact tag ref, or PEP 440 version constraint|
+|`_PATH`|Path to the entry-point manifest XML within the repository|
 
 Sources are processed in alphabetical order by name.
 
@@ -25,10 +53,10 @@ for the full variable table.
 
 ### Source Naming Convention
 
-The `<name>` in `KANON_SOURCE_<name>_URL` is a free-form identifier — Kanon
-extracts it by stripping the `KANON_SOURCE_` prefix and the `_URL` suffix,
-treating everything in between as the source name. The name has no semantic
-meaning to the CLI; it is purely organizational.
+The `<name>` in `KANON_SOURCE_<name>_URL` is a free-form identifier --
+Kanon extracts it by stripping the `KANON_SOURCE_` prefix and the `_URL`
+suffix, treating everything in between as the source name. The name has
+no semantic meaning to the CLI; it is purely organizational.
 
 **The CLI treats all sources identically.** Every source goes through the
 same processing pipeline: `repo init` → `repo envsubst` → `repo sync`.
@@ -39,12 +67,12 @@ A source delivers build packages when its manifest contains `<project>`
 entries that clone package repositories into `.packages/`. A source
 delivers marketplace plugins when its manifest contains `<project>` entries
 with `<linkfile>` elements that create symlinks into
-`${CLAUDE_MARKETPLACES_DIR}`. It is the symlink destination — not the
-source name — that causes the synced content to be recognized as a
-marketplace plugin. When `KANON_MARKETPLACE_INSTALL=true`, the CLI scans the
-entire `${CLAUDE_MARKETPLACES_DIR}` directory after all sources have synced
-and installs every plugin found there, regardless of which source created
-the symlink.
+`${CLAUDE_MARKETPLACES_DIR}`. It is the symlink destination -- not the
+source name -- that causes the synced content to be recognized as a
+marketplace plugin. When `KANON_MARKETPLACE_INSTALL=true`, the CLI scans
+the entire `${CLAUDE_MARKETPLACES_DIR}` directory after all sources have
+synced and installs every plugin found there, regardless of which source
+created the symlink.
 
 ### Recommended Naming Convention
 
@@ -52,14 +80,14 @@ Choose source names that describe what the source provides. This makes
 `.kanon` files self-documenting for humans and AI agents without needing
 to inspect the manifest XML content. Common prefixes include:
 
-| Prefix | Purpose |
+|Prefix|Purpose|
 |---|---|
-| `build` | Build tooling packages (linting, formatting, conventions) |
-| `marketplaces` | Claude Code marketplace plugins |
-| `pipelines` | CI/CD pipeline packages |
-| `runners` | Task runner packages |
-| `tf-deploy-templates` | Terraform deployment templates |
-| `sonarqube-config` | SonarQube configuration packages |
+|`build`|Build tooling packages (linting, formatting, conventions)|
+|`marketplaces`|Claude Code marketplace plugins|
+|`pipelines`|CI/CD pipeline packages|
+|`runners`|Task runner packages|
+|`tf-deploy-templates`|Terraform deployment templates|
+|`sonarqube-config`|SonarQube configuration packages|
 
 These prefixes are conventions, not requirements. Any descriptive name
 that communicates the source's purpose to your team is appropriate.
@@ -77,7 +105,7 @@ KANON_SOURCE_<name>_URL
      ^1         ^2    ^3
 
 Field 1: KANON_SOURCE_   (fixed prefix)
-Field 2: <name>          (free-form identifier — use hyphens for multi-word names)
+Field 2: <name>          (free-form identifier -- use hyphens for multi-word names)
 Field 3: _URL            (fixed suffix: _URL, _REVISION, or _PATH)
 ```
 
@@ -89,7 +117,7 @@ KANON_SOURCE_marketplaces_URL=...
 KANON_SOURCE_pipelines_URL=...
 ```
 
-**Multiple sources per concern — hyphenate the name:**
+**Multiple sources per concern -- hyphenate the name:**
 
 ```properties
 KANON_SOURCE_build-core_URL=...
@@ -105,7 +133,7 @@ There is no limit on the number of sources. The CLI discovers all
 them in alphabetical order.
 
 > **Note:** Underscores within the name (e.g., `KANON_SOURCE_build_core_URL`)
-> also work — the parser strips only the known prefix and suffix. However,
+> also work -- the parser strips only the known prefix and suffix. However,
 > hyphens are recommended because they visually distinguish the source name
 > from the surrounding underscore-delimited fields.
 
@@ -113,21 +141,21 @@ them in alphabetical order.
 
 ```properties
 # Sources are auto-discovered from KANON_SOURCE_<name>_URL patterns.
-# No explicit source list is needed — names are extracted from _URL keys
+# No explicit source list is needed -- names are extracted from _URL keys
 # and processed in alphabetical order.
 
-# Build tools source — pinned to exact tag
-KANON_SOURCE_build_URL=https://github.com/org/kanon-build-tools.git
+# Build tools source -- pinned to exact tag
+KANON_SOURCE_build_URL=https://example.com/org/kanon-build-tools.git
 KANON_SOURCE_build_REVISION=refs/tags/2.0.0
 KANON_SOURCE_build_PATH=repo-specs/build-meta.xml
 
-# Marketplace source — compatible release constraint (>=1.1.0, <1.2.0)
-KANON_SOURCE_marketplaces_URL=https://github.com/org/kanon-marketplace.git
+# Marketplace source -- compatible release constraint (>=1.1.0, <1.2.0)
+KANON_SOURCE_marketplaces_URL=https://example.com/org/kanon-marketplace.git
 KANON_SOURCE_marketplaces_REVISION=refs/tags/~=1.1.0
 KANON_SOURCE_marketplaces_PATH=repo-specs/common/plugins/plugins-marketplace.xml
 
 # Global variables available to all sources
-GITBASE=https://github.com/org/
+GITBASE=https://example.com/org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 ```
 
@@ -138,30 +166,30 @@ sources with hyphenated names. Each source gets its own isolated workspace
 and all packages are aggregated into a unified `.packages/` directory.
 
 ```properties
-# Build sources — each points to a different manifest repository
-KANON_SOURCE_build-core_URL=https://github.com/org/kanon-build-core.git
+# Build sources -- each points to a different manifest repository
+KANON_SOURCE_build-core_URL=https://example.com/org/kanon-build-core.git
 KANON_SOURCE_build-core_REVISION=refs/tags/~=2.0.0
 KANON_SOURCE_build-core_PATH=repo-specs/build-meta.xml
 
-KANON_SOURCE_build-infra_URL=https://github.com/org/kanon-build-infra.git
+KANON_SOURCE_build-infra_URL=https://example.com/org/kanon-build-infra.git
 KANON_SOURCE_build-infra_REVISION=refs/tags/>=1.0.0,<2.0.0
 KANON_SOURCE_build-infra_PATH=repo-specs/build-meta.xml
 
-KANON_SOURCE_build-security_URL=https://github.com/org/kanon-build-security.git
+KANON_SOURCE_build-security_URL=https://example.com/org/kanon-build-security.git
 KANON_SOURCE_build-security_REVISION=refs/tags/~=1.4.0
 KANON_SOURCE_build-security_PATH=repo-specs/build-meta.xml
 
-# Marketplace sources — each provides Claude Code plugins
-KANON_SOURCE_marketplaces-core_URL=https://github.com/org/kanon-marketplace-core.git
+# Marketplace sources -- each provides Claude Code plugins
+KANON_SOURCE_marketplaces-core_URL=https://example.com/org/kanon-marketplace-core.git
 KANON_SOURCE_marketplaces-core_REVISION=main
 KANON_SOURCE_marketplaces-core_PATH=repo-specs/common/core/core-marketplace.xml
 
-KANON_SOURCE_marketplaces-team_URL=https://github.com/org/kanon-marketplace-team.git
+KANON_SOURCE_marketplaces-team_URL=https://example.com/org/kanon-marketplace-team.git
 KANON_SOURCE_marketplaces-team_REVISION=main
 KANON_SOURCE_marketplaces-team_PATH=repo-specs/common/team/team-marketplace.xml
 
 # Global variables available to all sources
-GITBASE=https://github.com/org/
+GITBASE=https://example.com/org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 KANON_MARKETPLACE_INSTALL=true
 ```
@@ -169,11 +197,18 @@ KANON_MARKETPLACE_INSTALL=true
 Processing order (alphabetical): `build-core` → `build-infra` →
 `build-security` → `marketplaces-core` → `marketplaces-team`.
 
-`KANON_SOURCE_<name>_REVISION` accepts a branch name, an exact tag ref, or a PEP 440 constraint. When a constraint is used, the CLI resolves it against available tags before passing the result to `repo init -b`. Using the `refs/tags/` prefix is recommended — it scopes resolution to tags and produces a full ref path compatible with `repo init`. See [version-resolution.md](version-resolution.md) for all supported operators and syntax.
+`KANON_SOURCE_<name>_REVISION` accepts a branch name, an exact tag ref,
+or a PEP 440 constraint. When a constraint is used, the CLI resolves it
+against available tags before passing the result to `repo init -b`. Using
+the `refs/tags/` prefix is recommended -- it scopes resolution to tags
+and produces a full ref path compatible with `repo init`. See
+[version-resolution.md](version-resolution.md) for all supported
+operators and syntax.
 
-Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns
-and processed in alphabetical order by name. Environment variables override
-`.kanon` file values, allowing the same configuration to work across environments.
+Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable
+patterns and processed in alphabetical order by name. Environment
+variables override `.kanon` file values, allowing the same configuration
+to work across environments.
 
 ---
 
@@ -226,18 +261,25 @@ provided them.
 
 ### Aggregation Process
 
-1. For each source in alphabetical order, scan `.kanon-data/sources/<name>/.packages/`
-2. For each package directory found, create a symlink in the top-level `.packages/`
-3. The symlink points from `.packages/<pkg-name>` to `.kanon-data/sources/<name>/.packages/<pkg-name>`
+1. For each source in alphabetical order, scan
+   `.kanon-data/sources/<name>/.packages/`
+2. For each package directory found, create a symlink in the top-level
+   `.packages/`
+3. The symlink points from `.packages/<pkg-name>` to
+   `.kanon-data/sources/<name>/.packages/<pkg-name>`
 
 ### Result
 
 ```text
-.packages/                                         # Unified view (symlinks)
-├── kanon-build-conventions          -> .kanon-data/sources/build-core/.packages/kanon-build-conventions
-├── kanon-terraform-modules          -> .kanon-data/sources/build-infra/.packages/kanon-terraform-modules
-├── kanon-claude-marketplaces-example-dev-lint -> .kanon-data/sources/marketplaces-core/.packages/kanon-claude-marketplaces-example-dev-lint
-└── kanon-claude-marketplaces-team-tools      -> .kanon-data/sources/marketplaces-team/.packages/kanon-claude-marketplaces-team-tools
+.packages/                         # Unified view (symlinks)
+├── kanon-build-conventions
+│   -> .kanon-data/sources/build-core/.packages/kanon-build-conventions
+├── kanon-terraform-modules
+│   -> .kanon-data/sources/build-infra/.packages/kanon-terraform-modules
+├── kanon-claude-marketplaces-example-dev-lint
+│   -> .kanon-data/sources/marketplaces-core/.packages/...
+└── kanon-claude-marketplaces-team-tools
+    -> .kanon-data/sources/marketplaces-team/.packages/...
 ```
 
 Consumers reference packages from `.packages/` without needing to know
@@ -268,7 +310,8 @@ Error: Package collision for 'kanon-shared-utils':
 
 - Rename one of the conflicting packages in its manifest
 - Remove the duplicate from one source
-- Remove the `KANON_SOURCE_<name>_*` variables for the source with the unwanted duplicate
+- Remove the `KANON_SOURCE_<name>_*` variables for the source with the
+  unwanted duplicate
 
 Collision detection runs after all sources are synced, ensuring that
 the error is caught before any consumer code runs.

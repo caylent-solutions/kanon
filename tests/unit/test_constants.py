@@ -365,7 +365,7 @@ class TestKanonLockFileConstant:
         """KANON_LOCK_FILE constant exists in kanon_cli.constants and is importable."""
         from kanon_cli.constants import KANON_LOCK_FILE
 
-        assert KANON_LOCK_FILE is not None
+        assert KANON_LOCK_FILE == "KANON_LOCK_FILE"
 
     def test_kanon_lock_file_value(self) -> None:
         """KANON_LOCK_FILE constant equals the string 'KANON_LOCK_FILE'."""

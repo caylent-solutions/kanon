@@ -16,13 +16,15 @@ Section 4.7.1 (atomicity contract for the lockfile writer).
 from __future__ import annotations
 
 import os
+import random
 import re
+import string
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import tomli_w
 from packaging.requirements import InvalidRequirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
@@ -32,6 +34,45 @@ from kanon_cli.core.url import canonicalize_repo_url
 
 # resolved_sha must be exactly 40 or 64 lowercase hex digits (SHA-1 or SHA-256).
 _SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
+
+# -- TOML serialisation: control-character escape table --
+# Maps every control character that TOML requires to be escaped in basic strings
+# (U+0000-U+001F, U+007F) to its TOML escape sequence.
+_TOML_CONTROL_ESCAPES: dict[str, str] = {
+    "\x00": "\\u0000",
+    "\x01": "\\u0001",
+    "\x02": "\\u0002",
+    "\x03": "\\u0003",
+    "\x04": "\\u0004",
+    "\x05": "\\u0005",
+    "\x06": "\\u0006",
+    "\x07": "\\u0007",
+    "\x08": "\\b",
+    "\x09": "\\t",
+    "\x0a": "\\n",
+    "\x0b": "\\u000B",
+    "\x0c": "\\f",
+    "\x0d": "\\r",
+    "\x0e": "\\u000E",
+    "\x0f": "\\u000F",
+    "\x10": "\\u0010",
+    "\x11": "\\u0011",
+    "\x12": "\\u0012",
+    "\x13": "\\u0013",
+    "\x14": "\\u0014",
+    "\x15": "\\u0015",
+    "\x16": "\\u0016",
+    "\x17": "\\u0017",
+    "\x18": "\\u0018",
+    "\x19": "\\u0019",
+    "\x1a": "\\u001A",
+    "\x1b": "\\u001B",
+    "\x1c": "\\u001C",
+    "\x1d": "\\u001D",
+    "\x1e": "\\u001E",
+    "\x1f": "\\u001F",
+    "\x7f": "\\u007F",
+}
 
 # branch-name charset for the third accept rule of revision_spec validation.
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9_./+-]+$")
@@ -407,94 +448,116 @@ def _parse_catalog_block(raw: dict[str, Any]) -> CatalogBlock:
 # ---------------------------------------------------------------------------
 
 
-def _include_entry_to_dict(entry: IncludeEntry) -> dict[str, Any]:
-    """Convert an ``IncludeEntry`` to a plain dict suitable for ``tomli_w``.
+def _toml_str(value: str) -> str:
+    """Encode a Python string as a TOML basic string literal.
 
-    Recursively converts nested ``includes`` lists.
-
-    Args:
-        entry: The ``IncludeEntry`` to serialise.
-
-    Returns:
-        A dict with all fields in TOML-compatible types.
-    """
-    d: dict[str, Any] = {
-        "name": entry.name,
-        "path_in_repo": entry.path_in_repo,
-        "url": entry.url,
-        "resolved_sha": entry.resolved_sha,
-    }
-    if entry.includes:
-        d["includes"] = [_include_entry_to_dict(child) for child in entry.includes]
-    return d
-
-
-def _project_entry_to_dict(entry: ProjectEntry) -> dict[str, Any]:
-    """Convert a ``ProjectEntry`` to a plain dict suitable for ``tomli_w``.
+    Escapes backslash, double-quote, and the control characters that TOML
+    requires to be escaped in basic strings (U+0000-U+001F, U+007F).
 
     Args:
-        entry: The ``ProjectEntry`` to serialise.
+        value: The string to encode.
 
     Returns:
-        A dict with all fields in TOML-compatible types.
+        A quoted TOML basic string, e.g. ``"hello"`` or ``"line\\nbreak"``.
     """
-    return {
-        "name": entry.name,
-        "url": entry.url,
-        "canonical_url": entry.canonical_url,
-        "revision_spec": entry.revision_spec,
-        "resolved_ref": entry.resolved_ref,
-        "resolved_sha": entry.resolved_sha,
-    }
+    result = value.replace("\\", "\\\\").replace('"', '\\"')
+    # Escape control characters (TOML spec requires explicit escaping)
+    for char, escape in _TOML_CONTROL_ESCAPES.items():
+        result = result.replace(char, escape)
+    return f'"{result}"'
 
 
-def _source_entry_to_dict(entry: SourceEntry) -> dict[str, Any]:
-    """Convert a ``SourceEntry`` to a plain dict suitable for ``tomli_w``.
+def _serialize_include_entries(
+    includes: list[IncludeEntry],
+    table_path: str,
+    lines: list[str],
+) -> None:
+    """Append TOML lines for an ``includes`` array-of-tables at the given path.
+
+    Each ``IncludeEntry`` is serialised as a ``[[<table_path>]]`` header followed
+    by its scalar fields. Nested includes are serialised recursively under the
+    extended path ``<table_path>.includes``.
+
+    A depth-3 chain under ``sources`` yields headers
+    ``[[sources.includes]]``, ``[[sources.includes.includes]]``,
+    and ``[[sources.includes.includes.includes]]``.
 
     Args:
-        entry: The ``SourceEntry`` to serialise.
-
-    Returns:
-        A dict with all fields in TOML-compatible types.
+        includes: The list of ``IncludeEntry`` objects to serialise.
+        table_path: Dot-separated TOML table-array path for the header,
+            e.g. ``"sources.includes"`` or ``"sources.includes.includes"``.
+        lines: Mutable list of output lines to append to.
     """
-    d: dict[str, Any] = {
-        "name": entry.name,
-        "url": entry.url,
-        "revision_spec": entry.revision_spec,
-        "resolved_ref": entry.resolved_ref,
-        "resolved_sha": entry.resolved_sha,
-        "path": entry.path,
-    }
-    if entry.includes:
-        d["includes"] = [_include_entry_to_dict(inc) for inc in entry.includes]
-    if entry.projects:
-        d["projects"] = [_project_entry_to_dict(proj) for proj in entry.projects]
-    return d
+    for entry in includes:
+        lines.append(f"[[{table_path}]]")
+        lines.append(f"name = {_toml_str(entry.name)}")
+        lines.append(f"path_in_repo = {_toml_str(entry.path_in_repo)}")
+        lines.append(f"url = {_toml_str(entry.url)}")
+        lines.append(f"resolved_sha = {_toml_str(entry.resolved_sha)}")
+        if entry.includes:
+            _serialize_include_entries(entry.includes, f"{table_path}.includes", lines)
 
 
-def _lockfile_to_dict(lockfile: Lockfile) -> dict[str, Any]:
-    """Convert a ``Lockfile`` to a plain dict suitable for ``tomli_w``.
+def _serialize_toml(lockfile: Lockfile) -> str:
+    """Serialise a ``Lockfile`` to a TOML string without any third-party library.
+
+    The output format matches the fixed schema v1 structure exactly:
+
+    - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash)
+    - ``[catalog]`` inline table block
+    - ``[[sources]]`` array-of-tables entries, each followed by
+      ``[[sources.includes]]`` chains (recursively) and ``[[sources.projects]]``
+      entries
+
+    String values are encoded as TOML basic strings with all required control-
+    character escapes applied.
 
     Args:
         lockfile: The ``Lockfile`` to serialise.
 
     Returns:
-        An ordered dict with the top-level TOML keys in spec-canonical order.
+        A TOML-formatted string representing the lockfile, ending with a newline.
     """
-    return {
-        "schema_version": lockfile.schema_version,
-        "generated_at": lockfile.generated_at,
-        "generator": lockfile.generator,
-        "kanon_hash": lockfile.kanon_hash,
-        "catalog": {
-            "source": lockfile.catalog.source,
-            "url": lockfile.catalog.url,
-            "revision_spec": lockfile.catalog.revision_spec,
-            "resolved_ref": lockfile.catalog.resolved_ref,
-            "resolved_sha": lockfile.catalog.resolved_sha,
-        },
-        "sources": [_source_entry_to_dict(src) for src in lockfile.sources],
-    }
+    lines: list[str] = []
+
+    # Top-level scalar fields
+    lines.append(f"schema_version = {lockfile.schema_version}")
+    lines.append(f"generated_at = {_toml_str(lockfile.generated_at)}")
+    lines.append(f"generator = {_toml_str(lockfile.generator)}")
+    lines.append(f"kanon_hash = {_toml_str(lockfile.kanon_hash)}")
+
+    # [catalog] block
+    lines.append("")
+    lines.append("[catalog]")
+    lines.append(f"source = {_toml_str(lockfile.catalog.source)}")
+    lines.append(f"url = {_toml_str(lockfile.catalog.url)}")
+    lines.append(f"revision_spec = {_toml_str(lockfile.catalog.revision_spec)}")
+    lines.append(f"resolved_ref = {_toml_str(lockfile.catalog.resolved_ref)}")
+    lines.append(f"resolved_sha = {_toml_str(lockfile.catalog.resolved_sha)}")
+
+    # [[sources]] array-of-tables
+    for source in lockfile.sources:
+        lines.append("")
+        lines.append("[[sources]]")
+        lines.append(f"name = {_toml_str(source.name)}")
+        lines.append(f"url = {_toml_str(source.url)}")
+        lines.append(f"revision_spec = {_toml_str(source.revision_spec)}")
+        lines.append(f"resolved_ref = {_toml_str(source.resolved_ref)}")
+        lines.append(f"resolved_sha = {_toml_str(source.resolved_sha)}")
+        lines.append(f"path = {_toml_str(source.path)}")
+        if source.includes:
+            _serialize_include_entries(source.includes, "sources.includes", lines)
+        for project in source.projects:
+            lines.append("")
+            lines.append("[[sources.projects]]")
+            lines.append(f"name = {_toml_str(project.name)}")
+            lines.append(f"url = {_toml_str(project.url)}")
+            lines.append(f"canonical_url = {_toml_str(project.canonical_url)}")
+            lines.append(f"revision_spec = {_toml_str(project.revision_spec)}")
+            lines.append(f"resolved_ref = {_toml_str(project.resolved_ref)}")
+            lines.append(f"resolved_sha = {_toml_str(project.resolved_sha)}")
+
+    return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -570,12 +633,7 @@ def write_lockfile(lockfile: Lockfile, path: Path) -> None:
     Raises:
         OSError: If the temp file cannot be created, written, fsynced, or renamed.
     """
-    import random
-    import string
-    import tempfile
-
-    data = _lockfile_to_dict(lockfile)
-    toml_bytes = tomli_w.dumps(data).encode("utf-8")
+    toml_bytes = _serialize_toml(lockfile).encode("utf-8")
 
     rand_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
     tmp_suffix = f".tmp.{os.getpid()}.{rand_suffix}"

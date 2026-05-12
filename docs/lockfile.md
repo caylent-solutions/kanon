@@ -266,7 +266,7 @@ resolved_sha  = "abcdef1234567890abcdef1234567890abcdef12"
 ```
 
 In this example:
-- `kanon_hash` is the SHA-1 of the `.kanon` file that produced this lockfile.
+- `kanon_hash` is the SHA-1 or SHA-256 of the `.kanon` file that produced this lockfile.
 - `catalog.resolved_sha` pins the catalog repo at a specific commit.
 - `sources[0].resolved_sha` pins the `platform-tools` source at a specific commit.
 - `sources[0].projects[0].canonical_url` is the result of canonicalising

@@ -13,6 +13,8 @@ Section 4.1 flag-table rows ``--tree``, ``--max-depth N``,
 Section 4.1 flag-table rows ``--all-versions``, ``--limit N``,
 ``--no-limit``, ``--since-version <spec>`` for the historical-versions walker.
 Section 4.1 flag-table row ``--format {names,json}`` for JSON output.
+Section 4.1 flag-table rows ``<substring>`` (positional), ``--regex <pattern>``,
+``--match-fields <csv>`` for the filter framework.
 
 Environment variables:
 - ``KANON_CATALOG_SOURCE``: catalog source override (CLI flag wins).
@@ -27,9 +29,11 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import defusedxml.ElementTree as ET
@@ -57,6 +61,16 @@ _DETAIL_LABEL_WIDTH = 12
 # Choices: 'names' (default), 'json'.
 # CLI flag --format takes precedence when both are set.
 _KANON_LIST_FORMAT_ENV_VAR = "KANON_LIST_FORMAT"
+
+# ---------------------------------------------------------------------------
+# Filter framework public constants
+# ---------------------------------------------------------------------------
+
+# Spec canonical phrasing for zero-match stderr note (Section 4.1).
+LIST_FILTER_ZERO_MATCH_NOTE = "0 entries match filter"
+
+# Legal field names for --match-fields (in the same order as the spec table).
+MATCH_FIELDS_LEGAL: tuple[str, ...] = ("name", "display-name", "description", "keywords")
 
 
 # ---------------------------------------------------------------------------
@@ -828,6 +842,104 @@ def _render_tree(
 
 
 # ---------------------------------------------------------------------------
+# Filter framework helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_filter_predicate(
+    substring: str | None,
+    regex: str | None,
+    match_fields: list[str] | None,
+) -> Callable[[CatalogMetadata], bool]:
+    """Build a filter predicate for catalog entries.
+
+    Returns a callable that accepts a :class:`CatalogMetadata` instance and
+    returns ``True`` when the entry matches the filter.
+
+    The default match-set (when ``match_fields`` is ``None``) checks all four
+    fields: ``name``, ``display-name``, ``description``, ``keywords``.
+
+    For ``keywords``, substring matching checks each element; regex matching
+    uses ``re.search`` against each element.
+
+    Args:
+        substring: Case-sensitive substring to match against field values.
+            Exactly one of ``substring`` or ``regex`` must be non-``None``.
+        regex: Regular-expression pattern (``re.search``) to match against
+            field values. Exactly one of ``substring`` or ``regex`` must be
+            non-``None``.
+        match_fields: Optional list of field names restricting the search.
+            When ``None``, all four default fields are checked. Each element
+            must be one of ``MATCH_FIELDS_LEGAL``.
+
+    Returns:
+        A predicate callable ``(CatalogMetadata) -> bool``.
+    """
+    effective_fields: tuple[str, ...] = tuple(match_fields) if match_fields is not None else MATCH_FIELDS_LEGAL
+
+    def _get_field_values(entry: CatalogMetadata) -> list[str | list[str]]:
+        values: list[str | list[str]] = []
+        for field_name in effective_fields:
+            if field_name == "name":
+                values.append(entry.name)
+            elif field_name == "display-name":
+                values.append(entry.display_name)
+            elif field_name == "description":
+                values.append(entry.description)
+            elif field_name == "keywords":
+                values.append(entry.keywords)
+        return values
+
+    if substring is not None:
+
+        def _substring_predicate(entry: CatalogMetadata) -> bool:
+            for val in _get_field_values(entry):
+                if isinstance(val, list):
+                    if any(substring in kw for kw in val):
+                        return True
+                else:
+                    if substring in val:
+                        return True
+            return False
+
+        return _substring_predicate
+
+    # regex path: caller guarantees exactly one of substring/regex is non-None.
+    # When substring is None the caller must have passed a non-None regex string.
+    if regex is None:
+        raise ValueError("_build_filter_predicate requires exactly one of substring or regex to be non-None")
+    compiled = re.compile(regex)
+
+    def _regex_predicate(entry: CatalogMetadata) -> bool:
+        for val in _get_field_values(entry):
+            if isinstance(val, list):
+                if any(compiled.search(kw) is not None for kw in val):
+                    return True
+            else:
+                if compiled.search(val) is not None:
+                    return True
+        return False
+
+    return _regex_predicate
+
+
+def _apply_filter(
+    entries: list[CatalogMetadata],
+    predicate: Callable[[CatalogMetadata], bool],
+) -> list[CatalogMetadata]:
+    """Apply ``predicate`` to ``entries`` and return matching entries in order.
+
+    Args:
+        entries: List of :class:`CatalogMetadata` instances.
+        predicate: Callable that returns ``True`` for entries to keep.
+
+    Returns:
+        Filtered list preserving the original order of matching entries.
+    """
+    return [e for e in entries if predicate(e)]
+
+
+# ---------------------------------------------------------------------------
 # Threshold guardrail
 # ---------------------------------------------------------------------------
 
@@ -836,6 +948,7 @@ def _check_tree_guardrail(
     entry_count: int,
     max_depth: int | None,
     no_filter_required: bool,
+    filter_present: bool = False,
 ) -> str | None:
     """Return an error message string when the threshold guardrail should fire.
 
@@ -846,10 +959,14 @@ def _check_tree_guardrail(
     ``--max-depth 0`` counts as a valid filter per spec Section 4.1, so the
     guardrail does NOT fire when ``max_depth == 0``.
 
+    A positional ``<substring>`` or ``--regex`` pattern also counts as a
+    filter (``filter_present=True``), satisfying the guardrail requirement.
+
     Args:
         entry_count: Number of catalog entries in the manifest repo.
         max_depth: Value of ``--max-depth``, or ``None`` for unlimited.
         no_filter_required: ``True`` when ``--no-filter-required`` was passed.
+        filter_present: ``True`` when a substring or regex filter was supplied.
 
     Returns:
         An error message string when the guardrail fires, or ``None``.
@@ -857,6 +974,8 @@ def _check_tree_guardrail(
     if no_filter_required:
         return None
     if max_depth is not None and max_depth == 0:
+        return None
+    if filter_present:
         return None
     threshold = KANON_TREE_NO_FILTER_THRESHOLD
     if entry_count > threshold:
@@ -891,6 +1010,10 @@ def run_list(args: argparse.Namespace) -> int:
     via ``git ls-remote --tags`` and emits one ``<name>@<version>`` row per
     catalog entry per version. Mutually exclusive with ``--tree``.
 
+    Filter mode: the positional ``<substring>`` or ``--regex <pattern>`` flag
+    narrows the catalog entries before any renderer runs. ``--match-fields``
+    restricts the filter to a subset of the four default fields.
+
     Args:
         args: Parsed argument namespace. Expected attributes:
             - ``catalog_source`` (``str | None``): from ``--catalog-source``.
@@ -905,6 +1028,9 @@ def run_list(args: argparse.Namespace) -> int:
             - ``list_format`` (``str``): from ``--format`` (default ``"names"``);
               ``KANON_LIST_FORMAT`` env var is consulted when the flag is at its
               default. CLI flag takes precedence.
+            - ``substring`` (``str | None``): positional substring filter.
+            - ``regex`` (``str | None``): from ``--regex``.
+            - ``match_fields`` (``list[str] | None``): from ``--match-fields`` CSV.
 
     Returns:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
@@ -919,6 +1045,55 @@ def run_list(args: argparse.Namespace) -> int:
     limit: int = getattr(args, "limit", KANON_LIST_LIMIT)
     no_limit: bool = getattr(args, "no_limit", False)
     since_version: str | None = getattr(args, "since_version", None)
+    substring: str | None = getattr(args, "substring", None)
+    regex: str | None = getattr(args, "regex", None)
+    match_fields: list[str] | None = getattr(args, "match_fields", None)
+
+    # -- Filter mutual-exclusion checks (fail-fast, before catalog work) --
+
+    # <substring> and --regex are mutually exclusive.
+    if substring is not None and regex is not None:
+        print(
+            "ERROR: <substring> and --regex are mutually exclusive. "
+            "Supply the positional substring OR --regex <pattern>, not both.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # --match-fields requires <substring> or --regex.
+    if match_fields is not None and substring is None and regex is None:
+        print(
+            "ERROR: --match-fields requires a filter. "
+            "Supply a positional <substring> or --regex <pattern> together with --match-fields.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Unknown values in --match-fields are a hard error.
+    if match_fields is not None:
+        unknown = [f for f in match_fields if f not in MATCH_FIELDS_LEGAL]
+        if unknown:
+            legal_str = ", ".join(MATCH_FIELDS_LEGAL)
+            unknown_str = ", ".join(unknown)
+            print(
+                f"ERROR: unknown --match-fields value(s): {unknown_str}. Legal values are: {legal_str}.",
+                file=sys.stderr,
+            )
+            return 1
+
+    # Validate the --regex pattern early (fail-fast, before catalog work).
+    if regex is not None:
+        try:
+            re.compile(regex)
+        except re.error as exc:
+            print(
+                f"ERROR: invalid --regex pattern {regex!r}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+
+    # -- Determine whether a user-supplied filter is active --
+    filter_present: bool = substring is not None or regex is not None
 
     # Resolve the output format: CLI flag > env var > default "names".
     # The argparse default is None (not "names") so we can detect when the
@@ -1001,47 +1176,65 @@ def run_list(args: argparse.Namespace) -> int:
     manifest_root = _resolve_manifest_repo(catalog_source)
 
     if tree:
-        index = _build_sorted_index(manifest_root)
-        entry_count = len(index)
+        # Build the full metadata list first so the filter can be applied.
+        all_entries = _build_sorted_metadata(manifest_root)
+        entry_count = len(all_entries)
 
-        guardrail_msg = _check_tree_guardrail(entry_count, max_depth, no_filter_required)
+        guardrail_msg = _check_tree_guardrail(entry_count, max_depth, no_filter_required, filter_present=filter_present)
         if guardrail_msg is not None:
             print(guardrail_msg, file=sys.stderr, end="")
             return 1
 
-        if not index:
-            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+        # Apply filter to narrow the tree entries.
+        if filter_present:
+            predicate = _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields)
+            filtered_entries = _apply_filter(all_entries, predicate)
+        else:
+            filtered_entries = all_entries
+
+        if not filtered_entries:
+            if filter_present:
+                print(LIST_FILTER_ZERO_MATCH_NOTE, file=sys.stderr)
+            else:
+                print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
             return 0
 
-        for entry_name in index:
-            tree_lines = _render_tree(manifest_root, entry_name, max_depth)
+        for entry in filtered_entries:
+            tree_lines = _render_tree(manifest_root, entry.name, max_depth)
             for line in tree_lines:
                 print(line, flush=True)
 
         return 0
 
-    if list_format == "json":
-        # JSON format uses the metadata shape for both default and --detail modes.
-        entries = _build_sorted_metadata(manifest_root)
+    # Non-tree modes: build full metadata, apply filter, render.
+    all_entries = _build_sorted_metadata(manifest_root)
+
+    if filter_present:
+        predicate = _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields)
+        entries = _apply_filter(all_entries, predicate)
+
         if not entries:
-            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
-            print(_format_json_catalog([]), end="")
+            print(LIST_FILTER_ZERO_MATCH_NOTE, file=sys.stderr)
+            if list_format == "json":
+                print(_format_json_catalog([]), end="")
             return 0
+    else:
+        entries = all_entries
+
+    if not entries:
+        print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+        if list_format == "json":
+            print(_format_json_catalog([]), end="")
+        return 0
+
+    if list_format == "json":
         print(_format_json_catalog(entries), end="")
     elif detail:
-        entries = _build_sorted_metadata(manifest_root)
-        if not entries:
-            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
-            return 0
         for metadata in entries:
             print(_format_detail_record(metadata), flush=True)
     else:
-        index = _build_sorted_index(manifest_root)
-        if not index:
-            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
-            return 0
-        for name in index:
-            print(name, flush=True)
+        for metadata in entries:
+            print(metadata.name, flush=True)
 
     return 0
 
@@ -1050,6 +1243,7 @@ def register(subparsers) -> None:
     """Register the ``list`` subcommand on the top-level argparse parser.
 
     Adds the ``list`` subparser with:
+    - ``<substring>`` optional positional filter (substring, case-sensitive).
     - ``--catalog-source`` from the shared factory.
     - ``--format {names,json}`` to select the output format (default: ``names``).
     - ``--detail`` for human-readable per-entry records.
@@ -1060,6 +1254,8 @@ def register(subparsers) -> None:
     - ``--limit N`` to cap the number of versions walked (default: ``KANON_LIST_LIMIT``).
     - ``--no-limit`` to walk all PEP 440-valid tags without a cap.
     - ``--since-version <spec>`` to filter walked versions by a PEP 440 constraint.
+    - ``--regex <pattern>`` for regex-based entry filtering.
+    - ``--match-fields <csv>`` to narrow the filter to specific fields.
 
     Threshold guardrail: when the catalog has more than
     ``KANON_TREE_NO_FILTER_THRESHOLD`` entries (default 20, overridable via
@@ -1089,6 +1285,14 @@ def register(subparsers) -> None:
             "Requires a catalog source via --catalog-source or the\n"
             "KANON_CATALOG_SOURCE environment variable. The CLI flag takes\n"
             "precedence when both are set.\n\n"
+            "Filter mode: supply an optional positional <substring> or --regex\n"
+            "<pattern> to narrow the catalog entries returned. The filter checks\n"
+            "the entry name, display-name, description, and keywords by default.\n"
+            "Use --match-fields <csv> to restrict to a subset of those fields.\n"
+            "  <substring> and --regex are mutually exclusive.\n"
+            "  --match-fields requires <substring> or --regex.\n"
+            "Zero matches: exits 0 with empty stdout and '0 entries match filter'\n"
+            "on stderr.\n\n"
             "Format mode (--format): selects the output format. Choices:\n"
             "  names (default) -- one entry name per line, pipeable into kanon add.\n"
             "  json -- structured JSON array of entry objects. Default mode and\n"
@@ -1114,6 +1318,9 @@ def register(subparsers) -> None:
         epilog=(
             "Examples:\n"
             "  kanon list --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list foo --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list --regex '^foo' --catalog-source ...\n"
+            "  kanon list foo --match-fields keywords --catalog-source ...\n"
             "  kanon list --format json --catalog-source https://example.com/org/repo.git@main\n"
             "  kanon list --format json --all-versions --catalog-source ...\n"
             "  kanon list --detail --catalog-source https://example.com/org/repo.git@main\n"
@@ -1131,6 +1338,19 @@ def register(subparsers) -> None:
     )
 
     add_catalog_source_arg(parser)
+
+    parser.add_argument(
+        "substring",
+        nargs="?",
+        default=None,
+        metavar="<substring>",
+        help=(
+            "Optional case-sensitive substring filter. When supplied, only entries "
+            "whose name, display-name, description, or keywords contain the substring "
+            "are returned. Mutually exclusive with --regex. "
+            "Use --match-fields to restrict the fields checked."
+        ),
+    )
 
     parser.add_argument(
         "--format",
@@ -1256,6 +1476,37 @@ def register(subparsers) -> None:
             "The constraint is evaluated against the PEP 440 version parsed "
             "from each tag name. Tags that do not parse as PEP 440 are skipped. "
             "Example: --since-version '>=1.0,<2.0'"
+        ),
+    )
+
+    parser.add_argument(
+        "--regex",
+        dest="regex",
+        default=None,
+        metavar="<pattern>",
+        help=(
+            "Regular-expression filter (Python re.search). When supplied, only "
+            "entries whose name, display-name, description, or keywords match the "
+            "pattern are returned. The keywords field matches when any element "
+            "satisfies re.search. Mutually exclusive with the positional <substring>. "
+            "Use --match-fields to restrict the fields checked. "
+            "Example: --regex '^foo'"
+        ),
+    )
+
+    parser.add_argument(
+        "--match-fields",
+        dest="match_fields",
+        default=None,
+        metavar="<csv>",
+        type=lambda v: [f.strip() for f in v.split(",") if f.strip()],
+        help=(
+            "Comma-separated list of fields to check when filtering. "
+            "Legal values: name, display-name, description, keywords. "
+            "Default (when --match-fields is not supplied): all four fields. "
+            "Requires the positional <substring> or --regex to be present; "
+            "supplying --match-fields without a filter is a hard error. "
+            "Example: --match-fields keywords"
         ),
     )
 

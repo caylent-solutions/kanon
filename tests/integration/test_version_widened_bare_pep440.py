@@ -9,6 +9,13 @@ No shared state: each test builds its own fixture repo via ``tmp_path``
 so cases are fully isolated.
 
 Implements AC-TEST-003 and AC-CYCLE-001 (E1-F1-S1-T1).
+
+Also implements AC-CYCLE-001 (E1-F1-S1-T2): the loud zero-PEP-440-parseable
+error case.  A fixture repo whose tags are entirely non-PEP-440
+(``release-2024``, ``snapshot-abc``, ``nightly-build``) is built;
+``resolve_version`` is called with a ``==1.0.0``-style constraint; the
+raised ``SystemExit`` is caught (smoke check) and the ``ValueError`` content
+is verified via ``_resolve_constraint_from_tags`` directly.
 """
 
 from __future__ import annotations
@@ -93,3 +100,60 @@ def test_widened_pep440_resolve_version_returns_refs_tags(
     result = resolve_version(url, spec)
 
     assert result == f"refs/tags/{spec}", f"Expected refs/tags/{spec!r} for {description} but got {result!r}"
+
+
+@pytest.mark.integration
+def test_all_non_pep440_tags_raises_loud_error(tmp_path: pathlib.Path) -> None:
+    """AC-CYCLE-001 (E1-F1-S1-T2): entirely non-PEP-440 tag set triggers SystemExit.
+
+    Smoke check: builds a fixture repo with three genuinely non-PEP-440 tags
+    (``release-2024``, ``snapshot-abc``, ``nightly-build``) and calls
+    ``resolve_version`` with a ``==1.0.0``-style constraint.  Asserts that
+    ``SystemExit`` is raised -- resolve_version catches the inner ValueError
+    and calls sys.exit(1).  Content verification is done separately in
+    ``test_all_non_pep440_tags_loud_error_content``.
+    """
+    non_pep440_tags = ["release-2024", "snapshot-abc", "nightly-build"]
+    url = _init_fixture_repo(tmp_path / "repo", non_pep440_tags)
+
+    with pytest.raises(SystemExit):
+        # resolve_version catches ValueError and calls sys.exit(1)
+        resolve_version(url, "refs/tags/==1.0.0")
+
+
+@pytest.mark.integration
+def test_all_non_pep440_tags_loud_error_content(tmp_path: pathlib.Path) -> None:
+    """AC-CYCLE-001 (E1-F1-S1-T2): loud error names all three skipped tags.
+
+    Calls _resolve_constraint_from_tags directly (bypassing the sys.exit
+    wrapper) to capture the ValueError and assert its content.
+    """
+    from kanon_cli.version import _resolve_constraint_from_tags
+
+    non_pep440_tags = ["release-2024", "snapshot-abc", "nightly-build"]
+    url = _init_fixture_repo(tmp_path / "repo", non_pep440_tags)
+
+    # Build full refs as git ls-remote would return them
+    result = subprocess.run(
+        ["git", "ls-remote", "--tags", url],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    available_tags = [
+        line.split("\t")[1]
+        for line in result.stdout.strip().splitlines()
+        if "\t" in line and not line.split("\t")[1].endswith("^{}")
+    ]
+
+    with pytest.raises(ValueError) as exc_info:
+        _resolve_constraint_from_tags("refs/tags/==1.0.0", available_tags)
+
+    msg = str(exc_info.value)
+    assert msg.startswith("ERROR: No PEP 440-parseable version tags found under 'refs/tags'."), (
+        f"Unexpected message start: {msg!r}"
+    )
+    assert "Skipped 3 tag(s)" in msg, f"Missing count in: {msg!r}"
+    for tag_name in non_pep440_tags:
+        assert f"refs/tags/{tag_name}" in msg, f"Tag {tag_name!r} not listed in error message: {msg!r}"
+    assert "kanon catalog audit --check tag-format" in msg, f"Remediation pointer missing: {msg!r}"

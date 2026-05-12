@@ -18,7 +18,7 @@ import sys
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from kanon_cli.constants import PEP440_OPERATORS
+from kanon_cli.constants import PEP440_OPERATORS, TAG_ERROR_DISPLAY_CAP
 
 
 def is_version_constraint(rev_spec: str) -> bool:
@@ -192,6 +192,42 @@ def _normalize_bare_semver_to_tag(rev_spec: str) -> str:
     return rev_spec
 
 
+def _format_zero_pep440_tags_error(prefix: str, skipped: list[str]) -> str:
+    """Format the loud error message for the zero-PEP-440-parseable-tags case.
+
+    Called when candidate tags exist under ``prefix`` but none of their last
+    path components parse as a valid PEP 440 version. Per spec Section 0.4
+    and Section 13 decision 14, the message must enumerate the non-PEP-440
+    tag names (capped at 10, deterministically sorted) plus a remediation
+    pointer to ``kanon catalog audit --check tag-format``.
+
+    Args:
+        prefix: The tag namespace prefix that was searched (e.g.
+            ``refs/tags/mylib`` or ``refs/tags``).
+        skipped: Full tag ref names of every candidate whose last path
+            component failed PEP 440 parsing.
+
+    Returns:
+        A multi-line error message string (without a trailing newline)
+        ready to be passed to ``ValueError``.
+    """
+    count = len(skipped)
+    sorted_skipped = sorted(skipped)
+    display = sorted_skipped[:TAG_ERROR_DISPLAY_CAP]
+    lines: list[str] = [
+        f"ERROR: No PEP 440-parseable version tags found under '{prefix}'.",
+        f"Skipped {count} tag(s) whose last path component is not a valid PEP 440 version:",
+    ]
+    for tag in display:
+        lines.append(f"  - {tag}")
+    if count > TAG_ERROR_DISPLAY_CAP:
+        lines.append(f"... (showing first {TAG_ERROR_DISPLAY_CAP} of {count})")
+    lines.append("Run 'kanon catalog audit --check tag-format' against the manifest repo")
+    lines.append("to identify every non-PEP-440 tag, then ask the catalog author to rename")
+    lines.append("them to PEP 440 form (e.g., 'release-1.0.0' -> '1.0.0').")
+    return "\n".join(lines)
+
+
 def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> str:
     """Resolve a PEP 440 version constraint to the highest matching tag.
 
@@ -203,6 +239,17 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     This is the canonical constraint resolution implementation. Both
     ``resolve_version`` (CLI, fetches its own tags) and the repo module's
     ``resolve_version_constraint`` (receives pre-fetched tags) delegate here.
+
+    Two distinct error variants apply when no PEP 440 versions are found:
+
+    1. Zero candidates under prefix -- ``prefix`` has no tags at all. Raises a
+       narrow ``ValueError`` with message ``"No tags found under prefix '<prefix>'
+       for the given revision"``. This path is unchanged from before this task.
+
+    2. Candidates exist but none parse as PEP 440 (spec Section 0.4) -- Raises a
+       loud ``ValueError`` produced by ``_format_zero_pep440_tags_error``, which
+       enumerates up to 10 non-PEP-440 tag names (sorted deterministically) and
+       includes a remediation pointer to ``kanon catalog audit --check tag-format``.
 
     Args:
         revision: A revision string with a PEP 440 constraint in the last
@@ -236,16 +283,19 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         raise ValueError(f"No tags found under prefix '{prefix}' for the given revision")
 
     # Parse version from the last path component of each candidate.
+    # Collect skipped non-PEP-440 tag names for the loud error if needed.
     versions = []
+    skipped: list[str] = []
     for tag in candidate_tags:
         version_str = tag.rsplit("/", 1)[-1]
         try:
             versions.append((tag, Version(version_str)))
         except InvalidVersion:
-            continue
+            skipped.append(tag)
 
     if not versions:
-        raise ValueError(f"No parseable version tags found under '{prefix or 'refs/tags'}'")
+        display_prefix = prefix if prefix is not None else "refs/tags"
+        raise ValueError(_format_zero_pep440_tags_error(display_prefix, skipped))
 
     # Wildcard or 'latest': return highest version. The literal ``latest``
     # is treated as an alias for ``*`` so that ``refs/tags/latest`` and the

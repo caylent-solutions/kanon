@@ -171,8 +171,50 @@ export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@2.2.0'
 ## Error Cases
 
 - No tags found for the URL -- fail with error
-- No tags under the specified prefix -- fail with error
-- No parseable version tags -- fail with error
+- No tags under the specified prefix -- fail with a narrow error:
+  ```
+  No tags found under prefix '<prefix>' for the given revision
+  ```
+- No parseable version tags -- two variants apply (see below):
+  - **Zero candidates under prefix** (prefix has no tags at all): narrow message preserved as-is.
+  - **Non-PEP-440 candidates** (tags exist under prefix but none parse as PEP 440): loud error (see below).
 - No tags matching the specifier -- fail with available versions listed
 - Invalid constraint syntax -- fail with error
 - `git ls-remote` failure -- fail with stderr
+
+---
+
+## Loud Error: Non-PEP-440 Tags Under Prefix
+
+When candidate tags exist under the requested prefix but none of their last path
+components parse as a valid PEP 440 version (spec Section 0.4, Section 13 decision 14),
+the resolver raises a `ValueError` with the following multi-line format:
+
+```
+ERROR: No PEP 440-parseable version tags found under '<prefix>'.
+Skipped <N> tag(s) whose last path component is not a valid PEP 440 version:
+  - <tag_name_1>
+  - <tag_name_2>
+  ... (showing first 10 of <N>)
+Run 'kanon catalog audit --check tag-format' against the manifest repo
+to identify every non-PEP-440 tag, then ask the catalog author to rename
+them to PEP 440 form (e.g., 'release-1.0.0' -> '1.0.0').
+```
+
+Key details:
+
+- The `... (showing first 10 of <N>)` suffix is only present when more than 10 tags are skipped.
+- The bullet list is sorted deterministically (lexicographic) regardless of input order.
+- The remediation pointer always names `kanon catalog audit --check tag-format`.
+
+**When this fires:** the prefix matched at least one tag, but every matched tag has a
+last path component that `packaging.version.Version` rejects (e.g., `release-1.0.0`,
+`release-2024`, `nightly-build`).
+
+**When the narrow message fires instead:** the prefix matched zero tags -- there are
+simply no tags under that namespace at all. In this case the original narrow message
+is preserved: `No tags found under prefix '<prefix>' for the given revision`.
+
+The formatting logic is encapsulated in the private helper
+`_format_zero_pep440_tags_error(prefix, skipped)` in `kanon_cli.version`, which
+accepts the display prefix string and the full list of skipped tag refs.

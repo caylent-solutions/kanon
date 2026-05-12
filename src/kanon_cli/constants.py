@@ -15,6 +15,9 @@ CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 
 # -- Version resolution --
 PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
+# Maximum number of non-PEP-440 tag names to include in a loud error message.
+# Keeps error output bounded when a prefix matches many malformed tags.
+TAG_ERROR_DISPLAY_CAP = 10
 
 # -- kanonenv parsing --
 SOURCE_PREFIX = "KANON_SOURCE_"

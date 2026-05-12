@@ -25,6 +25,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "defusedxml>=0.7.1",
     "packaging>=23.0",
 ]
 
@@ -118,5 +119,7 @@ patch_tags = ["fix", "perf", "security", "revert"]
 dev = [
     "build>=1.4.3",
     "hatchling>=1.29.0",
+    "mypy>=1.0.0",
+    "types-defusedxml>=0.7.0",
     "yamllint>=1.38.0",
 ]

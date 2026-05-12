@@ -30,7 +30,7 @@ from kanon_cli.core.metadata import _parse_catalog_metadata
 from kanon_cli.version import is_version_constraint, resolve_version
 
 
-def resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
+def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
     """Resolve the manifest repo root directory from a catalog source string.
 
     Clones the manifest repo at the given ``<git_url>@<ref>`` source into a
@@ -123,20 +123,21 @@ def run_list(args: argparse.Namespace) -> int:
     """Entry-point function for the ``kanon list`` subcommand.
 
     Resolves the catalog source, clones the manifest repo, builds the sorted
-    entry-name index, and prints one name per line to stdout. Exits 0 in all
+    entry-name index, and prints one name per line to stdout. Returns 0 in all
     successful cases (including empty catalogs). Writes the canonical
-    missing-catalog error to stderr and returns non-zero when no catalog
-    source is configured.
+    missing-catalog error to stderr and returns 1 when no catalog source is
+    configured.
 
-    Output is streamed line-by-line (``flush=True``) so large catalogs do not
-    buffer the full result in memory per spec Section 4.1 "Streaming".
+    Entry names are fully collected and sorted in memory, then printed
+    line-by-line with ``flush=True`` per spec Section 4.1.
 
     Args:
         args: Parsed argument namespace. Expected attributes:
             - ``catalog_source`` (``str | None``): from ``--catalog-source``.
 
     Returns:
-        Exit code: 0 on success (including empty catalog), 1 on error.
+        Exit code: 0 on success (including empty catalog), 1 when no catalog
+        source is configured.
     """
     catalog_source: str | None = getattr(args, "catalog_source", None) or os.environ.get(CATALOG_ENV_VAR)
 
@@ -145,9 +146,9 @@ def run_list(args: argparse.Namespace) -> int:
             MISSING_CATALOG_ERROR_TEMPLATE.format(command="list"),
             file=sys.stderr,
         )
-        sys.exit(1)
+        return 1
 
-    manifest_root = resolve_manifest_repo(catalog_source)
+    manifest_root = _resolve_manifest_repo(catalog_source)
     index = _build_sorted_index(manifest_root)
 
     if not index:

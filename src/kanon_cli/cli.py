@@ -123,4 +123,6 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(2)
 
-    args.func(args)
+    exit_code = args.func(args)
+    if exit_code:
+        sys.exit(exit_code)

@@ -13,9 +13,9 @@ import pytest
 
 from kanon_cli.commands.list import (
     _build_sorted_index,
+    _resolve_manifest_repo,
     _walk_marketplace_xmls,
     register,
-    resolve_manifest_repo,
     run_list,
 )
 from kanon_cli.constants import MISSING_CATALOG_ERROR_TEMPLATE
@@ -59,16 +59,16 @@ def _write_marketplace_xml(directory: Path, name: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Tests for resolve_manifest_repo
+# Tests for _resolve_manifest_repo
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestResolveManifestRepo:
-    """Tests for the resolve_manifest_repo() git-clone wrapper."""
+    """Tests for the _resolve_manifest_repo() git-clone wrapper."""
 
     def test_clones_and_returns_repo_dir(self, tmp_path: Path) -> None:
-        """resolve_manifest_repo clones the repo and returns the repo dir path."""
+        """_resolve_manifest_repo clones the repo and returns the repo dir path."""
         fake_repo = tmp_path / "repo"
         fake_repo.mkdir()
 
@@ -82,12 +82,12 @@ class TestResolveManifestRepo:
             ),
             patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
         ):
-            result = resolve_manifest_repo("https://example.com/repo.git@main")
+            result = _resolve_manifest_repo("https://example.com/repo.git@main")
 
         assert result == fake_repo
 
     def test_exits_1_when_clone_fails(self) -> None:
-        """resolve_manifest_repo calls sys.exit(1) when git clone fails."""
+        """_resolve_manifest_repo calls sys.exit(1) when git clone fails."""
         mock_result = type("R", (), {"returncode": 1, "stderr": "fatal: repo not found"})()
 
         with (
@@ -99,11 +99,11 @@ class TestResolveManifestRepo:
             patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                resolve_manifest_repo("https://example.com/repo.git@main")
+                _resolve_manifest_repo("https://example.com/repo.git@main")
         assert exc_info.value.code == 1
 
     def test_exits_1_writes_error_to_stderr(self, capsys: pytest.CaptureFixture) -> None:
-        """resolve_manifest_repo writes ERROR: to stderr when clone fails."""
+        """_resolve_manifest_repo writes ERROR: to stderr when clone fails."""
         mock_result = type("R", (), {"returncode": 1, "stderr": "fatal: repo not found"})()
 
         with (
@@ -115,13 +115,13 @@ class TestResolveManifestRepo:
             patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
         ):
             with pytest.raises(SystemExit):
-                resolve_manifest_repo("https://example.com/repo.git@main")
+                _resolve_manifest_repo("https://example.com/repo.git@main")
 
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
 
     def test_resolves_latest_ref_to_wildcard(self, tmp_path: Path) -> None:
-        """resolve_manifest_repo maps 'latest' ref to '*' before cloning."""
+        """_resolve_manifest_repo maps 'latest' ref to '*' before cloning."""
         fake_repo = tmp_path / "repo"
         fake_repo.mkdir()
         captured_args: list[list[str]] = []
@@ -140,14 +140,14 @@ class TestResolveManifestRepo:
             ),
             patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
         ):
-            resolve_manifest_repo("https://example.com/repo.git@latest")
+            _resolve_manifest_repo("https://example.com/repo.git@latest")
 
         assert captured_args, "subprocess.run should have been called"
         git_args = captured_args[0]
         assert "*" in git_args, f"Expected '*' branch arg for 'latest'; got {git_args!r}"
 
     def test_resolves_version_constraint_via_resolve_version(self, tmp_path: Path) -> None:
-        """resolve_manifest_repo calls resolve_version() for PEP 440 constraints."""
+        """_resolve_manifest_repo calls resolve_version() for PEP 440 constraints."""
         fake_repo = tmp_path / "repo"
         fake_repo.mkdir()
 
@@ -163,7 +163,7 @@ class TestResolveManifestRepo:
             patch("kanon_cli.commands.list.is_version_constraint", return_value=True),
             patch("kanon_cli.commands.list.resolve_version", return_value="refs/tags/1.2.0") as mock_rv,
         ):
-            resolve_manifest_repo("https://example.com/repo.git@>=1.0.0")
+            _resolve_manifest_repo("https://example.com/repo.git@>=1.0.0")
 
         mock_rv.assert_called_once_with("https://example.com/repo.git", ">=1.0.0")
 
@@ -280,7 +280,12 @@ class TestBuildSortedIndex:
 
 @pytest.mark.unit
 class TestRunListMissingCatalogSource:
-    """run_list() exits non-zero with the canonical error when no source is set."""
+    """run_list() returns non-zero with the canonical error when no source is set."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_catalog_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Ensure KANON_CATALOG_SOURCE is absent for every test in this class."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
 
     def _make_args(self, catalog_source: str | None = None) -> argparse.Namespace:
         return argparse.Namespace(
@@ -289,32 +294,15 @@ class TestRunListMissingCatalogSource:
         )
 
     def test_missing_source_exits_nonzero(self) -> None:
-        """run_list calls sys.exit with non-zero code when catalog_source is None and env var is unset."""
+        """run_list returns 1 when catalog_source is None and env var is unset."""
         args = self._make_args(catalog_source=None)
-        import os
-
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            with pytest.raises(SystemExit) as exc_info:
-                run_list(args)
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
-        assert exc_info.value.code != 0
+        result = run_list(args)
+        assert result != 0
 
     def test_missing_source_writes_canonical_error_to_stderr(self, capsys: pytest.CaptureFixture) -> None:
         """run_list writes the canonical missing-catalog error to stderr."""
         args = self._make_args(catalog_source=None)
-        import os
-
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            with pytest.raises(SystemExit):
-                run_list(args)
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
-
+        run_list(args)
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
         assert "catalog source" in captured.err.lower()
@@ -322,48 +310,21 @@ class TestRunListMissingCatalogSource:
     def test_missing_source_empty_stdout(self, capsys: pytest.CaptureFixture) -> None:
         """run_list writes nothing to stdout on missing catalog source."""
         args = self._make_args(catalog_source=None)
-        import os
-
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            with pytest.raises(SystemExit):
-                run_list(args)
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
-
+        run_list(args)
         captured = capsys.readouterr()
         assert captured.out == ""
 
     def test_canonical_error_mentions_list_command(self, capsys: pytest.CaptureFixture) -> None:
         """The canonical error names the 'list' command in the error text."""
         args = self._make_args(catalog_source=None)
-        import os
-
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            with pytest.raises(SystemExit):
-                run_list(args)
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
-
+        run_list(args)
         captured = capsys.readouterr()
         assert "list" in captured.err
 
     def test_canonical_error_mentions_catalog_source_flag(self, capsys: pytest.CaptureFixture) -> None:
         """The canonical error mentions --catalog-source and KANON_CATALOG_SOURCE."""
         args = self._make_args(catalog_source=None)
-        import os
-
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            with pytest.raises(SystemExit):
-                run_list(args)
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
-
+        run_list(args)
         captured = capsys.readouterr()
         assert "--catalog-source" in captured.err
         assert "KANON_CATALOG_SOURCE" in captured.err
@@ -383,7 +344,7 @@ class TestRunListEmptyCatalog:
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             result = run_list(args)
         assert result == 0
 
@@ -392,7 +353,7 @@ class TestRunListEmptyCatalog:
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             run_list(args)
         captured = capsys.readouterr()
         assert captured.out == ""
@@ -402,7 +363,7 @@ class TestRunListEmptyCatalog:
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             run_list(args)
         captured = capsys.readouterr()
         assert "manifest repo contains 0 entries" in captured.err
@@ -424,7 +385,7 @@ class TestRunListHappyPath:
             _write_marketplace_xml(repo_specs, name)
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             result = run_list(args)
 
         captured = capsys.readouterr()
@@ -438,7 +399,7 @@ class TestRunListHappyPath:
         _write_marketplace_xml(repo_specs, "my-entry")
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             result = run_list(args)
         assert result == 0
 
@@ -448,7 +409,7 @@ class TestRunListHappyPath:
         _write_marketplace_xml(repo_specs, "my-entry")
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list.resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
             run_list(args)
         captured = capsys.readouterr()
         # stderr may contain recommended-field warnings from metadata parsing;

@@ -7,6 +7,7 @@ lexicographically.
 Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
 Section 4.1 (data source + default output) and Section 4 header
 (canonical missing-catalog error and env-var precedence).
+Section 4.1 flag-table row ``--detail`` for the per-entry detail formatter.
 
 Environment variables:
 - ``KANON_CATALOG_SOURCE``: catalog source override (CLI flag wins).
@@ -26,8 +27,16 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
-from kanon_cli.core.metadata import _parse_catalog_metadata
+from kanon_cli.core.metadata import CatalogMetadata, _parse_catalog_metadata
 from kanon_cli.version import is_version_constraint, resolve_version
+
+# -- Detail formatter private constants --
+# Placeholder rendered in place of a missing recommended field (type=None).
+# Matches the spec-canonical text from spec Section 2.1 step 2.
+_DETAIL_MISSING_PLACEHOLDER = "<missing>"
+# Width to which all field labels are padded so the ' : ' separator is
+# column-aligned across the four field lines in a detail record.
+_DETAIL_LABEL_WIDTH = 12
 
 
 def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
@@ -119,27 +128,97 @@ def _build_sorted_index(manifest_root: pathlib.Path) -> list[str]:
     return sorted(names)
 
 
+def _build_sorted_metadata(manifest_root: pathlib.Path) -> list[CatalogMetadata]:
+    """Build a lexicographically sorted list of CatalogMetadata instances.
+
+    Walks ``repo-specs/**/*-marketplace.xml`` in manifest_root, parses each
+    file with :func:`_parse_catalog_metadata`, and returns the results sorted
+    by entry name. Used by ``--detail`` mode to obtain both names and field
+    values in a single pass.
+
+    Recommended-field warnings are emitted to stderr by
+    :func:`_parse_catalog_metadata` as a side effect; this function does not
+    add or suppress them.
+
+    Args:
+        manifest_root: Root directory of the cloned manifest repo.
+
+    Returns:
+        Sorted list of :class:`CatalogMetadata` instances. Empty when the
+        catalog has no ``*-marketplace.xml`` files.
+    """
+    xml_paths = _walk_marketplace_xmls(manifest_root)
+    entries: list[CatalogMetadata] = []
+    for xml_path in xml_paths:
+        metadata = _parse_catalog_metadata(xml_path)
+        entries.append(metadata)
+    return sorted(entries, key=lambda m: m.name)
+
+
+def _format_detail_record(metadata: CatalogMetadata) -> str:
+    """Format a single catalog entry as a human-readable multi-line record.
+
+    Output shape (per spec Section 2.1 step 2)::
+
+        <name>
+          display-name : <display-name>
+          description  : <description>
+          version      : <version>
+          type         : <type>
+
+    Field labels are right-padded to :data:`_DETAIL_LABEL_WIDTH` so the
+    ``' : '`` separator is at a consistent column position across all four
+    field lines. Missing recommended fields (``type=None``) render as the
+    :data:`_DETAIL_MISSING_PLACEHOLDER` constant (``<missing>``).
+
+    Args:
+        metadata: A parsed :class:`CatalogMetadata` instance.
+
+    Returns:
+        The formatted record string (no trailing newline).
+    """
+    type_value = metadata.type if metadata.type is not None else _DETAIL_MISSING_PLACEHOLDER
+
+    def _field(label: str, value: str) -> str:
+        padded_label = label.ljust(_DETAIL_LABEL_WIDTH)
+        return f"  {padded_label} : {value}"
+
+    lines = [
+        metadata.name,
+        _field("display-name", metadata.display_name),
+        _field("description", metadata.description),
+        _field("version", metadata.version),
+        _field("type", type_value),
+    ]
+    return "\n".join(lines)
+
+
 def run_list(args: argparse.Namespace) -> int:
     """Entry-point function for the ``kanon list`` subcommand.
 
     Resolves the catalog source, clones the manifest repo, builds the sorted
-    entry-name index, and prints one name per line to stdout. Returns 0 in all
-    successful cases (including empty catalogs). Writes the canonical
-    missing-catalog error to stderr and returns 1 when no catalog source is
-    configured.
+    entry index, and writes output to stdout. Returns 0 in all successful
+    cases (including empty catalogs). Writes the canonical missing-catalog
+    error to stderr and returns 1 when no catalog source is configured.
 
-    Entry names are fully collected and sorted in memory, then printed
-    line-by-line with ``flush=True`` per spec Section 4.1.
+    Default mode: prints one entry name per line with ``flush=True`` per spec
+    Section 4.1.
+
+    Detail mode (``--detail``): prints a multi-line record per entry via
+    :func:`_format_detail_record`. Human-readable; not pipeable into
+    ``kanon add``.
 
     Args:
         args: Parsed argument namespace. Expected attributes:
             - ``catalog_source`` (``str | None``): from ``--catalog-source``.
+            - ``detail`` (``bool``): from ``--detail`` (default ``False``).
 
     Returns:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
         source is configured.
     """
     catalog_source: str | None = getattr(args, "catalog_source", None) or os.environ.get(CATALOG_ENV_VAR)
+    detail: bool = getattr(args, "detail", False)
 
     if not catalog_source:
         print(
@@ -149,14 +228,21 @@ def run_list(args: argparse.Namespace) -> int:
         return 1
 
     manifest_root = _resolve_manifest_repo(catalog_source)
-    index = _build_sorted_index(manifest_root)
 
-    if not index:
-        print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
-        return 0
-
-    for name in index:
-        print(name, flush=True)
+    if detail:
+        entries = _build_sorted_metadata(manifest_root)
+        if not entries:
+            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+            return 0
+        for metadata in entries:
+            print(_format_detail_record(metadata), flush=True)
+    else:
+        index = _build_sorted_index(manifest_root)
+        if not index:
+            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+            return 0
+        for name in index:
+            print(name, flush=True)
 
     return 0
 
@@ -168,6 +254,8 @@ def register(subparsers) -> None:
     - ``--catalog-source`` from the shared factory in
       ``kanon_cli.core.cli_args`` (so there is no flag-definition collision
       with ``bootstrap`` or any other command that also uses the factory).
+    - ``--detail`` for human-readable per-entry records (not pipeable into
+      ``kanon add``; machine consumers should combine with ``--format json``).
 
     Args:
         subparsers: The subparsers action from the parent parser (returned by
@@ -187,11 +275,23 @@ def register(subparsers) -> None:
         epilog=(
             "Examples:\n"
             "  kanon list --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list --detail --catalog-source https://example.com/org/repo.git@main\n"
             "  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     add_catalog_source_arg(parser)
+
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        default=False,
+        help=(
+            "Print a human-readable multi-line record per entry (display-name, "
+            "description, version, type). Human-readable only -- not pipeable "
+            "into kanon add. For machine consumers, combine with --format json."
+        ),
+    )
 
     parser.set_defaults(func=run_list)

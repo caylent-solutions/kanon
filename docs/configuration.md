@@ -1,5 +1,50 @@
 # Configuration (.kanon)
 
+## Global options
+
+The following flags are accepted by every `kanon` command as global options placed
+before the subcommand name (e.g., `kanon --quiet install`):
+
+| Flag | Description |
+|------|-------------|
+| `--quiet` | Suppress all output except errors. Sets the root logger to WARNING level. |
+| `--verbose` | Enable debug-level output. Sets the root logger to DEBUG level. |
+| `--no-color` | Disable ANSI color output unconditionally. |
+
+### Mutual exclusion: --quiet and --verbose
+
+`--quiet` and `--verbose` are mutually exclusive. Passing both flags at the same
+time causes argparse to exit immediately with a non-zero code and an error message
+on stderr. There is no fallback or silent suppression -- this is a hard error per
+spec Section 7.
+
+```bash
+# ERROR: argument --verbose: not allowed with argument --quiet
+kanon --quiet --verbose install .kanon
+```
+
+### Color output: --no-color and the NO_COLOR environment variable
+
+Color output is controlled by the following precedence chain (highest wins):
+
+1. `--no-color` flag -- always disables color when passed, regardless of the
+   `NO_COLOR` environment variable or TTY state.
+2. `NO_COLOR` environment variable -- when set to any non-empty value, disables
+   color output following the https://no-color.org convention.
+3. TTY auto-detection -- color is enabled by default when stdout is a TTY and
+   neither of the above conditions applies.
+
+```bash
+# Disable color via flag (highest precedence)
+kanon --no-color install .kanon
+
+# Disable color via environment variable
+NO_COLOR=1 kanon install .kanon
+
+# --no-color wins even when NO_COLOR is empty
+NO_COLOR= kanon --no-color install .kanon
+```
+
 The `.kanon` file is a shell-compatible KEY=VALUE configuration file that drives the Kanon lifecycle.
 
 ## Format

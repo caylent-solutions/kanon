@@ -55,3 +55,12 @@ GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")
 # -- Install concurrency lock --
 # File name for the per-project exclusive lock that serializes concurrent installs.
 INSTALL_LOCK_FILENAME = ".kanon-install.lock"
+
+# -- Color / TTY output --
+# Environment variable name that suppresses ANSI color output when non-empty,
+# following the https://no-color.org convention.
+NO_COLOR_ENV = "NO_COLOR"
+# Runtime flag mutated by _apply_global_flags (kanon_cli.core.cli_args) when
+# --no-color is passed or NO_COLOR env var is non-empty. All formatter helpers
+# read this flag before emitting ANSI escape sequences.
+_NO_COLOR_ACTIVE: bool = False

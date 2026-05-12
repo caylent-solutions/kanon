@@ -23,6 +23,7 @@ from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.install import register as register_install
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
+from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 
 
 def _make_signal_handler(signum: int) -> "Callable[[int, FrameType | None], None]":
@@ -75,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
     )
 
+    add_global_flags(parser)
+
     subparsers = parser.add_subparsers(
         dest="command",
         title="subcommands",
@@ -111,6 +114,8 @@ def main(argv: list[str] | None = None) -> None:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    _apply_global_flags(args)
 
     if args.command is None:
         parser.print_help()

@@ -111,3 +111,18 @@ if _raw_list_limit is not None:
     KANON_LIST_LIMIT: int = int(_raw_list_limit)
 else:
     KANON_LIST_LIMIT = 50
+
+# -- kanon add --
+# Environment variable name for the destination .kanon file path.
+# CLI flag --kanon-file takes precedence when both are set.
+KANON_KANON_FILE_ENV = "KANON_KANON_FILE"
+
+# Default destination .kanon file path when neither --kanon-file nor
+# KANON_KANON_FILE are set.
+KANON_KANON_FILE_DEFAULT = "./.kanon"
+
+# Standard-header line values written to a newly-created .kanon file.
+# These match the template in src/kanon_cli/catalog/kanon/.kanon verbatim.
+KANON_HEADER_GITBASE = "GITBASE=<YOUR_GIT_ORG_BASE_URL>"
+KANON_HEADER_CLAUDE_MARKETPLACES_DIR = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
+KANON_HEADER_MARKETPLACE_INSTALL = "KANON_MARKETPLACE_INSTALL=<true|false>"

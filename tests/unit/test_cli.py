@@ -216,6 +216,7 @@ class TestGlobalFlagsSubcommandPropagation:
         and the test will fail loudly rather than swallowing the error.
         """
         minimal: dict[str, list[str]] = {
+            "add": ["entry-a", "--catalog-source", "https://example.com/repo.git@main"],
             "install": [_FAKE_KANON_PATH],
             "clean": [_FAKE_KANON_PATH],
             "validate": ["xml"],
@@ -519,3 +520,77 @@ class TestListSubcommandRegistration:
         help_text = buf.getvalue()
         assert "--catalog-source" in help_text
         assert "KANON_CATALOG_SOURCE" in help_text
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new 'add' subcommand registration in build_parser() (AC-FUNC-002)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddSubcommandRegistration:
+    """build_parser() registers the 'add' subcommand per AC-FUNC-002."""
+
+    def test_add_subcommand_exists_in_parser(self) -> None:
+        """build_parser() includes 'add' as a registered subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["add", "entry-a", "--catalog-source", "https://example.com/repo.git@main"])
+        assert args.command == "add"
+
+    def test_add_subcommand_has_catalog_source_flag(self) -> None:
+        """The 'add' subcommand accepts --catalog-source (from shared factory)."""
+        parser = build_parser()
+        args = parser.parse_args(["add", "entry-a", "--catalog-source", "https://example.com/repo.git@main"])
+        assert args.catalog_source == "https://example.com/repo.git@main"
+
+    def test_add_subcommand_has_kanon_file_flag(self) -> None:
+        """The 'add' subcommand accepts --kanon-file."""
+        parser = build_parser()
+        args = parser.parse_args(["add", "entry-a", "--catalog-source", "x@main", "--kanon-file", "/tmp/.kanon"])
+        assert args.kanon_file == "/tmp/.kanon"
+
+    def test_add_subcommand_kanon_file_default(self) -> None:
+        """--kanon-file defaults to ./.kanon when not supplied and env var is absent."""
+        import os
+
+        parser = build_parser()
+        env_backup = os.environ.pop("KANON_KANON_FILE", None)
+        try:
+            args = parser.parse_args(["add", "entry-a", "--catalog-source", "x@main"])
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_KANON_FILE"] = env_backup
+        assert args.kanon_file == "./.kanon"
+
+    def test_add_subcommand_sets_func(self) -> None:
+        """The 'add' subcommand sets args.func to run_add."""
+        from kanon_cli.commands.add import run_add
+
+        parser = build_parser()
+        args = parser.parse_args(["add", "entry-a", "--catalog-source", "x@main"])
+        assert args.func is run_add
+
+    def test_add_help_exits_0(self) -> None:
+        """kanon add --help exits 0 without error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["add", "--help"])
+        assert exc_info.value.code == 0
+
+    def test_add_help_mentions_kanon_file_and_env_var(self) -> None:
+        """kanon add --help text mentions --kanon-file and KANON_KANON_FILE."""
+        import io
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                add_parser = action.choices.get("add")
+                break
+        else:
+            add_parser = None
+
+        assert add_parser is not None, "add subparser must be registered"
+        buf = io.StringIO()
+        add_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        assert "--kanon-file" in help_text
+        assert "KANON_KANON_FILE" in help_text

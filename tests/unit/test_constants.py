@@ -285,3 +285,73 @@ class TestKanonListLimit:
             importlib.reload(constants)
         monkeypatch.delenv("KANON_LIST_LIMIT", raising=False)
         importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonAddConstants:
+    """Tests for kanon add constants (E2-F4-S1-T1 AC-FUNC-013, AC-TEST-001)."""
+
+    def test_kanon_kanon_file_env_exists(self) -> None:
+        """KANON_KANON_FILE_ENV constant exists and is the string 'KANON_KANON_FILE'."""
+        from kanon_cli.constants import KANON_KANON_FILE_ENV
+
+        assert isinstance(KANON_KANON_FILE_ENV, str)
+        assert KANON_KANON_FILE_ENV == "KANON_KANON_FILE"
+
+    def test_kanon_kanon_file_default_exists(self) -> None:
+        """KANON_KANON_FILE_DEFAULT constant exists and is './.kanon'."""
+        from kanon_cli.constants import KANON_KANON_FILE_DEFAULT
+
+        assert isinstance(KANON_KANON_FILE_DEFAULT, str)
+        assert KANON_KANON_FILE_DEFAULT == "./.kanon"
+
+    def test_kanon_header_gitbase_exists(self) -> None:
+        """KANON_HEADER_GITBASE constant exists and contains the template placeholder."""
+        from kanon_cli.constants import KANON_HEADER_GITBASE
+
+        assert isinstance(KANON_HEADER_GITBASE, str)
+        assert "<YOUR_GIT_ORG_BASE_URL>" in KANON_HEADER_GITBASE
+
+    def test_kanon_header_claude_marketplaces_dir_exists(self) -> None:
+        """KANON_HEADER_CLAUDE_MARKETPLACES_DIR constant exists and contains the template value."""
+        from kanon_cli.constants import KANON_HEADER_CLAUDE_MARKETPLACES_DIR
+
+        assert isinstance(KANON_HEADER_CLAUDE_MARKETPLACES_DIR, str)
+        assert "${HOME}/.claude-marketplaces" in KANON_HEADER_CLAUDE_MARKETPLACES_DIR
+
+    def test_kanon_header_marketplace_install_exists(self) -> None:
+        """KANON_HEADER_MARKETPLACE_INSTALL constant exists and contains the template placeholder."""
+        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
+
+        assert isinstance(KANON_HEADER_MARKETPLACE_INSTALL, str)
+        assert "<true|false>" in KANON_HEADER_MARKETPLACE_INSTALL
+
+    def test_header_constants_are_non_empty(self) -> None:
+        """All three standard-header constants are non-empty strings."""
+        from kanon_cli.constants import (
+            KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
+            KANON_HEADER_GITBASE,
+            KANON_HEADER_MARKETPLACE_INSTALL,
+        )
+
+        assert len(KANON_HEADER_GITBASE) > 0
+        assert len(KANON_HEADER_CLAUDE_MARKETPLACES_DIR) > 0
+        assert len(KANON_HEADER_MARKETPLACE_INSTALL) > 0
+
+    def test_gitbase_line_starts_with_gitbase(self) -> None:
+        """KANON_HEADER_GITBASE starts with 'GITBASE=' per the .kanon template."""
+        from kanon_cli.constants import KANON_HEADER_GITBASE
+
+        assert KANON_HEADER_GITBASE.startswith("GITBASE=")
+
+    def test_claude_marketplaces_dir_line_starts_with_key(self) -> None:
+        """KANON_HEADER_CLAUDE_MARKETPLACES_DIR starts with 'CLAUDE_MARKETPLACES_DIR='."""
+        from kanon_cli.constants import KANON_HEADER_CLAUDE_MARKETPLACES_DIR
+
+        assert KANON_HEADER_CLAUDE_MARKETPLACES_DIR.startswith("CLAUDE_MARKETPLACES_DIR=")
+
+    def test_marketplace_install_line_starts_with_key(self) -> None:
+        """KANON_HEADER_MARKETPLACE_INSTALL starts with 'KANON_MARKETPLACE_INSTALL='."""
+        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
+
+        assert KANON_HEADER_MARKETPLACE_INSTALL.startswith("KANON_MARKETPLACE_INSTALL=")

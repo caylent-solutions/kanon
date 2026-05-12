@@ -1,6 +1,7 @@
 """Kanon CLI entry point with argparse subcommands.
 
 Provides the top-level ``kanon`` command with subcommands:
+  - ``kanon add <name>[@<spec>] ...`` -- Add catalog entries to .kanon file
   - ``kanon install <kanonenv-path>`` -- Full lifecycle: prereqs + repo install + multi-source sync
   - ``kanon clean <kanonenv-path>`` -- Full teardown: uninstall, remove dirs
   - ``kanon validate xml [--repo-root PATH]`` -- Validate manifest XML files
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from types import FrameType
 
 from kanon_cli import __version__
+from kanon_cli.commands.add import register as register_add
 from kanon_cli.commands.bootstrap import register as register_bootstrap
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.install import register as register_install
@@ -85,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Available subcommands",
     )
 
+    register_add(subparsers)
     register_bootstrap(subparsers)
     register_install(subparsers)
     register_clean(subparsers)

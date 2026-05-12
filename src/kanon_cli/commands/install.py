@@ -83,10 +83,26 @@ def register(subparsers) -> None:
         help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
     add_catalog_source_arg(parser)
+
+    # --refresh-lock and --refresh-lock-source (T3) are mutually exclusive.
+    # T3 adds --refresh-lock-source to this same group when it lands.
+    refresh_group = parser.add_mutually_exclusive_group()
+    refresh_group.add_argument(
+        "--refresh-lock",
+        action="store_true",
+        default=False,
+        help=(
+            "Ignore the existing lockfile, re-resolve every transitive version from "
+            "scratch, and overwrite .kanon.lock with the new state. "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "the lockfile fallback is disabled on this path."
+        ),
+    )
+
     parser.set_defaults(func=_run)
 
 
-def _run(args) -> None:
+def _run(args) -> int | None:
     """Execute the install command.
 
     Resolves the .kanon path (walking up from cwd when not provided), parses
@@ -130,7 +146,12 @@ def _run(args) -> None:
         sys.exit(1)
 
     try:
-        install(args.kanonenv_path, catalog_source=args.catalog_source)
+        install(
+            args.kanonenv_path,
+            catalog_source=args.catalog_source,
+            refresh_lock=args.refresh_lock,
+        )
     except (InstallError, OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+    return None

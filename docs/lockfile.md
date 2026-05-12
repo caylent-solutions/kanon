@@ -326,6 +326,40 @@ Only `kanon install --refresh-lock` persists changes.
 
 ---
 
+## Lockfile Rebuild Flags
+
+### `--refresh-lock`
+
+`kanon install --refresh-lock` discards the existing `.kanon.lock` file entirely,
+re-resolves every transitive version from scratch, and overwrites `.kanon.lock`
+with the new resolved state. The info-line emitted is:
+
+```
+lockfile rebuilt from .kanon (N sources, M projects)
+```
+
+**Catalog source requirement.** On the `--refresh-lock` path the lockfile fallback for
+the catalog source is DISABLED. You MUST supply a catalog source via `--catalog-source`
+or the `KANON_CATALOG_SOURCE` environment variable. If neither is set, kanon exits with:
+
+```
+ERROR: install requires a catalog source.
+...
+--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback is
+disabled on this path.
+```
+
+This constraint exists because the operator is explicitly rebuilding the lockfile;
+silently reusing the stale catalog source stored in the old lockfile would defeat
+the purpose of the rebuild.
+
+**What is modified.** Only `.kanon.lock` and the per-source workspaces under
+`.kanon-data/` are rewritten. The `.kanon` file is never modified.
+
+Mutually exclusive with `--refresh-lock-source` (added in a future task).
+
+---
+
 ## Environment Variables
 
 | Variable          | Description |

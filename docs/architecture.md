@@ -92,6 +92,7 @@ which returns an `InstallClassification` NamedTuple containing `state`, `compute
 | `LOCKFILE_HASH_MISMATCH` | `.kanon.lock` exists but `kanon_hash` does not match | Hard error. | `KanonHashMismatchError` | `kanon install --refresh-lock` or `--refresh-lock-source <name>` |
 | `LOCKFILE_UNREACHABLE` | Resolver discovers a lockfile SHA is no longer reachable on remote | Hard error. Names the source, SHA, and remote URL. | `LockfileUnreachableShaError` | `kanon install --refresh-lock-source <name>` |
 | `LOCKFILE_SOURCE_MISMATCH` | `lockfile.[catalog].source` differs from CLI/env catalog source (when CLI/env is set) | Hard error. Names both values. The lockfile is authoritative. | `CatalogSourceMismatchError` | `kanon install --refresh-lock` |
+| `REFRESH_LOCK` | Operator passed `--refresh-lock` | Short-circuit: ignore lockfile state entirely. Resolve every transitive version fresh. Overwrite `.kanon.lock`. Emit info-line: `"lockfile rebuilt from .kanon (N sources, M projects)"`. Lockfile catalog-source fallback is DISABLED on this path. | -- | Requires CLI or env-var catalog source. |
 
 ### State Classification Logic
 
@@ -100,7 +101,9 @@ NamedTuple -- not a bare `InstallState` enum -- so the caller receives the pre-c
 hash and parsed lockfile without needing to recompute them.
 
 ```
-_classify_install_state(kanon_path, lockfile_path) -> InstallClassification:
+_classify_install_state(kanon_path, lockfile_path, refresh_lock=False) -> InstallClassification:
+  if refresh_lock:
+    return InstallClassification(REFRESH_LOCK, computed_hash=None, lockfile=None)
   if lockfile_path does not exist:
     return InstallClassification(LOCKFILE_ABSENT, computed_hash=None, lockfile=None)
   lockfile = read_lockfile(lockfile_path)
@@ -113,6 +116,13 @@ _classify_install_state(kanon_path, lockfile_path) -> InstallClassification:
 The `LOCKFILE_UNREACHABLE` and `LOCKFILE_SOURCE_MISMATCH` states are detected
 later in the pipeline (during resolver output analysis and catalog-source
 validation) and are surfaced as exceptions rather than `InstallState` values.
+
+The `REFRESH_LOCK` state is triggered by the `--refresh-lock` CLI flag
+(`refresh_lock=True` kwarg). It short-circuits the normal hash comparison,
+returning `REFRESH_LOCK` regardless of lockfile presence or hash state. The
+`computed_hash` and `lockfile` fields are `None` in this state (the lockfile is
+ignored entirely). The `--refresh-lock` flag is mutually exclusive with
+`--refresh-lock-source` (added in a future task) at the argparse level.
 
 ---
 
@@ -128,6 +138,14 @@ validation) and are surfaced as exceptions rather than `InstallState` values.
 3. **`lockfile.[catalog].source`** -- lockfile fallback. Applies ONLY in the
    `LOCKFILE_CONSISTENT` state and ONLY when both CLI flag and env var are
    unset. This is the documented exception to the NO-FALLBACK rule.
+
+**Special case: `REFRESH_LOCK` state.** When `install_state == REFRESH_LOCK`
+(i.e. `--refresh-lock` was passed), the lockfile fallback (tier 3) is DISABLED.
+The operator MUST supply a catalog source via CLI or env var. If neither is set,
+`MissingCatalogSourceError` is raised with the refresh-specific remediation text:
+`"--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback
+is disabled on this path."` This constraint prevents silent reuse of a stale
+catalog source when the operator is explicitly rebuilding the lockfile.
 
 When CLI/env is set and differs from the lockfile's recorded source, a
 `CatalogSourceMismatchError` is raised (the lockfile is authoritative; the

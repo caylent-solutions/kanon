@@ -42,7 +42,11 @@ from typing import NamedTuple, cast
 
 import kanon_cli.repo as _repo
 from kanon_cli import __version__
-from kanon_cli.constants import CATALOG_ENV_VAR, INSTALL_LOCK_FILENAME, MISSING_CATALOG_ERROR_TEMPLATE
+from kanon_cli.constants import (
+    CATALOG_ENV_VAR,
+    INSTALL_LOCK_FILENAME,
+    MISSING_CATALOG_ERROR_TEMPLATE,
+)
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
@@ -69,6 +73,13 @@ _GIT_LS_REMOTE_TIMEOUT: int = int(
     os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
 )
 
+# Remediation text appended to MissingCatalogSourceError when --refresh-lock is
+# the active install state.  The lockfile fallback is disabled on the refresh path
+# because the operator is explicitly rebuilding the lockfile.
+_REFRESH_LOCK_MISSING_CATALOG_REMEDIATION = (
+    "--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
+)
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -76,13 +87,24 @@ _GIT_LS_REMOTE_TIMEOUT: int = int(
 
 
 class InstallState(enum.Enum):
-    """Enumeration of the five lockfile state-machine rows (spec Section 4.7)."""
+    """Enumeration of the lockfile state-machine rows (spec Section 4.7).
+
+    The six rows are:
+    - LOCKFILE_ABSENT:          .kanon.lock absent; resolve fresh, write lockfile.
+    - LOCKFILE_CONSISTENT:      .kanon.lock present and kanon_hash matches; replay SHAs.
+    - LOCKFILE_HASH_MISMATCH:   .kanon.lock present but kanon_hash differs; hard error.
+    - LOCKFILE_UNREACHABLE:     lockfile SHA no longer reachable on remote; hard error.
+    - LOCKFILE_SOURCE_MISMATCH: lockfile catalog source differs from CLI/env; hard error.
+    - REFRESH_LOCK:             operator requested a full lockfile rebuild via --refresh-lock;
+                                short-circuits the normal state classification.
+    """
 
     LOCKFILE_ABSENT = "lockfile-absent"
     LOCKFILE_CONSISTENT = "lockfile-consistent"
     LOCKFILE_HASH_MISMATCH = "lockfile-hash-mismatch"
     LOCKFILE_UNREACHABLE = "lockfile-unreachable"
     LOCKFILE_SOURCE_MISMATCH = "lockfile-catalog-source-mismatch"
+    REFRESH_LOCK = "refresh-lock"
 
 
 # ---------------------------------------------------------------------------
@@ -187,14 +209,22 @@ class MissingCatalogSourceError(InstallError):
 
     Args:
         command: The command name to embed in the error message (e.g. ``"install"``).
+        remediation: Optional override for the remediation line.  When set,
+            this text is appended to the standard error body.  Used by the
+            ``--refresh-lock`` path to explain that the lockfile fallback is
+            disabled on the rebuild path.
     """
 
-    def __init__(self, command: str) -> None:
+    def __init__(self, command: str, remediation: str | None = None) -> None:
         self.command = command
+        self.remediation = remediation
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        return MISSING_CATALOG_ERROR_TEMPLATE.format(command=self.command)
+        base = MISSING_CATALOG_ERROR_TEMPLATE.format(command=self.command)
+        if self.remediation is not None:
+            return base + "\n" + self.remediation
+        return base
 
 
 # ---------------------------------------------------------------------------
@@ -248,10 +278,15 @@ class InstallClassification(NamedTuple):
 def _classify_install_state(
     kanon_path: pathlib.Path,
     lockfile_path: pathlib.Path,
+    refresh_lock: bool = False,
 ) -> InstallClassification:
     """Return the ``InstallClassification`` for the given ``.kanon`` + ``.kanon.lock`` combination.
 
-    Implements the first three rows of the spec Section 4.7 state matrix:
+    When ``refresh_lock=True``, short-circuits the normal hash comparison and
+    returns ``InstallState.REFRESH_LOCK`` regardless of lockfile presence or
+    hash state (spec Section 4.7 -- ``--refresh-lock`` flag).
+
+    Otherwise, implements the first three rows of the spec Section 4.7 state matrix:
     - LOCKFILE_ABSENT: lockfile path does not exist.
     - LOCKFILE_CONSISTENT: lockfile exists and its kanon_hash matches the
       freshly-computed hash of the ``.kanon`` file.
@@ -268,6 +303,8 @@ def _classify_install_state(
     Args:
         kanon_path: Path to the ``.kanon`` configuration file.
         lockfile_path: Path to the ``.kanon.lock`` file (may not exist).
+        refresh_lock: When ``True``, always return ``InstallState.REFRESH_LOCK``
+            regardless of lockfile state (spec Section 4.7 -- ``--refresh-lock``).
 
     Returns:
         An ``InstallClassification`` named tuple with ``state``, ``computed_hash``,
@@ -278,6 +315,15 @@ def _classify_install_state(
         LockfileSchemaError: If the lockfile's schema_version is unsupported.
         LockfileValidationError: If a lockfile field fails validation.
     """
+    # Short-circuit: operator requested a full lockfile rebuild.
+    # The lockfile state (present, consistent, mismatched) is irrelevant.
+    if refresh_lock:
+        return InstallClassification(
+            state=InstallState.REFRESH_LOCK,
+            computed_hash=None,
+            lockfile=None,
+        )
+
     lockfile = read_lockfile_if_present(lockfile_path)
     if lockfile is None:
         return InstallClassification(
@@ -353,6 +399,16 @@ def _resolve_catalog_source(
             )
         return cli_env_source
 
+    # On the refresh-lock path the lockfile fallback is DISABLED.
+    # The operator is explicitly rebuilding the lockfile and must supply a
+    # source via CLI or env var; falling back to a stale lockfile entry would
+    # silently reuse the old catalog, defeating the purpose of --refresh-lock.
+    if install_state is InstallState.REFRESH_LOCK:
+        raise MissingCatalogSourceError(
+            command="install",
+            remediation=_REFRESH_LOCK_MISSING_CATALOG_REMEDIATION,
+        )
+
     # No CLI/env source -- use lockfile fallback only in the consistent state.
     if install_state is InstallState.LOCKFILE_CONSISTENT and lockfile_catalog_source is not None:
         return lockfile_catalog_source
@@ -363,9 +419,11 @@ def _resolve_catalog_source(
 def _emit_install_state(state: InstallState, sources: int, projects: int) -> None:
     """Print the spec's verbatim info-line for the given install state to stdout.
 
-    Only two states produce an info-line (spec Section 4.7):
+    Three states produce an info-line (spec Section 4.7):
     - LOCKFILE_ABSENT:     ``"lockfile rebuilt from .kanon (N sources, M projects)"``
     - LOCKFILE_CONSISTENT: ``"installing from lockfile (N sources, M projects)"``
+    - REFRESH_LOCK:        ``"lockfile rebuilt from .kanon (N sources, M projects)"``
+      (same text as LOCKFILE_ABSENT -- the operator's intent is equivalent)
 
     Other states are not emitted by this helper (they result in exceptions).
 
@@ -374,7 +432,7 @@ def _emit_install_state(state: InstallState, sources: int, projects: int) -> Non
         sources: The number of top-level sources declared in ``.kanon``.
         projects: The total number of resolved projects across all sources.
     """
-    if state is InstallState.LOCKFILE_ABSENT:
+    if state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         print(f"lockfile rebuilt from .kanon ({sources} sources, {projects} projects)")
     elif state is InstallState.LOCKFILE_CONSISTENT:
         print(f"installing from lockfile ({sources} sources, {projects} projects)")
@@ -694,6 +752,7 @@ def _run_install(
     kanonenv_path: pathlib.Path,
     lockfile_path: pathlib.Path,
     catalog_source: str | None,
+    refresh_lock: bool = False,
 ) -> None:
     """Execute the install lifecycle without acquiring the concurrency lock.
 
@@ -704,6 +763,7 @@ def _run_install(
     - LOCKFILE_ABSENT: resolve fresh, install, write lockfile.
     - LOCKFILE_CONSISTENT: install exactly the SHAs in the lockfile; skip resolve.
     - LOCKFILE_HASH_MISMATCH: raise KanonHashMismatchError immediately.
+    - REFRESH_LOCK: ignore lockfile entirely, re-resolve fresh, overwrite lockfile.
 
     All errors propagate unconditionally. There is no fallback logic.
 
@@ -712,13 +772,17 @@ def _run_install(
         lockfile_path: Path to the .kanon.lock file (may or may not exist).
         catalog_source: Catalog source string from the CLI flag, or None when
             the caller did not provide one (the env var is consulted automatically).
+        refresh_lock: When ``True``, short-circuit to ``InstallState.REFRESH_LOCK``
+            regardless of lockfile presence or hash state.  The lockfile fallback
+            in ``_resolve_catalog_source`` is disabled on this path.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
             not match the freshly-computed hash of the .kanon file.
         MissingCatalogSourceError: If no catalog source can be resolved from
             cli arg, env var, or lockfile fallback (AC-FUNC-007). Always raised;
-            never swallowed.
+            never swallowed.  On the REFRESH_LOCK path, the lockfile fallback is
+            disabled and the remediation text explains this constraint.
         CatalogSourceMismatchError: If the resolved catalog source differs from
             the lockfile's recorded source in the consistent state.
         ValueError: If the catalog source is not in ``url@ref`` form, if
@@ -731,7 +795,8 @@ def _run_install(
     # Step 1: Classify the lockfile state.
     # The classification result carries the pre-computed hash and parsed lockfile
     # to avoid recomputing them later in the pipeline (DRY).
-    classification = _classify_install_state(kanonenv_path, lockfile_path)
+    # When refresh_lock=True, _classify_install_state short-circuits to REFRESH_LOCK.
+    classification = _classify_install_state(kanonenv_path, lockfile_path, refresh_lock=refresh_lock)
     install_state = classification.state
     existing_lockfile: Lockfile | None = classification.lockfile
 
@@ -878,10 +943,11 @@ def _run_install(
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
 
-    # Step 7: Write the lockfile when state is LOCKFILE_ABSENT.
+    # Step 7: Write the lockfile when state is LOCKFILE_ABSENT or REFRESH_LOCK.
     # In the LOCKFILE_CONSISTENT state the lockfile is authoritative and
-    # must not be modified.
-    if install_state is InstallState.LOCKFILE_ABSENT:
+    # must not be modified.  In the REFRESH_LOCK state the operator explicitly
+    # requested a full rebuild, so the lockfile is always overwritten.
+    if install_state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         # In the LOCKFILE_ABSENT state, computed_hash is always None because
         # _classify_install_state does not call kanon_hash when there is no
         # lockfile to compare against. Compute it now.
@@ -923,6 +989,7 @@ def install(
     kanonenv_path: pathlib.Path,
     lock_file_path: pathlib.Path | None = None,
     catalog_source: str | None = None,
+    refresh_lock: bool = False,
 ) -> None:
     """Execute the full Kanon install lifecycle.
 
@@ -940,7 +1007,9 @@ def install(
       1. Create .kanon-data/ directory (fail fast on permission errors).
       2. Acquire exclusive file lock inside .kanon-data/.
       3. Classify the lockfile state via _classify_install_state.
+         When refresh_lock=True, short-circuits to InstallState.REFRESH_LOCK.
       4. Resolve the effective catalog source via _resolve_catalog_source.
+         On the REFRESH_LOCK path, the lockfile fallback is disabled.
       5. Parse .kanon and validate sources.
       6. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
       7. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
@@ -948,7 +1017,7 @@ def install(
       9. Update .gitignore.
       10. Emit state info-line via _emit_install_state.
       11. If KANON_MARKETPLACE_INSTALL=true: run install script.
-      12. Write .kanon.lock when state is LOCKFILE_ABSENT.
+      12. Write .kanon.lock when state is LOCKFILE_ABSENT or REFRESH_LOCK.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
@@ -959,12 +1028,18 @@ def install(
             precedence over the KANON_CATALOG_SOURCE env var, which is read
             automatically inside _run_install). Pass None when no CLI flag
             is present; the env var will be consulted automatically.
+        refresh_lock: When ``True``, ignore the existing lockfile entirely and
+            rebuild it from scratch.  The lockfile fallback for catalog source
+            resolution is disabled on this path.  Default ``False`` preserves
+            prior behaviour.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
             not match the freshly-computed hash of the .kanon file.
         MissingCatalogSourceError: If the consistent state requires a catalog
             source but none can be resolved from cli arg, env var, or lockfile.
+            On the REFRESH_LOCK path the lockfile fallback is disabled and the
+            error message includes the refresh-specific remediation text.
         CatalogSourceMismatchError: If the CLI/env catalog source differs from
             the lockfile's recorded source in the consistent state.
         ValueError: If marketplace install is requested but
@@ -987,4 +1062,4 @@ def install(
     concurrency_lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
     with open(concurrency_lock_path, "w") as _lock_fd:
         fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
-        _run_install(kanonenv_path, resolved_lockfile_path, catalog_source)
+        _run_install(kanonenv_path, resolved_lockfile_path, catalog_source, refresh_lock=refresh_lock)

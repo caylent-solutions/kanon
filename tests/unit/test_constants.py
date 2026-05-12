@@ -1,8 +1,9 @@
 import pytest
 
 from kanon_cli.constants import (
-    MISSING_CATALOG_ERROR_TEMPLATE,
+    KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
+    MISSING_CATALOG_ERROR_TEMPLATE,
     RECOMMENDED_CHAR_RE,
     TAG_ERROR_DISPLAY_CAP,
 )
@@ -172,3 +173,59 @@ class TestListEmptyCatalogNote:
     def test_contains_zero_entries_phrase(self) -> None:
         """Value contains the spec-canonical 'manifest repo contains 0 entries' phrase."""
         assert "manifest repo contains 0 entries" in LIST_EMPTY_CATALOG_NOTE
+
+
+@pytest.mark.unit
+class TestKanonTreeNoFilterThreshold:
+    """Tests for KANON_TREE_NO_FILTER_THRESHOLD (E2-F2-S1-T3 AC-FUNC-002)."""
+
+    def test_is_int(self) -> None:
+        """KANON_TREE_NO_FILTER_THRESHOLD is an int."""
+        assert isinstance(KANON_TREE_NO_FILTER_THRESHOLD, int)
+
+    def test_default_value_is_20(self) -> None:
+        """KANON_TREE_NO_FILTER_THRESHOLD default value is 20."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        # Ensure no override env var is set before checking the default.
+        saved = os.environ.pop("KANON_TREE_NO_FILTER_THRESHOLD", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_TREE_NO_FILTER_THRESHOLD == 20
+        finally:
+            if saved is not None:
+                os.environ["KANON_TREE_NO_FILTER_THRESHOLD"] = saved
+            importlib.reload(constants)
+
+    def test_is_positive(self) -> None:
+        """KANON_TREE_NO_FILTER_THRESHOLD is a positive integer."""
+        assert KANON_TREE_NO_FILTER_THRESHOLD > 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_TREE_NO_FILTER_THRESHOLD env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_TREE_NO_FILTER_THRESHOLD", "42")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_TREE_NO_FILTER_THRESHOLD == 42
+        finally:
+            monkeypatch.delenv("KANON_TREE_NO_FILTER_THRESHOLD", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_TREE_NO_FILTER_THRESHOLD set to a non-integer env var raises ValueError."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_TREE_NO_FILTER_THRESHOLD", "not-a-number")
+        with pytest.raises((ValueError, SystemExit)):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_TREE_NO_FILTER_THRESHOLD", raising=False)
+        importlib.reload(constants)

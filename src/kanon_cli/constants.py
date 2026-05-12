@@ -4,6 +4,7 @@ All module-level constants live here to avoid hard-coded values
 scattered across source files.
 """
 
+import os
 import re
 
 # -- Marketplace validation --
@@ -89,3 +90,14 @@ _NO_COLOR_ACTIVE: bool = False
 # Pattern matching the full recommended character set for catalog entry names.
 # Characters outside this set in an entry name trigger a shell-quoting warning.
 RECOMMENDED_CHAR_RE = re.compile(r"^[a-zA-Z0-9_-]*$")
+
+# -- kanon list --tree threshold guardrail --
+# Maximum number of catalog entries allowed before the threshold guardrail
+# requires the operator to supply a filter (positional substring, --regex,
+# --max-depth 0) or override with --no-filter-required.
+# Overridable via the KANON_TREE_NO_FILTER_THRESHOLD environment variable.
+_raw_threshold = os.environ.get("KANON_TREE_NO_FILTER_THRESHOLD")
+if _raw_threshold is not None:
+    KANON_TREE_NO_FILTER_THRESHOLD: int = int(_raw_threshold)
+else:
+    KANON_TREE_NO_FILTER_THRESHOLD = 20

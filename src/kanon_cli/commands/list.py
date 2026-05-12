@@ -12,16 +12,19 @@ Section 4.1 flag-table rows ``--tree``, ``--max-depth N``,
 ``--no-filter-required`` and the threshold guardrail.
 Section 4.1 flag-table rows ``--all-versions``, ``--limit N``,
 ``--no-limit``, ``--since-version <spec>`` for the historical-versions walker.
+Section 4.1 flag-table row ``--format {names,json}`` for JSON output.
 
 Environment variables:
 - ``KANON_CATALOG_SOURCE``: catalog source override (CLI flag wins).
 - ``KANON_TREE_NO_FILTER_THRESHOLD``: overrides the default threshold (20)
   above which ``kanon list --tree`` requires a filter.
 - ``KANON_LIST_LIMIT``: overrides the default version-walk cap (50).
+- ``KANON_LIST_FORMAT``: overrides the output format (CLI flag wins).
 """
 
 import argparse
 import hashlib
+import json
 import os
 import pathlib
 import subprocess
@@ -48,6 +51,12 @@ from kanon_cli.version import is_version_constraint, resolve_version
 # -- Detail formatter private constants --
 _DETAIL_MISSING_PLACEHOLDER = "<missing>"
 _DETAIL_LABEL_WIDTH = 12
+
+# -- Format flag private constants --
+# Environment variable that sets the output format for 'kanon list'.
+# Choices: 'names' (default), 'json'.
+# CLI flag --format takes precedence when both are set.
+_KANON_LIST_FORMAT_ENV_VAR = "KANON_LIST_FORMAT"
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +504,65 @@ def _format_detail_record(metadata: CatalogMetadata) -> str:
 
 
 # ---------------------------------------------------------------------------
+# JSON renderers (--format json)
+# ---------------------------------------------------------------------------
+
+
+def _format_json_catalog(entries: list[CatalogMetadata]) -> str:
+    """Serialise a list of :class:`CatalogMetadata` to a JSON array string.
+
+    Each element is an object with the five fields specified in Section 4.1:
+    ``name``, ``display-name``, ``type``, ``description``, ``version``.
+    The ``type`` field is ``null`` in JSON when the metadata slot is ``None``.
+
+    Used by both the default mode and the ``--detail`` mode when
+    ``--format json`` is active; the ``--detail`` flag does not change the
+    JSON shape.
+
+    Args:
+        entries: Sorted list of :class:`CatalogMetadata` instances.
+
+    Returns:
+        A JSON-serialised string terminated by exactly one newline.
+    """
+    records = [
+        {
+            "name": m.name,
+            "display-name": m.display_name,
+            "type": m.type,
+            "description": m.description,
+            "version": m.version,
+        }
+        for m in entries
+    ]
+    return json.dumps(records) + "\n"
+
+
+def _format_json_all_versions(rows: list[VersionRow]) -> str:
+    """Serialise a list of :class:`VersionRow` to a JSON array string.
+
+    Each element is an object with the four fields specified in Section 4.1
+    worked-example footer: ``name``, ``version``, ``ref``, ``sha``.
+
+    Args:
+        rows: List of :class:`VersionRow` instances.
+
+    Returns:
+        A JSON-serialised string terminated by exactly one newline.
+    """
+    records = [
+        {
+            "name": r.name,
+            "version": r.version,
+            "ref": r.ref,
+            "sha": r.sha,
+        }
+        for r in rows
+    ]
+    return json.dumps(records) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Tree renderer helpers
 # ---------------------------------------------------------------------------
 
@@ -834,6 +902,9 @@ def run_list(args: argparse.Namespace) -> int:
             - ``limit`` (``int``): from ``--limit`` (default ``KANON_LIST_LIMIT``).
             - ``no_limit`` (``bool``): from ``--no-limit`` (default ``False``).
             - ``since_version`` (``str | None``): from ``--since-version``.
+            - ``list_format`` (``str``): from ``--format`` (default ``"names"``);
+              ``KANON_LIST_FORMAT`` env var is consulted when the flag is at its
+              default. CLI flag takes precedence.
 
     Returns:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
@@ -848,6 +919,39 @@ def run_list(args: argparse.Namespace) -> int:
     limit: int = getattr(args, "limit", KANON_LIST_LIMIT)
     no_limit: bool = getattr(args, "no_limit", False)
     since_version: str | None = getattr(args, "since_version", None)
+
+    # Resolve the output format: CLI flag > env var > default "names".
+    # The argparse default is None (not "names") so we can detect when the
+    # flag was explicitly set vs. defaulted. Precedence:
+    #   1. CLI flag (args.list_format is not None) -- use it.
+    #   2. KANON_LIST_FORMAT env var (when CLI flag was absent) -- use it if valid.
+    #   3. Default: "names".
+    # Fail-fast: an unrecognized KANON_LIST_FORMAT value is an immediate error.
+    _arg_format: str | None = getattr(args, "list_format", None)
+    _env_format: str | None = os.environ.get(_KANON_LIST_FORMAT_ENV_VAR)
+    if _arg_format is not None:
+        list_format: str = _arg_format
+    elif _env_format is None:
+        list_format = "names"
+    elif _env_format in ("names", "json"):
+        list_format = _env_format
+    else:
+        print(
+            f"ERROR: {_KANON_LIST_FORMAT_ENV_VAR}={_env_format!r} is not a recognised format. "
+            f"Valid values are: 'names', 'json'.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Mutual exclusion: --format json and --tree cannot be combined.
+    if list_format == "json" and tree:
+        print(
+            "ERROR: --format json and --tree are mutually exclusive. "
+            "JSON output is not defined for tree mode. "
+            "Use --format json without --tree, or use --tree without --format json.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Mutual exclusion: --tree and --all-versions cannot be combined.
     if tree and all_versions:
@@ -884,9 +988,14 @@ def run_list(args: argparse.Namespace) -> int:
         rows = _walk_all_versions(catalog_source, effective_limit, since_version)
         if not rows:
             print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+            if list_format == "json":
+                print(_format_json_all_versions([]), end="")
             return 0
-        for row in rows:
-            print(str(row), flush=True)
+        if list_format == "json":
+            print(_format_json_all_versions(rows), end="")
+        else:
+            for row in rows:
+                print(str(row), flush=True)
         return 0
 
     manifest_root = _resolve_manifest_repo(catalog_source)
@@ -911,7 +1020,15 @@ def run_list(args: argparse.Namespace) -> int:
 
         return 0
 
-    if detail:
+    if list_format == "json":
+        # JSON format uses the metadata shape for both default and --detail modes.
+        entries = _build_sorted_metadata(manifest_root)
+        if not entries:
+            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+            print(_format_json_catalog([]), end="")
+            return 0
+        print(_format_json_catalog(entries), end="")
+    elif detail:
         entries = _build_sorted_metadata(manifest_root)
         if not entries:
             print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
@@ -934,6 +1051,7 @@ def register(subparsers) -> None:
 
     Adds the ``list`` subparser with:
     - ``--catalog-source`` from the shared factory.
+    - ``--format {names,json}`` to select the output format (default: ``names``).
     - ``--detail`` for human-readable per-entry records.
     - ``--tree`` for the three-layer ASCII dependency tree renderer.
     - ``--max-depth N`` to cap the rendered tree depth (0 = root only).
@@ -952,6 +1070,12 @@ def register(subparsers) -> None:
     paths: positional substring, ``--regex``, ``--max-depth 0``,
     ``--no-filter-required``.
 
+    Format flag (``--format``): selects between ``names`` (default, one entry
+    name per line) and ``json`` (structured JSON array). The ``KANON_LIST_FORMAT``
+    environment variable sets the format when the CLI flag is absent; the CLI
+    flag takes precedence when both are set. ``--format json`` is incompatible
+    with ``--tree`` (hard error at validation time).
+
     Args:
         subparsers: The subparsers action from the parent parser.
     """
@@ -965,6 +1089,14 @@ def register(subparsers) -> None:
             "Requires a catalog source via --catalog-source or the\n"
             "KANON_CATALOG_SOURCE environment variable. The CLI flag takes\n"
             "precedence when both are set.\n\n"
+            "Format mode (--format): selects the output format. Choices:\n"
+            "  names (default) -- one entry name per line, pipeable into kanon add.\n"
+            "  json -- structured JSON array of entry objects. Default mode and\n"
+            "    --detail mode emit {name, display-name, type, description, version};\n"
+            "    --all-versions mode emits {name, version, ref, sha}.\n"
+            "The KANON_LIST_FORMAT environment variable sets the format when the\n"
+            "CLI flag is absent; the CLI flag takes precedence when both are set.\n"
+            "--format json is incompatible with --tree (hard error).\n\n"
             "Tree mode (--tree): renders a three-layer ASCII dependency tree\n"
             "per entry. Subject to a threshold guardrail: when the catalog has\n"
             f"more than KANON_TREE_NO_FILTER_THRESHOLD (default {KANON_TREE_NO_FILTER_THRESHOLD})\n"
@@ -982,6 +1114,8 @@ def register(subparsers) -> None:
         epilog=(
             "Examples:\n"
             "  kanon list --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list --format json --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list --format json --all-versions --catalog-source ...\n"
             "  kanon list --detail --catalog-source https://example.com/org/repo.git@main\n"
             "  kanon list --tree --catalog-source https://example.com/org/repo.git@main\n"
             "  kanon list --tree --max-depth 0 --catalog-source ...\n"
@@ -990,12 +1124,30 @@ def register(subparsers) -> None:
             "  kanon list --all-versions --limit 3 --catalog-source ...\n"
             "  kanon list --all-versions --no-limit --catalog-source ...\n"
             "  kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...\n"
-            "  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list"
+            "  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list\n"
+            "  KANON_LIST_FORMAT=json kanon list --catalog-source ..."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     add_catalog_source_arg(parser)
+
+    parser.add_argument(
+        "--format",
+        dest="list_format",
+        choices=["names", "json"],
+        default=None,
+        metavar="{names,json}",
+        help=(
+            "Output format. 'names' (default): one entry name per line, pipeable "
+            "into kanon add. 'json': structured JSON array. Default mode and "
+            "--detail mode emit {name, display-name, type, description, version} "
+            "objects; --all-versions mode emits {name, version, ref, sha} objects. "
+            "The KANON_LIST_FORMAT environment variable sets the format when this "
+            "flag is absent; the CLI flag takes precedence when both are set. "
+            "--format json is incompatible with --tree (hard error at validation time)."
+        ),
+    )
 
     parser.add_argument(
         "--detail",

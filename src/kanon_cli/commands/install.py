@@ -9,8 +9,9 @@ import pathlib
 import sys
 import warnings
 
+from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.discover import find_kanonenv
-from kanon_cli.core.install import install
+from kanon_cli.core.install import InstallError, install
 from kanon_cli.repo import RepoCommandError
 
 # Legacy environment variables superseded by the embedded repo tool and --catalog-source.
@@ -81,6 +82,7 @@ def register(subparsers) -> None:
         type=pathlib.Path,
         help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
+    add_catalog_source_arg(parser)
     parser.set_defaults(func=_run)
 
 
@@ -128,7 +130,7 @@ def _run(args) -> None:
         sys.exit(1)
 
     try:
-        install(args.kanonenv_path)
-    except (OSError, ValueError, RepoCommandError) as exc:
+        install(args.kanonenv_path, catalog_source=args.catalog_source)
+    except (InstallError, OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

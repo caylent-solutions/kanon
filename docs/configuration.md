@@ -73,7 +73,13 @@ If the referenced variable is not set in the environment, parsing fails with a d
 
 ## Environment Variable Overrides
 
-Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file:
+Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file.
+
+Additionally, the following environment variables control internal timeouts:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_GIT_LS_REMOTE_TIMEOUT` | `30` | Timeout in seconds for `git ls-remote` calls used by SHA reachability checks and ref resolution in the install engine. |
 
 ```bash
 KANON_SOURCE_build_REVISION=refs/tags/~=2.0.0 kanon install .kanon
@@ -94,6 +100,35 @@ KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces.xml
 ```
 
 Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed variables.
+
+## KANON_CATALOG_SOURCE Environment Variable
+
+The `KANON_CATALOG_SOURCE` environment variable specifies the catalog repository
+used by `kanon install` to resolve version specs. It follows the `<url>@<ref>` form:
+
+```bash
+export KANON_CATALOG_SOURCE=https://github.com/example-org/kanon-catalog.git@main
+kanon install .kanon
+```
+
+**Precedence (highest to lowest):**
+
+1. `--catalog-source` CLI flag (**pending**: not yet registered on `kanon install`;
+   see task E1-F4-S1-T1. Currently only `KANON_CATALOG_SOURCE` and lockfile fallback
+   are active.)
+2. `KANON_CATALOG_SOURCE` environment variable
+3. `lockfile.[catalog].source` (fallback -- applies only in the `LOCKFILE_CONSISTENT`
+   state and only when both the CLI flag and env var are unset)
+
+When none of the three sources is set and the lockfile fallback is not applicable,
+`kanon install` raises `MissingCatalogSourceError` with remediation text. See the
+catalog source configuration section above for details on how to configure a catalog.
+
+When the CLI flag or env var is set and differs from the lockfile's recorded
+`[catalog].source`, `kanon install` raises `CatalogSourceMismatchError`. The lockfile
+is authoritative; run `kanon install --refresh-lock` to intentionally change catalogs.
+
+See `docs/architecture.md` for the full precedence and mismatch-detection logic.
 
 ## KANON_MARKETPLACE_INSTALL Toggle
 

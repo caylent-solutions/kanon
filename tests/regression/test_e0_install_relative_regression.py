@@ -71,6 +71,7 @@ def _make_args(kanonenv_path: pathlib.Path) -> object:
 
     args = MagicMock()
     args.kanonenv_path = kanonenv_path
+    args.catalog_source = None
     return args
 
 
@@ -119,7 +120,7 @@ def test_regression_relative_kanon_path_resolved_to_absolute_before_install(
 
     received_paths: list[pathlib.Path] = []
 
-    def _capture_install(path: pathlib.Path) -> None:
+    def _capture_install(path: pathlib.Path, **kwargs) -> None:
         received_paths.append(path)
 
     args = _make_args(relative_path)
@@ -181,7 +182,7 @@ def test_regression_relative_subdir_kanon_resolved_to_absolute(
 
     received_paths: list[pathlib.Path] = []
 
-    def _capture_install(path: pathlib.Path) -> None:
+    def _capture_install(path: pathlib.Path, **kwargs) -> None:
         received_paths.append(path)
 
     args = _make_args(relative_path)
@@ -245,7 +246,7 @@ def test_regression_install_receives_absolute_path_for_relative_inputs(
 
     received_paths: list[pathlib.Path] = []
 
-    def _capture(path: pathlib.Path) -> None:
+    def _capture(path: pathlib.Path, **kwargs) -> None:
         received_paths.append(path)
 
     args = _make_args(rel_path)
@@ -289,7 +290,7 @@ def test_regression_current_code_passes_absolute_path_to_install(
 
     received_paths: list[pathlib.Path] = []
 
-    def _capture_install(path: pathlib.Path) -> None:
+    def _capture_install(path: pathlib.Path, **kwargs) -> None:
         received_paths.append(path)
 
     args = _make_args(pathlib.Path(".kanon"))
@@ -361,7 +362,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
 
     resolve_pos = source.find("args.kanonenv_path.resolve()")
     parse_pos = source.find("parse_kanonenv(")
-    install_pos = source.find("install(args.kanonenv_path)")
+    install_pos = source.find("install(args.kanonenv_path,")
 
     assert resolve_pos != -1, (
         "E0-INSTALL-RELATIVE regression guard: resolve() call not found in _run. "
@@ -372,7 +373,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
         "The install command must call parse_kanonenv() to validate the .kanon file."
     )
     assert install_pos != -1, (
-        "E0-INSTALL-RELATIVE regression guard: install(args.kanonenv_path) call not found "
+        "E0-INSTALL-RELATIVE regression guard: install(args.kanonenv_path, ...) call not found "
         "in _run. The install command must delegate to core install() after path resolution."
     )
 

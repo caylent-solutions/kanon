@@ -29,6 +29,8 @@ from tests.unit.test_lockfile import _minimal_toml
 # ---------------------------------------------------------------------------
 
 _VALID_SHA40 = "a" * 40
+# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+_VALID_KANON_HASH = "sha256:" + "a" * 64
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ class TestSuccessfulUpgradeViaFakeUpgrader:
             # v0 fixture omits generated_at; the upgrader fills it in.
             upgraded.setdefault("generated_at", "2026-01-01T00:00:00Z")
             upgraded.setdefault("generator", "kanon-cli/1.4.0")
-            upgraded.setdefault("kanon_hash", _VALID_SHA40)
+            upgraded.setdefault("kanon_hash", _VALID_KANON_HASH)
             if "catalog" not in upgraded:
                 upgraded["catalog"] = {
                     "source": "https://example.com/catalog.git@main",
@@ -184,7 +186,7 @@ def test_current_schema_read_unchanged(tmp_path):
     assert lf.schema_version == CURRENT_SCHEMA_VERSION
     assert lf.generated_at == "2026-01-01T00:00:00Z"
     assert lf.generator == "kanon-cli/1.4.0"
-    assert lf.kanon_hash == _VALID_SHA40
+    assert lf.kanon_hash == _VALID_KANON_HASH
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +270,7 @@ class TestEndToEndMigrationCycle:
             upgraded["schema_version"] = 1
             upgraded.setdefault("generated_at", "2026-01-01T00:00:00Z")
             upgraded.setdefault("generator", "kanon-cli/1.4.0")
-            upgraded.setdefault("kanon_hash", _VALID_SHA40)
+            upgraded.setdefault("kanon_hash", _VALID_KANON_HASH)
             if "catalog" not in upgraded:
                 upgraded["catalog"] = {
                     "source": "https://example.com/catalog.git@main",
@@ -285,7 +287,7 @@ class TestEndToEndMigrationCycle:
             # Step 3: Call read_lockfile; assert the returned object is a v1 Lockfile.
             lf = read_lockfile(v0_fixture)
             assert lf.schema_version == 1
-            assert lf.kanon_hash == _VALID_SHA40
+            assert lf.kanon_hash == _VALID_KANON_HASH
             assert lf.catalog.revision_spec == "main"
         finally:
             # Step 4: Remove the upgrader.

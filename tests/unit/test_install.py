@@ -8,6 +8,7 @@ import pytest
 
 from kanon_cli.commands.install import _run
 from kanon_cli.core.install import (
+    _RefResolution,
     aggregate_symlinks,
     create_source_dirs,
     install,
@@ -205,7 +206,16 @@ class TestMarketplace:
 
 @pytest.mark.unit
 class TestInstallLifecycle:
-    def test_create_source_dirs_oserror_causes_system_exit(self, tmp_path: pathlib.Path) -> None:
+    # Catalog source used across all TestInstallLifecycle tests.
+    _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
+    _FAKE_SHA = "a" * 40
+    # _resolve_ref_to_sha now returns a _RefResolution named tuple; patch
+    # with a consistent fake result so tests do not require network access.
+    _FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
+
+    def test_create_source_dirs_oserror_causes_system_exit(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """install() exits 1 when create_source_dirs raises OSError."""
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
@@ -213,10 +223,14 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
-        args = argparse.Namespace(kanonenv_path=kanonenv)
-        with patch(
-            "kanon_cli.core.install.create_source_dirs",
-            side_effect=OSError("Cannot create source directory /x: Permission denied"),
+        monkeypatch.setenv("KANON_CATALOG_SOURCE", self._CATALOG_SOURCE)
+        args = argparse.Namespace(kanonenv_path=kanonenv, catalog_source=None)
+        with (
+            patch(
+                "kanon_cli.core.install.create_source_dirs",
+                side_effect=OSError("Cannot create source directory /x: Permission denied"),
+            ),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 _run(args)
@@ -230,8 +244,11 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
-        with pytest.raises(ValueError):
-            install(kanonenv)
+        with (
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            pytest.raises(ValueError),
+        ):
+            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / ".claude-mp"
@@ -251,8 +268,9 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
             patch("kanon_cli.repo.repo_sync") as mock_sync,
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_install,
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
         ):
-            install(kanonenv)
+            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 
         assert mp_dir.is_dir()
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
@@ -275,11 +293,12 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_init") as mock_init,
             patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
             patch("kanon_cli.repo.repo_sync") as mock_sync,
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
         ):
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
             manager.attach_mock(mock_sync, "repo_sync")
-            install(kanonenv)
+            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 
         call_names = [c[0] for c in manager.mock_calls]
         assert call_names == ["repo_init", "repo_envsubst", "repo_sync"], (
@@ -300,8 +319,9 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", return_value="3.0.0") as mock_resolve,
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
         ):
-            install(kanonenv)
+            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
         args, kwargs = mock_init.call_args

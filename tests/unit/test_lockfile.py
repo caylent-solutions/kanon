@@ -31,6 +31,8 @@ from kanon_cli.core.lockfile import (
 
 _VALID_SHA40 = "a" * 40
 _VALID_SHA64 = "b" * 64
+# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+_VALID_KANON_HASH = "sha256:" + "a" * 64
 
 _VALID_CATALOG = CatalogBlock(
     source="https://example.com/catalog.git@main",
@@ -75,7 +77,7 @@ def _make_lockfile(**kwargs) -> Lockfile:
         "schema_version": 1,
         "generated_at": "2026-01-01T00:00:00Z",
         "generator": "kanon-cli/1.4.0",
-        "kanon_hash": _VALID_SHA40,
+        "kanon_hash": _VALID_KANON_HASH,
         "catalog": _VALID_CATALOG,
         "sources": [],
     }
@@ -132,7 +134,7 @@ def _minimal_toml(schema_version: int = 1, **overrides) -> str:
         "schema_version": schema_version,
         "generated_at": "2026-01-01T00:00:00Z",
         "generator": "kanon-cli/1.4.0",
-        "kanon_hash": _VALID_SHA40,
+        "kanon_hash": _VALID_KANON_HASH,
     }
     fields.update(overrides)
     lines = [
@@ -165,7 +167,7 @@ class TestDataclassConstruction:
         assert lf.schema_version == 1
         assert lf.generated_at == "2026-01-01T00:00:00Z"
         assert lf.generator == "kanon-cli/1.4.0"
-        assert lf.kanon_hash == _VALID_SHA40
+        assert lf.kanon_hash == _VALID_KANON_HASH
         assert isinstance(lf.catalog, CatalogBlock)
         assert lf.sources == []
 

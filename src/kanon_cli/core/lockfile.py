@@ -59,6 +59,10 @@ _UPGRADERS: dict[tuple[int, int], Callable[[dict[str, Any]], dict[str, Any]]] = 
 # resolved_sha must be exactly 40 or 64 lowercase hex digits (SHA-1 or SHA-256).
 _SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
 
+# kanon_hash must be a sha256:-prefixed 64-char lowercase hex digest (spec Rule 1a).
+# Total length: 71 chars ("sha256:" + 64 hex chars).
+_KANON_HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+
 # -- TOML serialisation: control-character escape table --
 # Maps every control character that TOML requires to be escaped in basic strings
 # (U+0000-U+001F, U+007F) to its TOML escape sequence.
@@ -297,6 +301,30 @@ class Lockfile:
 # ---------------------------------------------------------------------------
 # Private validation helpers
 # ---------------------------------------------------------------------------
+
+
+def _validate_kanon_hash(value: str) -> None:
+    """Raise ``LockfileValidationError`` if ``value`` is not a valid kanon_hash string.
+
+    A valid kanon_hash (spec Rule 1a) is a 71-character string of the form
+    ``sha256:<64 lowercase hex chars>``. Bare hex strings without the prefix are
+    rejected; uppercase hex characters are rejected.
+
+    Args:
+        value: The ``kanon_hash`` field value to validate.
+
+    Raises:
+        LockfileValidationError: If the value does not match the required pattern.
+    """
+    if not _KANON_HASH_RE.match(value):
+        raise LockfileValidationError(
+            f"ERROR: Invalid kanon_hash at 'kanon_hash'.\n"
+            f"  Value: {value!r}\n"
+            f"  Expected: 'sha256:' followed by exactly 64 lowercase hex digits (a-f0-9).\n"
+            f"  Total expected length: 71 characters.\n"
+            f"  Remediation: regenerate the lockfile with 'kanon install' to obtain "
+            f"a valid kanon_hash."
+        )
 
 
 def _validate_resolved_sha(sha: str, field_path: str) -> None:
@@ -647,14 +675,15 @@ def _serialize_toml(lockfile: Lockfile) -> str:
     lines.append(f"generator = {_toml_str(lockfile.generator)}")
     lines.append(f"kanon_hash = {_toml_str(lockfile.kanon_hash)}")
 
-    # [catalog] block
-    lines.append("")
-    lines.append("[catalog]")
-    lines.append(f"source = {_toml_str(lockfile.catalog.source)}")
-    lines.append(f"url = {_toml_str(lockfile.catalog.url)}")
-    lines.append(f"revision_spec = {_toml_str(lockfile.catalog.revision_spec)}")
-    lines.append(f"resolved_ref = {_toml_str(lockfile.catalog.resolved_ref)}")
-    lines.append(f"resolved_sha = {_toml_str(lockfile.catalog.resolved_sha)}")
+    # [catalog] block -- omitted when no catalog source was configured.
+    if lockfile.catalog.source:
+        lines.append("")
+        lines.append("[catalog]")
+        lines.append(f"source = {_toml_str(lockfile.catalog.source)}")
+        lines.append(f"url = {_toml_str(lockfile.catalog.url)}")
+        lines.append(f"revision_spec = {_toml_str(lockfile.catalog.revision_spec)}")
+        lines.append(f"resolved_ref = {_toml_str(lockfile.catalog.resolved_ref)}")
+        lines.append(f"resolved_sha = {_toml_str(lockfile.catalog.resolved_sha)}")
 
     # [[sources]] array-of-tables
     for source in lockfile.sources:
@@ -728,9 +757,22 @@ def read_lockfile(path: Path) -> Lockfile:
         schema_version = data["schema_version"]
 
     kanon_hash = data["kanon_hash"]
-    _validate_resolved_sha(kanon_hash, "kanon_hash")
+    _validate_kanon_hash(kanon_hash)
 
-    catalog = _parse_catalog_block(data["catalog"])
+    # The [catalog] section is optional: lockfiles written without a catalog
+    # source (e.g. when KANON_CATALOG_SOURCE is unset) omit it.
+    raw_catalog = data.get("catalog")
+    catalog = (
+        _parse_catalog_block(raw_catalog)
+        if raw_catalog is not None
+        else CatalogBlock(
+            source="",
+            url="",
+            revision_spec="",
+            resolved_ref="",
+            resolved_sha="",
+        )
+    )
 
     raw_sources: list[dict[str, Any]] = data.get("sources", [])
     sources = [_parse_source_entry(raw, i) for i, raw in enumerate(raw_sources)]

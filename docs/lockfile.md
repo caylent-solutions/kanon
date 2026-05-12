@@ -2,11 +2,11 @@
 
 ## Overview
 
-The kanon lockfile (`KANON_LOCK_FILE`, default derived from `--kanon-file`) is a TOML
-file that captures the exact resolved state of every dependency declared in a `.kanon`
-file at the moment `kanon lock` was last run. It is machine-generated and should be
-committed to source control so every subsequent `kanon install` produces bit-for-bit
-identical results.
+The kanon lockfile (`.kanon.lock`, written alongside the `.kanon` configuration file)
+is a TOML file that captures the exact resolved state of every dependency declared in
+a `.kanon` file at the moment `kanon install` last ran. It is machine-generated and
+should be committed to source control so every subsequent `kanon install` produces
+bit-for-bit identical results.
 
 The lockfile schema version is embedded in the file and drives the migration policy.
 This document describes schema version 1.
@@ -62,60 +62,60 @@ resolved_sha  = "deadbeef..."
 
 ### Top-level fields
 
-| Field           | Type   | Description |
-|----------------|--------|-------------|
-| `schema_version` | int  | Must be `1`. |
-| `generated_at` | string | ISO-8601 UTC timestamp of when the lockfile was written. |
-| `generator`    | string | The `kanon-cli/<version>` string identifying the writer. |
-| `kanon_hash`   | string | `sha256:`-prefixed 71-character digest (`sha256:<64 lowercase hex chars>`) of the `KANON_SOURCE_*` triples declared in the `.kanon` file. |
+| Field           | Type   | Description | State branch that reads it |
+|----------------|--------|-------------|---------------------------|
+| `schema_version` | int  | Must be `1`. | All -- read first by `read_lockfile`. |
+| `generated_at` | string | ISO-8601 UTC timestamp of when the lockfile was written. | Informational; not read by the state machine. |
+| `generator`    | string | The `kanon-cli/<version>` string identifying the writer. | Informational; not read by the state machine. |
+| `kanon_hash`   | string | `sha256:`-prefixed 71-character digest (`sha256:<64 lowercase hex chars>`) of the `KANON_SOURCE_*` triples declared in the `.kanon` file. | `LOCKFILE_CONSISTENT` / `LOCKFILE_HASH_MISMATCH`: compared to freshly-computed `kanon_hash(.kanon)` by `_classify_install_state`. See `docs/architecture.md`. |
 
 ### `[catalog]` block
 
-| Field           | Type   | Description |
-|----------------|--------|-------------|
-| `source`        | string | The `<url>@<ref>` form identifying the catalog source. |
-| `url`           | string | The catalog repository URL (without the `@<ref>` suffix). |
-| `revision_spec` | string | The revision spec used to locate the catalog (see Validation Rules). |
-| `resolved_ref`  | string | The git ref resolved from `revision_spec`. |
-| `resolved_sha`  | string | The exact commit SHA pinned for reproducibility. |
+| Field           | Type   | Description | State branch that reads it |
+|----------------|--------|-------------|---------------------------|
+| `source`        | string | The `<url>@<ref>` form identifying the catalog source. | `LOCKFILE_CONSISTENT` (fallback only): read by `_resolve_catalog_source` when CLI flag and `KANON_CATALOG_SOURCE` env var are both unset. Also: `LOCKFILE_SOURCE_MISMATCH` -- compared to CLI/env source; mismatch raises `CatalogSourceMismatchError`. See `docs/architecture.md`. |
+| `url`           | string | The catalog repository URL (without the `@<ref>` suffix). | Written at lock time; not used by the state machine directly. |
+| `revision_spec` | string | The revision spec used to locate the catalog (see Validation Rules). | Written at lock time; not used by the state machine directly. |
+| `resolved_ref`  | string | The git ref resolved from `revision_spec`. | Written at lock time; not used by the state machine directly. |
+| `resolved_sha`  | string | The exact commit SHA pinned for reproducibility. | Written at lock time; not used by the state machine directly (SHA reachability is checked by the resolver). |
 
 ### `[[sources]]` entries
 
 Each `[[sources]]` block represents one source repository declared in the `.kanon` file.
 
-| Field           | Type           | Description |
-|----------------|----------------|-------------|
-| `name`          | string         | Source name (matches the `KANON_SOURCE_<name>_URL` env-var key). |
-| `url`           | string         | Source repository URL. |
-| `revision_spec` | string         | The revision spec for this source. |
-| `resolved_ref`  | string         | The git ref resolved from `revision_spec`. |
-| `resolved_sha`  | string         | Pinned commit SHA. |
-| `path`          | string         | Path to the XML file in this source repo. |
-| `includes`      | list           | Zero or more `[[sources.includes]]` entries (recursive, unbounded depth). |
-| `projects`      | list           | Zero or more `[[sources.projects]]` entries. |
+| Field           | Type           | Description | State branch that reads it |
+|----------------|----------------|-------------|---------------------------|
+| `name`          | string         | Source name (matches the `KANON_SOURCE_<name>_URL` env-var key). | `LOCKFILE_UNREACHABLE`: named in the `LockfileUnreachableShaError` message. |
+| `url`           | string         | Source repository URL. | `LOCKFILE_UNREACHABLE`: included as `remote_url` in the `LockfileUnreachableShaError` message. |
+| `revision_spec` | string         | The revision spec for this source. | Written at lock time; not read back by the state machine. |
+| `resolved_ref`  | string         | The git ref resolved from `revision_spec`. | Written at lock time; not read back by the state machine. |
+| `resolved_sha`  | string         | Pinned commit SHA. | `LOCKFILE_CONSISTENT`: used by the resolver to pin the clone at the recorded SHA (ignoring newer tags). `LOCKFILE_UNREACHABLE`: if the resolver cannot verify the SHA, raises `LockfileUnreachableShaError`. |
+| `path`          | string         | Path to the XML file in this source repo. | `LOCKFILE_CONSISTENT`: passed to `repo init -m <path>`. |
+| `includes`      | list           | Zero or more `[[sources.includes]]` entries (recursive, unbounded depth). | `LOCKFILE_CONSISTENT`: walked transitively by the resolver. |
+| `projects`      | list           | Zero or more `[[sources.projects]]` entries. | `LOCKFILE_CONSISTENT`: each project is cloned at `resolved_sha`. |
 
 ### `[[sources.includes]]` entries
 
 Include entries are recursive: each entry may have its own `includes` list.
 
-| Field           | Type   | Description |
-|----------------|--------|-------------|
-| `name`          | string | Display name of the included file. |
-| `path_in_repo`  | string | Repo-relative path to the included XML file. |
-| `url`           | string | URL of the repository providing this include. |
-| `resolved_sha`  | string | Pinned commit SHA for reproducibility. |
-| `includes`      | list   | Nested includes (may be empty or absent). |
+| Field           | Type   | Description | State branch that reads it |
+|----------------|--------|-------------|---------------------------|
+| `name`          | string | Display name of the included file. | Informational; surfaced in error messages. |
+| `path_in_repo`  | string | Repo-relative path to the included XML file. | `LOCKFILE_CONSISTENT`: used to locate the included XML during `repo init`. |
+| `url`           | string | URL of the repository providing this include. | `LOCKFILE_CONSISTENT`: used as the source URL for this include's clone. |
+| `resolved_sha`  | string | Pinned commit SHA for reproducibility. | `LOCKFILE_CONSISTENT`: pins the include's clone; `LOCKFILE_UNREACHABLE` if the SHA is no longer reachable. |
+| `includes`      | list   | Nested includes (may be empty or absent). | `LOCKFILE_CONSISTENT`: walked recursively. |
 
 ### `[[sources.projects]]` entries
 
-| Field           | Type   | Description |
-|----------------|--------|-------------|
-| `name`          | string | Project name. |
-| `url`           | string | Raw project URL (as declared in the catalog XML). |
-| `canonical_url` | string | Canonical form of `url` (see Validation Rules). |
-| `revision_spec` | string | Revision spec for this project. |
-| `resolved_ref`  | string | Resolved git ref. |
-| `resolved_sha`  | string | Pinned commit SHA. |
+| Field           | Type   | Description | State branch that reads it |
+|----------------|--------|-------------|---------------------------|
+| `name`          | string | Project name. | Informational; surfaced in error messages. |
+| `url`           | string | Raw project URL (as declared in the catalog XML). | `LOCKFILE_CONSISTENT`: used as the remote for cloning this project. |
+| `canonical_url` | string | Canonical form of `url` (see Validation Rules). | Conflict detection (future `LOCKFILE_URL_CONFLICT` state, T5). |
+| `revision_spec` | string | Revision spec for this project. | Written at lock time; not read back by the state machine. |
+| `resolved_ref`  | string | Resolved git ref. | `LOCKFILE_CONSISTENT`: passed to `repo sync` to check out the project at this ref. |
+| `resolved_sha`  | string | Pinned commit SHA. | `LOCKFILE_CONSISTENT`: pins the project clone at this SHA via repo sync. Note: project SHAs are not individually verified by the LOCKFILE_UNREACHABLE check; only top-level source SHAs are checked via _check_sha_reachable(). Project SHA errors surface as repo sync failures. |
 
 ---
 
@@ -137,7 +137,7 @@ The top-level `kanon_hash` field must match the pattern `^sha256:[a-f0-9]{64}$`
 **Exception:** `LockfileValidationError` -- message includes the field path
 (`kanon_hash`) and the bad value.
 
-**Remediation:** Regenerate the lockfile with `kanon lock` to obtain a correctly
+**Remediation:** Regenerate the lockfile with `kanon install --refresh-lock` to obtain a correctly
 formatted `kanon_hash`.
 
 ### Rule 1b: `resolved_sha` must be 40 or 64 lowercase hex digits
@@ -154,7 +154,7 @@ the pattern `^[a-f0-9]{40}$` (SHA-1) OR `^[a-f0-9]{64}$` (SHA-256).
 **Exception:** `LockfileValidationError` -- message includes the field path (e.g.
 `sources[0].projects[2].resolved_sha`) and the bad value.
 
-**Remediation:** Regenerate the lockfile with `kanon lock` to obtain a fresh SHA.
+**Remediation:** Regenerate the lockfile with `kanon install --refresh-lock` to obtain a fresh SHA.
 
 ### Rule 2: `revision_spec` must satisfy one of three accept rules
 
@@ -175,7 +175,7 @@ A `revision_spec` value is accepted if it satisfies **any one** of:
 rejected value, and lists all three accept rules.
 
 **Remediation:** Update the `revision_spec` in your `.kanon` file and re-run
-`kanon lock`.
+`kanon install --refresh-lock`.
 
 ### Rule 3: `canonical_url` must equal `canonicalize_repo_url(url)`
 
@@ -187,7 +187,7 @@ user-info, strips a trailing `/`, strips a trailing `.git`, and preserves the po
 **Exception:** `LockfileValidationError` -- message includes both the recorded
 `canonical_url` and the computed value so the operator can see the mismatch.
 
-**Remediation:** Regenerate the lockfile with `kanon lock` to update the
+**Remediation:** Regenerate the lockfile with `kanon install --refresh-lock` to update the
 `canonical_url` field.
 
 ### Rule 4: `path` and `path_in_repo` must not contain NUL, newline, or tab
@@ -201,7 +201,7 @@ The `path` field on every `[[sources]]` entry and the `path_in_repo` field on ev
 **Exception:** `LockfileValidationError` -- message names the bad character by
 codepoint (e.g. `U+0000 (NUL)`) and the field path.
 
-**Remediation:** Correct the path value in your `.kanon` file and re-run `kanon lock`.
+**Remediation:** Correct the path value in your `.kanon` file and re-run `kanon install --refresh-lock`.
 
 ### Rule 5: `schema_version` -- migration policy
 
@@ -308,7 +308,7 @@ the implementation of this flag.
 
 **kanon never silently rewrites lockfiles.** A `read_lockfile` call that applies an
 upgrade returns the upgraded dataclass in memory but does NOT write back to disk.
-Only `kanon install --refresh-lock` (or `kanon lock`) persists changes.
+Only `kanon install --refresh-lock` persists changes.
 
 ---
 
@@ -330,7 +330,7 @@ Only `kanon install --refresh-lock` (or `kanon lock`) persists changes.
 
 | Variable          | Description |
 |------------------|-------------|
-| `KANON_LOCK_FILE` | Override the lockfile path. When set, kanon reads and writes the lockfile at this path instead of the default derived from `--kanon-file`. The `--lock-file` CLI flag takes precedence when both are set. |
+| `KANON_LOCK_FILE` | Override the lockfile path. When set, kanon reads and writes the lockfile at this path instead of the default derived from `--kanon-file`. The `--lock-file` CLI flag takes precedence when both are set. **Note:** this environment variable is planned for a future release and is not yet active in the current implementation. |
 
 ---
 
@@ -441,7 +441,7 @@ the `[catalog].source` field. A change to the catalog source does not change
   of repositories kanon resolves). It does NOT track the catalog used to
   resolve version specs.
 - `[catalog].source` records the catalog repository URL and ref used during
-  `kanon lock`. It does NOT track source declaration changes.
+  `kanon install --refresh-lock`. It does NOT track source declaration changes.
 
 A lockfile is stale if either `kanon_hash` differs from the current `.kanon`
 triples OR the resolved catalog SHA differs from the pinned value. Both are

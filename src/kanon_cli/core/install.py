@@ -6,20 +6,487 @@ per source, aggregates symlinks into ``.packages/``, detects collisions,
 updates ``.gitignore``, and optionally installs marketplace plugins.
 
 Concurrent installs on the same project directory are serialized via an
-exclusive file lock on ``.kanon-install.lock`` in the project root. This
+exclusive file lock on ``.kanon-data/.kanon-install.lock``. This
 prevents interleaved filesystem mutations when two ``kanon install`` processes
 are started simultaneously.
+
+Lockfile state machine (spec Section 4.7)
+-----------------------------------------
+Every ``kanon install`` invocation inspects the five-row state matrix:
+
+  LOCKFILE_ABSENT        -- .kanon.lock absent; resolve fresh, write lockfile.
+  LOCKFILE_CONSISTENT    -- .kanon.lock present and kanon_hash matches; replay SHAs.
+  LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs; hard error.
+  LOCKFILE_UNREACHABLE   -- lockfile SHA no longer reachable on remote; hard error.
+  LOCKFILE_SOURCE_MISMATCH -- lockfile catalog source differs from CLI/env; hard error.
+
+Exception hierarchy:
+
+  InstallError                -- base class for all install-state hard errors.
+  KanonHashMismatchError      -- kanon_hash in lockfile != freshly-computed hash.
+  LockfileUnreachableShaError -- a lockfile SHA is no longer reachable on remote.
+  CatalogSourceMismatchError  -- lockfile catalog source differs from CLI/env source.
+  MissingCatalogSourceError   -- no catalog source from CLI, env, or lockfile fallback.
 """
 
+from __future__ import annotations
+
+import datetime
+import enum
 import fcntl
+import os
 import pathlib
 import shutil
+import subprocess
+from typing import NamedTuple, cast
 
 import kanon_cli.repo as _repo
-from kanon_cli.constants import INSTALL_LOCK_FILENAME
+from kanon_cli import __version__
+from kanon_cli.constants import CATALOG_ENV_VAR, INSTALL_LOCK_FILENAME, MISSING_CATALOG_ERROR_TEMPLATE
+from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
+from kanon_cli.core.lockfile import (
+    CURRENT_SCHEMA_VERSION,
+    CatalogBlock,
+    Lockfile,
+    SourceEntry,
+    read_lockfile,
+    write_lockfile,
+)
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.version import resolve_version
+
+
+# ---------------------------------------------------------------------------
+# Module-private constants
+# ---------------------------------------------------------------------------
+
+# Timeout (seconds) for git ls-remote calls in _check_sha_reachable and
+# _resolve_ref_to_sha.  Override via KANON_GIT_LS_REMOTE_TIMEOUT env var.
+# constants.py is claimed by multiple non-terminal tasks (PRE_CONFLICT);
+# a module-private constant is used here to avoid the merge surface.
+_GIT_LS_REMOTE_TIMEOUT: int = int(
+    os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
+)
+
+
+# ---------------------------------------------------------------------------
+# State enum
+# ---------------------------------------------------------------------------
+
+
+class InstallState(enum.Enum):
+    """Enumeration of the five lockfile state-machine rows (spec Section 4.7)."""
+
+    LOCKFILE_ABSENT = "lockfile-absent"
+    LOCKFILE_CONSISTENT = "lockfile-consistent"
+    LOCKFILE_HASH_MISMATCH = "lockfile-hash-mismatch"
+    LOCKFILE_UNREACHABLE = "lockfile-unreachable"
+    LOCKFILE_SOURCE_MISMATCH = "lockfile-catalog-source-mismatch"
+
+
+# ---------------------------------------------------------------------------
+# Exception hierarchy
+# ---------------------------------------------------------------------------
+
+
+class InstallError(Exception):
+    """Base class for all install state-machine hard errors.
+
+    Subclasses carry structured payloads (summary, context, remediation) and
+    render via ``str(err)`` to the spec's standard three-line error shape.
+    """
+
+
+class KanonHashMismatchError(InstallError):
+    """Raised when the lockfile's kanon_hash does not match the freshly-computed value.
+
+    Spec row: ``.kanon modified (hash mismatch)``.
+    Remediation: ``kanon install --refresh-lock`` or ``--refresh-lock-source <name>``.
+
+    Args:
+        lockfile_hash: The ``kanon_hash`` value stored in the lockfile.
+        computed_hash: The ``kanon_hash`` freshly computed from the current ``.kanon``.
+    """
+
+    def __init__(self, lockfile_hash: str, computed_hash: str) -> None:
+        self.lockfile_hash = lockfile_hash
+        self.computed_hash = computed_hash
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            "ERROR: .kanon has been modified since the lockfile was written.\n"
+            f"  Lockfile kanon_hash : {self.lockfile_hash}\n"
+            f"  Current  kanon_hash : {self.computed_hash}\n"
+            "  Remediation: run 'kanon install --refresh-lock' to rebuild the entire\n"
+            "  lockfile, or 'kanon install --refresh-lock-source <name>' to re-resolve\n"
+            "  one source chain while preserving all other lockfile entries."
+        )
+
+
+class LockfileUnreachableShaError(InstallError):
+    """Raised when a SHA recorded in the lockfile is no longer reachable on the remote.
+
+    Spec row: ``.kanon.lock references a SHA no longer reachable on remote``.
+    Remediation: ``kanon install --refresh-lock-source <name>``.
+
+    Args:
+        source_name: The top-level source name whose SHA is unreachable.
+        sha: The pinned SHA that the remote no longer exposes.
+        remote_url: The remote git URL where the SHA was expected.
+    """
+
+    def __init__(self, source_name: str, sha: str, remote_url: str) -> None:
+        self.source_name = source_name
+        self.sha = sha
+        self.remote_url = remote_url
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: Lockfile SHA for source '{self.source_name}' is no longer reachable.\n"
+            f"  Source  : {self.source_name}\n"
+            f"  SHA     : {self.sha}\n"
+            f"  Remote  : {self.remote_url}\n"
+            f"  Remediation: run 'kanon install --refresh-lock-source {self.source_name}'\n"
+            f"  to re-resolve this source's full chain and update the lockfile entry."
+        )
+
+
+class CatalogSourceMismatchError(InstallError):
+    """Raised when the lockfile's [catalog].source differs from the CLI/env source.
+
+    Spec row: ``.kanon.lock records a different [catalog].source than the CLI/env source``.
+    Remediation: ``kanon install --refresh-lock``.
+
+    Args:
+        lockfile_source: The ``[catalog].source`` value from the lockfile.
+        cli_env_source: The catalog source resolved from the CLI flag or env var.
+    """
+
+    def __init__(self, lockfile_source: str, cli_env_source: str) -> None:
+        self.lockfile_source = lockfile_source
+        self.cli_env_source = cli_env_source
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            "ERROR: Catalog source in lockfile does not match the CLI/env catalog source.\n"
+            f"  Lockfile [catalog].source : {self.lockfile_source}\n"
+            f"  CLI/env catalog source    : {self.cli_env_source}\n"
+            "  The lockfile is authoritative; if you intentionally changed catalogs,\n"
+            "  run 'kanon install --refresh-lock' to rebuild the lockfile from the new source."
+        )
+
+
+class MissingCatalogSourceError(InstallError):
+    """Raised when no catalog source is available from CLI, env var, or lockfile fallback.
+
+    Spec reference: Section 4 header -- canonical missing-catalog error.
+
+    Args:
+        command: The command name to embed in the error message (e.g. ``"install"``).
+    """
+
+    def __init__(self, command: str) -> None:
+        self.command = command
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return MISSING_CATALOG_ERROR_TEMPLATE.format(command=self.command)
+
+
+# ---------------------------------------------------------------------------
+# Lockfile helpers (public API consumed by sibling tasks)
+# ---------------------------------------------------------------------------
+
+
+def read_lockfile_if_present(path: pathlib.Path) -> Lockfile | None:
+    """Return the parsed Lockfile if ``path`` exists, or ``None`` if absent.
+
+    Returns ``None`` only for a path that does not exist.  Any other error
+    (parse failure, permission error, schema error) is raised through
+    immediately so the caller sees a clear exception instead of a silent skip.
+
+    Args:
+        path: Filesystem path to the ``.kanon.lock`` file.
+
+    Returns:
+        A fully parsed and validated ``Lockfile`` dataclass, or ``None`` if
+        the path does not exist.
+
+    Raises:
+        LockfileSchemaError: If the lockfile's schema version is unsupported.
+        LockfileValidationError: If a field value fails validation.
+        OSError: If the file exists but cannot be opened (permission error, etc.).
+    """
+    if not path.exists():
+        return None
+    return read_lockfile(path)
+
+
+class InstallClassification(NamedTuple):
+    """Result of ``_classify_install_state``.
+
+    Carries the state, pre-computed kanon_hash, and parsed lockfile (when present)
+    to avoid recomputing them in the install pipeline (DRY).
+
+    Fields:
+        state: The ``InstallState`` enum value for the current install invocation.
+        computed_hash: The ``kanon_hash`` freshly computed from the ``.kanon`` file,
+            or ``None`` when the lockfile was absent (hash not yet needed).
+        lockfile: The parsed ``Lockfile`` when the lockfile exists, or ``None``
+            when ``state`` is ``LOCKFILE_ABSENT``.
+    """
+
+    state: InstallState
+    computed_hash: str | None
+    lockfile: Lockfile | None
+
+
+def _classify_install_state(
+    kanon_path: pathlib.Path,
+    lockfile_path: pathlib.Path,
+) -> InstallClassification:
+    """Return the ``InstallClassification`` for the given ``.kanon`` + ``.kanon.lock`` combination.
+
+    Implements the first three rows of the spec Section 4.7 state matrix:
+    - LOCKFILE_ABSENT: lockfile path does not exist.
+    - LOCKFILE_CONSISTENT: lockfile exists and its kanon_hash matches the
+      freshly-computed hash of the ``.kanon`` file.
+    - LOCKFILE_HASH_MISMATCH: lockfile exists but hashes differ.
+
+    The LOCKFILE_UNREACHABLE and LOCKFILE_SOURCE_MISMATCH rows require
+    resolver output (live git ls-remote results) and are detected elsewhere
+    in the install pipeline.
+
+    The returned ``InstallClassification`` carries the pre-computed hash and the
+    parsed lockfile so the caller (``_run_install``) does not need to recompute
+    or re-read them.
+
+    Args:
+        kanon_path: Path to the ``.kanon`` configuration file.
+        lockfile_path: Path to the ``.kanon.lock`` file (may not exist).
+
+    Returns:
+        An ``InstallClassification`` named tuple with ``state``, ``computed_hash``,
+        and ``lockfile`` fields.
+
+    Raises:
+        KanonHashError: If the ``.kanon`` source fields contain forbidden characters.
+        LockfileSchemaError: If the lockfile's schema_version is unsupported.
+        LockfileValidationError: If a lockfile field fails validation.
+    """
+    lockfile = read_lockfile_if_present(lockfile_path)
+    if lockfile is None:
+        return InstallClassification(
+            state=InstallState.LOCKFILE_ABSENT,
+            computed_hash=None,
+            lockfile=None,
+        )
+
+    computed_hash = _kanon_hash(kanon_path)
+    if computed_hash == lockfile.kanon_hash:
+        return InstallClassification(
+            state=InstallState.LOCKFILE_CONSISTENT,
+            computed_hash=computed_hash,
+            lockfile=lockfile,
+        )
+    return InstallClassification(
+        state=InstallState.LOCKFILE_HASH_MISMATCH,
+        computed_hash=computed_hash,
+        lockfile=lockfile,
+    )
+
+
+def _resolve_catalog_source(
+    cli_arg: str | None,
+    env_value: str | None,
+    lockfile_catalog_source: str | None,
+    install_state: InstallState,
+) -> str:
+    """Resolve the effective catalog source following the spec's precedence rule.
+
+    Precedence (highest to lowest, spec Section 4 header):
+    1. ``cli_arg`` -- the ``--catalog-source`` CLI flag value.
+    2. ``env_value`` -- the ``KANON_CATALOG_SOURCE`` environment variable.
+    3. ``lockfile_catalog_source`` -- the ``[catalog].source`` field from the
+       lockfile. This fallback applies ONLY in the ``LOCKFILE_CONSISTENT`` state
+       and ONLY when both ``cli_arg`` and ``env_value`` are unset.
+
+    When ``cli_arg`` or ``env_value`` is set and the lockfile's source differs,
+    ``CatalogSourceMismatchError`` is raised (spec Section 4.7 -- the lockfile
+    is authoritative; a deliberate catalog change requires ``--refresh-lock``).
+
+    When all three sources are unset (or the lockfile fallback is not applicable
+    for the current state), ``MissingCatalogSourceError`` is raised.
+
+    Args:
+        cli_arg: The ``--catalog-source`` CLI argument value, or ``None``.
+        env_value: The ``KANON_CATALOG_SOURCE`` env var value, or ``None``.
+        lockfile_catalog_source: The ``[catalog].source`` from a parsed lockfile,
+            or ``None`` when no lockfile is available.
+        install_state: The ``InstallState`` returned by ``_classify_install_state``.
+
+    Returns:
+        The effective catalog source string (``<url>@<ref>`` form).
+
+    Raises:
+        CatalogSourceMismatchError: If CLI/env source differs from the lockfile source
+            in the consistent state (AC-FUNC-005).
+        MissingCatalogSourceError: If no catalog source can be resolved (AC-FUNC-007).
+    """
+    # Determine the effective CLI/env source (highest priority wins)
+    cli_env_source: str | None = cli_arg if cli_arg is not None else env_value
+
+    if cli_env_source is not None:
+        # In the consistent state, validate that lockfile source agrees (if present).
+        if (
+            install_state is InstallState.LOCKFILE_CONSISTENT
+            and lockfile_catalog_source is not None
+            and lockfile_catalog_source != cli_env_source
+        ):
+            raise CatalogSourceMismatchError(
+                lockfile_source=lockfile_catalog_source,
+                cli_env_source=cli_env_source,
+            )
+        return cli_env_source
+
+    # No CLI/env source -- use lockfile fallback only in the consistent state.
+    if install_state is InstallState.LOCKFILE_CONSISTENT and lockfile_catalog_source is not None:
+        return lockfile_catalog_source
+
+    raise MissingCatalogSourceError(command="install")
+
+
+def _emit_install_state(state: InstallState, sources: int, projects: int) -> None:
+    """Print the spec's verbatim info-line for the given install state to stdout.
+
+    Only two states produce an info-line (spec Section 4.7):
+    - LOCKFILE_ABSENT:     ``"lockfile rebuilt from .kanon (N sources, M projects)"``
+    - LOCKFILE_CONSISTENT: ``"installing from lockfile (N sources, M projects)"``
+
+    Other states are not emitted by this helper (they result in exceptions).
+
+    Args:
+        state: The ``InstallState`` for the current install invocation.
+        sources: The number of top-level sources declared in ``.kanon``.
+        projects: The total number of resolved projects across all sources.
+    """
+    if state is InstallState.LOCKFILE_ABSENT:
+        print(f"lockfile rebuilt from .kanon ({sources} sources, {projects} projects)")
+    elif state is InstallState.LOCKFILE_CONSISTENT:
+        print(f"installing from lockfile ({sources} sources, {projects} projects)")
+
+
+class _RefResolution(NamedTuple):
+    """Result of resolving a git ref to a commit SHA via ``git ls-remote``."""
+
+    sha: str
+    resolved_ref: str
+
+
+def _check_sha_reachable(url: str, sha: str, source_name: str) -> None:
+    """Verify that a pinned SHA is still reachable on the remote.
+
+    Lists all refs from the remote via ``git ls-remote <url>`` (no pattern
+    argument) and searches the first column of every output line for the
+    pinned SHA.  If the SHA does not appear in any line, or if git ls-remote
+    returns a non-zero exit code, the SHA is considered unreachable and
+    ``LockfileUnreachableShaError`` is raised.
+
+    This approach avoids the limitation of ``git ls-remote <url> <pattern>``,
+    which only matches ref names -- not bare SHAs -- and would always return
+    empty output for SHA lookups, making every SHA appear unreachable.
+
+    Args:
+        url: Git repository URL to query.
+        sha: The pinned commit SHA to search for in remote refs.
+        source_name: The top-level source name (used in the error payload).
+
+    Raises:
+        LockfileUnreachableShaError: If the SHA is not found in any remote
+            ref or if git ls-remote exits with a non-zero return code.
+    """
+    result = subprocess.run(
+        ["git", "ls-remote", url],
+        capture_output=True,
+        text=True,
+        timeout=_GIT_LS_REMOTE_TIMEOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise LockfileUnreachableShaError(
+            source_name=source_name,
+            sha=sha,
+            remote_url=url,
+        )
+    # Check the first column (SHA) of each tab-delimited line; a substring search
+    # against the full stdout would produce false positives when a SHA appears in
+    # a ref name (unlikely but possible with partial hashes or test fixtures).
+    sha_found = any(line.split("\t")[0] == sha for line in result.stdout.strip().splitlines() if "\t" in line)
+    if not sha_found:
+        raise LockfileUnreachableShaError(
+            source_name=source_name,
+            sha=sha,
+            remote_url=url,
+        )
+
+
+def _resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
+    """Resolve a git ref to its commit SHA and the matched ref string via ``git ls-remote``.
+
+    Used when writing the lockfile to record the exact commit SHA and the
+    fully-qualified ref that the resolved ref points to.  The ref may be a tag
+    name (``1.0.0``), a branch name (``main``), a fully-qualified tag ref
+    (``refs/tags/1.0.0``), a fully-qualified branch ref (``refs/heads/main``),
+    or any other valid git ref.
+
+    When ``ref`` is not fully qualified (does not start with ``refs/``), the
+    ls-remote output is searched for any matching entry.  The first match's
+    fully-qualified ref is returned as ``resolved_ref`` so callers never need
+    to guess the ``refs/heads/`` vs ``refs/tags/`` prefix.
+
+    Args:
+        url: Git repository URL (local path or remote URL).
+        ref: A git ref (fully-qualified or short name).
+
+    Returns:
+        A ``_RefResolution`` named tuple with fields:
+        - ``sha``: The commit SHA that ``ref`` resolves to.
+        - ``resolved_ref``: The fully-qualified ref string returned by ls-remote.
+
+    Raises:
+        ValueError: If the ref is not found in the remote or if git ls-remote
+            fails.
+    """
+    result = subprocess.run(
+        ["git", "ls-remote", url, ref],
+        capture_output=True,
+        text=True,
+        timeout=_GIT_LS_REMOTE_TIMEOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError(
+            f"ERROR: git ls-remote failed for url={url!r}, ref={ref!r}.\n  stderr: {result.stderr.strip()}"
+        )
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            matched_sha = parts[0]
+            matched_ref = parts[1]
+            # Accept a match when the ref is fully-qualified and equals the
+            # matched_ref, OR when the ref is a short name and is the suffix
+            # of the matched_ref (e.g. "main" matches "refs/heads/main").
+            if matched_ref == ref or matched_ref.endswith(f"/{ref}"):
+                return _RefResolution(sha=matched_sha, resolved_ref=matched_ref)
+    raise ValueError(
+        f"ERROR: ref {ref!r} not found in remote {url!r}.\n"
+        f"  Remediation: verify the ref exists on the remote with "
+        f"'git ls-remote {url} {ref}'."
+    )
 
 
 def create_source_dirs(
@@ -223,21 +690,80 @@ def _print_package_summary(
             print(f"    - {pkg}")
 
 
-def _run_install(kanonenv_path: pathlib.Path) -> None:
+def _run_install(
+    kanonenv_path: pathlib.Path,
+    lockfile_path: pathlib.Path,
+    catalog_source: str | None,
+) -> None:
     """Execute the install lifecycle without acquiring the concurrency lock.
 
     This is the inner implementation called by install() after the exclusive
     file lock is held. All filesystem mutations happen here.
 
+    Implements the lockfile state-machine branching (spec Section 4.7):
+    - LOCKFILE_ABSENT: resolve fresh, install, write lockfile.
+    - LOCKFILE_CONSISTENT: install exactly the SHAs in the lockfile; skip resolve.
+    - LOCKFILE_HASH_MISMATCH: raise KanonHashMismatchError immediately.
+
+    All errors propagate unconditionally. There is no fallback logic.
+
     Args:
         kanonenv_path: Resolved absolute path to the .kanon configuration file.
+        lockfile_path: Path to the .kanon.lock file (may or may not exist).
+        catalog_source: Catalog source string from the CLI flag, or None when
+            the caller did not provide one (the env var is consulted automatically).
 
     Raises:
-        ValueError: If marketplace install is requested but
-            CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
+        KanonHashMismatchError: If the lockfile exists but its kanon_hash does
+            not match the freshly-computed hash of the .kanon file.
+        MissingCatalogSourceError: If no catalog source can be resolved from
+            cli arg, env var, or lockfile fallback (AC-FUNC-007). Always raised;
+            never swallowed.
+        CatalogSourceMismatchError: If the resolved catalog source differs from
+            the lockfile's recorded source in the consistent state.
+        ValueError: If the catalog source is not in ``url@ref`` form, if
+            git ls-remote fails or a ref is not found, if marketplace install
+            is requested but CLAUDE_MARKETPLACES_DIR is not configured, or on
+            package collision.
         OSError: If a source directory cannot be created.
         RepoCommandError: If any repo sub-command exits non-zero.
     """
+    # Step 1: Classify the lockfile state.
+    # The classification result carries the pre-computed hash and parsed lockfile
+    # to avoid recomputing them later in the pipeline (DRY).
+    classification = _classify_install_state(kanonenv_path, lockfile_path)
+    install_state = classification.state
+    existing_lockfile: Lockfile | None = classification.lockfile
+
+    # Step 2: On hash mismatch, fail fast with a structured error.
+    # Both values were already computed by _classify_install_state; use them directly.
+    if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
+        # Both fields are always populated by _classify_install_state in the
+        # LOCKFILE_HASH_MISMATCH branch. cast() communicates this to the type
+        # checker without stripping the check at runtime (unlike assert, which
+        # Python's -O flag would remove).
+        existing_lockfile_nn = cast(Lockfile, classification.lockfile)
+        computed_hash_nn = cast(str, classification.computed_hash)
+        raise KanonHashMismatchError(
+            lockfile_hash=existing_lockfile_nn.kanon_hash,
+            computed_hash=computed_hash_nn,
+        )
+
+    # Step 3: Read catalog source from env var if not supplied by caller.
+    env_catalog = os.environ.get(CATALOG_ENV_VAR)
+    lockfile_catalog_source: str | None = existing_lockfile.catalog.source if existing_lockfile is not None else None
+
+    # Step 4: Resolve the effective catalog source following precedence rules.
+    # _resolve_catalog_source enforces the three-tier precedence (CLI > env > lockfile
+    # fallback) and raises MissingCatalogSourceError when all tiers are unset
+    # (AC-FUNC-007).  The lockfile fallback applies only in LOCKFILE_CONSISTENT state.
+    effective_catalog_source: str = _resolve_catalog_source(
+        cli_arg=catalog_source,
+        env_value=env_catalog,
+        lockfile_catalog_source=lockfile_catalog_source,
+        install_state=install_state,
+    )
+
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = kanonenv_path.parent
@@ -266,11 +792,65 @@ def _run_install(kanonenv_path: pathlib.Path) -> None:
 
     source_dirs = create_source_dirs(source_names, base_dir)
 
+    # Step 5: Resolve SHAs and sync sources.
+    # In the LOCKFILE_CONSISTENT state, replay the pinned SHAs from the lockfile
+    # instead of calling resolve_version() (which would query the remote).
+    # resolved_entries: populated for lockfile writing.
+    resolved_entries: list[SourceEntry] = []
+
     for name in source_names:
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
-        resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+
+        if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
+            # Replay: find the pinned entry for this source.
+            pinned = next(
+                (e for e in existing_lockfile.sources if e.name == name),
+                None,
+            )
+            if pinned is not None:
+                # Verify SHA reachability before replaying: list all remote refs
+                # and check whether the pinned SHA appears in the first column.
+                # git ls-remote with a bare SHA pattern always returns empty output
+                # (only ref names are matched), so we list all refs and grep the SHA.
+                _check_sha_reachable(
+                    url=pinned.url,
+                    sha=pinned.resolved_sha,
+                    source_name=name,
+                )
+                resolved_revision = pinned.resolved_sha
+                resolved_entries.append(pinned)
+            else:
+                # Source in .kanon but not in lockfile -- resolve fresh.
+                resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+                ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
+                resolved_entries.append(
+                    SourceEntry(
+                        name=name,
+                        url=source_data["url"],
+                        revision_spec=source_data["revision"],
+                        resolved_ref=ref_resolution.resolved_ref,
+                        resolved_sha=ref_resolution.sha,
+                        path=source_data["path"],
+                    )
+                )
+        else:
+            resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+            # Resolve the actual commit SHA and the matched ref for the lockfile entry.
+            # ValueError propagates unconditionally (fail-fast; no silent degradation).
+            ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
+            resolved_entries.append(
+                SourceEntry(
+                    name=name,
+                    url=source_data["url"],
+                    revision_spec=source_data["revision"],
+                    resolved_ref=ref_resolution.resolved_ref,
+                    resolved_sha=ref_resolution.sha,
+                    path=source_data["path"],
+                )
+            )
+
         print(f"  repo init ({source_data['path']})...")
         run_repo_init(
             source_dir,
@@ -288,6 +868,9 @@ def _run_install(kanonenv_path: pathlib.Path) -> None:
     package_owners = aggregate_symlinks(source_names, base_dir)
     update_gitignore(base_dir)
 
+    # Step 6: Emit the spec's info-line for the current state.
+    _emit_install_state(install_state, sources=len(source_names), projects=len(package_owners))
+
     _print_package_summary(package_owners, source_names)
 
     if marketplace_install:
@@ -295,10 +878,52 @@ def _run_install(kanonenv_path: pathlib.Path) -> None:
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
 
+    # Step 7: Write the lockfile when state is LOCKFILE_ABSENT.
+    # In the LOCKFILE_CONSISTENT state the lockfile is authoritative and
+    # must not be modified.
+    if install_state is InstallState.LOCKFILE_ABSENT:
+        # In the LOCKFILE_ABSENT state, computed_hash is always None because
+        # _classify_install_state does not call kanon_hash when there is no
+        # lockfile to compare against. Compute it now.
+        computed_hash = _kanon_hash(kanonenv_path)
+
+        # Build the catalog block.  effective_catalog_source is always a non-empty
+        # string here: _resolve_catalog_source raised MissingCatalogSourceError above
+        # when all tiers were unset.  Fail fast if the value lacks the '@' separator.
+        if "@" not in effective_catalog_source:
+            raise ValueError(
+                f"catalog source must be in <url>@<ref> form; got: {effective_catalog_source!r}",
+            )
+        catalog_url, catalog_ref = effective_catalog_source.rsplit("@", 1)
+
+        # Resolve the catalog ref to a SHA and its fully-qualified ref string.
+        catalog_resolution = _resolve_ref_to_sha(catalog_url, catalog_ref)
+        catalog_block = CatalogBlock(
+            source=effective_catalog_source,
+            url=catalog_url,
+            revision_spec=catalog_ref,
+            resolved_ref=catalog_resolution.resolved_ref,
+            resolved_sha=catalog_resolution.sha,
+        )
+
+        lf = Lockfile(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            generator=f"kanon-cli/{__version__}",
+            kanon_hash=computed_hash,
+            catalog=catalog_block,
+            sources=resolved_entries,
+        )
+        write_lockfile(lf, lockfile_path)
+
     print("\nkanon install: done.")
 
 
-def install(kanonenv_path: pathlib.Path) -> None:
+def install(
+    kanonenv_path: pathlib.Path,
+    lock_file_path: pathlib.Path | None = None,
+    catalog_source: str | None = None,
+) -> None:
     """Execute the full Kanon install lifecycle.
 
     Acquires an exclusive file lock on ``.kanon-data/.kanon-install.lock``
@@ -312,20 +937,36 @@ def install(kanonenv_path: pathlib.Path) -> None:
     ``"Cannot create source directory"`` prefix.
 
     Steps:
-      1. Resolve .kanon path
-      2. Create .kanon-data/ directory (fail fast on permission errors)
-      3. Acquire exclusive file lock inside .kanon-data/
-      4. Parse .kanon and validate sources
-      5. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir
-      6. For each source: mkdir, repo init, envsubst, sync
-      7. Aggregate symlinks into .packages/
-      8. Update .gitignore
-      9. If KANON_MARKETPLACE_INSTALL=true: run install script
+      1. Create .kanon-data/ directory (fail fast on permission errors).
+      2. Acquire exclusive file lock inside .kanon-data/.
+      3. Classify the lockfile state via _classify_install_state.
+      4. Resolve the effective catalog source via _resolve_catalog_source.
+      5. Parse .kanon and validate sources.
+      6. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
+      7. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
+      8. Aggregate symlinks into .packages/.
+      9. Update .gitignore.
+      10. Emit state info-line via _emit_install_state.
+      11. If KANON_MARKETPLACE_INSTALL=true: run install script.
+      12. Write .kanon.lock when state is LOCKFILE_ABSENT.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
+        lock_file_path: Path to the .kanon.lock file. When None, the default
+            is derived as ``<kanonenv_path.parent>/.kanon.lock``. T7 passes
+            the operator-supplied value here; T1 accepts whatever is passed.
+        catalog_source: Effective catalog source (cli flag value takes
+            precedence over the KANON_CATALOG_SOURCE env var, which is read
+            automatically inside _run_install). Pass None when no CLI flag
+            is present; the env var will be consulted automatically.
 
     Raises:
+        KanonHashMismatchError: If the lockfile exists but its kanon_hash does
+            not match the freshly-computed hash of the .kanon file.
+        MissingCatalogSourceError: If the consistent state requires a catalog
+            source but none can be resolved from cli arg, env var, or lockfile.
+        CatalogSourceMismatchError: If the CLI/env catalog source differs from
+            the lockfile's recorded source in the consistent state.
         ValueError: If marketplace install is requested but
             CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
         OSError: If the managed data directory or a source directory cannot be
@@ -334,12 +975,16 @@ def install(kanonenv_path: pathlib.Path) -> None:
     """
     kanonenv_path = kanonenv_path.resolve()
     base_dir = kanonenv_path.parent
+
+    # Derive the default lockfile path when the caller did not supply one.
+    resolved_lockfile_path = lock_file_path if lock_file_path is not None else base_dir / ".kanon.lock"
+
     kanon_data_dir = base_dir / ".kanon-data"
     try:
         kanon_data_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise OSError(f"Cannot create source directory {kanon_data_dir}: {exc.strerror}") from exc
-    lock_file_path = kanon_data_dir / INSTALL_LOCK_FILENAME
-    with open(lock_file_path, "w") as _lock_fd:
+    concurrency_lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
+    with open(concurrency_lock_path, "w") as _lock_fd:
         fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
-        _run_install(kanonenv_path)
+        _run_install(kanonenv_path, resolved_lockfile_path, catalog_source)

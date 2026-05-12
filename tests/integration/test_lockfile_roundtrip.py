@@ -25,6 +25,8 @@ from kanon_cli.core.lockfile import (
 _SHA40 = "a" * 40
 _SHA40_B = "b" * 40
 _SHA64 = "c" * 64
+# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+_KANON_HASH = "sha256:" + "a" * 64
 
 
 def _make_include_chain(depth: int, prefix: str) -> list[IncludeEntry]:
@@ -89,7 +91,7 @@ def _build_deep_lockfile() -> Lockfile:
         schema_version=1,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/1.4.0",
-        kanon_hash=_SHA40,
+        kanon_hash=_KANON_HASH,
         catalog=catalog,
         sources=sources,
     )

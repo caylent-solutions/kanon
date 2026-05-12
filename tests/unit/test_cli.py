@@ -222,6 +222,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "validate": ["xml"],
             "bootstrap": ["list"],
             "list": [],
+            "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
         }
         return minimal[subcommand]
@@ -594,3 +595,133 @@ class TestAddSubcommandRegistration:
         help_text = buf.getvalue()
         assert "--kanon-file" in help_text
         assert "KANON_KANON_FILE" in help_text
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new 'remove' subcommand registration in build_parser()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRemoveSubcommandRegistration:
+    """build_parser() registers the 'remove' subcommand (AC-FUNC-001, AC-FUNC-002, AC-FUNC-003)."""
+
+    def test_remove_subcommand_exists_in_parser(self) -> None:
+        """build_parser() includes 'remove' as a registered subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar"])
+        assert args.command == "remove"
+
+    def test_remove_subcommand_accepts_positional_name(self) -> None:
+        """The 'remove' subcommand accepts one positional <name>."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar"])
+        assert args.names == ["foo_bar"]
+
+    def test_remove_subcommand_accepts_multiple_names(self) -> None:
+        """The 'remove' subcommand accepts multiple positional <name> values."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar", "baz_qux"])
+        assert args.names == ["foo_bar", "baz_qux"]
+
+    def test_remove_subcommand_has_kanon_file_flag(self) -> None:
+        """The 'remove' subcommand accepts --kanon-file."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar", "--kanon-file", "/tmp/.kanon"])
+        assert args.kanon_file == "/tmp/.kanon"
+
+    def test_remove_subcommand_kanon_file_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--kanon-file defaults to ./.kanon when not supplied and env var is absent."""
+        monkeypatch.delenv("KANON_KANON_FILE", raising=False)
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar"])
+        assert args.kanon_file == "./.kanon"
+
+    def test_remove_subcommand_has_force_flag(self) -> None:
+        """The 'remove' subcommand accepts --force."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar", "--force"])
+        assert args.force is True
+
+    def test_remove_subcommand_has_dry_run_flag(self) -> None:
+        """The 'remove' subcommand accepts --dry-run."""
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar", "--dry-run"])
+        assert args.dry_run is True
+
+    def test_remove_subcommand_has_no_color_flag(self) -> None:
+        """The 'remove' subcommand receives --no-color from the root parser global flags."""
+        parser = build_parser()
+        args = parser.parse_args(["--no-color", "remove", "foo_bar"])
+        assert args.no_color is True
+
+    def test_remove_subcommand_sets_func(self) -> None:
+        """The 'remove' subcommand sets args.func to run_remove."""
+        from kanon_cli.commands.remove import run_remove
+
+        parser = build_parser()
+        args = parser.parse_args(["remove", "foo_bar"])
+        assert args.func is run_remove
+
+    def test_remove_help_exits_0(self) -> None:
+        """kanon remove --help exits 0 without error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["remove", "--help"])
+        assert exc_info.value.code == 0
+
+    def test_remove_help_mentions_kanon_file_and_env_var(self) -> None:
+        """kanon remove --help text mentions --kanon-file and KANON_KANON_FILE."""
+        import io
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                remove_parser = action.choices.get("remove")
+                break
+        else:
+            remove_parser = None
+
+        assert remove_parser is not None, "remove subparser must be registered"
+        buf = io.StringIO()
+        remove_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        assert "--kanon-file" in help_text
+        assert "KANON_KANON_FILE" in help_text
+
+    def test_remove_help_mentions_dual_input_contract(self) -> None:
+        """kanon remove --help describes that both source name and entry name are accepted."""
+        import io
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                remove_parser = action.choices.get("remove")
+                break
+        else:
+            remove_parser = None
+
+        assert remove_parser is not None, "remove subparser must be registered"
+        buf = io.StringIO()
+        remove_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        # Help text must describe the dual-input contract (AC-DOC-001)
+        assert "foo_bar" in help_text or "source name" in help_text or "entry name" in help_text
+
+    def test_remove_help_mentions_atomicity_rule(self) -> None:
+        """kanon remove --help describes the atomicity rule."""
+        import io
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                remove_parser = action.choices.get("remove")
+                break
+        else:
+            remove_parser = None
+
+        assert remove_parser is not None, "remove subparser must be registered"
+        buf = io.StringIO()
+        remove_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        # Atomicity rule mentioned (AC-DOC-001)
+        assert "atomic" in help_text.lower() or "Atomicity" in help_text or "nothing changes" in help_text

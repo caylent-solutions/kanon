@@ -2,6 +2,7 @@
 
 Provides the top-level ``kanon`` command with subcommands:
   - ``kanon add <name>[@<spec>] ...`` -- Add catalog entries to .kanon file
+  - ``kanon remove <name> ...`` -- Remove dependency triples from .kanon file
   - ``kanon install <kanonenv-path>`` -- Full lifecycle: prereqs + repo install + multi-source sync
   - ``kanon clean <kanonenv-path>`` -- Full teardown: uninstall, remove dirs
   - ``kanon validate xml [--repo-root PATH]`` -- Validate manifest XML files
@@ -24,6 +25,7 @@ from kanon_cli.commands.bootstrap import register as register_bootstrap
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.install import register as register_install
 from kanon_cli.commands.list import register as register_list
+from kanon_cli.commands.remove import register as register_remove
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
@@ -92,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_install(subparsers)
     register_clean(subparsers)
     register_list(subparsers)
+    register_remove(subparsers)
     register_validate(subparsers)
     register_repo(subparsers)
 

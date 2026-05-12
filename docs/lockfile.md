@@ -189,17 +189,112 @@ codepoint (e.g. `U+0000 (NUL)`) and the field path.
 
 **Remediation:** Correct the path value in your `.kanon` file and re-run `kanon lock`.
 
-### Rule 5: `schema_version` must be 1
+### Rule 5: `schema_version` -- migration policy
 
-Any `schema_version` value other than `1` raises `LockfileSchemaError` (a distinct
-exception class from `LockfileValidationError`). This allows the T2 migration policy
-to dispatch on the schema version and apply the appropriate upgrade path.
+`schema_version` is validated against `CURRENT_SCHEMA_VERSION` (currently `1`).
+Three cases are handled:
 
-**Exception:** `LockfileSchemaError` with message
-`"lockfile schema v<N> not supported by this kanon version"`.
+**Forward-incompatible** (`schema_version > CURRENT_SCHEMA_VERSION`): raises
+`LockfileSchemaError` with message:
+`"lockfile schema v<N> written by newer kanon; upgrade kanon-cli."`
 
-**Remediation:** Upgrade `kanon-cli` to a version that supports the lockfile's schema
-version, or downgrade the lockfile by re-running `kanon lock` with a supported version.
+This is a fatal error; kanon cannot safely parse a format it has never seen.
+
+**Backward-incompatible** (`schema_version < CURRENT_SCHEMA_VERSION`): looks up a
+registered upgrader chain from the file's version to `CURRENT_SCHEMA_VERSION`. If
+a chain exists, each upgrader is applied in sequence and the upgraded `Lockfile` is
+returned. If no chain exists, raises `LockfileSchemaError` with message:
+`"no upgrade path from lockfile schema v<N> to v<current>; this is a kanon bug; please report."`
+
+The "kanon bug" framing is intentional: the spec mandates that every released schema
+bump ships with an explicit upgrader; a missing upgrader is a packaging defect, not an
+operator error.
+
+**Current schema** (`schema_version == CURRENT_SCHEMA_VERSION`): parsed and validated
+directly with no migration applied.
+
+**Exception class:** `LockfileSchemaError` (distinct from `LockfileValidationError`)
+so callers can dispatch on schema errors separately from field validation errors.
+
+---
+
+## Schema Migration Policy
+
+### Overview
+
+Every kanon release ships with a single `CURRENT_SCHEMA_VERSION` constant (currently
+`1`). When `read_lockfile` encounters a lockfile whose `schema_version` differs from
+`CURRENT_SCHEMA_VERSION`, it applies one of three outcomes:
+
+| Condition | Outcome |
+|-----------|---------|
+| `schema_version > CURRENT_SCHEMA_VERSION` | Fatal error -- kanon is too old |
+| `schema_version < CURRENT_SCHEMA_VERSION` | Upgrade via registered chain |
+| `schema_version == CURRENT_SCHEMA_VERSION` | Parse directly -- no migration |
+
+### Forward-incompatible reads
+
+If the lockfile was written by a newer kanon (i.e. `schema_version > CURRENT_SCHEMA_VERSION`),
+`read_lockfile` raises `LockfileSchemaError`:
+
+```
+lockfile schema v<N> written by newer kanon; upgrade kanon-cli.
+```
+
+There is no fallback; the format is unknown and cannot be parsed safely.
+
+**Remediation:** Upgrade `kanon-cli` to a version that supports schema v`<N>`, or
+rebuild the lockfile with a supported kanon by running `kanon install --refresh-lock`.
+
+### Backward-compatible reads (per-version upgrader chain)
+
+If the lockfile was written by an older kanon (i.e. `schema_version < CURRENT_SCHEMA_VERSION`),
+kanon walks an upgrader chain: for each step from `N` to `N+1`, a registered upgrader
+function transforms the raw TOML dict. If any step has no registered upgrader, the error is:
+
+```
+no upgrade path from lockfile schema v<N> to v<current>; this is a kanon bug; please report.
+```
+
+Because the spec requires every schema bump to ship with an explicit upgrader, a missing
+upgrader is a packaging defect in kanon, not an operator error.
+
+### v1 -> v2 placeholder example (spec Section 5.2)
+
+When schema v2 ships, the migration module will contain one new registry entry:
+
+```python
+from kanon_cli.core.lockfile import _register_upgrader
+
+def _upgrade_v1_to_v2(data: dict) -> dict:
+    """Upgrade a schema v1 lockfile dict to schema v2."""
+    upgraded = dict(data)
+    upgraded["schema_version"] = 2
+    # Example: v2 adds a required "lock_generated_by" field.
+    upgraded.setdefault("lock_generated_by", upgraded.get("generator", "unknown"))
+    return upgraded
+
+_register_upgrader(1, 2, _upgrade_v1_to_v2)
+```
+
+No other code changes are needed for the migration to function; `_dispatch_migration`
+walks the chain automatically.
+
+### Operator rebuild path
+
+Operators who want to rewrite an older lockfile at the current schema can run:
+
+```
+kanon install --refresh-lock
+```
+
+This discards the existing lockfile and rebuilds it from scratch at `CURRENT_SCHEMA_VERSION`.
+It is the canonical path for intentional lockfile regeneration. See `E3-F3-S1-T2` for
+the implementation of this flag.
+
+**kanon never silently rewrites lockfiles.** A `read_lockfile` call that applies an
+upgrade returns the upgraded dataclass in memory but does NOT write back to disk.
+Only `kanon install --refresh-lock` (or `kanon lock`) persists changes.
 
 ---
 

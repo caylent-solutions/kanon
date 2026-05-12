@@ -601,19 +601,35 @@ class TestPathCharacterValidation:
 
 @pytest.mark.unit
 class TestSchemaVersionValidation:
-    """Tests for unknown schema_version raising LockfileSchemaError (AC-FUNC-009)."""
+    """Tests for schema_version handling -- updated for T2 migration policy.
 
-    @pytest.mark.parametrize("bad_version", [0, 2, 99, -1, 100])
-    def test_unknown_schema_version_raises_lockfile_schema_error(self, bad_version, tmp_path):
-        """Non-1 schema_version raises LockfileSchemaError, not LockfileValidationError."""
-        toml_content = _minimal_toml(schema_version=bad_version)
+    T2 differentiates forward-incompatible reads (schema_version > current)
+    from backward-incompatible reads (schema_version < current).
+    """
+
+    @pytest.mark.parametrize("future_version", [2, 99, 100])
+    def test_forward_incompatible_schema_raises_lockfile_schema_error(self, future_version, tmp_path):
+        """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError."""
+        toml_content = _minimal_toml(schema_version=future_version)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         with pytest.raises(LockfileSchemaError) as exc_info:
             read_lockfile(p)
         err_msg = str(exc_info.value)
-        assert f"v{bad_version}" in err_msg
-        assert "not supported" in err_msg
+        assert f"v{future_version}" in err_msg
+        assert "upgrade kanon-cli" in err_msg
+
+    @pytest.mark.parametrize("old_version", [0, -1])
+    def test_backward_incompatible_schema_no_upgrader_raises_lockfile_schema_error(self, old_version, tmp_path):
+        """schema_version < CURRENT_SCHEMA_VERSION with no upgrader raises LockfileSchemaError."""
+        toml_content = _minimal_toml(schema_version=old_version)
+        p = tmp_path / "kanon.lock"
+        p.write_text(toml_content)
+        with pytest.raises(LockfileSchemaError) as exc_info:
+            read_lockfile(p)
+        err_msg = str(exc_info.value)
+        assert f"v{old_version}" in err_msg
+        assert "kanon bug" in err_msg
 
     def test_schema_version_1_accepted(self, tmp_path):
         """schema_version == 1 is the only supported version and is accepted."""
@@ -623,14 +639,14 @@ class TestSchemaVersionValidation:
         lf = read_lockfile(p)
         assert lf.schema_version == 1
 
-    def test_schema_error_message_format(self, tmp_path):
-        """LockfileSchemaError message matches the exact format from the spec."""
+    def test_forward_incompat_schema_error_message_format(self, tmp_path):
+        """LockfileSchemaError message for forward-incompatible reads matches spec text."""
         toml_content = _minimal_toml(schema_version=7)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         with pytest.raises(LockfileSchemaError) as exc_info:
             read_lockfile(p)
-        assert str(exc_info.value) == "lockfile schema v7 not supported by this kanon version"
+        assert str(exc_info.value) == "lockfile schema v7 written by newer kanon; upgrade kanon-cli."
 
     def test_schema_error_is_distinct_from_validation_error(self, tmp_path):
         """LockfileSchemaError is NOT a subclass of LockfileValidationError."""
@@ -638,7 +654,7 @@ class TestSchemaVersionValidation:
 
     def test_both_exceptions_are_distinct_types(self):
         """LockfileSchemaError and LockfileValidationError are distinct exception types."""
-        schema_err = LockfileSchemaError("schema v2 not supported by this kanon version")
+        schema_err = LockfileSchemaError("schema v2 written by newer kanon; upgrade kanon-cli.")
         val_err = LockfileValidationError("bad sha")
         assert type(schema_err) is not type(val_err)
 

@@ -2,15 +2,25 @@
 
 Public entry points:
   - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
+    Applies schema migration policy (spec Section 5.2) when schema_version differs
+    from CURRENT_SCHEMA_VERSION.
   - ``write_lockfile(lockfile: Lockfile, path: Path) -> None``: atomically serialise
     a Lockfile to disk using a write-temp-then-rename pattern.
 
 Exception hierarchy:
-  - ``LockfileSchemaError``: raised when the schema_version is not supported.
+  - ``LockfileSchemaError``: raised when the schema_version is not supported or has
+    no upgrade path to the current schema.
   - ``LockfileValidationError``: raised when a field value violates a validation rule.
 
-Spec source: spec Section 5 (Lockfile format and validation rules) and
-Section 4.7.1 (atomicity contract for the lockfile writer).
+Schema migration registry (spec Section 5.2):
+  - ``_register_upgrader(from_version, to_version, fn)``: register an upgrader function.
+  - ``_unregister_upgrader(from_version, to_version)``: remove a registered upgrader.
+  - ``_dispatch_migration(data)``: walk the upgrader chain from data's schema_version
+    to CURRENT_SCHEMA_VERSION, raising LockfileSchemaError if no chain exists.
+
+Spec source: spec Section 5 (Lockfile format and validation rules),
+Section 4.7.1 (atomicity contract for the lockfile writer), and
+Section 5.2 (Lockfile schema migration policy).
 """
 
 from __future__ import annotations
@@ -21,6 +31,7 @@ import re
 import string
 import tempfile
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -29,6 +40,19 @@ from packaging.requirements import InvalidRequirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from kanon_cli.core.url import canonicalize_repo_url
+
+# ---------------------------------------------------------------------------
+# Schema version constant and migration registry
+# ---------------------------------------------------------------------------
+
+#: The schema version this kanon version reads and writes.
+CURRENT_SCHEMA_VERSION: int = 1
+
+#: Registry of upgrader functions keyed by (from_version, to_version).
+#: Each upgrader receives a raw dict and returns a raw dict with the schema
+#: advanced by one step. The registry is intentionally empty in production;
+#: future schema bumps add a single entry here rather than a refactor.
+_UPGRADERS: dict[tuple[int, int], Callable[[dict[str, Any]], dict[str, Any]]] = {}
 
 # -- Compiled validation patterns --
 
@@ -83,6 +107,103 @@ _FORBIDDEN_PATH_CHARS: tuple[tuple[str, str], ...] = (
     ("\n", "U+000A (newline)"),
     ("\t", "U+0009 (tab)"),
 )
+
+
+# ---------------------------------------------------------------------------
+# Migration registry helpers
+# ---------------------------------------------------------------------------
+
+
+def _register_upgrader(
+    from_version: int,
+    to_version: int,
+    fn: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    """Register an upgrader function for the (from_version, to_version) pair.
+
+    The upgrader receives a raw TOML dict and must return a raw dict with
+    schema_version set to ``to_version``. Callers are responsible for ensuring
+    the returned dict is valid for ``to_version`` parsing.
+
+    Raises:
+        ValueError: If an upgrader for the same (from_version, to_version) pair
+            is already registered. Duplicate registrations are rejected to prevent
+            accidental shadowing in tests.
+
+    Args:
+        from_version: The schema version the upgrader reads.
+        to_version: The schema version the upgrader produces.
+        fn: The upgrader function.
+    """
+    key = (from_version, to_version)
+    if key in _UPGRADERS:
+        raise ValueError(
+            f"Upgrader for schema ({from_version} -> {to_version}) is already registered. "
+            f"Unregister the existing upgrader before registering a replacement."
+        )
+    _UPGRADERS[key] = fn
+
+
+def _unregister_upgrader(from_version: int, to_version: int) -> None:
+    """Remove the upgrader for (from_version, to_version) from the registry.
+
+    Used by test teardown to prevent registry state leaking across tests.
+
+    Args:
+        from_version: The schema version the upgrader reads.
+        to_version: The schema version the upgrader produces.
+
+    Raises:
+        KeyError: If no upgrader is registered for the given (from_version, to_version)
+            pair. Fail-fast: a missing key indicates a programming error (mismatched
+            register/unregister calls or a double-unregister in test teardown).
+    """
+    key = (from_version, to_version)
+    if key not in _UPGRADERS:
+        raise KeyError(
+            f"No upgrader registered for schema ({from_version} -> {to_version}). "
+            f"Ensure _register_upgrader was called before _unregister_upgrader."
+        )
+    del _UPGRADERS[key]
+
+
+def _dispatch_migration(data: dict[str, Any]) -> dict[str, Any]:
+    """Walk the upgrader chain from data's schema_version to CURRENT_SCHEMA_VERSION.
+
+    Applies upgraders one step at a time, following the (N, N+1) chain until the
+    data's schema_version reaches CURRENT_SCHEMA_VERSION.
+
+    Args:
+        data: Raw TOML dict with ``schema_version`` set to a version older than
+            CURRENT_SCHEMA_VERSION.
+
+    Returns:
+        The raw TOML dict after all upgrader functions have been applied, with
+        ``schema_version`` equal to ``CURRENT_SCHEMA_VERSION``.
+
+    Raises:
+        LockfileSchemaError: If no registered upgrader exists for a required step
+            in the chain from data's ``schema_version`` to ``CURRENT_SCHEMA_VERSION``.
+    """
+    current = data
+    from_ver: int = current["schema_version"]
+    while from_ver < CURRENT_SCHEMA_VERSION:
+        to_ver = from_ver + 1
+        key = (from_ver, to_ver)
+        if key not in _UPGRADERS:
+            raise LockfileSchemaError(
+                f"no upgrade path from lockfile schema v{from_ver} "
+                f"to v{CURRENT_SCHEMA_VERSION}; this is a kanon bug; please report."
+            )
+        current = _UPGRADERS[key](current)
+        if current["schema_version"] <= from_ver:
+            raise LockfileSchemaError(
+                f"upgrader for schema v{from_ver}->v{to_ver} did not advance "
+                f"schema_version (returned {current['schema_version']}); "
+                f"this is a kanon bug; please report."
+            )
+        from_ver = current["schema_version"]
+    return current
 
 
 # ---------------------------------------------------------------------------
@@ -568,14 +689,19 @@ def _serialize_toml(lockfile: Lockfile) -> str:
 def read_lockfile(path: Path) -> Lockfile:
     """Parse a TOML lockfile from disk into the ``Lockfile`` dataclass tree.
 
-    Applies every validation rule from spec Section 5:
+    Applies every validation rule from spec Section 5 and the migration policy
+    from spec Section 5.2:
       - ``resolved_sha``: exactly 40 or 64 lowercase hex digits.
       - ``revision_spec``: PEP 440 SpecifierSet, ``refs/...`` prefix, or
         branch-charset regex -- with optional monorepo path prefix.
       - ``canonical_url`` on every ``ProjectEntry``: must equal
         ``canonicalize_repo_url(entry.url)``.
       - ``path`` and ``path_in_repo``: must not contain NUL, newline, or tab.
-      - ``schema_version``: must be 1; any other value raises ``LockfileSchemaError``.
+      - ``schema_version > CURRENT_SCHEMA_VERSION``: raises ``LockfileSchemaError``
+        with message "lockfile schema v<N> written by newer kanon; upgrade kanon-cli."
+      - ``schema_version < CURRENT_SCHEMA_VERSION``: applies the registered upgrader
+        chain; raises ``LockfileSchemaError`` if no chain exists.
+      - ``schema_version == CURRENT_SCHEMA_VERSION``: parsed and validated directly.
 
     Args:
         path: Filesystem path to the TOML lockfile.
@@ -585,7 +711,9 @@ def read_lockfile(path: Path) -> Lockfile:
 
     Raises:
         FileNotFoundError: If ``path`` does not exist.
-        LockfileSchemaError: If ``schema_version`` is not 1.
+        LockfileSchemaError: If ``schema_version > CURRENT_SCHEMA_VERSION`` (forward-
+            incompatible) or if ``schema_version < CURRENT_SCHEMA_VERSION`` with no
+            registered upgrader chain (backward-incompatible, missing upgrader).
         LockfileValidationError: If any field value violates a validation rule,
             with an error message naming the offending field path and value.
     """
@@ -593,8 +721,11 @@ def read_lockfile(path: Path) -> Lockfile:
         data: dict[str, Any] = tomllib.load(f)
 
     schema_version = data["schema_version"]
-    if schema_version != 1:
-        raise LockfileSchemaError(f"lockfile schema v{schema_version} not supported by this kanon version")
+    if schema_version > CURRENT_SCHEMA_VERSION:
+        raise LockfileSchemaError(f"lockfile schema v{schema_version} written by newer kanon; upgrade kanon-cli.")
+    if schema_version < CURRENT_SCHEMA_VERSION:
+        data = _dispatch_migration(data)
+        schema_version = data["schema_version"]
 
     kanon_hash = data["kanon_hash"]
     _validate_resolved_sha(kanon_hash, "kanon_hash")

@@ -16,6 +16,19 @@ version semantics (e.g. the resolver) are responsible for further parsing.
 
 Required fields: ``name``, ``display-name``, ``description``, ``version``.
 Recommended fields: ``type``, ``owner-name``, ``owner-email``, ``keywords``.
+
+Soft-spot rule 2 semantics -- :func:`derive_source_name`
+---------------------------------------------------------
+:func:`derive_source_name` normalises a ``<catalog-metadata><name>`` value
+into a ``KANON_SOURCE_<name>_*`` shell-variable token by unconditionally
+lowercasing the input and replacing every ``-`` with ``_``. No other
+transformation is applied. If the input contains any character outside the
+recommended set ``[a-zA-Z0-9_-]``, a single-line warning is emitted to
+stderr; the transformation is still applied and the result is returned.
+Empty strings produce empty strings without a warning. The function is
+deterministic, pure, and idempotent. Downstream consumers include
+``kanon add``, ``kanon remove``, ``kanon why``, and
+``kanon install --refresh-lock-source``.
 """
 
 import sys
@@ -25,6 +38,8 @@ import defusedxml.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree.ElementTree import Element, ParseError as XMLParseError
+
+from kanon_cli.constants import RECOMMENDED_CHAR_RE
 
 
 class CatalogMetadataParseError(ValueError):
@@ -220,3 +235,42 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
         owner_email=owner_email,
         keywords=keywords,
     )
+
+
+def derive_source_name(entry_name: str) -> str:
+    """Normalise ``<catalog-metadata><name>`` to a ``KANON_SOURCE_<name>_*`` token.
+
+    Applies soft-spot rule 2 from ``spec/kanon-list-add-lock-features-spec.md``
+    Section 3.5 unconditionally:
+
+    1. Lowercase the input.
+    2. Replace every ``-`` with ``_``.
+
+    No other transformation is applied. The function is deterministic, pure,
+    and idempotent: ``derive_source_name(derive_source_name(x))`` equals
+    ``derive_source_name(x)`` for every legal input.
+
+    If the input contains any character outside the set ``[a-zA-Z0-9_-]``, a
+    single-line warning is emitted to stderr noting that the entry name
+    contains characters outside the recommended set and the normalised form
+    may not survive shell quoting cleanly. The transformation is still applied
+    and the result is returned. Empty strings produce empty strings; the empty
+    string is not considered outside the recommended set and emits no warning.
+
+    Downstream consumers: ``kanon add``, ``kanon remove``, ``kanon why``,
+    ``kanon install --refresh-lock-source``.
+
+    Args:
+        entry_name: The raw ``<name>`` value from a ``<catalog-metadata>`` block.
+
+    Returns:
+        The lowercased, hyphen-to-underscore-converted source name token.
+    """
+    if entry_name and not RECOMMENDED_CHAR_RE.fullmatch(entry_name):
+        print(
+            f"WARNING: entry name {entry_name!r} contains characters outside the "
+            "recommended set [a-zA-Z0-9_-]; the normalised form may not survive "
+            "shell quoting cleanly.",
+            file=sys.stderr,
+        )
+    return entry_name.lower().replace("-", "_")

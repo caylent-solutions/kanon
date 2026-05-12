@@ -64,3 +64,8 @@ NO_COLOR_ENV = "NO_COLOR"
 # --no-color is passed or NO_COLOR env var is non-empty. All formatter helpers
 # read this flag before emitting ANSI escape sequences.
 _NO_COLOR_ACTIVE: bool = False
+
+# -- Source-name derivation (soft-spot rule 2) --
+# Pattern matching the full recommended character set for catalog entry names.
+# Characters outside this set in an entry name trigger a shell-quoting warning.
+RECOMMENDED_CHAR_RE = re.compile(r"^[a-zA-Z0-9_-]*$")

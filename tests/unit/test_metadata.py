@@ -1,8 +1,8 @@
-"""Unit tests for CatalogMetadata dataclass and _parse_catalog_metadata() helper.
+"""Unit tests for CatalogMetadata dataclass, _parse_catalog_metadata(), and derive_source_name().
 
 Tests cover every acceptance criterion: happy path, required fields,
 recommended fields, duplicate children, zero/multiple blocks, malformed XML,
-whitespace-only fields, and keywords parsing.
+whitespace-only fields, keywords parsing, and the derive_source_name helper.
 """
 
 import textwrap
@@ -14,6 +14,7 @@ from kanon_cli.core.metadata import (
     CatalogMetadata,
     CatalogMetadataParseError,
     _parse_catalog_metadata,
+    derive_source_name,
 )
 
 
@@ -466,3 +467,37 @@ class TestEndToEndCycle:
         msg = str(exc_info.value)
         assert "name" in msg
         assert str(xml_file) in msg
+
+
+@pytest.mark.unit
+class TestDeriveSourceName:
+    """Tests for derive_source_name() in metadata.py (source-test-atomicity companion).
+
+    This class provides the TDD-paired coverage required by
+    docs/source-test-atomicity.md for the production change in
+    src/kanon_cli/core/metadata.py. Detailed parametrised coverage lives in
+    tests/unit/test_derive_source_name.py; this class confirms the function is
+    importable from the module and applies the two-step transformation rule.
+    """
+
+    def test_derive_source_name_normalises_mixed_case_with_hyphen(self) -> None:
+        """derive_source_name applies both transformations: lowercase and hyphen-to-underscore."""
+        assert derive_source_name("Foo-Bar") == "foo_bar"
+
+    def test_lowercase_passthrough(self) -> None:
+        """Lowercase-only input is returned unchanged."""
+        assert derive_source_name("foo") == "foo"
+
+    def test_hyphen_replaced(self) -> None:
+        """Each hyphen is replaced by an underscore."""
+        assert derive_source_name("foo-bar-baz") == "foo_bar_baz"
+
+    def test_empty_string(self) -> None:
+        """Empty string returns empty string."""
+        assert derive_source_name("") == ""
+
+    def test_warning_on_special_chars(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Characters outside [a-zA-Z0-9_-] trigger a stderr WARNING."""
+        derive_source_name("foo.bar")
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err

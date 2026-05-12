@@ -22,7 +22,7 @@ and zero or more `[[sources]]` entries.
 schema_version = 1
 generated_at   = "2026-01-15T12:34:56Z"
 generator      = "kanon-cli/1.4.0"
-kanon_hash     = "aabbcc..."          # SHA-1 or SHA-256 of the .kanon file
+kanon_hash     = "sha256:aabbcc..."    # sha256:<64 hex chars> of the .kanon source triples
 
 [catalog]
 source       = "https://example.com/manifest-repo.git@main"
@@ -67,7 +67,7 @@ resolved_sha  = "deadbeef..."
 | `schema_version` | int  | Must be `1`. |
 | `generated_at` | string | ISO-8601 UTC timestamp of when the lockfile was written. |
 | `generator`    | string | The `kanon-cli/<version>` string identifying the writer. |
-| `kanon_hash`   | string | SHA-1 or SHA-256 hex digest of the `.kanon` file that produced this lockfile. |
+| `kanon_hash`   | string | `sha256:`-prefixed 71-character digest (`sha256:<64 lowercase hex chars>`) of the `KANON_SOURCE_*` triples declared in the `.kanon` file. |
 
 ### `[catalog]` block
 
@@ -125,12 +125,26 @@ When `read_lockfile` parses a lockfile, it applies the following validation rule
 Any violation raises a specific exception with a message that names the offending
 field path and value, and suggests a remediation step.
 
-### Rule 1: `resolved_sha` must be 40 or 64 lowercase hex digits
+### Rule 1a: `kanon_hash` must be a `sha256:`-prefixed digest
 
-Every `resolved_sha` field (at the top level as `kanon_hash`, in `[catalog]`, in every
-`[[sources]]` entry, in every `[[sources.includes]]` entry, and in every
-`[[sources.projects]]` entry) must match the pattern `^[a-f0-9]{40}$` (SHA-1) OR
-`^[a-f0-9]{64}$` (SHA-256).
+The top-level `kanon_hash` field must match the pattern `^sha256:[a-f0-9]{64}$`
+(71 characters total: the 7-character prefix `sha256:` followed by 64 lowercase hex chars).
+
+- The `sha256:` prefix is required; a bare 64-character hex string is rejected.
+- Uppercase hex characters after the prefix are rejected.
+- Any length other than 71 total characters is rejected.
+
+**Exception:** `LockfileValidationError` -- message includes the field path
+(`kanon_hash`) and the bad value.
+
+**Remediation:** Regenerate the lockfile with `kanon lock` to obtain a correctly
+formatted `kanon_hash`.
+
+### Rule 1b: `resolved_sha` must be 40 or 64 lowercase hex digits
+
+Every `resolved_sha` field (in `[catalog]`, in every `[[sources]]` entry, in every
+`[[sources.includes]]` entry, and in every `[[sources.projects]]` entry) must match
+the pattern `^[a-f0-9]{40}$` (SHA-1) OR `^[a-f0-9]{64}$` (SHA-256).
 
 - Uppercase hex characters are rejected (`A-F` are not accepted).
 - Mixed-case values are rejected.
@@ -328,7 +342,7 @@ The following is a complete schema-v1 lockfile matching the structure from spec 
 schema_version = 1
 generated_at   = "2026-01-15T12:34:56Z"
 generator      = "kanon-cli/1.4.0"
-kanon_hash     = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+kanon_hash     = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 [catalog]
 source        = "https://github.com/example-org/kanon-catalog.git@main"
@@ -361,8 +375,89 @@ resolved_sha  = "abcdef1234567890abcdef1234567890abcdef12"
 ```
 
 In this example:
-- `kanon_hash` is the SHA-1 or SHA-256 of the `.kanon` file that produced this lockfile.
+- `kanon_hash` is the SHA-256 digest of the `.kanon` source triples that produced this lockfile (see below).
 - `catalog.resolved_sha` pins the catalog repo at a specific commit.
 - `sources[0].resolved_sha` pins the `platform-tools` source at a specific commit.
 - `sources[0].projects[0].canonical_url` is the result of canonicalising
   `https://github.com/example-org/build-service.git` (strips the `.git` suffix).
+
+---
+
+## `kanon_hash` -- Lockfile Consistency Hash
+
+### Purpose
+
+The `kanon_hash` field in the lockfile (see top-level fields above) is a deterministic
+SHA-256 digest that covers only the `KANON_SOURCE_<name>_{URL,REVISION,PATH}` triples
+declared in the `.kanon` file. It changes whenever a source URL, revision, or path
+changes, and remains stable across comment edits, blank-line additions, declaration
+reordering, and workspace-environment changes. This makes it safe to use as a
+cache key and as a freshness check for `kanon install`.
+
+The `kanon_hash` covers ONLY the `.kanon` source triples and is independent of
+the `[catalog].source` field. A change to the catalog source does not change
+`kanon_hash`; a change to any `KANON_SOURCE_*` triple does.
+
+### Algorithm (spec Section 5.1)
+
+1. Parse the `.kanon` file via `parse_kanonenv`.
+2. Extract every `KANON_SOURCE_<name>_{URL,REVISION,PATH}` triple. Discard
+   comments, blank lines, and all non-`KANON_SOURCE_*` keys (specifically
+   `GITBASE`, `CLAUDE_MARKETPLACES_DIR`, and `KANON_MARKETPLACE_INSTALL`).
+3. Sort triples by source name (lexicographic, case-sensitive); within a
+   source, `URL` precedes `REVISION` precedes `PATH`.
+4. Serialise as bytes `name\turl\trevision\tpath\n` per source. If any of
+   `name`, `url`, `revision`, or `path` contains a literal tab (`\t`, U+0009),
+   NUL byte (`\x00`, U+0000), or newline (`\n`, U+000A), a `KanonHashError`
+   is raised naming the source, the field, and the offending codepoint. This
+   is a hard error -- there is no sanitisation or fallback.
+5. SHA-256 the serialised bytes.
+6. Return `f"sha256:{digest.hexdigest()}"` -- 71 characters total (7-char
+   prefix `sha256:` plus 64 lowercase hex characters).
+
+### Properties
+
+| Property | Effect on hash |
+|----------|---------------|
+| Re-order source blocks | No change |
+| Add, remove, or change comments | No change |
+| Add or remove blank lines | No change |
+| Change any `REVISION` value | Hash changes |
+| Change any `URL` value | Hash changes |
+| Change any `PATH` value | Hash changes |
+| Change a source name | Hash changes |
+| Change `GITBASE` | No change |
+| Change `CLAUDE_MARKETPLACES_DIR` | No change |
+| Change `KANON_MARKETPLACE_INSTALL` | No change |
+| URL contains literal tab (`\t`) | Raises `KanonHashError` |
+| PATH contains literal newline (`\n`) | Raises `KanonHashError` |
+| REVISION contains literal NUL (`\x00`) | Raises `KanonHashError` |
+
+### Relationship to `[catalog].source`
+
+`kanon_hash` and `[catalog].source` are independent checks:
+
+- `kanon_hash` tracks changes to the `.kanon` source declarations (the set
+  of repositories kanon resolves). It does NOT track the catalog used to
+  resolve version specs.
+- `[catalog].source` records the catalog repository URL and ref used during
+  `kanon lock`. It does NOT track source declaration changes.
+
+A lockfile is stale if either `kanon_hash` differs from the current `.kanon`
+triples OR the resolved catalog SHA differs from the pinned value. Both are
+checked independently during `kanon install`.
+
+### Implementation
+
+`kanon_hash` is implemented in `src/kanon_cli/core/kanon_hash.py`:
+
+```python
+from pathlib import Path
+from kanon_cli.core.kanon_hash import kanon_hash, KanonHashError
+
+digest = kanon_hash(Path(".kanon"))  # returns "sha256:<64 hex chars>"
+```
+
+The function is pure: given identical `.kanon` content it returns identical
+output. It does not touch the filesystem outside reading the `kanon_path`
+argument and makes no network calls.

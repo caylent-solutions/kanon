@@ -1,6 +1,7 @@
 import pytest
 
 from kanon_cli.constants import (
+    KANON_LIST_LIMIT,
     KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
     MISSING_CATALOG_ERROR_TEMPLATE,
@@ -228,4 +229,59 @@ class TestKanonTreeNoFilterThreshold:
         with pytest.raises((ValueError, SystemExit)):
             importlib.reload(constants)
         monkeypatch.delenv("KANON_TREE_NO_FILTER_THRESHOLD", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonListLimit:
+    """Tests for KANON_LIST_LIMIT (E2-F2-S1-T4 AC-FUNC-002)."""
+
+    def test_is_int(self) -> None:
+        """KANON_LIST_LIMIT is an int."""
+        assert isinstance(KANON_LIST_LIMIT, int)
+
+    def test_default_value_is_50(self) -> None:
+        """KANON_LIST_LIMIT default value is 50."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_LIST_LIMIT", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_LIST_LIMIT == 50
+        finally:
+            if saved is not None:
+                os.environ["KANON_LIST_LIMIT"] = saved
+            importlib.reload(constants)
+
+    def test_is_positive(self) -> None:
+        """KANON_LIST_LIMIT is a positive integer."""
+        assert KANON_LIST_LIMIT > 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_LIST_LIMIT env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_LIST_LIMIT", "77")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_LIST_LIMIT == 77
+        finally:
+            monkeypatch.delenv("KANON_LIST_LIMIT", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_LIST_LIMIT set to a non-integer env var raises ValueError."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_LIST_LIMIT", "not-a-number")
+        with pytest.raises((ValueError, SystemExit)):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_LIST_LIMIT", raising=False)
         importlib.reload(constants)

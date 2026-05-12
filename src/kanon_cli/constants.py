@@ -101,3 +101,13 @@ if _raw_threshold is not None:
     KANON_TREE_NO_FILTER_THRESHOLD: int = int(_raw_threshold)
 else:
     KANON_TREE_NO_FILTER_THRESHOLD = 20
+
+# -- kanon list --all-versions cap --
+# Maximum number of catalog versions walked when --all-versions is given and
+# neither --limit N nor --no-limit is explicitly passed.
+# Overridable via the KANON_LIST_LIMIT environment variable.
+_raw_list_limit = os.environ.get("KANON_LIST_LIMIT")
+if _raw_list_limit is not None:
+    KANON_LIST_LIMIT: int = int(_raw_list_limit)
+else:
+    KANON_LIST_LIMIT = 50

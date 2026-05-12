@@ -10,11 +10,14 @@ Section 4.1 (data source + default output) and Section 4 header
 Section 4.1 flag-table row ``--detail`` for the per-entry detail formatter.
 Section 4.1 flag-table rows ``--tree``, ``--max-depth N``,
 ``--no-filter-required`` and the threshold guardrail.
+Section 4.1 flag-table rows ``--all-versions``, ``--limit N``,
+``--no-limit``, ``--since-version <spec>`` for the historical-versions walker.
 
 Environment variables:
 - ``KANON_CATALOG_SOURCE``: catalog source override (CLI flag wins).
 - ``KANON_TREE_NO_FILTER_THRESHOLD``: overrides the default threshold (20)
   above which ``kanon list --tree`` requires a filter.
+- ``KANON_LIST_LIMIT``: overrides the default version-walk cap (50).
 """
 
 import argparse
@@ -24,11 +27,15 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 
 import defusedxml.ElementTree as ET
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
+    KANON_LIST_LIMIT,
     KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
     MISSING_CATALOG_ERROR_TEMPLATE,
@@ -41,6 +48,37 @@ from kanon_cli.version import is_version_constraint, resolve_version
 # -- Detail formatter private constants --
 _DETAIL_MISSING_PLACEHOLDER = "<missing>"
 _DETAIL_LABEL_WIDTH = 12
+
+
+# ---------------------------------------------------------------------------
+# All-versions walker data types
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class VersionRow:
+    """A single row of output for ``--all-versions`` mode.
+
+    Carries the data needed for both human-readable output (``<name>@<version>``)
+    and the structured JSON renderer in E2-F2-S1-T5 (``{name, version, ref, sha}``).
+
+    Attributes:
+        name: Catalog entry name.
+        version: Version string (e.g. ``1.2.3``).
+        ref: Full git tag ref (e.g. ``refs/tags/1.2.3``).
+        sha: Commit SHA or abbreviated SHA associated with this tag. May be
+            an empty string when the SHA is not available.
+    """
+
+    name: str
+    version: str
+    ref: str
+    sha: str
+
+    def __str__(self) -> str:
+        """Return the spec-canonical per-row text: ``<name>@<version>``."""
+        return f"{self.name}@{self.version}"
+
 
 # -- Tree renderer private constants --
 _TREE_PREFIX_MID = "+--"
@@ -63,6 +101,243 @@ _TREE_GUARDRAIL_ERROR = (
     "Or raise the threshold:\n"
     "  KANON_TREE_NO_FILTER_THRESHOLD={threshold_plus} kanon list --tree ...\n"
 )
+
+
+# ---------------------------------------------------------------------------
+# All-versions walker helpers
+# ---------------------------------------------------------------------------
+
+
+def _list_tags_from_url(url: str) -> list[tuple[str, str]]:
+    """Return ``(ref, sha)`` pairs from ``git ls-remote --tags <url>``.
+
+    Runs ``git ls-remote --tags`` and filters out ``^{}`` peeled refs.
+
+    Args:
+        url: Git repository URL.
+
+    Returns:
+        List of ``(ref, sha)`` tuples where ``ref`` is the full tag ref
+        (e.g. ``refs/tags/1.0.0``) and ``sha`` is the associated commit SHA.
+
+    Raises:
+        SystemExit: When git ls-remote fails.
+    """
+    result = subprocess.run(
+        ["git", "ls-remote", "--tags", url],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"ERROR: git ls-remote failed for {url}: {result.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    pairs: list[tuple[str, str]] = []
+    for line in result.stdout.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        sha, ref = parts[0], parts[1]
+        if ref.startswith("refs/tags/") and not ref.endswith("^{}"):
+            pairs.append((ref, sha))
+    return pairs
+
+
+def _sort_versions_newest_first(
+    tags: list[str],
+) -> list[tuple[str, Version, str]]:
+    """Parse and sort tag refs newest-first by PEP 440 version.
+
+    Each tag's last ``/``-delimited path component is parsed as a PEP 440
+    ``packaging.version.Version``. Tags whose last component does not parse
+    are silently skipped (the loud-error for zero parseable tags is raised
+    higher up in ``_walk_all_versions``).
+
+    Args:
+        tags: List of full git tag ref strings (e.g. ``refs/tags/1.0.0``).
+
+    Returns:
+        List of ``(ref, Version, sha)`` triples, sorted newest-first.
+        The ``sha`` field is an empty string because this function operates
+        on bare ref strings without SHA information. Use
+        ``_sort_version_pairs_newest_first`` when SHAs are available.
+    """
+    parsed: list[tuple[str, Version, str]] = []
+    for ref in tags:
+        version_str = ref.rsplit("/", 1)[-1]
+        try:
+            parsed.append((ref, Version(version_str), ""))
+        except InvalidVersion:
+            continue
+    parsed.sort(key=lambda t: t[1], reverse=True)
+    return parsed
+
+
+def _sort_version_pairs_newest_first(
+    pairs: list[tuple[str, str]],
+) -> list[tuple[str, Version, str]]:
+    """Parse and sort ``(ref, sha)`` pairs newest-first by PEP 440 version.
+
+    Parses each tag's last ``/``-delimited path component as a PEP 440
+    version. Tags that do not parse are silently skipped here; the caller
+    is responsible for raising a loud error when zero PEP 440 tags remain.
+
+    Args:
+        pairs: List of ``(ref, sha)`` tuples from ``git ls-remote``.
+
+    Returns:
+        List of ``(ref, Version, sha)`` triples sorted newest-first.
+    """
+    parsed: list[tuple[str, Version, str]] = []
+    for ref, sha in pairs:
+        version_str = ref.rsplit("/", 1)[-1]
+        try:
+            parsed.append((ref, Version(version_str), sha))
+        except InvalidVersion:
+            continue
+    parsed.sort(key=lambda t: t[1], reverse=True)
+    return parsed
+
+
+def _filter_versions_by_constraint(
+    sorted_triples: list[tuple[str, Version, str]],
+    constraint: str,
+) -> list[tuple[str, Version, str]]:
+    """Filter version triples by a PEP 440 specifier constraint.
+
+    Args:
+        sorted_triples: List of ``(ref, Version, sha)`` triples.
+        constraint: A PEP 440 specifier string (e.g. ``>=1.0,<2.0``).
+
+    Returns:
+        Filtered list preserving the original order.
+
+    Raises:
+        ValueError: When the constraint string is not valid PEP 440.
+    """
+    try:
+        specifier = SpecifierSet(constraint)
+    except InvalidSpecifier as exc:
+        raise ValueError(f"invalid PEP 440 constraint '{constraint}': {exc}") from exc
+
+    return [(ref, ver, sha) for ref, ver, sha in sorted_triples if ver in specifier]
+
+
+def _build_all_versions_rows(
+    catalog_names: list[str],
+    sorted_versions: list[tuple[str, Version, str]],
+) -> list[VersionRow]:
+    """Build the flat list of ``VersionRow`` objects for ``--all-versions`` output.
+
+    Emits one ``VersionRow`` per catalog entry per version, in newest-first
+    version order. Within each version, entries are sorted lexicographically.
+
+    Args:
+        catalog_names: Catalog entry names. Need not be pre-sorted; this
+            function sorts them lexicographically.
+        sorted_versions: List of ``(ref, Version, sha)`` triples in
+            newest-first order.
+
+    Returns:
+        Flat list of :class:`VersionRow` objects ready for output.
+    """
+    sorted_names = sorted(catalog_names)
+    rows: list[VersionRow] = []
+    for ref, ver, sha in sorted_versions:
+        for name in sorted_names:
+            rows.append(VersionRow(name=name, version=str(ver), ref=ref, sha=sha))
+    return rows
+
+
+def _walk_all_versions(
+    catalog_source: str,
+    limit: int,
+    since_version: str | None,
+) -> list[VersionRow]:
+    """Walk historical catalog versions and return all-versions rows.
+
+    Fetches tags from the manifest repo via ``git ls-remote --tags``,
+    sorts them newest-first, applies the ``--limit`` cap and optional
+    ``--since-version`` PEP 440 filter, clones each version, and builds
+    the flat ``VersionRow`` list.
+
+    Args:
+        catalog_source: A ``<git_url>@<ref>`` string. The ``@<ref>`` part
+            is used only as a default ref for initial tag discovery; the
+            actual walking iterates over all PEP 440-valid tags.
+        limit: Maximum number of versions to walk. ``0`` means unlimited.
+        since_version: Optional PEP 440 specifier string. When provided,
+            only versions satisfying the specifier are walked.
+
+    Returns:
+        Flat list of :class:`VersionRow` objects, newest version first.
+
+    Raises:
+        SystemExit: On git ls-remote or git clone failure.
+        ValueError: When ``since_version`` is not a valid PEP 440 specifier.
+    """
+    url, _ref = _parse_catalog_source(catalog_source)
+
+    pairs = _list_tags_from_url(url)
+    if not pairs:
+        return []
+
+    sorted_triples = _sort_version_pairs_newest_first(pairs)
+    if not sorted_triples:
+        # Zero PEP 440-parseable tags -- surface the skipped tags via a loud error.
+        skipped = [ref for ref, _ in pairs]
+        from kanon_cli.version import _format_zero_pep440_tags_error
+
+        msg = _format_zero_pep440_tags_error("refs/tags", skipped)
+        print(f"ERROR: {msg}", file=sys.stderr)
+        sys.exit(1)
+
+    if since_version is not None:
+        try:
+            sorted_triples = _filter_versions_by_constraint(sorted_triples, since_version)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    # Apply version cap. limit=0 means unlimited.
+    if limit > 0:
+        sorted_triples = sorted_triples[:limit]
+
+    if not sorted_triples:
+        return []
+
+    # For the all-versions output we do NOT clone each version individually --
+    # we clone the repo once at the newest version to obtain the catalog entry
+    # names, then emit one row per (name, version) combination for all versions.
+    # This matches the spec worked-example which shows the entry names as they
+    # exist in the manifest repo's HEAD, attributed to each historical version.
+    newest_ref = sorted_triples[0][0]
+    newest_version_str = newest_ref.rsplit("/", 1)[-1]
+
+    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-list-av-"))
+    repo_dir = clone_dir / "repo"
+
+    clone_result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", newest_version_str, url, str(repo_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if clone_result.returncode != 0:
+        print(
+            f"ERROR: Failed to clone manifest repo from {url}@{newest_version_str}: {clone_result.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    catalog_names = _build_sorted_index(repo_dir)
+    return _build_all_versions_rows(catalog_names, sorted_triples)
 
 
 def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
@@ -544,6 +819,10 @@ def run_list(args: argparse.Namespace) -> int:
     entry via :func:`_render_tree`. Subject to the threshold guardrail unless
     a filter or ``--no-filter-required`` is supplied.
 
+    All-versions mode (``--all-versions``): walks historical catalog versions
+    via ``git ls-remote --tags`` and emits one ``<name>@<version>`` row per
+    catalog entry per version. Mutually exclusive with ``--tree``.
+
     Args:
         args: Parsed argument namespace. Expected attributes:
             - ``catalog_source`` (``str | None``): from ``--catalog-source``.
@@ -552,6 +831,9 @@ def run_list(args: argparse.Namespace) -> int:
             - ``max_depth`` (``int | None``): from ``--max-depth``.
             - ``no_filter_required`` (``bool``): from ``--no-filter-required``.
             - ``all_versions`` (``bool``): from ``--all-versions``.
+            - ``limit`` (``int``): from ``--limit`` (default ``KANON_LIST_LIMIT``).
+            - ``no_limit`` (``bool``): from ``--no-limit`` (default ``False``).
+            - ``since_version`` (``str | None``): from ``--since-version``.
 
     Returns:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
@@ -563,12 +845,28 @@ def run_list(args: argparse.Namespace) -> int:
     max_depth: int | None = getattr(args, "max_depth", None)
     no_filter_required: bool = getattr(args, "no_filter_required", False)
     all_versions: bool = getattr(args, "all_versions", False)
+    limit: int = getattr(args, "limit", KANON_LIST_LIMIT)
+    no_limit: bool = getattr(args, "no_limit", False)
+    since_version: str | None = getattr(args, "since_version", None)
 
+    # Mutual exclusion: --tree and --all-versions cannot be combined.
     if tree and all_versions:
         print(
             "ERROR: --tree and --all-versions are mutually exclusive. "
             "Use --tree for dependency tree rendering, or --all-versions to "
             "list all available versions. These flags cannot be combined.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Mutual exclusion: --limit and --no-limit cannot be combined.
+    # ``limit`` defaults to KANON_LIST_LIMIT in the parser. When --no-limit is
+    # present alongside an explicitly different --limit value, the user has
+    # supplied both flags, which is an error.
+    if no_limit and limit != KANON_LIST_LIMIT:
+        print(
+            "ERROR: --limit and --no-limit are mutually exclusive. "
+            "Pass --limit N to cap at N versions, or --no-limit to walk all versions.",
             file=sys.stderr,
         )
         return 1
@@ -579,6 +877,17 @@ def run_list(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+
+    if all_versions:
+        # Determine the effective cap: no_limit -> 0 (unlimited), else use limit.
+        effective_limit = 0 if no_limit else limit
+        rows = _walk_all_versions(catalog_source, effective_limit, since_version)
+        if not rows:
+            print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
+            return 0
+        for row in rows:
+            print(str(row), flush=True)
+        return 0
 
     manifest_root = _resolve_manifest_repo(catalog_source)
 
@@ -629,6 +938,10 @@ def register(subparsers) -> None:
     - ``--tree`` for the three-layer ASCII dependency tree renderer.
     - ``--max-depth N`` to cap the rendered tree depth (0 = root only).
     - ``--no-filter-required`` to bypass the threshold guardrail.
+    - ``--all-versions`` to walk all historical tagged versions.
+    - ``--limit N`` to cap the number of versions walked (default: ``KANON_LIST_LIMIT``).
+    - ``--no-limit`` to walk all PEP 440-valid tags without a cap.
+    - ``--since-version <spec>`` to filter walked versions by a PEP 440 constraint.
 
     Threshold guardrail: when the catalog has more than
     ``KANON_TREE_NO_FILTER_THRESHOLD`` entries (default 20, overridable via
@@ -657,7 +970,14 @@ def register(subparsers) -> None:
             f"more than KANON_TREE_NO_FILTER_THRESHOLD (default {KANON_TREE_NO_FILTER_THRESHOLD})\n"
             "entries, a filter is required unless --no-filter-required is passed.\n"
             "Resolution paths: positional <name> substring, --regex <pattern>,\n"
-            "--max-depth 0, or --no-filter-required."
+            "--max-depth 0, or --no-filter-required.\n\n"
+            "All-versions mode (--all-versions): walks historical catalog versions\n"
+            "via git ls-remote --tags. Emits one <name>@<version> row per catalog\n"
+            "entry per version, newest version first. Default version cap:\n"
+            f"KANON_LIST_LIMIT (default {KANON_LIST_LIMIT}, overridable via env var).\n"
+            "Use --limit N to cap at N versions, --no-limit to walk all versions.\n"
+            "Use --since-version <spec> to filter by a PEP 440 constraint\n"
+            "(e.g. '>=1.0,<2.0'). Mutually exclusive with --tree."
         ),
         epilog=(
             "Examples:\n"
@@ -666,6 +986,10 @@ def register(subparsers) -> None:
             "  kanon list --tree --catalog-source https://example.com/org/repo.git@main\n"
             "  kanon list --tree --max-depth 0 --catalog-source ...\n"
             "  kanon list --tree --no-filter-required --catalog-source ...\n"
+            "  kanon list --all-versions --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon list --all-versions --limit 3 --catalog-source ...\n"
+            "  kanon list --all-versions --no-limit --catalog-source ...\n"
+            "  kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...\n"
             "  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -725,6 +1049,61 @@ def register(subparsers) -> None:
             f"(default {KANON_TREE_NO_FILTER_THRESHOLD}) entries require a filter "
             "(positional substring, --regex, or --max-depth 0) to avoid accidental "
             "full-catalog tree renders. Pass this flag to bypass the check."
+        ),
+    )
+
+    parser.add_argument(
+        "--all-versions",
+        dest="all_versions",
+        action="store_true",
+        default=False,
+        help=(
+            "Walk all historical tagged versions of the manifest repo and emit "
+            "one <name>@<version> row per catalog entry per version. Versions are "
+            "ordered newest-first by PEP 440 natural sort; entries within each "
+            "version are sorted lexicographically. Mutually exclusive with --tree. "
+            "Default cap: KANON_LIST_LIMIT (default 50, overridable via env var). "
+            "Use --limit N or --no-limit to control the number of versions walked."
+        ),
+    )
+
+    parser.add_argument(
+        "--limit",
+        dest="limit",
+        type=int,
+        default=KANON_LIST_LIMIT,
+        metavar="N",
+        help=(
+            "Cap the number of versions walked by --all-versions. "
+            f"Default: KANON_LIST_LIMIT (default {KANON_LIST_LIMIT}, "
+            "overridable via the KANON_LIST_LIMIT environment variable). "
+            "Mutually exclusive with --no-limit."
+        ),
+    )
+
+    parser.add_argument(
+        "--no-limit",
+        dest="no_limit",
+        action="store_true",
+        default=False,
+        help=(
+            "Walk all PEP 440-valid tags when using --all-versions, with no cap. "
+            "Equivalent to --limit <very-large-number>. "
+            "Mutually exclusive with --limit."
+        ),
+    )
+
+    parser.add_argument(
+        "--since-version",
+        dest="since_version",
+        default=None,
+        metavar="<spec>",
+        help=(
+            "Filter the versions walked by --all-versions to those matching "
+            "a PEP 440 specifier constraint (e.g. '>=1.0,<2.0'). "
+            "The constraint is evaluated against the PEP 440 version parsed "
+            "from each tag name. Tags that do not parse as PEP 440 are skipped. "
+            "Example: --since-version '>=1.0,<2.0'"
         ),
     )
 

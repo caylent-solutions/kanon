@@ -355,3 +355,33 @@ class TestKanonAddConstants:
         from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
 
         assert KANON_HEADER_MARKETPLACE_INSTALL.startswith("KANON_MARKETPLACE_INSTALL=")
+
+
+@pytest.mark.unit
+class TestKanonLockFileConstant:
+    """Tests for KANON_LOCK_FILE constant (E3-F1-S1-T1 AC-FUNC-008)."""
+
+    def test_kanon_lock_file_exists(self) -> None:
+        """KANON_LOCK_FILE constant exists in kanon_cli.constants and is importable."""
+        from kanon_cli.constants import KANON_LOCK_FILE
+
+        assert KANON_LOCK_FILE is not None
+
+    def test_kanon_lock_file_value(self) -> None:
+        """KANON_LOCK_FILE constant equals the string 'KANON_LOCK_FILE'."""
+        from kanon_cli.constants import KANON_LOCK_FILE
+
+        assert KANON_LOCK_FILE == "KANON_LOCK_FILE"
+
+    def test_kanon_lock_file_is_string(self) -> None:
+        """KANON_LOCK_FILE constant is a str."""
+        from kanon_cli.constants import KANON_LOCK_FILE
+
+        assert isinstance(KANON_LOCK_FILE, str)
+
+    def test_kanon_lock_file_adjacent_to_kanon_file_env(self) -> None:
+        """KANON_LOCK_FILE and KANON_KANON_FILE_ENV are both importable from constants."""
+        from kanon_cli.constants import KANON_KANON_FILE_ENV, KANON_LOCK_FILE
+
+        assert KANON_LOCK_FILE == "KANON_LOCK_FILE"
+        assert KANON_KANON_FILE_ENV == "KANON_KANON_FILE"

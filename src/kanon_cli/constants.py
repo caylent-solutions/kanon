@@ -117,6 +117,12 @@ else:
 # CLI flag --kanon-file takes precedence when both are set.
 KANON_KANON_FILE_ENV = "KANON_KANON_FILE"
 
+# -- kanon lock --
+# Environment variable name for the operator-override lockfile path.
+# When set, kanon reads/writes the lockfile at this path instead of the
+# default derived from --kanon-file. CLI flag --lock-file takes precedence.
+KANON_LOCK_FILE = "KANON_LOCK_FILE"
+
 # Default destination .kanon file path when neither --kanon-file nor
 # KANON_KANON_FILE are set.
 KANON_KANON_FILE_DEFAULT = "./.kanon"

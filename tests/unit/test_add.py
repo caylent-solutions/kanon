@@ -624,7 +624,7 @@ class TestResolveSpec:
                 _resolve_spec("https://example.com/repo.git", None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        assert "No tags found" in captured.err
+        assert "manifest repo has no PEP 440-valid tags" in captured.err
 
     def test_explicit_spec_delegates_to_resolve_version(self) -> None:
         """When spec is given, resolve_version() is called and result is returned."""

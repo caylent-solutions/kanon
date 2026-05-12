@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <catalog-metadata>
+    <name>entry-a</name>
+    <display-name>Entry A Display</display-name>
+    <description>Fixture entry for zero-pep440-tags integration tests.</description>
+    <version>0.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Fixture</owner-name>
+    <owner-email>fixture@example.com</owner-email>
+    <keywords>fixture, test</keywords>
+  </catalog-metadata>
+</manifest>

@@ -19,6 +19,8 @@ import subprocess
 import sys
 import tempfile
 
+from packaging.version import InvalidVersion, Version
+
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
@@ -27,6 +29,7 @@ from kanon_cli.constants import (
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    TAG_ERROR_DISPLAY_CAP,
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
@@ -37,6 +40,15 @@ from kanon_cli.core.metadata import (
     derive_source_name,
 )
 from kanon_cli.version import _list_tags, _resolve_constraint_from_tags, is_version_constraint, resolve_version
+
+# Spec-verbatim error emitted when the manifest repo has no PEP 440-valid tags
+# and the operator did not supply an explicit @<spec> constraint.
+# Spec reference: kanon-list-add-lock-features-spec.md Section 4.2, step 4.
+_ZERO_PEP440_TAGS_ERROR = (
+    "manifest repo has no PEP 440-valid tags; pin to a branch or SHA"
+    " explicitly (e.g., 'kanon add foo@main') or ask the catalog author"
+    " to publish a release tag."
+)
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -285,11 +297,17 @@ def _find_entry_by_name(
 def _resolve_spec(url: str, spec: str | None) -> str:
     """Resolve the version spec for a catalog entry.
 
-    When spec is None, selects the highest PEP 440-valid git tag on the
-    manifest repo via git ls-remote --tags.
+    When spec is None (default-spec path), selects the highest PEP 440-valid
+    git tag on the manifest repo via git ls-remote --tags. Raises SystemExit
+    with the spec-verbatim error if:
+
+    - The repo has zero tags total (AC-FUNC-002), or
+    - The repo has tags but none parse as ``packaging.version.Version``
+      (AC-FUNC-003). In this subcase the first up-to-10 skipped tag names
+      are printed so the operator can identify the offending tags.
 
     When spec is a non-empty string, delegates to resolve_version() to
-    resolve the PEP 440 constraint against the available tags.
+    resolve the PEP 440 constraint against the available tags (AC-FUNC-005).
 
     Args:
         url: The manifest repo git URL.
@@ -301,12 +319,36 @@ def _resolve_spec(url: str, spec: str | None) -> str:
     if spec is None:
         tags = _list_tags(url)
         if not tags:
-            print(
-                f"ERROR: No tags found in manifest repo {url!r}.\n"
-                "The manifest repo must have at least one PEP 440-valid git tag.",
-                file=sys.stderr,
-            )
+            # Zero tags total -- emit spec-verbatim error (AC-FUNC-002).
+            print(f"ERROR: {_ZERO_PEP440_TAGS_ERROR}", file=sys.stderr)
             sys.exit(1)
+
+        # Check whether at least one tag has a PEP 440-valid last component.
+        # Collect skipped names so the loud error can list them (AC-FUNC-003).
+        skipped: list[str] = []
+        has_pep440 = False
+        for tag in tags:
+            last = tag.rsplit("/", 1)[-1]
+            try:
+                Version(last)
+                has_pep440 = True
+                break
+            except InvalidVersion:
+                skipped.append(tag)
+
+        if not has_pep440:
+            # Zero PEP 440-valid tags -- emit spec-verbatim error plus skipped
+            # tag names (first up-to-TAG_ERROR_DISPLAY_CAP, sorted) (AC-FUNC-003).
+            sorted_skipped = sorted(skipped)
+            display = sorted_skipped[:TAG_ERROR_DISPLAY_CAP]
+            lines = [f"ERROR: {_ZERO_PEP440_TAGS_ERROR}", "Skipped non-PEP-440 tags:"]
+            for tag_name in display:
+                lines.append(f"  - {tag_name}")
+            if len(skipped) > TAG_ERROR_DISPLAY_CAP:
+                lines.append(f"  ... (showing first {TAG_ERROR_DISPLAY_CAP} of {len(skipped)})")
+            print("\n".join(lines), file=sys.stderr)
+            sys.exit(1)
+
         return _resolve_constraint_from_tags("*", tags)
 
     return resolve_version(url, spec)
@@ -595,6 +637,14 @@ def run_add(args: argparse.Namespace) -> int:
     destination .kanon file. Creates the file with a standard header when
     absent.
 
+    The implementation uses a two-phase approach to satisfy AC-FUNC-004
+    (destination .kanon is unchanged after any error):
+
+    - **Resolution phase** (Steps 1-4): all catalog lookups, tag resolution,
+      and against-existing collision detection run first. No file writes occur.
+    - **Write phase** (Step 5): only after every entry is fully resolved and
+      validated does the header write and triple append/overwrite execute.
+
     When --dry-run is set, prints the diff that would be applied and exits 0
     without modifying any file.
 
@@ -629,14 +679,11 @@ def run_add(args: argparse.Namespace) -> int:
     # Step 2: Build entry catalog (hard-errors on soft-spot rule 1 / 3 violations).
     catalog = _build_entry_catalog(manifest_root, url)
 
-    # Step 3: Ensure destination file exists (creates with standard header if absent).
-    # For --dry-run we still create the header so collision detection has a file to scan;
-    # however, if the file genuinely does not exist and we are dry-running, we skip
-    # the header write (nothing to collide against and no file change is allowed).
-    if not dry_run:
-        _write_standard_header(kanon_file)
-
-    # Step 4: Process each requested entry in argument order.
+    # Step 3-4: Resolution phase -- resolve every entry and run against-existing
+    # collision detection BEFORE any file write. This ensures that if any entry
+    # fails (e.g. zero PEP 440-valid tags, unknown entry name, collision), the
+    # destination .kanon file is not modified at all (AC-FUNC-004).
+    resolved_entries: list[tuple[str, str, list[str]]] = []
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
 
@@ -665,14 +712,27 @@ def run_add(args: argparse.Namespace) -> int:
             force=force,
         )
 
-        if dry_run:
+        resolved_entries.append((source_name, rel_path, lines))
+
+    # Step 5: Write phase -- all entries resolved successfully; now write to disk.
+    # For --dry-run: print diffs without any file modification.
+    # For normal runs: ensure the header exists, then append/overwrite each triple.
+    if dry_run:
+        for source_name, _rel_path, lines in resolved_entries:
             _render_dry_run_diff(
                 dest=kanon_file,
                 source_name=source_name,
                 lines=lines,
                 force=force,
             )
-        elif force and kanon_file.exists():
+        return 0
+
+    # Normal (non-dry-run) write path: create header if file does not exist,
+    # then append or overwrite each resolved triple in argument order.
+    _write_standard_header(kanon_file)
+
+    for source_name, _rel_path, lines in resolved_entries:
+        if force and kanon_file.exists():
             # Check whether an existing block is present; if so, overwrite it.
             existing_url, _, _ = _read_existing_triple_block(kanon_file, source_name)
             if existing_url is not None:

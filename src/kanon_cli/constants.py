@@ -30,6 +30,26 @@ SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 # -- Catalog --
 CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
 
+# -- List command error and notice strings --
+# Canonical missing-catalog error template (spec Section 4 header, verbatim).
+# Call with .format(command=<command-name>) to produce the final error string.
+MISSING_CATALOG_ERROR_TEMPLATE = (
+    "ERROR: {command} requires a catalog source.\n"
+    "Provide one of:\n"
+    "  --catalog-source <git-url>@<ref>      # e.g. --catalog-source https://example.com/org/manifest-repo.git@main\n"
+    "  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run\n"
+    "\n"
+    "The CLI flag takes precedence when both are set.\n"
+    "A catalog source identifies a manifest repo (a git repository whose\n"
+    "repo-specs/ directory exposes installable kanon dependencies).\n"
+    "See docs/catalogs-explained.md for what a manifest repo is and how to find one.\n"
+    "See docs/configuration.md for the full configuration reference."
+)
+
+# Stderr note emitted when the manifest repo contains zero marketplace XML files.
+# Spec Section 4.1: "manifest repo contains 0 entries".
+LIST_EMPTY_CATALOG_NOTE = "manifest repo contains 0 entries"
+
 # -- Configuration file --
 KANONENV_FILENAME = ".kanon"
 

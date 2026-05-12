@@ -220,6 +220,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "clean": [_FAKE_KANON_PATH],
             "validate": ["xml"],
             "bootstrap": ["list"],
+            "list": [],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
         }
         return minimal[subcommand]
@@ -439,3 +440,82 @@ class TestSubprocessGlobalFlags:
         assert not matches, (
             f"ANSI escape sequences found in NO_COLOR=1 output: {matches!r}; output snippet: {combined[:500]!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new 'list' subcommand registration in build_parser() (AC-FUNC-002)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestListSubcommandRegistration:
+    """build_parser() registers the 'list' subcommand per AC-FUNC-002."""
+
+    def test_list_subcommand_exists_in_parser(self) -> None:
+        """build_parser() includes 'list' as a registered subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["list"])
+        assert args.command == "list"
+
+    def test_list_subcommand_has_catalog_source_flag(self) -> None:
+        """The 'list' subcommand accepts --catalog-source (from shared factory)."""
+        parser = build_parser()
+        args = parser.parse_args(["list", "--catalog-source", "https://example.com/repo.git@main"])
+        assert args.catalog_source == "https://example.com/repo.git@main"
+
+    def test_list_subcommand_catalog_source_default_none(self) -> None:
+        """--catalog-source defaults to None when unset and env var is absent."""
+        import os
+
+        parser = build_parser()
+        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
+        try:
+            args = parser.parse_args(["list"])
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_CATALOG_SOURCE"] = env_backup
+        assert args.catalog_source is None
+
+    def test_list_subcommand_has_no_color_flag(self) -> None:
+        """The 'list' subcommand propagates --no-color from the root parser.
+
+        --no-color is a global flag defined on the root parser (before any
+        subcommand token). Verify that 'kanon --no-color list' sets
+        no_color=True in the parsed namespace.
+        """
+        parser = build_parser()
+        args = parser.parse_args(["--no-color", "list"])
+        assert args.no_color is True
+
+    def test_list_subcommand_sets_func(self) -> None:
+        """The 'list' subcommand sets args.func to run_list."""
+        from kanon_cli.commands.list import run_list
+
+        parser = build_parser()
+        args = parser.parse_args(["list"])
+        assert args.func is run_list
+
+    def test_list_help_exits_0(self) -> None:
+        """kanon list --help exits 0 without error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["list", "--help"])
+        assert exc_info.value.code == 0
+
+    def test_list_help_mentions_catalog_source(self) -> None:
+        """kanon list --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
+        import io
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                list_parser = action.choices.get("list")
+                break
+        else:
+            list_parser = None
+
+        assert list_parser is not None, "list subparser must be registered"
+        buf = io.StringIO()
+        list_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        assert "--catalog-source" in help_text
+        assert "KANON_CATALOG_SOURCE" in help_text

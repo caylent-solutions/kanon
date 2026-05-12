@@ -7,6 +7,8 @@ does not already exist.
 
 Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
 Section 4.2 (Behaviour steps 1-5), Section 4.0 (last-@ spec split),
+Section 4.2 flag-table rows --force and --dry-run,
+Section 4.2 collision detection pre-flight,
 Section 2.1 (worked example step 3), Section 1.1 (.kanon file definition).
 """
 
@@ -86,21 +88,32 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    # --force and --dry-run are reserved for E2-F4-S1-T2; registered here so
-    # later tasks do not need to re-thread argparse.
     parser.add_argument(
         "--force",
         dest="force",
         action="store_true",
         default=False,
-        help=argparse.SUPPRESS,
+        help=(
+            "Overwrite an existing KANON_SOURCE_<name>_* block in the\n"
+            "destination .kanon file. Without this flag, any collision\n"
+            "between a requested source name and an existing block is a\n"
+            "hard error. Collision detection pre-flight runs before any\n"
+            "write whether or not --force is set."
+        ),
     )
     parser.add_argument(
         "--dry-run",
         dest="dry_run",
         action="store_true",
         default=False,
-        help=argparse.SUPPRESS,
+        help=(
+            "Print the diff that WOULD be written to the destination\n"
+            ".kanon file ('+' for added lines, '-' for removed lines\n"
+            "under --force). Makes no on-disk change. Exits 0. Collision\n"
+            "detection pre-flight still runs, so within-request and\n"
+            "against-existing collisions are reported before a diff is\n"
+            "shown (unless --force is also passed)."
+        ),
     )
 
     parser.set_defaults(func=run_add)
@@ -360,6 +373,216 @@ def _xml_repo_relative_path(
 
 
 # ---------------------------------------------------------------------------
+# Collision detection helpers
+# ---------------------------------------------------------------------------
+
+
+def _check_within_request_collisions(entry_names: list[str]) -> None:
+    """Detect duplicates within the requested set before any catalog work.
+
+    Normalises each raw entry name (via derive_source_name) and hard-errors
+    on the first pair that maps to the same source name token.
+
+    Args:
+        entry_names: Raw positional argument strings (names only, no spec).
+
+    Raises:
+        SystemExit: When two or more names normalise to the same source name.
+    """
+    seen: dict[str, str] = {}  # source_name -> first raw name
+    for raw in entry_names:
+        source = derive_source_name(raw)
+        if source in seen:
+            first = seen[source]
+            print(
+                f"ERROR: within-request collision: '{first}' and '{raw}' both "
+                f"normalise to source name '{source}'.\n"
+                "Remove duplicate entries from your command arguments.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        seen[source] = raw
+
+
+def _read_existing_triple_block(
+    kanon_file: pathlib.Path,
+    source_name: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Read the URL, REVISION, and PATH values for an existing source-name block.
+
+    Scans the destination .kanon file for lines matching
+    KANON_SOURCE_<source_name>_{URL,REVISION,PATH}=<value>.
+
+    Args:
+        kanon_file: Path to the .kanon file (may not exist).
+        source_name: Normalised source name (output of derive_source_name).
+
+    Returns:
+        A 3-tuple (url, revision, path). Each element is the value string if
+        found, or None when absent.
+    """
+    if not kanon_file.exists():
+        return None, None, None
+
+    prefix = f"KANON_SOURCE_{source_name}_"
+    url: str | None = None
+    revision: str | None = None
+    path: str | None = None
+
+    for raw_line in kanon_file.read_text().splitlines():
+        line = raw_line.strip()
+        if line.startswith(f"{prefix}URL="):
+            url = line[len(f"{prefix}URL=") :]
+        elif line.startswith(f"{prefix}REVISION="):
+            revision = line[len(f"{prefix}REVISION=") :]
+        elif line.startswith(f"{prefix}PATH="):
+            path = line[len(f"{prefix}PATH=") :]
+
+    return url, revision, path
+
+
+def _check_against_existing_blocks(
+    kanon_file: pathlib.Path,
+    source_name: str,
+    new_url: str,
+    new_revision: str,
+    new_path: str,
+    force: bool,
+) -> None:
+    """Detect a collision between source_name and an existing block in the file.
+
+    Per spec Section 4.2 pre-flight paragraph: if the destination .kanon file
+    already contains any KANON_SOURCE_<source_name>_* line, and --force is not
+    set, print the spec-canonical error message and exit non-zero.
+
+    Args:
+        kanon_file: Path to the .kanon file (may not exist).
+        source_name: Normalised source name (output of derive_source_name).
+        new_url: Requested manifest repo URL.
+        new_revision: Requested revision spec.
+        new_path: Requested repo-relative XML path.
+        force: When True, collision is permitted (no error).
+
+    Raises:
+        SystemExit: When the source name already has a block and force is False.
+    """
+    if force:
+        return
+
+    existing_url, existing_revision, existing_path = _read_existing_triple_block(kanon_file, source_name)
+
+    if existing_url is None and existing_revision is None and existing_path is None:
+        return
+
+    # At least one line exists -- collision detected.
+    print(
+        f"ERROR: source-name '{source_name}' already mapped to "
+        f"{existing_url}/{existing_path} "
+        f"(revision {existing_revision}); requested mapping is "
+        f"{new_url}/{new_path} (revision {new_revision}).\n"
+        "Use --force to overwrite, or 'kanon remove "
+        f"{source_name}' first.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Force-overwrite helper
+# ---------------------------------------------------------------------------
+
+
+def _overwrite_triple_block(
+    dest: pathlib.Path,
+    source_name: str,
+    lines: list[str],
+) -> None:
+    """Replace the three KANON_SOURCE_<source_name>_* lines in dest.
+
+    Reads the entire file, removes any line whose key begins with
+    KANON_SOURCE_<source_name>_{URL,REVISION,PATH}=, and inserts the
+    three new lines in place of the first removed line (preserving order).
+
+    Args:
+        dest: Destination .kanon file (must exist and contain the triple).
+        source_name: Normalised source name.
+        lines: The three replacement KANON_SOURCE_* lines.
+    """
+    prefix = f"KANON_SOURCE_{source_name}_"
+    triple_keys = {f"{prefix}URL", f"{prefix}REVISION", f"{prefix}PATH"}
+
+    existing_lines = dest.read_text().splitlines(keepends=True)
+    result: list[str] = []
+    inserted = False
+
+    for raw_line in existing_lines:
+        stripped = raw_line.rstrip("\n").rstrip("\r")
+        key = stripped.split("=", 1)[0] if "=" in stripped else stripped
+        if key in triple_keys:
+            if not inserted:
+                # Insert replacement block at the position of the first matched line.
+                for new_line in lines:
+                    result.append(new_line + "\n")
+                inserted = True
+            # Skip old line (replaced above).
+        else:
+            result.append(raw_line)
+
+    dest.write_text("".join(result))
+
+    key_names = ", ".join(
+        [
+            f"KANON_SOURCE_{source_name}_URL",
+            f"KANON_SOURCE_{source_name}_REVISION",
+            f"KANON_SOURCE_{source_name}_PATH",
+        ]
+    )
+    print(f"Overwrote {key_names} in {dest}")
+
+
+# ---------------------------------------------------------------------------
+# Dry-run renderer
+# ---------------------------------------------------------------------------
+
+
+def _render_dry_run_diff(
+    dest: pathlib.Path,
+    source_name: str,
+    lines: list[str],
+    force: bool,
+) -> None:
+    """Print the diff that WOULD be applied to dest without modifying the file.
+
+    When force is False (no collision expected), each line is printed with a
+    '+' prefix. When force is True, existing triple lines appear with '-'
+    prefix first, then replacement lines with '+' prefix.
+
+    Args:
+        dest: Destination .kanon file path.
+        source_name: Normalised source name.
+        lines: The three replacement KANON_SOURCE_* lines.
+        force: Whether the operation would overwrite an existing block.
+    """
+    if force and dest.exists():
+        existing_url, existing_revision, existing_path = _read_existing_triple_block(dest, source_name)
+        if existing_url is not None or existing_revision is not None or existing_path is not None:
+            prefix = f"KANON_SOURCE_{source_name}_"
+            old_lines = [
+                f"{prefix}URL={existing_url}",
+                f"{prefix}REVISION={existing_revision}",
+                f"{prefix}PATH={existing_path}",
+            ]
+            for old_line in old_lines:
+                print(f"-{old_line}")
+            for new_line in lines:
+                print(f"+{new_line}")
+            return
+
+    for new_line in lines:
+        print(f"+{new_line}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -368,8 +591,15 @@ def run_add(args: argparse.Namespace) -> int:
     """Entry-point function for the 'kanon add' subcommand.
 
     Resolves each requested catalog entry, constructs the three
-    KANON_SOURCE_* lines, and appends them to the destination .kanon file.
-    Creates the file with a standard header when absent.
+    KANON_SOURCE_* lines, and appends (or overwrites) them in the
+    destination .kanon file. Creates the file with a standard header when
+    absent.
+
+    When --dry-run is set, prints the diff that would be applied and exits 0
+    without modifying any file.
+
+    When --force is set, an existing KANON_SOURCE_<name>_* block is
+    overwritten rather than treated as a hard error.
 
     Args:
         args: Parsed argument namespace from argparse.
@@ -386,6 +616,12 @@ def run_add(args: argparse.Namespace) -> int:
         sys.exit(1)
 
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
+    force: bool = getattr(args, "force", False)
+    dry_run: bool = getattr(args, "dry_run", False)
+
+    # Pre-flight: within-request collision detection (before any catalog work).
+    raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
+    _check_within_request_collisions(raw_names)
 
     # Step 1: Resolve manifest repo.
     manifest_root, url, _ref = _resolve_manifest_repo_for_add(catalog_source)
@@ -394,7 +630,11 @@ def run_add(args: argparse.Namespace) -> int:
     catalog = _build_entry_catalog(manifest_root, url)
 
     # Step 3: Ensure destination file exists (creates with standard header if absent).
-    _write_standard_header(kanon_file)
+    # For --dry-run we still create the header so collision detection has a file to scan;
+    # however, if the file genuinely does not exist and we are dry-running, we skip
+    # the header write (nothing to collide against and no file change is allowed).
+    if not dry_run:
+        _write_standard_header(kanon_file)
 
     # Step 4: Process each requested entry in argument order.
     for raw_entry in args.entries:
@@ -415,10 +655,43 @@ def run_add(args: argparse.Namespace) -> int:
             path=rel_path,
         )
 
-        _append_triple_block(
-            dest=kanon_file,
+        # Against-existing collision detection (runs for both normal and dry-run paths).
+        _check_against_existing_blocks(
+            kanon_file=kanon_file,
             source_name=source_name,
-            lines=lines,
+            new_url=entry_url,
+            new_revision=resolved_revision,
+            new_path=rel_path,
+            force=force,
         )
+
+        if dry_run:
+            _render_dry_run_diff(
+                dest=kanon_file,
+                source_name=source_name,
+                lines=lines,
+                force=force,
+            )
+        elif force and kanon_file.exists():
+            # Check whether an existing block is present; if so, overwrite it.
+            existing_url, _, _ = _read_existing_triple_block(kanon_file, source_name)
+            if existing_url is not None:
+                _overwrite_triple_block(
+                    dest=kanon_file,
+                    source_name=source_name,
+                    lines=lines,
+                )
+            else:
+                _append_triple_block(
+                    dest=kanon_file,
+                    source_name=source_name,
+                    lines=lines,
+                )
+        else:
+            _append_triple_block(
+                dest=kanon_file,
+                source_name=source_name,
+                lines=lines,
+            )
 
     return 0

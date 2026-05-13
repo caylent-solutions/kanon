@@ -95,7 +95,13 @@ name | current | latest-matching-spec | latest-available | upgrade-type
    - Branch-pinned: `drift` when the locked SHA differs from the branch HEAD
      SHA; `none` otherwise.
    - SHA-pinned: always `none` (a pinned SHA cannot drift).
-6. **Exit code** -- always 0. A future release will add `--fail-on-upgrade` to exit non-zero when upgrades are available.
+6. **Exit code** -- always 0 by default, matching the convention of `pip list --outdated`,
+   `npm outdated`, and `cargo outdated` (spec Section 0.2). Pass `--fail-on-upgrade` to exit 1
+   when ANY source has an available upgrade (i.e. any row whose `upgrade-type` is not `none`).
+   This is the CI-gate use case: a workflow runs `kanon outdated --fail-on-upgrade` and the
+   build fails when any source is upgradable, prompting the operator to refresh the lockfile.
+   The row content (column values) is identical whether or not the flag is set; only the exit
+   code differs.
 
 #### Branch-pinned sources
 
@@ -134,6 +140,7 @@ kanon outdated [--catalog-source <git-url>@<ref>]
                [--kanon-file <path>]
                [--lock-file <path>]
                [--format {table}]
+               [--fail-on-upgrade]
 ```
 
 | Flag | Env var | Default | Description |
@@ -142,6 +149,7 @@ kanon outdated [--catalog-source <git-url>@<ref>]
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the lockfile. Optional; derived from `--kanon-file` when absent. |
 | `--format` | `KANON_OUTDATED_FORMAT` | `table` | Output format. Only `table` supported in this release. |
+| `--fail-on-upgrade` | (none) | off | Exit 1 when any source has an available upgrade (`upgrade-type != none`). Default is always exit 0 -- parity with `pip list --outdated`, `npm outdated`, `cargo outdated` (spec Section 0.2). Use this flag in CI pipelines to gate on lockfile freshness. |
 
 **Example:**
 

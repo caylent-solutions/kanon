@@ -539,6 +539,7 @@ def _make_args(
     kanon_file: str = "/fake/.kanon",
     lock_file: str | None = None,
     format: str = "table",
+    fail_on_upgrade: bool = False,
 ) -> argparse.Namespace:
     """Build a minimal argparse Namespace for the outdated subcommand."""
     return argparse.Namespace(
@@ -546,6 +547,7 @@ def _make_args(
         kanon_file=kanon_file,
         lock_file=lock_file,
         format=format,
+        fail_on_upgrade=fail_on_upgrade,
     )
 
 

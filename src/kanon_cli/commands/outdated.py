@@ -470,8 +470,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "  name | current | latest-matching-spec | latest-available | upgrade-type\n\n"
             "The 'current' column is taken from the lockfile when present, or\n"
             "live-resolved against the catalog when absent.\n\n"
-            "Exit code is always 0 for this command. A future release will add\n"
-            "--fail-on-upgrade to exit non-zero when upgrades are available.\n\n"
+            "Exit code is always 0 unless --fail-on-upgrade is set, in which\n"
+            "case the command exits 1 when any source has an available upgrade.\n\n"
             "Catalog source precedence: --catalog-source flag, then\n"
             "KANON_CATALOG_SOURCE env var. Both being absent is a hard error."
         ),
@@ -509,6 +509,22 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     )
 
     parser.add_argument(
+        "--fail-on-upgrade",
+        dest="fail_on_upgrade",
+        action="store_true",
+        default=False,
+        help=(
+            "Exit 1 when ANY source has an available upgrade (upgrade-type != 'none'). "
+            "Default is to always exit 0 (parity with pip list --outdated, npm outdated, "
+            "cargo outdated). Use this flag in CI pipelines to gate on lockfile freshness: "
+            "the build fails when any source is upgradable, prompting the operator to "
+            "refresh the lockfile. "
+            "Spec reference: spec/kanon-list-add-lock-features-spec.md Section 0.2 and "
+            "Section 4.4 'Exit code'."
+        ),
+    )
+
+    parser.add_argument(
         "--format",
         dest="format",
         default=os.environ.get(KANON_OUTDATED_FORMAT, KANON_OUTDATED_FORMAT_DEFAULT),
@@ -541,9 +557,13 @@ def run(args: argparse.Namespace) -> int:
             - ``kanon_file`` (str): path to the .kanon file.
             - ``lock_file`` (str | None): path to the lockfile, or None.
             - ``format`` (str): output format (currently only "table").
+            - ``fail_on_upgrade`` (bool): when True, exit 1 if any row has
+              an upgrade-type other than ``none``.
 
     Returns:
-        Exit code (always 0; --fail-on-upgrade will be added in a future release).
+        0 when all rows have upgrade-type ``none``, or when ``fail_on_upgrade``
+        is False (the default). 1 when ``fail_on_upgrade`` is True and at least
+        one row has an upgrade-type other than ``none``.
     """
     # -- Validate catalog source (AC-FUNC-009) --
     if not args.catalog_source:
@@ -619,4 +639,7 @@ def run(args: argparse.Namespace) -> int:
     # -- Emit output --
     print(_format_table(rows), end="")
 
+    # -- Exit code gate (AC-FUNC-002 / AC-FUNC-004) --
+    if args.fail_on_upgrade and any(row.upgrade_type != "none" for row in rows):
+        return 1
     return 0

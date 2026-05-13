@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.commands.install import _run
+from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     _RefResolution,
     aggregate_symlinks,
@@ -276,6 +277,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_sync") as mock_sync,
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_install,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 
@@ -301,6 +303,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
             patch("kanon_cli.repo.repo_sync") as mock_sync,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
@@ -327,6 +330,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", return_value="3.0.0") as mock_resolve,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(kanonenv, catalog_source=self._CATALOG_SOURCE)
 

@@ -23,7 +23,8 @@ Every ``kanon install`` invocation inspects the five-row state matrix:
 
 Exception hierarchy:
 
-  InstallError                -- base class for all install-state hard errors.
+  InstallError                -- base class for all install-state hard errors (defined in
+                                 core/include_walker.py; re-exported here for backwards compatibility).
   KanonHashMismatchError      -- kanon_hash in lockfile != freshly-computed hash.
   LockfileUnreachableShaError -- a lockfile SHA is no longer reachable on remote.
   CatalogSourceMismatchError  -- lockfile catalog source differs from CLI/env source.
@@ -32,6 +33,15 @@ Exception hierarchy:
   OrphanedLockEntryError      -- --strict-lock: lockfile source absent from .kanon.
   BranchDriftError            -- --strict-drift: branch tip differs from locked SHA.
   CanonicalUrlConflictError   -- two+ sources declare the same canonical URL with different SHAs.
+  IncludeCycleError           -- <include> chain contains a cycle (re-exported from include_walker).
+
+Include-tree resolution:
+
+  _walk_includes and IncludeTree are implemented in core/include_walker.py and
+  re-exported here so call-sites can use either import path.  The walker uses a
+  two-set DFS algorithm to detect cycles (raises IncludeCycleError) and
+  deduplicate diamond paths (shared nodes appear only at their first-walked
+  position).
 """
 
 from __future__ import annotations
@@ -58,16 +68,37 @@ from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
     CatalogBlock,
+    IncludeEntry,
     Lockfile,
     SourceEntry,
     read_lockfile,
     write_lockfile,
+)
+from kanon_cli.core.include_walker import (
+    IncludeCycleError,
+    IncludeTree,
+    InstallError,
+    MalformedIncludeError,
+    _canonicalize_include_path,
+    _walk_includes,
 )
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.version import resolve_version
+
+# Re-export include-walker symbols so call-sites can import from either module.
+# InstallError is defined in include_walker to avoid circular imports; re-exporting
+# it here preserves backwards compatibility for all existing import sites.
+__all__ = [
+    "IncludeCycleError",
+    "IncludeTree",
+    "InstallError",
+    "MalformedIncludeError",
+    "_canonicalize_include_path",
+    "_walk_includes",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -127,14 +158,6 @@ class InstallState(enum.Enum):
 # ---------------------------------------------------------------------------
 # Exception hierarchy
 # ---------------------------------------------------------------------------
-
-
-class InstallError(Exception):
-    """Base class for all install state-machine hard errors.
-
-    Subclasses carry structured payloads (summary, context, remediation) and
-    render via ``str(err)`` to the spec's standard three-line error shape.
-    """
 
 
 class KanonHashMismatchError(InstallError):
@@ -466,6 +489,52 @@ def _detect_canonical_url_conflicts(
                 )
             )
     return reports
+
+
+def _include_tree_to_entries(
+    tree: IncludeTree,
+    source_url: str,
+    resolved_sha: str,
+) -> list[IncludeEntry]:
+    """Convert the children of an ``IncludeTree`` node to ``IncludeEntry`` objects.
+
+    The root of ``tree`` represents the source's own manifest XML (recorded as
+    a ``[[sources]]`` entry).  Only the root's children become
+    ``[[sources.includes]]`` entries, so callers pass the root node and this
+    function converts its ``includes`` list recursively.
+
+    Each ``IncludeEntry`` records:
+    - ``name``: the file stem of the XML path (display name for error messages).
+    - ``path_in_repo``: the repo-relative path string as produced by
+      ``_canonicalize_include_path``.
+    - ``url``: the parent source's URL (all includes live in the same repo).
+    - ``resolved_sha``: the parent source's locked SHA (same repo, same commit).
+    - ``includes``: recursively converted child entries (preserves DFS order and
+      diamond deduplication performed by ``_walk_includes``).
+
+    Args:
+        tree: An ``IncludeTree`` node whose ``includes`` list should be converted.
+            Typically the root node returned by ``_walk_includes``.
+        source_url: The URL of the parent source's manifest repository.
+        resolved_sha: The commit SHA locked for the parent source.
+
+    Returns:
+        A list of ``IncludeEntry`` objects parallel to ``tree.includes``,
+        preserving DFS pre-order and diamond deduplication from the walker.
+    """
+    entries: list[IncludeEntry] = []
+    for child in tree.includes:
+        child_path_str = str(child.path)
+        entries.append(
+            IncludeEntry(
+                name=pathlib.Path(child_path_str).stem,
+                path_in_repo=child_path_str,
+                url=source_url,
+                resolved_sha=resolved_sha,
+                includes=_include_tree_to_entries(child, source_url, resolved_sha),
+            )
+        )
+    return entries
 
 
 def _gather_resolved_projects(resolved_entries: list[SourceEntry]) -> list[ResolvedProject]:
@@ -1640,6 +1709,25 @@ def _run_install(
         run_repo_envsubst(source_dir, env_vars)
         print("  repo sync...")
         run_repo_sync(source_dir)
+
+        # Walk the <include> chain from the checked-out manifest XML.
+        # The manifest XML is located at source_dir / source_data["path"].
+        # _walk_includes uses source_dir as the manifest repo root so all
+        # <include name=...> values (relative to the repo root) resolve correctly.
+        # The walker raises IncludeCycleError on cycles and MalformedIncludeError
+        # on malformed elements -- both propagate unconditionally (fail-fast).
+        # Only the root's children become [[sources.includes]] entries; the root
+        # itself is already recorded in the [[sources]] entry above.
+        manifest_xml_path = source_dir / source_data["path"]
+        include_tree = _walk_includes(manifest_xml_path, source_dir)
+        # resolved_entries[-1] is the SourceEntry appended for this source
+        # in the resolution branches above. Populate its includes list with
+        # the DFS-ordered, diamond-deduped tree the walker produced.
+        resolved_entries[-1].includes = _include_tree_to_entries(
+            include_tree,
+            source_url=source_data["url"],
+            resolved_sha=resolved_entries[-1].resolved_sha,
+        )
 
     # Canonical-URL conflict check on the absent/refresh paths: run the detector
     # against the freshly-resolved entries now that all sources have been resolved.

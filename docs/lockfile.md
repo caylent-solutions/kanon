@@ -42,13 +42,13 @@ path          = "repo-specs/build-tools/meta.xml"
 [[sources.includes]]
 name         = "ci-helpers"
 path_in_repo = "repo-specs/ci/helpers.xml"
-url          = "https://example.com/ci-helpers.git"
-resolved_sha = "11223344..."
+url          = "https://example.com/build-tools.git"
+resolved_sha = "aabbccdd..."
 
 [[sources.includes.includes]]
 name         = "shell-utils"
 path_in_repo = "repo-specs/shell/utils.xml"
-url          = "https://example.com/shell-utils.git"
+url          = "https://example.com/build-tools.git"
 resolved_sha = "aabbccdd..."
 
 [[sources.projects]]
@@ -102,9 +102,45 @@ Include entries are recursive: each entry may have its own `includes` list.
 |----------------|--------|-------------|---------------------------|
 | `name`          | string | Display name of the included file. | Informational; surfaced in error messages. |
 | `path_in_repo`  | string | Repo-relative path to the included XML file. | `LOCKFILE_CONSISTENT`: used to locate the included XML during `repo init`. |
-| `url`           | string | URL of the repository providing this include. | `LOCKFILE_CONSISTENT`: used as the source URL for this include's clone. |
+| `url`           | string | URL of the parent manifest repository (same as the `[[sources]]` entry that owns this include tree). | `LOCKFILE_CONSISTENT`: used as the source URL for this include's clone. |
 | `resolved_sha`  | string | Pinned commit SHA for reproducibility. | `LOCKFILE_CONSISTENT`: pins the include's clone; `LOCKFILE_UNREACHABLE` if the SHA is no longer reachable. |
 | `includes`      | list   | Nested includes (may be empty or absent). | `LOCKFILE_CONSISTENT`: walked recursively. |
+
+#### Include-tree serialisation order
+
+The `[[sources.includes]]` entries in the lockfile are written in **DFS pre-order** -- the same order that `_walk_includes` in `core/include_walker.py` traverses the `<include>` chain. For a source with a two-level chain `A -> B -> C`, the lockfile contains:
+
+```
+[[sources.includes]]          # B (depth 1 under A)
+[[sources.includes.includes]] # C (depth 2 under B)
+```
+
+The depth of the TOML table-array path (`sources.includes`, `sources.includes.includes`, etc.) matches the depth of the DFS walk.
+
+#### Diamond-deduplicate rule
+
+When two or more paths through the `<include>` graph lead to the same XML file (a **diamond** shape), the shared file appears in the lockfile **exactly once**, at its **first-walked position**.
+
+Example (diamond: A includes B and C; both B and C include D):
+
+```toml
+[[sources]]
+# A is the top-level source
+
+[[sources.includes]]
+name = "b"   # B appears first (DFS visits A -> B first)
+
+[[sources.includes.includes]]
+name = "d"   # D appears under B (first-walked position)
+
+[[sources.includes]]
+name = "c"   # C appears second
+
+# D is NOT repeated here -- it was already serialised under B.
+# c has no [[sources.includes.includes]] entry for d.
+```
+
+This deduplication is performed by `_walk_includes` using a `done` set. A file added to `done` after its subtree is fully processed is skipped on all subsequent visits. After each source's `repo sync` completes, `install()` in `core/install.py` calls `_walk_includes` on the checked-out manifest XML and converts the resulting `IncludeTree` to `IncludeEntry` objects via `_include_tree_to_entries`. The lockfile writer (`_serialize_include_entries` in `core/lockfile.py`) then serialises those entries in the same DFS order, so the diamond-dedupe rule is automatically preserved in the written lockfile.
 
 ### `[[sources.projects]]` entries
 

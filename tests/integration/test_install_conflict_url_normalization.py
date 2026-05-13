@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     CanonicalUrlConflictError,
     _RefResolution,
@@ -44,6 +45,16 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: no SHA reachability checks needed for conflict-detection tests."""
     with patch("kanon_cli.core.install._check_sha_reachable"):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _mock_walk_includes():
+    """Override: mock _walk_includes so tests that mock repo ops do not require real XML files on disk."""
+    with patch(
+        "kanon_cli.core.install._walk_includes",
+        return_value=IncludeTree(path=pathlib.Path("manifest.xml")),
+    ):
         yield
 
 

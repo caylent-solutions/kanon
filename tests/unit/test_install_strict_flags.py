@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     BranchDriftError,
     BranchDriftReport,
@@ -447,6 +448,7 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             # ls-remote call from _detect_branch_drift: alpha's tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
@@ -478,6 +480,7 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
             install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
@@ -639,6 +642,7 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             # Remote tip differs from locked SHA -- simulates drift
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
@@ -665,6 +669,7 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_init") as mock_init,
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
@@ -833,6 +838,7 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_drift=True)
@@ -856,6 +862,7 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             # Must NOT raise BranchDriftError -- lockfile is absent, nothing to compare

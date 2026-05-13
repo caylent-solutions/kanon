@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     CatalogSourceMismatchError,
     InstallClassification,
@@ -736,6 +737,7 @@ path = "manifest.xml"
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("subprocess.run", return_value=mock_result),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
             # Must not raise LockfileUnreachableShaError
             install(
@@ -855,6 +857,7 @@ class TestMalformedCatalogSource:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
             with pytest.raises(ValueError, match="<url>@<ref>"):
                 install(

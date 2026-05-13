@@ -165,6 +165,84 @@ See `docs/configuration.md` for how to configure a catalog source.
 
 ---
 
+## `<include>` Cycle Detection and Diamond Handling
+
+### Implementation
+
+The `<include>` chain resolver is implemented in `core/include_walker.py` as the
+`_walk_includes(start_xml_path, manifest_repo) -> IncludeTree` function. It uses a
+depth-first search (DFS) with two sets to handle cycles and diamonds:
+
+- **`active_path`** (ordered list): repo-relative canonical paths of ancestors on the
+  current DFS branch. Every path is appended before recursing and popped after the subtree
+  is fully processed.
+- **`done`** (set): repo-relative canonical paths whose subtrees have been fully processed.
+  A path is added to `done` after it is popped from `active_path`.
+
+Algorithm (per visit of a node):
+
+```
+visit(abs_path):
+  canonical = normpath(abs_path relative to manifest_repo)
+  if canonical in active_path:
+    CYCLE -- raise IncludeCycleError(rendered cycle)
+  active_path.append(canonical)
+  child_nodes = []
+  for child_path in xml_includes(abs_path):
+    child_canonical = normpath(child_path relative to manifest_repo)
+    if child_canonical in done:
+      DIAMOND -- skip this child (already processed at first-walked position)
+      continue
+    child_nodes.append(visit(child_path))
+  active_path.pop()
+  done.add(canonical)
+  return IncludeTree(path=canonical, includes=child_nodes)
+```
+
+Note: the `done` check is performed in the **parent's child-iteration loop** before
+calling `visit()` on the child -- `visit()` is never called on a node that is already
+in `done`.  This differs from a naive two-set design where `visit()` might be called
+and return early; the actual implementation avoids the redundant call entirely.
+
+### Cycle error format
+
+When a cycle is detected, `IncludeCycleError` is raised with a message of the form:
+
+```
+include cycle: <p0> -> <p1> -> ... -> <pn> -> <p0>
+```
+
+where `p0` is the canonical node that was already on `active_path` and `pn` is the last
+visited node before the cycle was detected. All paths are **repo-relative** (not absolute
+filesystem paths) so the message is portable across operator machines.
+
+Self-cycle example: `include cycle: a.xml -> a.xml`
+
+Triangle example: `include cycle: a.xml -> b.xml -> c.xml -> a.xml`
+
+### Diamond deduplication
+
+When `_walk_includes` encounters a node that is already in `done` (reached via a second
+path through the graph -- a diamond), the second visit is a no-op for include traversal.
+The shared node's subtree is **not** re-processed; it appears in the `IncludeTree` only
+at its **first-walked position**.
+
+See `docs/lockfile.md` for the corresponding lockfile serialisation rule.
+
+### Path canonicalisation
+
+All paths compared for cycle and diamond detection are canonicalised via
+`_canonicalize_include_path(abs_path, manifest_repo)`, which:
+
+1. Computes the path relative to `manifest_repo`.
+2. Applies `os.path.normpath` to resolve `./` prefixes, `..` segments, and redundant
+   separators.
+
+This means `./foo.xml` and `foo.xml` are treated as the same node, preventing trivial
+cycle-bypass attempts via path aliasing.
+
+---
+
 ## Exception Classes
 
 All install-state hard errors inherit from `InstallError(Exception)`:
@@ -178,6 +256,8 @@ All install-state hard errors inherit from `InstallError(Exception)`:
 | `UnknownSourceError` | `--refresh-lock-source <name>` does not match any known source by direct lookup or `derive_source_name`. | `name`, `known_names` |
 | `OrphanedLockEntryError` | `--strict-lock` is set and the lockfile contains sources absent from `.kanon` (`LOCKFILE_CONSISTENT` state only). | `orphaned_names` |
 | `BranchDriftError` | `--strict-drift` is set and one or more branch-shaped sources have a remote tip that differs from the locked SHA (`LOCKFILE_CONSISTENT` state only). | `reports` (list of `BranchDriftReport`) |
+| `IncludeCycleError` | `_walk_includes` detects a cycle in the `<include>` chain. | `cycle_path` (list of repo-relative path strings) |
+| `MalformedIncludeError` | An `<include>` element is missing the required `name` attribute (fail-fast; not silently skipped). | `xml_file` (path to the containing XML file) |
 
 Each exception's `__str__` renders in the spec's standard three-line error
 shape: `ERROR: <one-line summary>`, optional context lines (wrapped at 80

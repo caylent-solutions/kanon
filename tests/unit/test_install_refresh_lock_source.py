@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     InstallState,
     MissingCatalogSourceError,
@@ -618,6 +619,7 @@ class TestInstallRefreshLockSourceKwarg:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(
                 kanonenv_path=kanon_path,
@@ -676,6 +678,7 @@ class TestInstallRefreshLockSourceKwarg:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(
                 kanonenv_path=kanon_path,

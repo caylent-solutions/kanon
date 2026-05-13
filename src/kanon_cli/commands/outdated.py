@@ -7,13 +7,23 @@ KANON_SOURCE_<name>_* block containing:
 
 The ``current`` column is taken from the lockfile when present (the locked
 resolved_ref), or live-resolved against the catalog when no lockfile exists.
-``latest-matching-spec`` is the highest ref satisfying the source's REVISION
-constraint. ``latest-available`` is the highest ref under the prefix regardless
-of the constraint. ``upgrade-type`` compares ``current`` vs ``latest-matching-spec``
-via ``packaging.version.Version`` component diffs.
+
+Three REVISION shapes are handled (see ``kanon_cli.version.RevisionShape``):
+
+- **Tag-pinned** (PEP 440 constraint or ``refs/tags/...``): ``latest-matching-spec``
+  is the highest ref satisfying the constraint; ``latest-available`` is the
+  highest ref under the prefix. ``upgrade-type`` is one of ``none``, ``patch``,
+  ``minor``, ``major``, or ``prerelease``.
+- **Branch-pinned** (plain branch name such as ``main``, ``develop``,
+  ``feature/foo``): both ``latest-matching-spec`` and ``latest-available`` are
+  the branch HEAD SHA truncated to 12 hex characters. ``upgrade-type`` is
+  ``drift`` when the locked SHA differs from the branch HEAD, or ``none``
+  otherwise.
+- **SHA-pinned** (40 or 64 hex chars): all three columns show the same truncated
+  SHA; ``upgrade-type`` is always ``none`` (a pinned SHA cannot drift).
 
 Spec reference:
-  ``spec/kanon-list-add-lock-features-spec.md`` Section 4.4 (behaviour 1-3)
+  ``spec/kanon-list-add-lock-features-spec.md`` Section 4.4
   and Section 7 (``KANON_OUTDATED_FORMAT``, ``--catalog-source``,
   ``--kanon-file``, ``--lock-file``, ``--format`` flags).
 """
@@ -38,7 +48,14 @@ from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import read_lockfile
-from kanon_cli.version import _list_tags, _resolve_constraint_from_tags
+from kanon_cli.version import (
+    RevisionShape,
+    _classify_revision_shape,
+    _list_branch_head,
+    _list_tags,
+    _resolve_constraint_from_tags,
+    _truncate_sha,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -138,20 +155,24 @@ def _build_row(
 ) -> OutdatedRow:
     """Construct one OutdatedRow for a single source.
 
-    Computes ``current``, ``latest-matching-spec``, ``latest-available``, and
-    ``upgrade-type`` columns for the given source. All tag resolution is
-    performed against the pre-fetched ``available_tags`` list to avoid
-    repeated network calls.
+    Dispatches to the correct column-building strategy based on the shape of
+    the source's REVISION string (see ``kanon_cli.version.RevisionShape``):
+
+    - **Tag-pinned**: uses PEP 440 tag resolution against ``available_tags``.
+    - **Branch-pinned**: queries branch HEAD via ``git ls-remote refs/heads/<branch>``;
+      both ``latest-*`` columns show the 12-char truncated HEAD SHA.
+      ``upgrade-type`` is ``drift`` when the locked SHA differs from HEAD.
+    - **SHA-pinned**: all three columns show the same 12-char truncated SHA;
+      ``upgrade-type`` is always ``none``.
 
     Args:
-        name: The source name (e.g. ``foo``).
+        name: The source name (e.g. ``FOO``).
         source: The source dict from ``parse_kanonenv`` with keys ``url``,
             ``revision``, and ``path``.
-        available_tags: Full list of tag refs fetched from the source's git URL
-            (e.g. ``["refs/tags/1.0.0", "refs/tags/1.0.1", ...]``).
+        available_tags: Full list of tag refs fetched from the source's git URL.
+            Used only for tag-pinned sources; ignored for branch- and SHA-pinned.
         lock_ref: The resolved_ref stored in the lockfile for this source, or
-            ``None`` when no lockfile is present. When not ``None``, used as
-            the ``current`` column directly (no network call needed).
+            ``None`` when no lockfile is present.
 
     Returns:
         A populated :class:`OutdatedRow`.
@@ -161,9 +182,50 @@ def _build_row(
             parseable tags exist under the source prefix (loud error from
             ``_resolve_constraint_from_tags``), or if no tags match the
             constraint.
+        ValueError: If the branch ref is not found on the remote (branch-pinned).
+        RuntimeError: If the ``git`` binary is not found or ``git ls-remote``
+            exits with a non-zero return code (branch-pinned path).
     """
     revision = source["revision"]
+    url = source["url"]
+    shape = _classify_revision_shape(revision)
 
+    if shape is RevisionShape.SHA:
+        return _build_row_sha_pinned(name=name, revision=revision, lock_ref=lock_ref)
+
+    if shape is RevisionShape.BRANCH:
+        return _build_row_branch_pinned(name=name, url=url, branch=revision, lock_ref=lock_ref)
+
+    # Tag-pinned (default T1 path)
+    return _build_row_tag_pinned(
+        name=name,
+        revision=revision,
+        available_tags=available_tags,
+        lock_ref=lock_ref,
+    )
+
+
+def _build_row_tag_pinned(
+    *,
+    name: str,
+    revision: str,
+    available_tags: list[str],
+    lock_ref: str | None,
+) -> OutdatedRow:
+    """Build an OutdatedRow for a tag-pinned source using PEP 440 resolution.
+
+    This is the original T1 implementation, extracted to a dedicated helper so
+    the branch-pinned and SHA-pinned paths can be added cleanly.
+
+    Args:
+        name: Source name.
+        revision: The REVISION string (PEP 440 constraint or ``refs/tags/...``).
+        available_tags: Pre-fetched list of tag refs from the source's remote.
+        lock_ref: Locked ref from the lockfile, or ``None``.
+
+    Returns:
+        A populated :class:`OutdatedRow`.
+    """
     # latest-matching-spec: highest ref satisfying the source's REVISION constraint
     latest_matching_ref = _resolve_constraint_from_tags(revision, available_tags)
     latest_matching_ver = _extract_version_from_ref(latest_matching_ref)
@@ -194,6 +256,88 @@ def _build_row(
         latest_matching_spec=latest_matching_ver,
         latest_available=latest_available_ver,
         upgrade_type=upgrade_type,
+    )
+
+
+def _build_row_branch_pinned(
+    *,
+    name: str,
+    url: str,
+    branch: str,
+    lock_ref: str | None,
+) -> OutdatedRow:
+    """Build an OutdatedRow for a branch-pinned source.
+
+    Queries the branch HEAD SHA via ``git ls-remote refs/heads/<branch>``,
+    truncates to 12 hex chars, and compares with the locked SHA (if any) to
+    derive the ``upgrade-type``.
+
+    Per spec Section 4.4: both ``latest-matching-spec`` and ``latest-available``
+    show the same truncated branch HEAD SHA (no cross-branch latest-available).
+
+    Args:
+        name: Source name.
+        url: Git repository URL.
+        branch: Branch name (without ``refs/heads/`` prefix).
+        lock_ref: Locked resolved_ref from the lockfile, or ``None``.
+
+    Returns:
+        A populated :class:`OutdatedRow`.
+    """
+    head_sha = _list_branch_head(url, branch)
+    head_sha_12 = _truncate_sha(head_sha)
+
+    if lock_ref is not None:
+        # Locked SHA may be a full 40-char SHA or a short form; compare prefix
+        locked_sha_12 = _truncate_sha(lock_ref)
+        upgrade_type = "drift" if locked_sha_12 != head_sha_12 else "none"
+        current = locked_sha_12
+    else:
+        # No lockfile: live-resolve equals HEAD; no drift possible
+        current = head_sha_12
+        upgrade_type = "none"
+
+    return OutdatedRow(
+        name=name,
+        current=current,
+        latest_matching_spec=head_sha_12,
+        latest_available=head_sha_12,
+        upgrade_type=upgrade_type,
+    )
+
+
+def _build_row_sha_pinned(
+    *,
+    name: str,
+    revision: str,
+    lock_ref: str | None,
+) -> OutdatedRow:
+    """Build an OutdatedRow for a SHA-pinned source.
+
+    A pinned SHA cannot drift: the operator explicitly pinned to that exact
+    commit. All three columns (``current``, ``latest-matching-spec``,
+    ``latest-available``) display the 12-char truncation of the revision SHA.
+    ``upgrade-type`` is always ``none``.
+
+    Per spec Section 4.4: no network call is needed for SHA-pinned sources.
+
+    Args:
+        name: Source name.
+        revision: The full hexadecimal SHA from REVISION (40 or 64 chars).
+        lock_ref: Locked ref from the lockfile (ignored; revision SHA is used
+            for all columns since it is already an exact commit reference).
+
+    Returns:
+        A populated :class:`OutdatedRow`.
+    """
+    sha_12 = _truncate_sha(revision)
+
+    return OutdatedRow(
+        name=name,
+        current=sha_12,
+        latest_matching_spec=sha_12,
+        latest_available=sha_12,
+        upgrade_type="none",
     )
 
 
@@ -257,6 +401,9 @@ def _resolve_lock_ref(name: str, lock_file_path: pathlib.Path | None) -> str | N
     when the lockfile contains no entry for ``name``, or when ``lock_file_path``
     is ``None``.
 
+    Used for tag-pinned sources where the ``resolved_ref`` is a full tag ref
+    (e.g. ``refs/tags/1.0.0``) from which the version string is extracted.
+
     Args:
         name: Source name (case-sensitive, matches SourceEntry.name).
         lock_file_path: Lockfile path, or ``None`` if no ``--lock-file`` was
@@ -272,6 +419,34 @@ def _resolve_lock_ref(name: str, lock_file_path: pathlib.Path | None) -> str | N
     for entry in lockfile.sources:
         if entry.name == name:
             return entry.resolved_ref
+    return None
+
+
+def _resolve_lock_sha(name: str, lock_file_path: pathlib.Path | None) -> str | None:
+    """Look up the resolved_sha for ``name`` in the lockfile, if the file exists.
+
+    Returns the full commit SHA stored in the lockfile's ``resolved_sha`` field
+    for the named source. Used for branch-pinned sources where the locked value
+    to compare against the branch HEAD is the commit SHA, not the ref name.
+
+    Returns ``None`` when the lockfile is absent, when the lockfile contains no
+    entry for ``name``, or when ``lock_file_path`` is ``None``.
+
+    Args:
+        name: Source name (case-sensitive, matches SourceEntry.name).
+        lock_file_path: Lockfile path, or ``None`` if the default derived path
+            does not exist.
+
+    Returns:
+        The ``resolved_sha`` string from the matching SourceEntry, or ``None``.
+    """
+    if lock_file_path is None or not lock_file_path.exists():
+        return None
+
+    lockfile = read_lockfile(lock_file_path)
+    for entry in lockfile.sources:
+        if entry.name == name:
+            return entry.resolved_sha
     return None
 
 
@@ -413,13 +588,20 @@ def run(args: argparse.Namespace) -> int:
         url = source["url"]
         revision = source["revision"]
 
-        # Fetch tags from the source URL once per source
-        available_tags = _list_tags(url)
+        # Fetch tags only for tag-pinned sources; branch- and SHA-pinned sources
+        # do not use the tag list so fetching it would be a wasted network call.
+        shape = _classify_revision_shape(revision)
+        if shape is RevisionShape.TAG:
+            available_tags = _list_tags(url)
+        else:
+            available_tags = []
 
-        # Build the prefix+constraint revision string for tag resolution
-        # The revision stored in .kanon may be just the constraint or a full prefix/constraint
-        # _resolve_constraint_from_tags handles both forms already
-        lock_ref = _resolve_lock_ref(name, lock_file_path)
+        # For branch-pinned sources, the locked value is the commit SHA (resolved_sha),
+        # not the ref name (resolved_ref). For tag-pinned sources, the ref name is used.
+        if shape is RevisionShape.BRANCH:
+            lock_ref = _resolve_lock_sha(name, lock_file_path)
+        else:
+            lock_ref = _resolve_lock_ref(name, lock_file_path)
 
         try:
             row = _build_row(
@@ -428,7 +610,7 @@ def run(args: argparse.Namespace) -> int:
                 available_tags=available_tags,
                 lock_ref=lock_ref,
             )
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 

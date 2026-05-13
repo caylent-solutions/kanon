@@ -484,3 +484,80 @@ class TestKanonOutdatedFormatConstant:
         from kanon_cli.constants import KANON_OUTDATED_FORMAT_DEFAULT
 
         assert len(KANON_OUTDATED_FORMAT_DEFAULT) > 0
+
+
+@pytest.mark.unit
+class TestBranchShaTruncationConstants:
+    """Tests for BRANCH_SHA_TRUNCATION_LENGTH, SHA1_HEX_LENGTH, SHA256_HEX_LENGTH.
+
+    Added alongside the branch-pinned outdated logic (spec Section 4.4).
+    """
+
+    def test_branch_sha_truncation_length_exists(self) -> None:
+        """BRANCH_SHA_TRUNCATION_LENGTH constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import BRANCH_SHA_TRUNCATION_LENGTH
+
+        assert BRANCH_SHA_TRUNCATION_LENGTH is not None
+
+    def test_branch_sha_truncation_length_value(self) -> None:
+        """BRANCH_SHA_TRUNCATION_LENGTH equals 12 (matching git short-SHA convention)."""
+        from kanon_cli.constants import BRANCH_SHA_TRUNCATION_LENGTH
+
+        assert BRANCH_SHA_TRUNCATION_LENGTH == 12
+
+    def test_branch_sha_truncation_length_is_positive_int(self) -> None:
+        """BRANCH_SHA_TRUNCATION_LENGTH is a positive integer."""
+        from kanon_cli.constants import BRANCH_SHA_TRUNCATION_LENGTH
+
+        assert isinstance(BRANCH_SHA_TRUNCATION_LENGTH, int)
+        assert BRANCH_SHA_TRUNCATION_LENGTH > 0
+
+    def test_sha1_hex_length_exists(self) -> None:
+        """SHA1_HEX_LENGTH constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import SHA1_HEX_LENGTH
+
+        assert SHA1_HEX_LENGTH is not None
+
+    def test_sha1_hex_length_value(self) -> None:
+        """SHA1_HEX_LENGTH equals 40 (SHA-1 produces a 40-character hex digest)."""
+        from kanon_cli.constants import SHA1_HEX_LENGTH
+
+        assert SHA1_HEX_LENGTH == 40
+
+    def test_sha1_hex_length_is_positive_int(self) -> None:
+        """SHA1_HEX_LENGTH is a positive integer."""
+        from kanon_cli.constants import SHA1_HEX_LENGTH
+
+        assert isinstance(SHA1_HEX_LENGTH, int)
+        assert SHA1_HEX_LENGTH > 0
+
+    def test_sha256_hex_length_exists(self) -> None:
+        """SHA256_HEX_LENGTH constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import SHA256_HEX_LENGTH
+
+        assert SHA256_HEX_LENGTH is not None
+
+    def test_sha256_hex_length_value(self) -> None:
+        """SHA256_HEX_LENGTH equals 64 (SHA-256 produces a 64-character hex digest)."""
+        from kanon_cli.constants import SHA256_HEX_LENGTH
+
+        assert SHA256_HEX_LENGTH == 64
+
+    def test_sha256_hex_length_is_positive_int(self) -> None:
+        """SHA256_HEX_LENGTH is a positive integer."""
+        from kanon_cli.constants import SHA256_HEX_LENGTH
+
+        assert isinstance(SHA256_HEX_LENGTH, int)
+        assert SHA256_HEX_LENGTH > 0
+
+    def test_sha256_longer_than_sha1(self) -> None:
+        """SHA256_HEX_LENGTH is longer than SHA1_HEX_LENGTH."""
+        from kanon_cli.constants import SHA1_HEX_LENGTH, SHA256_HEX_LENGTH
+
+        assert SHA256_HEX_LENGTH > SHA1_HEX_LENGTH
+
+    def test_truncation_length_less_than_sha1_length(self) -> None:
+        """BRANCH_SHA_TRUNCATION_LENGTH is shorter than SHA1_HEX_LENGTH (the shorter full SHA)."""
+        from kanon_cli.constants import BRANCH_SHA_TRUNCATION_LENGTH, SHA1_HEX_LENGTH
+
+        assert BRANCH_SHA_TRUNCATION_LENGTH < SHA1_HEX_LENGTH

@@ -12,13 +12,20 @@ revision attributes:
 - Prefixed: refs/tags/~=1.0.0 or refs/tags/prefix/~=1.0.0
 """
 
+import enum
 import subprocess
 import sys
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from kanon_cli.constants import PEP440_OPERATORS, TAG_ERROR_DISPLAY_CAP
+from kanon_cli.constants import (
+    BRANCH_SHA_TRUNCATION_LENGTH,
+    PEP440_OPERATORS,
+    SHA1_HEX_LENGTH,
+    SHA256_HEX_LENGTH,
+    TAG_ERROR_DISPLAY_CAP,
+)
 
 
 def is_version_constraint(rev_spec: str) -> bool:
@@ -329,6 +336,123 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         )
 
     return max(matching, key=lambda pair: pair[1])[0]
+
+
+class RevisionShape(enum.Enum):
+    """Classification of a REVISION string for 'kanon outdated' column dispatch.
+
+    Values:
+        TAG: A PEP 440 version constraint (e.g. ``~=1.0.0``, ``>=1.0.0,<2.0.0``,
+            ``*``, ``latest``) or a ``refs/tags/...`` reference. Tag-pinned
+            sources use PEP 440 resolution against the remote's tag list.
+        BRANCH: A plain branch name (e.g. ``main``, ``develop``, ``feature/foo``)
+            that is neither a PEP 440 constraint nor a 40/64-hex-char SHA.
+            Branch-pinned sources query the branch HEAD via
+            ``git ls-remote refs/heads/<branch>``.
+        SHA: A full hexadecimal commit SHA (40 or 64 characters). SHA-pinned
+            sources display the same truncated SHA in all columns and have
+            ``upgrade-type=none`` (the operator pinned exactly that commit).
+    """
+
+    TAG = "tag"
+    BRANCH = "branch"
+    SHA = "sha"
+
+
+def _classify_revision_shape(revision: str) -> RevisionShape:
+    """Classify a REVISION string into TAG, BRANCH, or SHA.
+
+    Classification rules (applied in order):
+    1. If the string is exactly 40 or 64 hex characters, it is SHA-pinned.
+    2. If ``is_version_constraint`` returns True or the string starts with
+       ``refs/tags/``, it is TAG-pinned.
+    3. Otherwise it is BRANCH-pinned.
+
+    Args:
+        revision: The REVISION string from a KANON_SOURCE_<name>_REVISION
+            environment variable (e.g. ``main``, ``>=1.0.0``, ``a3b4c5...``).
+
+    Returns:
+        A :class:`RevisionShape` member describing the revision kind.
+    """
+    # SHA check: exactly 40 or 64 hex characters
+    hex_chars = frozenset("0123456789abcdefABCDEF")
+    if len(revision) in (SHA1_HEX_LENGTH, SHA256_HEX_LENGTH) and all(c in hex_chars for c in revision):
+        return RevisionShape.SHA
+
+    # Tag check: PEP 440 constraint or explicit refs/tags/ prefix
+    if is_version_constraint(revision) or revision.startswith("refs/tags/"):
+        return RevisionShape.TAG
+
+    # Default: branch-pinned
+    return RevisionShape.BRANCH
+
+
+def _truncate_sha(sha: str) -> str:
+    """Return the first ``BRANCH_SHA_TRUNCATION_LENGTH`` characters of a SHA.
+
+    This matches the ``git`` default short-SHA convention. Used for the
+    ``current``, ``latest-matching-spec``, and ``latest-available`` columns
+    for branch-pinned and SHA-pinned sources in 'kanon outdated'.
+
+    Args:
+        sha: A full hexadecimal commit SHA (typically 40 or 64 characters,
+            but any non-empty string is accepted; the first
+            ``BRANCH_SHA_TRUNCATION_LENGTH`` characters are returned).
+
+    Returns:
+        The leading ``BRANCH_SHA_TRUNCATION_LENGTH`` characters of ``sha``.
+    """
+    return sha[:BRANCH_SHA_TRUNCATION_LENGTH]
+
+
+def _list_branch_head(url: str, branch: str) -> str:
+    """Return the full commit SHA at the HEAD of a remote branch.
+
+    Runs ``git ls-remote <url> refs/heads/<branch>`` and parses the SHA from
+    the single matching output line.
+
+    Issues a single ``git ls-remote`` call with no timeout or retry logic.
+    The caller is responsible for any retry or timeout policy if needed.
+
+    Args:
+        url: Git repository URL (any scheme accepted by git ls-remote).
+        branch: Branch name without the ``refs/heads/`` prefix.
+
+    Returns:
+        The full 40-character hexadecimal commit SHA at the branch HEAD.
+
+    Raises:
+        RuntimeError: If the ``git`` binary is not found on PATH, or if the
+            git command exits with a non-zero return code.
+        ValueError: If the branch ref is not found in the remote's output
+            (i.e., the branch does not exist on the remote).
+    """
+    ref = f"refs/heads/{branch}"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", url, ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("ERROR: git binary not found. Install git and ensure it is on PATH.") from exc
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ERROR: git ls-remote failed for {url!r}: {result.stderr.strip()}")
+
+    for line in result.stdout.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[1] == ref:
+            return parts[0]
+
+    raise ValueError(
+        f"ERROR: Branch '{branch}' ({ref}) not found on remote {url!r}.\n"
+        f"Check that the branch name is correct and that the remote is accessible."
+    )
 
 
 def _list_tags(url: str) -> list[str]:

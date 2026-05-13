@@ -5,11 +5,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.version import (
+    RevisionShape,
+    _classify_revision_shape,
     _format_zero_pep440_tags_error,
+    _list_branch_head,
+    _list_tags,
     _normalize_bare_semver_to_tag,
     _resolve_constraint_from_tags,
+    _truncate_sha,
     is_version_constraint,
-    _list_tags,
     resolve_version,
 )
 
@@ -453,3 +457,211 @@ class TestResolveConstraintFromTagsLoudError:
         assert "  - refs/tags/mylib/release-a" in msg
         assert "  - refs/tags/mylib/release-b" in msg
         assert "kanon catalog audit --check tag-format" in msg
+
+
+# ---------------------------------------------------------------------------
+# RevisionShape enum tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRevisionShapeEnum:
+    """Verify the RevisionShape enum has the expected members and values."""
+
+    def test_has_tag_member(self) -> None:
+        """RevisionShape.TAG member exists."""
+        assert RevisionShape.TAG is not None
+
+    def test_has_branch_member(self) -> None:
+        """RevisionShape.BRANCH member exists."""
+        assert RevisionShape.BRANCH is not None
+
+    def test_has_sha_member(self) -> None:
+        """RevisionShape.SHA member exists."""
+        assert RevisionShape.SHA is not None
+
+    def test_members_are_distinct(self) -> None:
+        """TAG, BRANCH, and SHA are distinct enum values."""
+        assert RevisionShape.TAG != RevisionShape.BRANCH
+        assert RevisionShape.TAG != RevisionShape.SHA
+        assert RevisionShape.BRANCH != RevisionShape.SHA
+
+    def test_tag_value_is_string(self) -> None:
+        """RevisionShape.TAG has a string value."""
+        assert isinstance(RevisionShape.TAG.value, str)
+
+
+# ---------------------------------------------------------------------------
+# _classify_revision_shape tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "revision, expected_shape",
+    [
+        # SHA-pinned: exactly 40 hex characters
+        ("a" * 40, RevisionShape.SHA),
+        ("0" * 40, RevisionShape.SHA),
+        ("abcdef1234567890abcdef1234567890abcdef12", RevisionShape.SHA),
+        # SHA-pinned: exactly 64 hex characters
+        ("b" * 64, RevisionShape.SHA),
+        ("f" * 64, RevisionShape.SHA),
+        # Tag-pinned: PEP 440 constraint operators
+        (">=1.0.0", RevisionShape.TAG),
+        ("~=1.0.0", RevisionShape.TAG),
+        ("<=2.0.0", RevisionShape.TAG),
+        ("==1.0.0", RevisionShape.TAG),
+        ("!=1.0.0", RevisionShape.TAG),
+        (">1.0.0", RevisionShape.TAG),
+        ("<2.0.0", RevisionShape.TAG),
+        (">=1.0.0,<2.0.0", RevisionShape.TAG),
+        ("*", RevisionShape.TAG),
+        ("latest", RevisionShape.TAG),
+        # Tag-pinned: refs/tags/ prefix
+        ("refs/tags/1.0.0", RevisionShape.TAG),
+        ("refs/tags/>=1.0.0", RevisionShape.TAG),
+        ("refs/tags/~=1.0.0", RevisionShape.TAG),
+        # Branch-pinned: plain branch names
+        ("main", RevisionShape.BRANCH),
+        ("develop", RevisionShape.BRANCH),
+        ("feature/foo", RevisionShape.BRANCH),
+        ("release/v1", RevisionShape.BRANCH),
+        ("my-branch", RevisionShape.BRANCH),
+    ],
+)
+class TestClassifyRevisionShapeVersion:
+    def test_classification(self, revision: str, expected_shape: RevisionShape) -> None:
+        result = _classify_revision_shape(revision)
+        assert result == expected_shape, (
+            f"_classify_revision_shape({revision!r}) = {result!r}, expected {expected_shape!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _truncate_sha tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "full_sha, expected",
+    [
+        ("abcdef1234567890abcdef1234567890abcdef12", "abcdef123456"),
+        ("0" * 40, "0" * 12),
+        ("f" * 64, "f" * 12),
+        ("1234567890abcdef" + "0" * 24, "1234567890ab"),
+    ],
+)
+class TestTruncateSha:
+    def test_truncation(self, full_sha: str, expected: str) -> None:
+        result = _truncate_sha(full_sha)
+        assert result == expected, f"_truncate_sha({full_sha!r}) = {result!r}, expected {expected!r}"
+        assert len(result) == 12
+
+
+# ---------------------------------------------------------------------------
+# _list_branch_head tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestListBranchHead:
+    """Unit tests for _list_branch_head in version.py."""
+
+    def test_returns_sha_for_matching_branch(self) -> None:
+        """Successful lookup returns the full SHA string."""
+        expected_sha = "abcdef1234567890abcdef1234567890abcdef12"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=f"{expected_sha}\trefs/heads/main\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == expected_sha
+
+    def test_multiple_refs_returns_correct_branch(self) -> None:
+        """When multiple refs are returned, only the matching branch SHA is returned."""
+        sha_main = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        sha_other = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=(f"{sha_other}\trefs/heads/other\n{sha_main}\trefs/heads/main\n"),
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == sha_main
+
+    def test_nonzero_returncode_raises_runtime_error(self) -> None:
+        """Non-zero git exit code raises RuntimeError."""
+        mock_result = MagicMock(returncode=128, stdout="", stderr="fatal: not a repository")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError, match="ERROR:"):
+                _list_branch_head("file:///repo", "main")
+
+    def test_nonzero_returncode_error_includes_url(self) -> None:
+        """RuntimeError message includes the repository URL."""
+        mock_result = MagicMock(returncode=1, stdout="", stderr="error")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError) as exc_info:
+                _list_branch_head("https://example.com/repo.git", "main")
+        assert "https://example.com/repo.git" in str(exc_info.value)
+
+    def test_branch_not_found_raises_value_error(self) -> None:
+        """Empty stdout raises ValueError when branch is not found."""
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError, match="not found on remote"):
+                _list_branch_head("file:///repo", "missing-branch")
+
+    def test_branch_not_found_error_includes_branch_name(self) -> None:
+        """ValueError message includes the branch name."""
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError) as exc_info:
+                _list_branch_head("file:///repo", "my-branch")
+        assert "my-branch" in str(exc_info.value)
+
+    def test_git_not_found_raises_runtime_error(self) -> None:
+        """FileNotFoundError when git is absent raises RuntimeError."""
+        with patch(
+            "kanon_cli.version.subprocess.run",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            with pytest.raises(RuntimeError, match="ERROR:"):
+                _list_branch_head("file:///repo", "main")
+
+    def test_git_not_found_error_mentions_git(self) -> None:
+        """RuntimeError message for missing git binary mentions 'git'."""
+        with patch(
+            "kanon_cli.version.subprocess.run",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                _list_branch_head("file:///repo", "main")
+        assert "git" in str(exc_info.value).lower()
+
+    def test_empty_lines_in_output_are_skipped(self) -> None:
+        """Empty lines in git ls-remote output are skipped without error."""
+        expected_sha = "cccccccccccccccccccccccccccccccccccccccc"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=f"\n{expected_sha}\trefs/heads/main\n\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == expected_sha
+
+    def test_lines_without_tab_are_skipped(self) -> None:
+        """Lines without a tab separator are skipped; ValueError if no match found."""
+        mock_result = MagicMock(
+            returncode=0,
+            stdout="malformed-line-no-tab\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError, match="not found on remote"):
+                _list_branch_head("file:///repo", "main")

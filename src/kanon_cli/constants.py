@@ -153,3 +153,15 @@ KANON_OUTDATED_FORMAT = "KANON_OUTDATED_FORMAT"
 # Default output format for 'kanon outdated' when neither --format nor
 # KANON_OUTDATED_FORMAT are set.
 KANON_OUTDATED_FORMAT_DEFAULT = "table"
+
+# -- Branch-pinned SHA truncation (spec Section 4.4) --
+# Number of leading hex characters used for the short-SHA display in the
+# 'kanon outdated' table for branch-pinned and SHA-pinned sources.
+# Matches git's default short-SHA convention.
+BRANCH_SHA_TRUNCATION_LENGTH = 12
+
+# Lengths (in hex chars) of the two SHA hash types accepted as REVISION values.
+# SHA-1 produces a 40-character hex string; SHA-256 produces a 64-character hex
+# string. Both are recognised as "SHA-pinned" by _classify_revision_shape.
+SHA1_HEX_LENGTH = 40
+SHA256_HEX_LENGTH = 64

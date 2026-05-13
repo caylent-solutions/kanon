@@ -71,15 +71,61 @@ name | current | latest-matching-spec | latest-available | upgrade-type
 2. **`.kanon` required** -- the file at `--kanon-file` (default `./.kanon`) must
    exist. When absent the command exits non-zero naming the missing path.
 3. **Lockfile optional** -- when `.kanon.lock` is present (at `--lock-file` or
-   the default derived path `<kanon-file>.lock`) its `resolved_ref` is used as
-   the `current` column. When absent `current` is live-resolved from the catalog.
-4. **Three columns computed per source:**
-   - `current` -- locked ref or live-resolved ref (version extracted from the tag).
-   - `latest-matching-spec` -- highest ref satisfying the source's `REVISION` constraint.
-   - `latest-available` -- highest ref under the prefix ignoring the constraint.
-5. **`upgrade-type`** -- one of `none`, `patch`, `minor`, `major`, or `prerelease`,
-   derived by comparing `current` vs `latest-matching-spec` via `packaging.version.Version`.
+   the default derived path `<kanon-file>.lock`) the locked value is used as
+   the `current` column. The exact field read depends on the revision shape: for
+   tag-pinned sources `resolved_ref` is used; for branch-pinned sources
+   `resolved_sha` is used (a full commit SHA stored at lock time). When absent,
+   `current` is live-resolved from the catalog or branch HEAD.
+4. **Three columns computed per source** (semantics depend on revision shape):
+   - For **tag-pinned** sources: `current` is the version extracted from the
+     locked/live-resolved tag; `latest-matching-spec` is the highest tag ref
+     satisfying the `REVISION` constraint; `latest-available` is the highest
+     tag ref under the prefix ignoring the constraint.
+   - For **branch-pinned** sources: all three columns display a 12-char
+     truncated SHA. `latest-matching-spec` and `latest-available` both show the
+     current branch HEAD SHA (they are equal -- there is no cross-branch notion).
+     See the Branch-pinned sources subsection below.
+   - For **SHA-pinned** sources: all three columns display the same 12-char
+     truncated SHA of the pinned commit. See the SHA-pinned sources subsection
+     below.
+5. **`upgrade-type`** -- the value depends on revision shape:
+   - Tag-pinned: one of `none`, `patch`, `minor`, `major`, or `prerelease`,
+     derived by comparing `current` vs `latest-matching-spec` via
+     `packaging.version.Version`.
+   - Branch-pinned: `drift` when the locked SHA differs from the branch HEAD
+     SHA; `none` otherwise.
+   - SHA-pinned: always `none` (a pinned SHA cannot drift).
 6. **Exit code** -- always 0. A future release will add `--fail-on-upgrade` to exit non-zero when upgrades are available.
+
+#### Branch-pinned sources
+
+A source's `REVISION` is **branch-pinned** when it is neither a PEP 440 version
+specifier nor a full-length hex SHA (40 or 64 chars) nor a `refs/tags/...` ref.
+Common branch shapes: `main`, `develop`, `release/v1`, `feature/foo`.
+
+For branch-pinned sources:
+
+- Both `latest-matching-spec` and `latest-available` display the current HEAD
+  SHA of the branch, truncated to **exactly 12 hex characters** (the leading 12
+  chars, matching git's short-SHA convention). The branch HEAD is resolved via
+  `git ls-remote <url> refs/heads/<branch>`.
+- `upgrade-type` is `drift` when the locked SHA in `.kanon.lock` differs from
+  the branch HEAD SHA at command time.
+- `upgrade-type` is `none` when the locked SHA equals the branch HEAD SHA, or
+  when no lockfile is present (in that case `current` is filled by live-resolving
+  the branch HEAD SHA, which equals the `latest-*` columns).
+- There is no "latest available across all branches" notion. Both `latest-matching-spec`
+  and `latest-available` always display the same 12-char HEAD SHA for the pinned
+  branch. Operators who want cross-branch upgrade visibility should switch to
+  tag-based pinning.
+
+#### SHA-pinned sources
+
+A source is **SHA-pinned** when its `REVISION` is a 40- or 64-character
+hexadecimal commit SHA. A pinned SHA cannot drift -- the operator explicitly
+pinned to that exact commit. All three of `current`, `latest-matching-spec`, and
+`latest-available` display the same 12-char truncation of the pinned SHA.
+`upgrade-type` is always `none`.
 
 **Flags:**
 

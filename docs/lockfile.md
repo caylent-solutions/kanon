@@ -524,6 +524,30 @@ current branch tip SHA.
 
 ---
 
+## HTTPS Enforcement on Replay
+
+`kanon install` enforces the HTTPS/SSH-only URL policy on the lockfile-consistent
+replay path as well as on fresh-resolve and rebuild paths.
+
+**Why replay enforcement matters.** A `.kanon.lock` file is committed to source control
+and shared across the team. If an attacker modifies the lockfile to record an HTTP
+`<remote>` URL, the next `kanon install` would silently clone over an unencrypted
+channel -- unless the policy is enforced during replay. By checking URLs even when
+replaying locked SHAs, kanon ensures that a tampered lockfile cannot downgrade the
+transport security.
+
+**Enforcement behavior.** During the `LOCKFILE_CONSISTENT` replay branch, `kanon
+install` reads each `[[sources]]` entry's `url` field and applies the same
+`_enforce_remote_url_policy` check as for freshly-resolved URLs. If any locked URL
+uses a disallowed scheme (HTTP, `file://`, etc.), `kanon install` exits with
+`InsecureRemoteUrlError` before any `git ls-remote` or `repo init` call is made.
+
+**Override.** Set `KANON_ALLOW_INSECURE_REMOTES=1` to bypass the check on all paths
+including replay. See `docs/configuration.md` for the security rationale and
+`docs/troubleshooting.md` for the recovery procedure.
+
+---
+
 ## Canonical-URL Conflict Detection
 
 ### Overview

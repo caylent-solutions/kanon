@@ -238,3 +238,69 @@ ignored). Re-run with `--refresh-lock-source <name>` to accept the new tip:
 ```bash
 kanon install --refresh-lock-source <name> --catalog-source <url>@<ref>
 ```
+
+---
+
+## Insecure Remote URL
+
+### Symptom
+
+`kanon install` exits non-zero with an error like:
+
+```
+Error: ERROR: Insecure <remote> URL detected in resolved manifest.
+  Source  : mysource
+  Remote  : mysource
+  URL     : http://example.com/repo.git
+  Remediation: Use an HTTPS or SSH <remote> URL, or set
+  KANON_ALLOW_INSECURE_REMOTES=1 if this is intentional
+  (the override disables the security check).
+```
+
+### Cause
+
+A source declared in your `.kanon` file uses an insecure URL scheme. kanon
+enforces the trust model from spec Section 3.6: only HTTPS and SSH URLs are
+accepted by default. Plain HTTP, `file://`, `git://`, and other unencrypted
+schemes are rejected.
+
+This check also runs on the lockfile-consistent replay path. If a `.kanon.lock`
+file was recorded with an HTTP URL and then replayed with `kanon install`, the
+error will surface even though no fresh resolution is attempted. This defends
+against a tampered lockfile.
+
+### Resolution
+
+**Option 1: Switch to an HTTPS or SSH URL (recommended).**
+
+Edit your `.kanon` file to use an HTTPS or SSH URL for the affected source:
+
+```ini
+# Before (rejected):
+KANON_SOURCE_mysource_URL=http://example.com/repo.git
+
+# After (accepted):
+KANON_SOURCE_mysource_URL=https://example.com/repo.git
+# or SSH:
+KANON_SOURCE_mysource_URL=git@example.com:org/repo.git
+```
+
+After updating, re-run `kanon install --refresh-lock` to rebuild the lockfile
+with the new URL.
+
+**Option 2: Override the check (use with caution).**
+
+If using an HTTP or other insecure URL is intentional (e.g. a private network
+without TLS), set `KANON_ALLOW_INSECURE_REMOTES=1`:
+
+```bash
+KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
+```
+
+The override must be exactly `1`. Values such as `true`, `yes`, or `on` do NOT
+enable the override.
+
+**Security note:** The override disables the URL scheme check entirely. All
+traffic between kanon and the remote will be unencrypted and unauthenticated at
+the transport layer. Only use this when the network path is trusted and you
+understand the risks.

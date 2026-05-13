@@ -385,3 +385,39 @@ class TestKanonLockFileConstant:
 
         assert KANON_LOCK_FILE == "KANON_LOCK_FILE"
         assert KANON_KANON_FILE_ENV == "KANON_KANON_FILE"
+
+
+@pytest.mark.unit
+class TestKanonAllowInsecureRemotesConstant:
+    """Tests for KANON_ALLOW_INSECURE_REMOTES constant (E3-F3-S1-T8 AC-FUNC-001)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_ALLOW_INSECURE_REMOTES constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+
+        assert KANON_ALLOW_INSECURE_REMOTES is not None
+
+    def test_constant_value(self) -> None:
+        """KANON_ALLOW_INSECURE_REMOTES equals the string 'KANON_ALLOW_INSECURE_REMOTES'."""
+        from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+
+        assert KANON_ALLOW_INSECURE_REMOTES == "KANON_ALLOW_INSECURE_REMOTES"
+
+    def test_constant_is_string(self) -> None:
+        """KANON_ALLOW_INSECURE_REMOTES is a str."""
+        from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+
+        assert isinstance(KANON_ALLOW_INSECURE_REMOTES, str)
+
+    def test_constant_non_empty(self) -> None:
+        """KANON_ALLOW_INSECURE_REMOTES is a non-empty string."""
+        from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+
+        assert len(KANON_ALLOW_INSECURE_REMOTES) > 0
+
+    def test_constant_importable_alongside_kanon_lock_file(self) -> None:
+        """KANON_ALLOW_INSECURE_REMOTES and KANON_LOCK_FILE are both importable from constants."""
+        from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES, KANON_LOCK_FILE
+
+        assert KANON_ALLOW_INSECURE_REMOTES == "KANON_ALLOW_INSECURE_REMOTES"
+        assert KANON_LOCK_FILE == "KANON_LOCK_FILE"

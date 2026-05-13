@@ -123,6 +123,13 @@ KANON_KANON_FILE_ENV = "KANON_KANON_FILE"
 # default derived from --kanon-file. CLI flag --lock-file takes precedence.
 KANON_LOCK_FILE = "KANON_LOCK_FILE"
 
+# -- HTTPS enforcement (spec Section 4.7 / Section 3.6 trust model) --
+# When set to "1", disables the insecure-remote-URL security check in
+# kanon install. All remote URL schemes (HTTP, file://, git://, etc.) are
+# accepted without error. Any value other than "1" is treated as unset.
+# See docs/configuration.md for the security rationale.
+KANON_ALLOW_INSECURE_REMOTES = "KANON_ALLOW_INSECURE_REMOTES"
+
 # Default destination .kanon file path when neither --kanon-file nor
 # KANON_KANON_FILE are set.
 KANON_KANON_FILE_DEFAULT = "./.kanon"

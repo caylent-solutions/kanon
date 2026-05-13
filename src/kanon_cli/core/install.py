@@ -62,6 +62,7 @@ from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
     INSTALL_LOCK_FILENAME,
+    KANON_ALLOW_INSECURE_REMOTES,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
@@ -85,6 +86,7 @@ from kanon_cli.core.include_walker import (
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.metadata import derive_source_name
+from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.version import resolve_version
 
@@ -1539,6 +1541,10 @@ def _run_install(
 
     source_dirs = create_source_dirs(source_names, base_dir)
 
+    # Compute the allow_insecure flag once: True only when the env var is exactly "1".
+    # This is used by _enforce_remote_url_policy for every encountered source URL.
+    allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
+
     # Step 5a: In the LOCKFILE_CONSISTENT state, apply strictness checks and
     # drift detection BEFORE entering the per-source loop.
     # Orphan check: sources in the lockfile but absent from .kanon.
@@ -1611,6 +1617,30 @@ def _run_install(
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
+
+        # HTTPS enforcement (spec Section 4.7 / Section 3.6 trust model).
+        # On the lockfile-consistent replay path, check the locked URL so a
+        # malicious lockfile that records an HTTP remote is rejected before any
+        # clone attempt.  On all other paths, check the .kanon source URL.
+        if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
+            _replay_candidate = next(
+                (e for e in existing_lockfile.sources if e.name == name),
+                None,
+            )
+            if _replay_candidate is None:
+                raise InstallError(
+                    f"BUG: source {name!r} not found in lockfile under LOCKFILE_CONSISTENT state"
+                    " -- kanon_hash consistency violation"
+                )
+            _url_to_check = _replay_candidate.url
+        else:
+            _url_to_check = source_data["url"]
+        _enforce_remote_url_policy(
+            url=_url_to_check,
+            allow_insecure=allow_insecure,
+            remote_name=name,
+            source_path=name,
+        )
 
         if install_state is InstallState.REFRESH_LOCK_SOURCE:
             # Determine whether this source is the one being refreshed.

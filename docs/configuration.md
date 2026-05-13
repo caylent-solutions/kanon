@@ -81,10 +81,42 @@ Additionally, the following environment variables control internal timeouts and 
 |----------|---------|-------------|
 | `KANON_GIT_LS_REMOTE_TIMEOUT` | `30` | Timeout in seconds for `git ls-remote` calls used by SHA reachability checks and ref resolution in the install engine. |
 | `KANON_LOCK_FILE` | _(derived)_ | Override the lock file path. When set to a non-empty value, kanon reads and writes the lock file at this path instead of the default derived from `--kanon-file` (i.e. `<kanon-file-path>.lock`). The `--lock-file` CLI flag takes precedence when both are set. An empty-string value is treated as unset. See `docs/lockfile.md` for the full precedence chain. |
+| `KANON_ALLOW_INSECURE_REMOTES` | _(unset)_ | When set to exactly `1`, disables the insecure-remote-URL security check in `kanon install`. All remote URL schemes (HTTP, `file://`, `git://`, etc.) are accepted without error. Any value other than `1` is treated as unset. See the security note below. |
+
+### KANON_ALLOW_INSECURE_REMOTES -- security rationale
+
+kanon enforces a trust model (spec Section 3.6) that requires all `<remote>` fetch URLs in
+resolved manifests to use HTTPS or SSH. Plain HTTP, `file://`, `git://`, and other unencrypted
+schemes are rejected by default because they expose dependency resolution to network-level
+interception and tampering.
+
+**Allowed unconditionally:**
+- `https://...` -- encrypted, authenticated.
+- `git@host:org/repo.git` -- SCP-style SSH shorthand; encrypted, key-authenticated.
+- `ssh://...` -- explicit SSH protocol; encrypted, key-authenticated.
+
+**Rejected by default (allowed only with `KANON_ALLOW_INSECURE_REMOTES=1`):**
+- `http://...` -- unencrypted; traffic can be intercepted and modified in transit.
+- `file://...` -- local filesystem path; no network-level guarantees, and a path that
+  is valid in one environment may resolve to something different in another.
+- Any other scheme (`git://`, `ftp://`, custom schemes, or empty URL).
+
+**Override:** Set `KANON_ALLOW_INSECURE_REMOTES=1` to disable the check. The override is
+intentionally narrow: only the exact string `1` enables it. Values such as `true`, `yes`,
+`on`, or `0` do NOT enable the override and leave the policy enforced.
 
 ```bash
-KANON_SOURCE_build_REVISION=refs/tags/~=2.0.0 kanon install .kanon
+# Default: HTTP remote rejected
+kanon install .kanon  # exits 1 if any <remote> uses http://
+
+# Override: HTTP remote accepted
+KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
 ```
+
+The check also runs on the lockfile-consistent replay path: even if a lockfile was
+recorded with an HTTP URL, `kanon install` rejects it. This defends against a malicious
+or tampered lockfile injecting an insecure remote for a subsequent install. See
+`docs/lockfile.md` for details on how replay enforcement works.
 
 ## Multi-Source Groups
 

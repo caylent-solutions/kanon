@@ -170,7 +170,7 @@ def _patched_install(kanonenv: pathlib.Path) -> None:
     only execute the production install() code path -- they do not
     set up or tear down their own patch contexts.
     """
-    install(kanonenv)
+    install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 def _patched_install_with_packages(
@@ -193,7 +193,7 @@ def _patched_install_with_packages(
             (pkg_dir / "README.md").write_text(f"# {pkg_name}\n", encoding="utf-8")
 
     with _use_repo_sync_side_effect(_fake_repo_sync):
-        install(kanonenv)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 def _build_subprocess_env() -> dict[str, str]:
@@ -438,7 +438,7 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("simulated sync failure")),
         ):
             with pytest.raises(RepoCommandError, match="simulated sync failure"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)
@@ -470,7 +470,7 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync"),
         ):
             with pytest.raises(RepoCommandError, match="simulated init failure"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)
@@ -537,7 +537,7 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync", side_effect=_selective_fail_sync),
         ):
             with pytest.raises(RepoCommandError):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)

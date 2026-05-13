@@ -555,6 +555,7 @@ class TestResolveCatalogSourceRaisesMissingCatalogSourceError:
             with pytest.raises(MissingCatalogSourceError) as exc_info:
                 install(
                     kanonenv_path=kanon_path,
+                    lock_file_path=kanon_path.parent / ".kanon.lock",
                     catalog_source=None,
                 )
 
@@ -862,5 +863,6 @@ class TestMalformedCatalogSource:
             with pytest.raises(ValueError, match="<url>@<ref>"):
                 install(
                     kanonenv_path=kanon_path,
+                    lock_file_path=kanon_path.parent / ".kanon.lock",
                     catalog_source="https://example.com/catalog.git",  # missing @ref
                 )

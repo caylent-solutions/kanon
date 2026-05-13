@@ -252,7 +252,7 @@ class TestUnicodePathsWork:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (unicode_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created in Unicode-named directory: {unicode_dir}"
@@ -598,7 +598,7 @@ class TestMidOperationDeletionRace:
         tmp_path.chmod(0o555)
         try:
             with pytest.raises(OSError, match="Cannot create source directory"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
         finally:
             tmp_path.chmod(0o755)
 

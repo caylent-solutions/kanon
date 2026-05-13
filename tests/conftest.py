@@ -112,6 +112,7 @@ def make_install_args():
     def _factory(kanonenv_path: pathlib.Path) -> MagicMock:
         args = MagicMock()
         args.kanonenv_path = kanonenv_path
+        args.lock_file = None
         return args
 
     return _factory

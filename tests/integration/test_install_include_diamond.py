@@ -67,7 +67,11 @@ def _run_install_with_fixture_sync(
         # MissingCatalogSourceError before reaching the include-walk step.
         # The conftest autouse fixture mocks _resolve_ref_to_sha so the
         # catalog URL is never actually queried.
-        install(kanonenv, catalog_source="https://example.com/catalog.git@main")
+        install(
+            kanonenv,
+            lock_file_path=kanonenv.parent / ".kanon.lock",
+            catalog_source="https://example.com/catalog.git@main",
+        )
 
 
 def _count_include_entries(entries: list) -> int:

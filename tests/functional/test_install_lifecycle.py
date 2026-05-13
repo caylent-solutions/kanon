@@ -36,7 +36,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         assert (tmp_path / ".packages" / "pkg-a").is_symlink()
@@ -74,7 +74,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(init_calls) == 2
         assert len(sync_calls) == 2
@@ -124,7 +124,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1

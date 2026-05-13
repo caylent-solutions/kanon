@@ -76,7 +76,7 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
-        install(kanonenv)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ class TestInstallCrashCleanReinstall:
             ),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Step 2: Partial artifacts exist after crash
         source_dir = tmp_path / ".kanon-data" / "sources" / "crash"
@@ -239,8 +239,8 @@ class TestInstallIdempotency:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         gitignore_content = (tmp_path / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (

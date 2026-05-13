@@ -208,7 +208,7 @@ def _run_install_with_fake_catalog(
         patch("kanon_cli.core.install.run_repo_envsubst"),
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
-        install(kanon_path, catalog_source=catalog_source, **kwargs)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=catalog_source, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +471,12 @@ class TestStrictLockEndToEnd:
         ):
             # No drift: remote tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{sha_alpha}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=catalog_source, strict_lock=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=catalog_source,
+                strict_lock=True,
+            )
 
         error_msg = str(exc_info.value)
         assert "ghost" in error_msg
@@ -526,7 +531,12 @@ class TestStrictLockEndToEnd:
             patch("kanon_cli.core.install.run_repo_sync"),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{sha_alpha}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=catalog_source, strict_lock=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=catalog_source,
+                strict_lock=False,
+            )
 
         captured = capsys.readouterr()
         assert "pruned orphaned lock entry: ghost" in captured.out

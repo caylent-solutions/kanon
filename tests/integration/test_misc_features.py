@@ -281,6 +281,6 @@ class TestKanonenvEdgeCases:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
         assert (tmp_path / ".kanon-data" / "sources" / "s").is_dir()
         assert (tmp_path / ".gitignore").is_file()

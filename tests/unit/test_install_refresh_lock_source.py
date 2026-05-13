@@ -405,6 +405,7 @@ class TestRefreshLockSourceMissingCatalog:
         with pytest.raises(MissingCatalogSourceError) as exc_info:
             install(
                 kanonenv_path=kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
                 catalog_source=None,
                 refresh_lock_source="alpha",
             )
@@ -623,6 +624,7 @@ class TestInstallRefreshLockSourceKwarg:
         ):
             install(
                 kanonenv_path=kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
                 catalog_source="https://catalog.example.com/repo.git@main",
                 refresh_lock_source="alpha",
             )
@@ -682,6 +684,7 @@ class TestInstallRefreshLockSourceKwarg:
         ):
             install(
                 kanonenv_path=kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
                 catalog_source="https://catalog.example.com/repo.git@main",
                 refresh_lock_source="alpha",
             )

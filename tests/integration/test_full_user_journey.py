@@ -362,7 +362,7 @@ class TestFullJourneyBootstrapInstallClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must exist after install"
         assert (project_dir / ".packages" / "synced-pkg").is_symlink(), (
@@ -457,7 +457,7 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
                 side_effect=lambda claude, pname, mpname: install_calls.append(f"{pname}@{mpname}") or True,
             ),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         assert len(register_calls) >= 1, f"Expected at least one marketplace register call, got: {register_calls!r}"
         assert len(install_calls) >= 1, f"Expected at least one plugin install call, got: {install_calls!r}"
@@ -561,7 +561,7 @@ class TestFullJourneyBootstrapInstallValidateClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
 
@@ -648,7 +648,7 @@ class TestFullJourneyWithVersionConstraints:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         assert len(resolved_calls) == 1, f"resolve_version must be called once per source, got: {resolved_calls!r}"
         called_rev_spec = resolved_calls[0][1]
@@ -715,7 +715,7 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(discovered)
+            install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must be created relative to project/"
         assert (project_dir / ".packages" / "auto-pkg").is_symlink(), ".packages/auto-pkg must be a symlink"
@@ -807,7 +807,7 @@ class TestFullJourneyMultiSourceWithMarketplace:
                 side_effect=lambda claude, pname, mpname: install_calls.append(pname) or True,
             ),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         assert "mp" in synced_sources, f"'mp' source must be synced, got: {synced_sources!r}"
         assert "pkgs" in synced_sources, f"'pkgs' source must be synced, got: {synced_sources!r}"
@@ -881,7 +881,7 @@ class TestFullJourneyEnvVarOverrides:
                 patch("kanon_cli.repo.repo_envsubst", side_effect=fake_repo_envsubst),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                install(kanonenv_path)
+                install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
         finally:
             if original_gitbase is None:
                 os.environ.pop("GITBASE", None)
@@ -938,7 +938,7 @@ class TestFullJourneyInstallTwiceThenClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         first_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
         assert first_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
@@ -950,7 +950,7 @@ class TestFullJourneyInstallTwiceThenClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv_path)
+            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         second_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
         assert second_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
@@ -1016,7 +1016,7 @@ class TestFullJourneyErrorRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_partial),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: invalid URL"):
-                install(kanonenv_path)
+                install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
 
         partial_exists = (project_dir / ".kanon-data" / "sources" / "good").is_dir() or (
             project_dir / ".kanon-data" / "sources" / "bad"

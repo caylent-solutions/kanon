@@ -100,7 +100,7 @@ def _install_patched(kanonenv: pathlib.Path) -> None:
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install.resolve_version", side_effect=lambda url, rev: rev),
     ):
-        install(kanonenv)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ class TestUnicodeBranchRevision:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_revision) == 1, "repo_init must be called exactly once"
         assert captured_revision[0] == unicode_revision, (
@@ -304,7 +304,7 @@ class TestUnicodeManifestPath:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_path) == 1, "repo_init must be called exactly once"
         assert captured_path[0] == manifest_path, (

@@ -9,10 +9,12 @@ import pathlib
 import sys
 import warnings
 
+from kanon_cli.constants import KANON_LOCK_FILE as _KANON_LOCK_FILE_ENV
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import InstallError, install
 from kanon_cli.repo import RepoCommandError
+from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
 # Legacy environment variables superseded by the embedded repo tool and --catalog-source.
 _LEGACY_REPO_URL_ENV = "REPO_URL"
@@ -141,6 +143,18 @@ def register(subparsers) -> None:
         ),
     )
 
+    parser.add_argument(
+        "--lock-file",
+        metavar="PATH",
+        default=None,
+        type=pathlib.Path,
+        help=(
+            "Path to the lock file. Defaults to <kanon-file>.lock (derived from "
+            "--kanon-file). The KANON_LOCK_FILE environment variable is consulted "
+            "when this flag is absent; the CLI flag takes precedence when both are set."
+        ),
+    )
+
     parser.set_defaults(func=_run)
 
 
@@ -187,9 +201,16 @@ def _run(args) -> int | None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    lock_file_path = derive_lock_file_path(
+        args.kanonenv_path,
+        args.lock_file,
+        os.environ.get(_KANON_LOCK_FILE_ENV),
+    )
+
     try:
         install(
             args.kanonenv_path,
+            lock_file_path=lock_file_path,
             catalog_source=args.catalog_source,
             refresh_lock=args.refresh_lock,
             refresh_lock_source=args.refresh_lock_source,

@@ -227,6 +227,7 @@ class TestInstallLifecycle:
         monkeypatch.setenv("KANON_CATALOG_SOURCE", self._CATALOG_SOURCE)
         args = argparse.Namespace(
             kanonenv_path=kanonenv,
+            lock_file=None,
             catalog_source=None,
             refresh_lock=False,
             refresh_lock_source=None,
@@ -256,7 +257,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             pytest.raises(ValueError),
         ):
-            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / ".claude-mp"
@@ -279,7 +280,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
 
         assert mp_dir.is_dir()
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
@@ -308,7 +309,7 @@ class TestInstallLifecycle:
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
             manager.attach_mock(mock_sync, "repo_sync")
-            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
 
         call_names = [c[0] for c in manager.mock_calls]
         assert call_names == ["repo_init", "repo_envsubst", "repo_sync"], (
@@ -332,7 +333,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
         args, kwargs = mock_init.call_args

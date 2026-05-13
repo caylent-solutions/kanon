@@ -171,7 +171,7 @@ def _run_install_mocked(
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install._resolve_ref_to_sha", side_effect=_resolve_ref_to_sha_patched),
     ):
-        install(kanon_path, catalog_source=catalog_source)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=catalog_source)
 
 
 # ===========================================================================
@@ -267,7 +267,7 @@ class TestLockfileReplay:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, catalog_source=_CATALOG_SOURCE)
+            install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=_CATALOG_SOURCE)
 
         # In the LOCKFILE_CONSISTENT state, resolve_version must NOT be called.
         assert resolve_calls == [], (

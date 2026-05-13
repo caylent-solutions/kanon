@@ -215,7 +215,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert captured.err == "", (
@@ -237,7 +237,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert len(captured.out) > 0, (

@@ -124,7 +124,7 @@ class TestMarketplaceInstallTrue:
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
             patch("kanon_cli.core.install.prepare_marketplace_dir"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_mp.called, (
             "install_marketplace_plugins must be called when KANON_MARKETPLACE_INSTALL=true "
@@ -152,7 +152,7 @@ class TestMarketplaceInstallTrue:
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
             patch("kanon_cli.core.install.prepare_marketplace_dir"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         call_args = mock_mp.call_args
         assert call_args is not None, "install_marketplace_plugins was not called"
@@ -193,7 +193,7 @@ class TestMarketplaceInstallMissingDir:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert "CLAUDE_MARKETPLACES_DIR" in str(exc_info.value), (
             f"ValueError message must name CLAUDE_MARKETPLACES_DIR; got: {exc_info.value!r}"
@@ -295,7 +295,7 @@ class TestMarketplaceInstallFalse:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not mock_mp.called, (
             f"install_marketplace_plugins must NOT be called when KANON_MARKETPLACE_INSTALL "
@@ -322,7 +322,7 @@ class TestMarketplaceInstallFalse:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not mock_mp.called, (
             "install_marketplace_plugins must NOT be called when env KANON_MARKETPLACE_INSTALL=false "
@@ -427,7 +427,7 @@ class TestMarketplaceCleanup:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert marketplace_dir.exists(), f"Marketplace dir must exist after install; not found at {marketplace_dir}"
 

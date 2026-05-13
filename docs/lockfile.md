@@ -597,11 +597,55 @@ source's revision to update.
 
 ---
 
+## Default --lock-file Derivation
+
+The lock file path is derived from the `--kanon-file` path when neither the
+`--lock-file` CLI flag nor the `KANON_LOCK_FILE` environment variable is set.
+
+### Derivation rule
+
+When `--kanon-file` is the default (`./.kanon`), `--lock-file` defaults to
+`./.kanon.lock`. When `--kanon-file` is set to a non-default path (via the
+CLI flag or the `KANON_KANON_FILE` env var), `--lock-file` defaults to
+`<kanon-file-path>.lock`. Operators running parallel installs in the same
+directory with different `--kanon-file` values therefore get distinct lockfile
+paths by default; an explicit `--lock-file` always wins.
+
+### Precedence chain
+
+The three-tier precedence (highest wins):
+
+1. `--lock-file PATH` CLI flag -- always wins when supplied.
+2. `KANON_LOCK_FILE` environment variable -- wins over derivation when the
+   CLI flag is absent. An empty-string value is treated as unset and falls
+   through to derivation.
+3. `<kanon-file-path>.lock` derivation -- the default when neither of the
+   above is set.
+
+### Examples
+
+```bash
+# Default: .kanon -> .kanon.lock
+kanon install
+
+# Non-default kanon file: alt.kanon -> alt.kanon.lock
+kanon install --kanon-file ./alt.kanon
+
+# Explicit lock file wins over derivation
+kanon install --kanon-file ./alt.kanon --lock-file ./my.lock
+
+# Env var wins over derivation (CLI flag absent)
+KANON_LOCK_FILE=/tmp/shared.lock kanon install --kanon-file ./alt.kanon
+
+# CLI flag wins over env var
+KANON_LOCK_FILE=/tmp/env.lock kanon install --lock-file ./explicit.lock
+```
+
 ## Environment Variables
 
 | Variable          | Description |
 |------------------|-------------|
-| `KANON_LOCK_FILE` | Override the lockfile path. When set, kanon reads and writes the lockfile at this path instead of the default derived from `--kanon-file`. The `--lock-file` CLI flag takes precedence when both are set. **Note:** this environment variable is planned for a future release and is not yet active in the current implementation. |
+| `KANON_LOCK_FILE` | Override the lockfile path. When set to a non-empty value, kanon reads and writes the lockfile at this path instead of the derived `<kanon-file-path>.lock`. The `--lock-file` CLI flag takes precedence when both are set. An empty-string value is treated as unset. |
 
 ---
 

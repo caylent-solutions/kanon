@@ -159,7 +159,12 @@ def _run_install_mocked(
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install._resolve_ref_to_sha", side_effect=_resolve_ref_patched),
     ):
-        install(kanon_path, catalog_source=catalog_source, refresh_lock=refresh_lock)
+        install(
+            kanon_path,
+            lock_file_path=kanon_path.parent / ".kanon.lock",
+            catalog_source=catalog_source,
+            refresh_lock=refresh_lock,
+        )
 
 
 # ===========================================================================

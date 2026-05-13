@@ -1877,7 +1877,7 @@ def _run_install(
 
 def install(
     kanonenv_path: pathlib.Path,
-    lock_file_path: pathlib.Path | None = None,
+    lock_file_path: pathlib.Path,
     catalog_source: str | None = None,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
@@ -1924,9 +1924,9 @@ def install(
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
-        lock_file_path: Path to the .kanon.lock file. When None, the default
-            is derived as ``<kanonenv_path.parent>/.kanon.lock``. T7 passes
-            the operator-supplied value here; T1 accepts whatever is passed.
+        lock_file_path: Pre-resolved path to the .kanon.lock file. The caller
+            is responsible for resolution via ``derive_lock_file_path``; this
+            function does not apply any fallback or derivation.
         catalog_source: Effective catalog source (cli flag value takes
             precedence over the KANON_CATALOG_SOURCE env var, which is read
             automatically inside _run_install). Pass None when no CLI flag
@@ -1975,9 +1975,6 @@ def install(
     kanonenv_path = kanonenv_path.resolve()
     base_dir = kanonenv_path.parent
 
-    # Derive the default lockfile path when the caller did not supply one.
-    resolved_lockfile_path = lock_file_path if lock_file_path is not None else base_dir / ".kanon.lock"
-
     kanon_data_dir = base_dir / ".kanon-data"
     try:
         kanon_data_dir.mkdir(parents=True, exist_ok=True)
@@ -1988,7 +1985,7 @@ def install(
         fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
         _run_install(
             kanonenv_path,
-            resolved_lockfile_path,
+            lock_file_path,
             catalog_source,
             refresh_lock=refresh_lock,
             refresh_lock_source=refresh_lock_source,

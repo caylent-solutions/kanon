@@ -151,7 +151,7 @@ class TestGitbaseEnvOverride:
             patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_env_vars) == 1, f"Expected repo_envsubst called once, called {len(captured_env_vars)} times"
         assert "GITBASE" in captured_env_vars[0], (
@@ -185,7 +185,7 @@ class TestGitbaseEnvOverride:
             patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_env_vars) == 1
         assert captured_env_vars[0]["GITBASE"] == "https://env-override.example.com/org/", (
@@ -225,7 +225,7 @@ class TestMarketplaceInstallTrueFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_called_once_with(marketplace_dir),
@@ -256,7 +256,7 @@ class TestMarketplaceInstallTrueFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_called_once(),
@@ -305,7 +305,7 @@ class TestMarketplaceInstallFalseFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_not_called(),
@@ -335,7 +335,7 @@ class TestMarketplaceInstallFalseFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_not_called(),
@@ -496,7 +496,7 @@ class TestChannelDiscipline:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert captured.err == "", f"stderr must be empty for a successful install; got stderr={captured.err!r}"

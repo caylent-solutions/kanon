@@ -75,11 +75,12 @@ If the referenced variable is not set in the environment, parsing fails with a d
 
 Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file.
 
-Additionally, the following environment variables control internal timeouts:
+Additionally, the following environment variables control internal timeouts and path overrides:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KANON_GIT_LS_REMOTE_TIMEOUT` | `30` | Timeout in seconds for `git ls-remote` calls used by SHA reachability checks and ref resolution in the install engine. |
+| `KANON_LOCK_FILE` | _(derived)_ | Override the lock file path. When set to a non-empty value, kanon reads and writes the lock file at this path instead of the default derived from `--kanon-file` (i.e. `<kanon-file-path>.lock`). The `--lock-file` CLI flag takes precedence when both are set. An empty-string value is treated as unset. See `docs/lockfile.md` for the full precedence chain. |
 
 ```bash
 KANON_SOURCE_build_REVISION=refs/tags/~=2.0.0 kanon install .kanon

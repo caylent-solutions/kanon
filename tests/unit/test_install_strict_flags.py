@@ -452,7 +452,13 @@ class TestOrphanPruneNoFlag:
         ):
             # ls-remote call from _detect_branch_drift: alpha's tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=False,
+                strict_drift=False,
+            )
 
         captured = capsys.readouterr()
         assert "pruned orphaned lock entry: ghost" in captured.out
@@ -483,7 +489,13 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=False,
+                strict_drift=False,
+            )
 
         lock_path = tmp_path / ".kanon.lock"
         updated_lockfile = read_lockfile(lock_path)
@@ -524,7 +536,13 @@ class TestOrphanStrictLock:
             patch("kanon_cli.core.install.run_repo_sync"),
             pytest.raises(OrphanedLockEntryError) as exc_info,
         ):
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=True, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=True,
+                strict_drift=False,
+            )
 
         assert "ghost" in str(exc_info.value)
 
@@ -585,7 +603,13 @@ class TestOrphanStrictLock:
             patch("kanon_cli.core.install.run_repo_sync"),
             pytest.raises(OrphanedLockEntryError) as exc_info,
         ):
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=True, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=True,
+                strict_drift=False,
+            )
 
         error_msg = str(exc_info.value)
         assert "ghost1" in error_msg
@@ -609,7 +633,12 @@ class TestOrphanStrictLock:
             patch("kanon_cli.core.install.run_repo_sync"),
             pytest.raises(OrphanedLockEntryError) as exc_info,
         ):
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=True,
+            )
 
         error_msg = str(exc_info.value)
         # Remediation must mention running without --strict-lock OR restoring source triples
@@ -646,7 +675,13 @@ class TestDriftReuseNoFlag:
         ):
             # Remote tip differs from locked SHA -- simulates drift
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=False,
+                strict_drift=False,
+            )
 
         captured = capsys.readouterr()
         expected_fragment = f"branch drift: alpha: main tip {_FAKE_SHA_REMOTE} differs from locked {_FAKE_SHA_ALPHA}; reusing locked SHA"
@@ -672,7 +707,13 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=False)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=False,
+                strict_drift=False,
+            )
 
         # repo init should use the locked SHA, NOT the remote tip
         assert mock_init.called
@@ -711,7 +752,13 @@ class TestDriftStrictFlag:
             pytest.raises(BranchDriftError) as exc_info,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=False, strict_drift=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=False,
+                strict_drift=True,
+            )
 
         error_msg = str(exc_info.value)
         assert "alpha" in error_msg
@@ -738,7 +785,12 @@ class TestDriftStrictFlag:
             pytest.raises(BranchDriftError) as exc_info,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_drift=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_drift=True,
+            )
 
         error_msg = str(exc_info.value)
         assert "--refresh-lock-source" in error_msg
@@ -808,7 +860,13 @@ class TestBothFlagsBothEvents:
         ):
             # Both alpha's tip differs from locked SHA (drift) AND ghost is orphaned
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_lock=True, strict_drift=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_lock=True,
+                strict_drift=True,
+            )
 
 
 # ===========================================================================
@@ -841,7 +899,12 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_drift=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_drift=True,
+            )
 
         captured = capsys.readouterr()
         assert "branch drift" not in captured.out
@@ -866,4 +929,9 @@ class TestDriftDetectorScope:
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             # Must NOT raise BranchDriftError -- lockfile is absent, nothing to compare
-            install(kanon_path, catalog_source=_CATALOG_SOURCE, strict_drift=True)
+            install(
+                kanon_path,
+                lock_file_path=kanon_path.parent / ".kanon.lock",
+                catalog_source=_CATALOG_SOURCE,
+                strict_drift=True,
+            )

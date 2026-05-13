@@ -178,3 +178,13 @@ BRANCH_SHA_TRUNCATION_LENGTH = 12
 # string. Both are recognised as "SHA-pinned" by _classify_revision_shape.
 SHA1_HEX_LENGTH = 40
 SHA256_HEX_LENGTH = 64
+
+# -- kanon why --
+# Environment variable name that controls the output format for 'kanon why'.
+# The CLI flag --format takes precedence when both are set.
+# Supported values: "text" (default). Extended to "text","json" in T4.
+KANON_WHY_FORMAT = "KANON_WHY_FORMAT"
+
+# Default output format for 'kanon why' when neither --format nor
+# KANON_WHY_FORMAT are set.
+KANON_WHY_FORMAT_DEFAULT = "text"

@@ -10,6 +10,7 @@ Provides the top-level ``kanon`` command with subcommands:
   - ``kanon bootstrap <package>`` -- Scaffold a new Kanon project from a catalog entry package
   - ``kanon bootstrap list`` -- List available catalog entry packages
   - ``kanon repo <repo-args>`` -- Passthrough to the embedded repo tool
+  - ``kanon why <project-url>`` -- Explain why a project is in the resolved tree
 """
 
 import argparse
@@ -27,6 +28,7 @@ from kanon_cli.commands.install import register as register_install
 from kanon_cli.commands.list import register as register_list
 from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
+from kanon_cli.commands.why import register as register_why
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
@@ -99,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_remove(subparsers)
     register_validate(subparsers)
     register_repo(subparsers)
+    register_why(subparsers)
 
     return parser
 

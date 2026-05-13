@@ -217,6 +217,62 @@ kanon outdated \
   --format json | jq '.[] | select(.["upgrade-type"] != "none")'
 ```
 
+### `kanon why`
+
+Explain why a transitive project is in the resolved dependency tree.
+
+Reads the `.kanon` file and resolves the full dependency tree. When a `.kanon.lock`
+file is present, the tree is built from lockfile entries (no network calls needed --
+every node already has its resolved SHA).
+
+> **Note:** Live-resolution (when no `.kanon.lock` is present) is not yet implemented.
+> Running `kanon why` without a lockfile exits with:
+> `ERROR: Live-resolution is not yet implemented. Run kanon install to generate a lockfile.`
+> Run `kanon install` first to generate `.kanon.lock`, then use `kanon why`.
+
+**Behaviour (spec Section 4.5):**
+
+1. Read the `.kanon` file at `--kanon-file` (default `./.kanon`; env `KANON_KANON_FILE`).
+2. Resolve the full dependency tree:
+   - If `.kanon.lock` exists (at `--lock-file` or its derived default), read the tree
+     from the lockfile -- every node carries its resolved SHA. No `git ls-remote` calls.
+   - Otherwise, live-resolution is not yet implemented. Exit with a clear error message
+     directing the user to run `kanon install`.
+3. Locate all `<project>` nodes whose canonicalized URL equals the canonicalized argument
+   (via `core/url.py::canonicalize_repo_url`). SCP shorthand, `https://`, `ssh://`,
+   trailing `.git`, and trailing `/` are all normalised before comparison.
+4. For every chain in the tree ending at the requested project, print one line:
+
+   ```
+   <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
+   ```
+
+5. If the argument is not found in the resolved tree, the command exits non-zero with:
+   `ERROR: <arg> not found in resolved tree`
+
+**Flags:**
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `<project-url>` (positional) | -- | required | Project URL to look up. |
+| `--catalog-source` | `KANON_CATALOG_SOURCE` | -- | Catalog source as `<git-url>@<ref>`. Required only when `.kanon.lock` is absent. |
+| `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
+| `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` file. |
+| `--format` | `KANON_WHY_FORMAT` | `text` | Output format: `text` (default). JSON output is added in a later task. |
+
+**Examples:**
+
+```sh
+# Find all chains reaching a project by https:// URL
+kanon why https://github.com/org/myproject \
+  --kanon-file ./.kanon \
+  --lock-file ./.kanon.lock
+
+# SCP shorthand and https:// forms are canonicalized -- both match the same project
+kanon why git@github.com:org/myproject.git \
+  --kanon-file ./.kanon
+```
+
 ### `kanon bootstrap`
 
 Scaffold a new Kanon project with catalog entry package files.

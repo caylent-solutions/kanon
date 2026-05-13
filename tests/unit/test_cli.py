@@ -225,6 +225,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
+            "why": ["https://github.com/org/repo"],
         }
         return minimal[subcommand]
 
@@ -796,3 +797,72 @@ class TestOutdatedSubcommandRegistration:
         finally:
             if env_backup is not None:
                 os.environ["KANON_OUTDATED_FORMAT"] = env_backup
+
+
+@pytest.mark.unit
+class TestWhySubcommand:
+    """Verify 'why' subcommand is registered in the CLI parser.
+
+    TDD-paired coverage for the production change in cli.py (register_why call).
+    """
+
+    def test_why_subcommand_is_registered(self) -> None:
+        """build_parser() must include 'why' in its subcommand choices."""
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                assert "why" in action.choices, "'why' subcommand must be registered in the top-level parser"
+                return
+        pytest.fail("No subparsers action found in parser")
+
+    def test_why_subcommand_parses_target(self) -> None:
+        """'why' subcommand accepts a positional target URL."""
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo"])
+        assert args.command == "why"
+        assert args.target == "https://github.com/org/repo"
+
+    def test_why_subcommand_parses_catalog_source(self) -> None:
+        """'why' subcommand accepts --catalog-source."""
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo", "--catalog-source", "file:///fake@HEAD"])
+        assert args.catalog_source == "file:///fake@HEAD"
+
+    def test_why_subcommand_parses_kanon_file(self) -> None:
+        """'why' subcommand accepts --kanon-file."""
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo", "--kanon-file", "/tmp/.kanon"])
+        assert args.kanon_file == "/tmp/.kanon"
+
+    def test_why_subcommand_parses_lock_file(self) -> None:
+        """'why' subcommand accepts --lock-file."""
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo", "--lock-file", "/tmp/.kanon.lock"])
+        assert args.lock_file == "/tmp/.kanon.lock"
+
+    def test_why_subcommand_parses_format_text(self) -> None:
+        """'why' subcommand accepts --format text."""
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo", "--format", "text"])
+        assert args.format == "text"
+
+    def test_why_subcommand_has_func_attribute(self) -> None:
+        """'why' subcommand sets args.func to the run() entry point."""
+        from kanon_cli.commands.why import run
+
+        parser = build_parser()
+        args = parser.parse_args(["why", "https://github.com/org/repo"])
+        assert args.func is run
+
+    def test_why_default_format_is_text(self) -> None:
+        """'why' subcommand default format is 'text'."""
+        import os
+
+        env_backup = os.environ.pop("KANON_WHY_FORMAT", None)
+        try:
+            parser = build_parser()
+            args = parser.parse_args(["why", "https://github.com/org/repo"])
+            assert args.format == "text"
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_WHY_FORMAT"] = env_backup

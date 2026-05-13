@@ -197,6 +197,31 @@ kanon outdated --format table --catalog-source file:///catalog@HEAD
 The constant `KANON_OUTDATED_FORMAT` (env var name) and `KANON_OUTDATED_FORMAT_DEFAULT` (default
 value `"table"`) are both defined in `src/kanon_cli/constants.py`.
 
+## KANON_WHY_FORMAT
+
+Controls the output format of the `kanon why` command.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_WHY_FORMAT` | `text` | Output format for `kanon why`. Currently only `text` is supported. JSON output will be added in a later release. |
+
+**Precedence:** `--format` CLI flag wins over `KANON_WHY_FORMAT` env var; the env var wins over
+the built-in default (`text`).
+
+```bash
+# Use the default text format
+kanon why https://github.com/org/myproject
+
+# Override via environment variable
+KANON_WHY_FORMAT=text kanon why https://github.com/org/myproject
+
+# Override via CLI flag (takes precedence over env var)
+kanon why https://github.com/org/myproject --format text
+```
+
+The constant `KANON_WHY_FORMAT` (env var name) and `KANON_WHY_FORMAT_DEFAULT` (default
+value `"text"`) are both defined in `src/kanon_cli/constants.py`.
+
 ## kanon repo Subcommand
 
 The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct

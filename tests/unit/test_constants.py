@@ -625,3 +625,26 @@ class TestKanonOutdatedJsonIndent:
             importlib.reload(constants)
         monkeypatch.delenv("KANON_OUTDATED_JSON_INDENT", raising=False)
         importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonWhyFormatConstants:
+    """Tests for KANON_WHY_FORMAT and KANON_WHY_FORMAT_DEFAULT constants (AC-FUNC-006)."""
+
+    def test_kanon_why_format_env_var_name(self) -> None:
+        """KANON_WHY_FORMAT is the correct env var name string."""
+        from kanon_cli.constants import KANON_WHY_FORMAT
+
+        assert KANON_WHY_FORMAT == "KANON_WHY_FORMAT"
+
+    def test_kanon_why_format_default_is_text(self) -> None:
+        """KANON_WHY_FORMAT_DEFAULT is 'text'."""
+        from kanon_cli.constants import KANON_WHY_FORMAT_DEFAULT
+
+        assert KANON_WHY_FORMAT_DEFAULT == "text"
+
+    def test_kanon_why_format_default_is_string(self) -> None:
+        """KANON_WHY_FORMAT_DEFAULT is a str instance."""
+        from kanon_cli.constants import KANON_WHY_FORMAT_DEFAULT
+
+        assert isinstance(KANON_WHY_FORMAT_DEFAULT, str)

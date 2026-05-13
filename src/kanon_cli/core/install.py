@@ -278,8 +278,8 @@ class OrphanedLockEntryError(InstallError):
     This happens when a source is removed from ``.kanon`` (via ``kanon remove``)
     but the lockfile is not yet pruned.
 
-    Default behaviour (without ``--strict-lock``): prune silently and emit an
-    info-line per orphan.  With ``--strict-lock``: this error is raised listing
+    Default behaviour (without ``--strict-lock``): prune the orphaned entry and
+    emit an info-line per orphan.  With ``--strict-lock``: this error is raised listing
     every orphaned entry so the operator can decide intentionally.
 
     Args:
@@ -1206,10 +1206,10 @@ def _run_install(
             in ``_resolve_catalog_source`` is disabled on this path.
         strict_lock: When ``True``, upgrade orphaned lock entries (sources in the
             lockfile but absent from ``.kanon``) to ``OrphanedLockEntryError``
-            instead of pruning silently.  Only applies in the consistent state.
+            instead of pruning with an info-line.  Only applies in the consistent state.
         strict_drift: When ``True``, upgrade branch drift (branch tip on remote
             differs from locked SHA) to ``BranchDriftError`` instead of reusing
-            the locked SHA silently.  Only applies in the consistent state.
+            the locked SHA with an info-line.  Only applies in the consistent state.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
@@ -1676,11 +1676,11 @@ def install(
             catalog source resolution is disabled on this path.  Default ``None``
             preserves prior behaviour.
         strict_lock: When ``True``, upgrade orphaned lock entries to
-            ``OrphanedLockEntryError`` instead of pruning silently.  Only
+            ``OrphanedLockEntryError`` instead of pruning with an info-line.  Only
             applies in the ``LOCKFILE_CONSISTENT`` state.  Default ``False``
             preserves prior behaviour (prune + info-line).
         strict_drift: When ``True``, upgrade branch drift to
-            ``BranchDriftError`` instead of reusing the locked SHA silently.
+            ``BranchDriftError`` instead of reusing the locked SHA with an info-line.
             Only applies in the ``LOCKFILE_CONSISTENT`` state.  Default
             ``False`` preserves prior behaviour (reuse + info-line).
 

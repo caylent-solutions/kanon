@@ -216,11 +216,11 @@ def _run_install_with_fake_catalog(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.functional
+@pytest.mark.integration
 class TestStrictDriftEndToEnd:
     """AC-TEST-002: full strict-drift cycle against a real fixture git repo.
 
-    This test is marked functional because it executes real git commands
+    This test is marked integration because it executes real git commands
     against a local fixture repository created in tmp_path.
     """
 
@@ -350,7 +350,7 @@ class TestStrictDriftEndToEnd:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.functional
+@pytest.mark.integration
 class TestStrictLockEndToEnd:
     """Strict-lock cycle: orphaned lock entries raise hard errors.
 

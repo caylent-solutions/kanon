@@ -119,7 +119,7 @@ def register(subparsers) -> None:
             "Upgrade orphaned lock entries to a hard error. An orphaned lock "
             "entry is a source present in .kanon.lock but absent from .kanon "
             "(e.g. after 'kanon remove'). Without this flag, orphaned entries "
-            "are pruned silently. With this flag, kanon exits with an error "
+            "are pruned and an info-line is emitted per orphan. With this flag, kanon exits with an error "
             "listing every orphaned source. "
             "Remediation: run without --strict-lock to prune, or restore the "
             "missing KANON_SOURCE_<name>_* triples in .kanon."

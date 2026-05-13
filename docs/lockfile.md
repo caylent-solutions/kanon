@@ -404,6 +404,88 @@ computed value over `.kanon`. The `[catalog]` block is preserved unchanged.
 
 Mutually exclusive with `--refresh-lock`.
 
+### `--strict-lock`
+
+`kanon install --strict-lock` upgrades orphaned lock entries from a notice to a hard
+error. An orphaned lock entry is a `[[sources]]` row in `.kanon.lock` whose `name` no
+longer appears in the current `.kanon` source declarations.
+
+**Default behaviour (without `--strict-lock`):** Orphaned entries are pruned from the
+rewritten lockfile, and an info-line is emitted to stdout for each pruned entry:
+
+```
+pruned orphaned lock entry: <name>
+```
+
+The lockfile is rewritten without the orphaned entries so subsequent installs do not
+re-detect them.
+
+**With `--strict-lock`:** kanon exits with `OrphanedLockEntryError` listing every
+orphaned source name.
+
+```
+ERROR: Lockfile contains orphaned sources not present in .kanon.
+  Orphaned sources: '<name>'
+  These sources appear in .kanon.lock but have no corresponding
+  KANON_SOURCE_<name>_* triples in the current .kanon file.
+  Remediation: run 'kanon install' without --strict-lock to prune
+  the orphaned entries automatically, or restore the missing
+  KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, and
+  KANON_SOURCE_<name>_PATH triples to .kanon.
+```
+
+**When orphaned entries occur.** This typically arises when the lockfile was manually
+edited to include an extra `[[sources]]` entry, or when a source entry was added to the
+lockfile by a tool that bypasses the normal install flow, while the `kanon_hash` still
+matches the current `.kanon`.
+
+**Only applies in `LOCKFILE_CONSISTENT` state.** Orphan detection runs only when the
+lockfile is consistent (hash matches). In other states (absent, mismatch, refresh), the
+lockfile is being rebuilt and orphan detection is not relevant.
+
+---
+
+### `--strict-drift`
+
+`kanon install --strict-drift` upgrades branch drift from a notice to a hard error.
+Branch drift occurs when a source's `revision_spec` is branch-shaped (e.g. `main`),
+but the branch's current tip on the remote is a different SHA than what the lockfile
+records.
+
+**Default behaviour (without `--strict-drift`):** The locked SHA is reused (the branch
+tip change is ignored), and an info-line is emitted to stdout for each drifted source:
+
+```
+branch drift: <source>: <branch> tip <new-sha> differs from locked <old-sha>; reusing locked SHA
+```
+
+**With `--strict-drift`:** kanon exits with `BranchDriftError` listing every drifted
+source.
+
+```
+ERROR: Branch drift detected -- locked SHAs differ from remote branch tips.
+  Source '<source>': branch '<branch>' locked at <old-sha>, remote tip is <new-sha>.
+  Remediation: run 'kanon install --refresh-lock-source <source>'
+  for each drifted source to accept the new branch tip.
+```
+
+**Tag-shaped sources are skipped.** The drift detector only runs on branch-shaped
+`revision_spec` values (plain branch names and `refs/heads/...`). PEP 440 specifiers
+(e.g. `==1.0.0`) and `refs/tags/...` specs are skipped because tags are immutable.
+
+**Only applies in `LOCKFILE_CONSISTENT` state.** The drift detector runs only when
+the lockfile is consistent. On the refresh paths and the absent-lockfile path, there
+is no locked SHA to compare against, so drift detection is not relevant.
+
+**Remediation path.** To accept the new branch tip:
+
+```
+kanon install --refresh-lock-source <source>
+```
+
+This re-resolves the named source's chain and rewrites its lockfile entry with the
+current branch tip SHA.
+
 ---
 
 ## Environment Variables

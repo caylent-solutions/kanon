@@ -650,7 +650,33 @@ class TestInstallRaisesLockfileUnreachableShaErrorEndToEnd:
         _lockfile_catalog_source = "https://git.example.com/catalog.git@main"
         kanon_path = _write_kanon(tmp_path)
         real_hash = compute_kanon_hash(kanon_path)
-        lock_path = _write_lockfile(tmp_path, real_hash, catalog_source=_lockfile_catalog_source)
+        # Write a lockfile with a tag-shaped revision_spec (==1.0.0) so that
+        # _detect_branch_drift skips this source (tags are immutable; drift is
+        # not a concept for them) and _check_sha_reachable fires as intended.
+        lock_path = tmp_path / ".kanon.lock"
+        lock_path.write_text(
+            f"""\
+schema_version = 1
+generated_at = "2026-01-15T00:00:00Z"
+generator = "kanon-cli/test"
+kanon_hash = "{real_hash}"
+
+[catalog]
+source = "{_lockfile_catalog_source}"
+url = "https://git.example.com/catalog.git"
+revision_spec = "main"
+resolved_ref = "refs/heads/main"
+resolved_sha = "{_VALID_SHA40}"
+
+[[sources]]
+name = "alpha"
+url = "https://git.example.com/alpha.git"
+revision_spec = "==1.0.0"
+resolved_ref = "refs/tags/v1.0.0"
+resolved_sha = "{_VALID_SHA40}"
+path = "manifest.xml"
+"""
+        )
 
         # The lockfile contains _VALID_SHA40 ("a" * 40) as resolved_sha for "alpha".
         # Return ls-remote output that does NOT contain this SHA.

@@ -88,7 +88,7 @@ which returns an `InstallClassification` NamedTuple containing `state`, `compute
 | State | Condition | Behaviour | Error class | Remediation |
 |-------|-----------|-----------|-------------|-------------|
 | `LOCKFILE_ABSENT` | `.kanon.lock` does not exist | Resolve every transitive version fresh. Install. Write `.kanon.lock` capturing resolved SHAs + catalog source + `kanon_hash`. Emit info-line: `"lockfile rebuilt from .kanon (N sources, M projects)"`. | -- | -- |
-| `LOCKFILE_CONSISTENT` | `.kanon.lock` exists AND `kanon_hash` in lockfile matches freshly-computed `kanon_hash(.kanon)` | Install EXACTLY the SHAs in the lockfile. Do NOT re-resolve. Ignore newer tags. Emit info-line: `"installing from lockfile (N sources, M projects)"`. Catalog source MAY be read from `lockfile.[catalog].source` when no CLI/env source is set. | -- | -- |
+| `LOCKFILE_CONSISTENT` | `.kanon.lock` exists AND `kanon_hash` in lockfile matches freshly-computed `kanon_hash(.kanon)` | Install EXACTLY the SHAs in the lockfile. Do NOT re-resolve. Ignore newer tags. Emit info-line: `"installing from lockfile (N sources, M projects)"`. Catalog source MAY be read from `lockfile.[catalog].source` when no CLI/env source is set. In this state, orphaned lock entries and branch drift are detected and handled per the strictness flags (see below). | -- | -- |
 | `LOCKFILE_HASH_MISMATCH` | `.kanon.lock` exists but `kanon_hash` does not match | Hard error. | `KanonHashMismatchError` | `kanon install --refresh-lock` or `--refresh-lock-source <name>` |
 | `LOCKFILE_UNREACHABLE` | Resolver discovers a lockfile SHA is no longer reachable on remote | Hard error. Names the source, SHA, and remote URL. | `LockfileUnreachableShaError` | `kanon install --refresh-lock-source <name>` |
 | `LOCKFILE_SOURCE_MISMATCH` | `lockfile.[catalog].source` differs from CLI/env catalog source (when CLI/env is set) | Hard error. Names both values. The lockfile is authoritative. | `CatalogSourceMismatchError` | `kanon install --refresh-lock` |
@@ -176,10 +176,63 @@ All install-state hard errors inherit from `InstallError(Exception)`:
 | `CatalogSourceMismatchError` | CLI/env catalog source differs from lockfile's `[catalog].source` (`LOCKFILE_SOURCE_MISMATCH` state). | `lockfile_source`, `cli_env_source` |
 | `MissingCatalogSourceError` | No catalog source is available from CLI, env, or lockfile fallback. | `command` |
 | `UnknownSourceError` | `--refresh-lock-source <name>` does not match any known source by direct lookup or `derive_source_name`. | `name`, `known_names` |
+| `OrphanedLockEntryError` | `--strict-lock` is set and the lockfile contains sources absent from `.kanon` (`LOCKFILE_CONSISTENT` state only). | `orphaned_names` |
+| `BranchDriftError` | `--strict-drift` is set and one or more branch-shaped sources have a remote tip that differs from the locked SHA (`LOCKFILE_CONSISTENT` state only). | `reports` (list of `BranchDriftReport`) |
 
 Each exception's `__str__` renders in the spec's standard three-line error
 shape: `ERROR: <one-line summary>`, optional context lines (wrapped at 80
 columns), and a remediation line.
+
+---
+
+## Orphan and Drift Handling (LOCKFILE_CONSISTENT State)
+
+When the install state is `LOCKFILE_CONSISTENT`, two additional checks run
+before the per-source resolution loop (step 5a):
+
+### Orphaned Lock Entries
+
+An orphaned lock entry is a `[[sources]]` row in `.kanon.lock` whose `name`
+does not match any `KANON_SOURCE_*` triple in the current `.kanon` file (e.g.
+after `kanon remove` without a subsequent `kanon install`).
+
+**Default behaviour (no `--strict-lock`).** Each orphaned source is logged
+with an info-line (`pruned orphaned lock entry: <name>`) and removed from the
+lockfile when it is rewritten at the end of the install step. The install
+continues normally using the remaining, non-orphaned lockfile entries.
+
+**With `--strict-lock`.** `OrphanedLockEntryError` is raised immediately,
+listing all orphaned source names. The install is aborted. Remediation: run
+`kanon install` without `--strict-lock` to prune the entries automatically, or
+restore the missing `KANON_SOURCE_<name>_*` triples in `.kanon`.
+
+### Branch Drift
+
+Branch drift occurs when a branch-shaped source (a source whose `revision_spec`
+is not a PEP 440 specifier and not a `refs/tags/` ref) has a remote branch tip
+that differs from the SHA recorded in the lockfile. This indicates the branch
+has advanced since the lockfile was written.
+
+**Branch-shape detection.** `_is_branch_shaped_spec(revision_spec)` returns
+`True` when the spec is not a non-empty PEP 440 `SpecifierSet` and does not
+start with `refs/tags/`. Plain names (`main`, `dev`) and `refs/heads/<name>`
+refs are both branch-shaped.
+
+**Default behaviour (no `--strict-drift`).** Each drifted source is logged
+with an info-line naming the branch, locked SHA, and current remote tip. The
+install continues using the locked SHA. The reachability check for drifted
+sources is skipped (the old SHA may no longer be a ref head on the remote even
+though it exists in commit history).
+
+**With `--strict-drift`.** `BranchDriftError` is raised immediately, carrying
+a list of `BranchDriftReport` NamedTuples (`source_name`, `branch`,
+`locked_sha`, `current_sha`). The install is aborted. Remediation: run
+`kanon install --refresh-lock-source <source>` to accept the new branch tip.
+
+### Interaction Between Both Flags
+
+The orphan check runs before the drift check. When both events are present and
+both strict flags are set, `OrphanedLockEntryError` is raised first.
 
 ---
 

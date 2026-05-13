@@ -264,9 +264,7 @@ class TestRunRemoveDryRun:
         assert "-KANON_SOURCE_foo_bar_URL" in out
         assert "-KANON_SOURCE_baz_qux_URL" in out
 
-    def test_dry_run_leaves_file_unchanged(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_dry_run_leaves_file_unchanged(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """--dry-run does not modify the file on disk (AC-FUNC-003).
 
         The dry-run path only prints the lines that would be removed with '-'

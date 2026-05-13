@@ -29,6 +29,8 @@ Exception hierarchy:
   CatalogSourceMismatchError  -- lockfile catalog source differs from CLI/env source.
   MissingCatalogSourceError   -- no catalog source from CLI, env, or lockfile fallback.
   UnknownSourceError          -- --refresh-lock-source name does not match any source.
+  OrphanedLockEntryError      -- --strict-lock: lockfile source absent from .kanon.
+  BranchDriftError            -- --strict-drift: branch tip differs from locked SHA.
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ import pathlib
 import shutil
 import subprocess
 from typing import NamedTuple, cast
+
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 import kanon_cli.repo as _repo
 from kanon_cli import __version__
@@ -264,6 +268,92 @@ class UnknownSourceError(InstallError):
             f"  Remediation: use one of the known source names above, or the catalog "
             f"entry name that normalises to one of them."
         )
+
+
+class OrphanedLockEntryError(InstallError):
+    """Raised by --strict-lock when the lockfile contains sources absent from .kanon.
+
+    An orphaned lock entry is a ``[[sources]]`` row in ``.kanon.lock`` whose
+    ``name`` no longer appears in the current ``.kanon`` source declarations.
+    This happens when a source is removed from ``.kanon`` (via ``kanon remove``)
+    but the lockfile is not yet pruned.
+
+    Default behaviour (without ``--strict-lock``): prune silently and emit an
+    info-line per orphan.  With ``--strict-lock``: this error is raised listing
+    every orphaned entry so the operator can decide intentionally.
+
+    Args:
+        orphaned_names: List of source names present in the lockfile but absent
+            from the current ``.kanon`` source declarations.
+    """
+
+    def __init__(self, orphaned_names: list[str]) -> None:
+        self.orphaned_names = orphaned_names
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        names_list = ", ".join(repr(n) for n in sorted(self.orphaned_names))
+        return (
+            "ERROR: Lockfile contains orphaned sources not present in .kanon.\n"
+            f"  Orphaned sources: {names_list}\n"
+            "  These sources appear in .kanon.lock but have no corresponding\n"
+            "  KANON_SOURCE_<name>_* triples in the current .kanon file.\n"
+            "  Remediation: run 'kanon install' without --strict-lock to prune\n"
+            "  the orphaned entries automatically, or restore the missing\n"
+            "  KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, and\n"
+            "  KANON_SOURCE_<name>_PATH triples to .kanon."
+        )
+
+
+class BranchDriftReport(NamedTuple):
+    """Payload for a single branch-drift observation.
+
+    Fields:
+        source_name: The top-level source name that has drifted.
+        branch: The branch name (short form, e.g. ``main``) that drifted.
+        locked_sha: The SHA recorded in the lockfile for this source.
+        current_sha: The current branch tip SHA on the remote.
+    """
+
+    source_name: str
+    branch: str
+    locked_sha: str
+    current_sha: str
+
+
+class BranchDriftError(InstallError):
+    """Raised by --strict-drift when a branch's remote tip differs from the locked SHA.
+
+    Branch drift occurs when the lockfile records a SHA for a source whose
+    ``revision_spec`` is a branch name (e.g. ``main``), but the branch's
+    current tip on the remote is a different SHA.
+
+    Default behaviour (without ``--strict-drift``): reuse the locked SHA and
+    emit an info-line per drifted source.  With ``--strict-drift``: this error
+    is raised listing every drifted source.
+
+    Args:
+        reports: List of ``BranchDriftReport`` instances, one per drifted source.
+    """
+
+    def __init__(self, reports: list[BranchDriftReport]) -> None:
+        self.reports = reports
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        lines = [
+            "ERROR: Branch drift detected -- locked SHAs differ from remote branch tips.",
+        ]
+        for r in self.reports:
+            lines.append(
+                f"  Source '{r.source_name}': branch '{r.branch}' "
+                f"locked at {r.locked_sha}, remote tip is {r.current_sha}."
+            )
+        lines.append(
+            "  Remediation: run 'kanon install --refresh-lock-source <source>'\n"
+            "  for each drifted source to accept the new branch tip."
+        )
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -903,6 +993,153 @@ def prepare_marketplace_dir(marketplace_dir: pathlib.Path) -> None:
             shutil.rmtree(item)
 
 
+def _is_branch_shaped_spec(revision_spec: str) -> bool:
+    """Return True if ``revision_spec`` is branch-shaped (not a tag or PEP 440 specifier).
+
+    A ``revision_spec`` is branch-shaped when it could refer to a moving branch
+    tip.  The following are NOT branch-shaped (tags are immutable, drift is not
+    a concept for them):
+
+    - PEP 440 specifiers (e.g. ``==1.0.0``, ``~=2.0.0``).
+    - ``refs/tags/...`` fully-qualified tag refs.
+
+    The following ARE branch-shaped:
+
+    - Plain branch names matching ``^[a-zA-Z0-9_./+-]+$`` (e.g. ``main``,
+      ``feature/foo``) that are NOT valid PEP 440 specifiers.
+    - ``refs/heads/...`` fully-qualified branch refs.
+
+    Args:
+        revision_spec: The ``revision_spec`` value from a ``SourceEntry``.
+
+    Returns:
+        ``True`` if the spec is branch-shaped; ``False`` otherwise.
+    """
+    # refs/tags/ -- clearly a tag ref, immutable
+    if revision_spec.startswith("refs/tags/"):
+        return False
+    # refs/heads/ -- a fully-qualified branch ref
+    if revision_spec.startswith("refs/heads/"):
+        return True
+    # other refs/ prefixes (e.g. refs/pull/) -- treat as branch-shaped
+    if revision_spec.startswith("refs/"):
+        return True
+    # PEP 440 specifier -- a pinned version, not a branch
+    try:
+        SpecifierSet(revision_spec)
+        # A successful parse means it is a version specifier -- not branch-shaped.
+        # However, a plain string like "main" also parses as a SpecifierSet with
+        # zero specifiers (empty set), so we must check that the set is non-empty.
+        parsed = SpecifierSet(revision_spec)
+        if len(list(parsed)) > 0:
+            return False
+    except (InvalidSpecifier, ValueError):
+        pass
+    # Branch-charset names: plain alphanumeric + _ . / + -
+    # These are the branch-shaped specs we care about for drift.
+    return True
+
+
+def _detect_orphaned_lock_entries(
+    lockfile: "Lockfile",
+    kanon_sources: list[str],
+) -> list[str]:
+    """Return source names that are in the lockfile but absent from kanon_sources.
+
+    An orphaned lock entry is a ``[[sources]]`` row in ``.kanon.lock`` whose
+    ``name`` no longer appears in the ``KANON_SOURCE_*`` triples of the current
+    ``.kanon`` file.  This happens after ``kanon remove`` when the operator has
+    removed a source but the lockfile has not yet been pruned.
+
+    Args:
+        lockfile: The currently-parsed ``Lockfile`` for the consistent state.
+        kanon_sources: The list of source names discovered from the current
+            ``.kanon`` file (``config["KANON_SOURCES"]``).
+
+    Returns:
+        A sorted list of source names that are present in ``lockfile.sources``
+        but absent from ``kanon_sources``.  An empty list means no orphans.
+    """
+    kanon_set = set(kanon_sources)
+    return sorted(entry.name for entry in lockfile.sources if entry.name not in kanon_set)
+
+
+def _detect_branch_drift(
+    lockfile: "Lockfile",
+) -> list[BranchDriftReport]:
+    """Return one report per branch-shaped source whose remote tip differs from the locked SHA.
+
+    Queries each branch-shaped source's remote via ``git ls-remote`` using the
+    source's ``url`` and the short branch name extracted from ``resolved_ref``.
+    Tag-shaped specs (PEP 440 or ``refs/tags/...``) are skipped because tags
+    are immutable and drift is not a concept for them.
+
+    This helper is only meaningful in the ``LOCKFILE_CONSISTENT`` state where
+    the locked SHAs are trustworthy.  Callers on the refresh or absent-lockfile
+    paths should not invoke this function.
+
+    Args:
+        lockfile: The currently-parsed ``Lockfile`` for the consistent state.
+
+    Returns:
+        A list of ``BranchDriftReport`` instances, one per branch-shaped source
+        whose current remote tip differs from the locked SHA.  An empty list
+        means no drift.
+    """
+    reports: list[BranchDriftReport] = []
+    for entry in lockfile.sources:
+        if not _is_branch_shaped_spec(entry.revision_spec):
+            continue
+        # Determine the ref to query.  Use resolved_ref when available;
+        # fall back to revision_spec for plain branch names.
+        ref_to_query = entry.resolved_ref if entry.resolved_ref else entry.revision_spec
+
+        result = subprocess.run(
+            ["git", "ls-remote", entry.url, ref_to_query],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_LS_REMOTE_TIMEOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            # ls-remote failure for drift check is non-fatal in strict-drift mode;
+            # the caller handles BranchDriftError based on the reports list.
+            # A reachability failure will surface separately via _check_sha_reachable.
+            continue
+
+        current_sha: str | None = None
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                matched_sha = parts[0]
+                matched_ref = parts[1]
+                if matched_ref == ref_to_query or matched_ref.endswith(f"/{ref_to_query}"):
+                    current_sha = matched_sha
+                    break
+
+        if current_sha is None:
+            # Ref not found on remote -- cannot determine drift; skip.
+            continue
+
+        if current_sha != entry.resolved_sha:
+            # Extract a human-readable branch name from resolved_ref.
+            branch_name = entry.resolved_ref
+            if branch_name.startswith("refs/heads/"):
+                branch_name = branch_name[len("refs/heads/") :]
+            elif branch_name.startswith("refs/"):
+                # Other ref types: keep last segment
+                branch_name = branch_name.split("/")[-1]
+            reports.append(
+                BranchDriftReport(
+                    source_name=entry.name,
+                    branch=branch_name,
+                    locked_sha=entry.resolved_sha,
+                    current_sha=current_sha,
+                )
+            )
+    return reports
+
+
 def _print_package_summary(
     package_owners: dict[str, str],
     source_names: list[str],
@@ -939,6 +1176,8 @@ def _run_install(
     catalog_source: str | None,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
+    strict_lock: bool = False,
+    strict_drift: bool = False,
 ) -> None:
     """Execute the install lifecycle without acquiring the concurrency lock.
 
@@ -965,6 +1204,12 @@ def _run_install(
         refresh_lock_source: When set, re-resolve exactly the named source chain
             while preserving all other lockfile entries.  The lockfile fallback
             in ``_resolve_catalog_source`` is disabled on this path.
+        strict_lock: When ``True``, upgrade orphaned lock entries (sources in the
+            lockfile but absent from ``.kanon``) to ``OrphanedLockEntryError``
+            instead of pruning silently.  Only applies in the consistent state.
+        strict_drift: When ``True``, upgrade branch drift (branch tip on remote
+            differs from locked SHA) to ``BranchDriftError`` instead of reusing
+            the locked SHA silently.  Only applies in the consistent state.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
@@ -977,6 +1222,10 @@ def _run_install(
             the lockfile's recorded source in the consistent state.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name (by literal or derive_source_name match).
+        OrphanedLockEntryError: If ``strict_lock=True`` and the lockfile contains
+            sources absent from the current ``.kanon`` source declarations.
+        BranchDriftError: If ``strict_drift=True`` and a branch-shaped source's
+            remote tip differs from the locked SHA.
         ValueError: If the catalog source is not in ``url@ref`` form, if
             git ls-remote fails or a ref is not found, if marketplace install
             is requested but CLAUDE_MARKETPLACES_DIR is not configured, or on
@@ -1061,6 +1310,40 @@ def _run_install(
 
     source_dirs = create_source_dirs(source_names, base_dir)
 
+    # Step 5a: In the LOCKFILE_CONSISTENT state, apply strictness checks and
+    # drift detection BEFORE entering the per-source loop.
+    # Orphan check: sources in the lockfile but absent from .kanon.
+    # Drift check: branch-shaped sources whose remote tip differs from locked SHA.
+    # Both checks run only in the consistent state; refresh and absent paths skip them.
+    # _consistent_has_orphans: set True when orphans were detected and pruned so
+    # step 7 knows to rewrite the lockfile without the orphaned entries.
+    # _drifted_source_names: set of source names with detected branch drift in
+    # the consistent state.  Used to skip SHA reachability checks for those
+    # sources (the locked SHA is not a current ref head after the branch moved,
+    # but we are intentionally reusing it in the default drift-reuse path).
+    _consistent_has_orphans: bool = False
+    _drifted_source_names: set[str] = set()
+    if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
+        orphaned = _detect_orphaned_lock_entries(existing_lockfile, source_names)
+        if orphaned:
+            if strict_lock:
+                raise OrphanedLockEntryError(orphaned_names=orphaned)
+            _consistent_has_orphans = True
+            for orphan_name in orphaned:
+                print(f"pruned orphaned lock entry: {orphan_name}")
+
+        drift_reports = _detect_branch_drift(existing_lockfile)
+        if drift_reports:
+            if strict_drift:
+                raise BranchDriftError(reports=drift_reports)
+            for report in drift_reports:
+                _drifted_source_names.add(report.source_name)
+                print(
+                    f"branch drift: {report.source_name}: {report.branch} tip "
+                    f"{report.current_sha} differs from locked {report.locked_sha}; "
+                    f"reusing locked SHA"
+                )
+
     # Step 5: Resolve SHAs and sync sources.
     # In the LOCKFILE_CONSISTENT state, replay the pinned SHAs from the lockfile
     # instead of calling resolve_version() (which would query the remote).
@@ -1134,11 +1417,16 @@ def _run_install(
                 # and check whether the pinned SHA appears in the first column.
                 # git ls-remote with a bare SHA pattern always returns empty output
                 # (only ref names are matched), so we list all refs and grep the SHA.
-                _check_sha_reachable(
-                    url=pinned.url,
-                    sha=pinned.resolved_sha,
-                    source_name=name,
-                )
+                # Skip reachability check for drifted branch-shaped sources: after
+                # the branch tip has moved, the locked SHA is no longer a ref head
+                # and would falsely fail the reachability check.  The drift info-line
+                # was already emitted (or BranchDriftError was raised) above.
+                if name not in _drifted_source_names:
+                    _check_sha_reachable(
+                        url=pinned.url,
+                        sha=pinned.resolved_sha,
+                        source_name=name,
+                    )
                 resolved_revision = pinned.resolved_sha
                 resolved_entries.append(pinned)
             else:
@@ -1194,12 +1482,8 @@ def _run_install(
         # Each SourceEntry carries a projects list populated during resolution; we
         # count projects belonging to the refreshed source (M) and all other sources (K).
         refreshed_name = target_source_entry.name
-        refreshed_count = sum(
-            len(e.projects) for e in resolved_entries if e.name == refreshed_name
-        )
-        preserved_count = sum(
-            len(e.projects) for e in resolved_entries if e.name != refreshed_name
-        )
+        refreshed_count = sum(len(e.projects) for e in resolved_entries if e.name == refreshed_name)
+        preserved_count = sum(len(e.projects) for e in resolved_entries if e.name != refreshed_name)
         _emit_install_state(
             install_state,
             sources=len(source_names),
@@ -1222,7 +1506,8 @@ def _run_install(
     # - LOCKFILE_ABSENT: write fresh lockfile.
     # - REFRESH_LOCK: full rebuild; overwrite lockfile.
     # - REFRESH_LOCK_SOURCE: partial rebuild; merge one source into old lockfile.
-    # - LOCKFILE_CONSISTENT: lockfile is authoritative; do NOT rewrite.
+    # - LOCKFILE_CONSISTENT with orphans pruned: rewrite without orphaned entries.
+    # - LOCKFILE_CONSISTENT (no orphans): lockfile is authoritative; do NOT rewrite.
     if install_state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         # In the LOCKFILE_ABSENT state, computed_hash is always None because
         # _classify_install_state does not call kanon_hash when there is no
@@ -1303,6 +1588,24 @@ def _run_install(
             )
             write_lockfile(lf, lockfile_path)
 
+    elif install_state is InstallState.LOCKFILE_CONSISTENT and _consistent_has_orphans:
+        # Orphans were pruned from the consistent-state run.  Rewrite the lockfile
+        # without the orphaned entries so subsequent installs do not re-detect them.
+        # The kanon_hash, catalog block, and all non-orphan source entries are
+        # preserved verbatim from the existing lockfile (it is still consistent).
+        pruned_lf_nn = cast(Lockfile, existing_lockfile)
+        active_names = set(source_names)
+        pruned_sources = [e for e in pruned_lf_nn.sources if e.name in active_names]
+        pruned_lockfile = Lockfile(
+            schema_version=pruned_lf_nn.schema_version,
+            generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            generator=pruned_lf_nn.generator,
+            kanon_hash=pruned_lf_nn.kanon_hash,
+            catalog=pruned_lf_nn.catalog,
+            sources=pruned_sources,
+        )
+        write_lockfile(pruned_lockfile, lockfile_path)
+
     print("\nkanon install: done.")
 
 
@@ -1312,6 +1615,8 @@ def install(
     catalog_source: str | None = None,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
+    strict_lock: bool = False,
+    strict_drift: bool = False,
 ) -> None:
     """Execute the full Kanon install lifecycle.
 
@@ -1335,6 +1640,9 @@ def install(
          On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths, the lockfile
          fallback is disabled.
       5. Parse .kanon and validate sources.
+      5a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
+         Prune orphans (or raise OrphanedLockEntryError with --strict-lock).
+         Log drift info-lines (or raise BranchDriftError with --strict-drift).
       6. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
       7. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
          On the REFRESH_LOCK_SOURCE path, only the named source is re-resolved;
@@ -1344,7 +1652,9 @@ def install(
       10. Emit state info-line via _emit_install_state.
       11. If KANON_MARKETPLACE_INSTALL=true: run install script.
       12. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK;
-          partial merge for REFRESH_LOCK_SOURCE; unchanged for LOCKFILE_CONSISTENT.
+          partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
+          LOCKFILE_CONSISTENT with orphans; unchanged for LOCKFILE_CONSISTENT
+          without orphans.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
@@ -1365,6 +1675,14 @@ def install(
             (enforced at the CLI level by argparse).  The lockfile fallback for
             catalog source resolution is disabled on this path.  Default ``None``
             preserves prior behaviour.
+        strict_lock: When ``True``, upgrade orphaned lock entries to
+            ``OrphanedLockEntryError`` instead of pruning silently.  Only
+            applies in the ``LOCKFILE_CONSISTENT`` state.  Default ``False``
+            preserves prior behaviour (prune + info-line).
+        strict_drift: When ``True``, upgrade branch drift to
+            ``BranchDriftError`` instead of reusing the locked SHA silently.
+            Only applies in the ``LOCKFILE_CONSISTENT`` state.  Default
+            ``False`` preserves prior behaviour (reuse + info-line).
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
@@ -1378,6 +1696,10 @@ def install(
             the lockfile's recorded source in the consistent state.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name by direct lookup or via ``derive_source_name``.
+        OrphanedLockEntryError: If ``strict_lock=True`` and the lockfile has
+            sources absent from the current ``.kanon`` declarations.
+        BranchDriftError: If ``strict_drift=True`` and a branch-shaped source's
+            remote tip differs from the locked SHA.
         ValueError: If marketplace install is requested but
             CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
         OSError: If the managed data directory or a source directory cannot be
@@ -1404,4 +1726,6 @@ def install(
             catalog_source,
             refresh_lock=refresh_lock,
             refresh_lock_source=refresh_lock_source,
+            strict_lock=strict_lock,
+            strict_drift=strict_drift,
         )

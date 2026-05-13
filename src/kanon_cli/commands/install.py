@@ -111,6 +111,36 @@ def register(subparsers) -> None:
         ),
     )
 
+    parser.add_argument(
+        "--strict-lock",
+        action="store_true",
+        default=False,
+        help=(
+            "Upgrade orphaned lock entries to a hard error. An orphaned lock "
+            "entry is a source present in .kanon.lock but absent from .kanon "
+            "(e.g. after 'kanon remove'). Without this flag, orphaned entries "
+            "are pruned silently. With this flag, kanon exits with an error "
+            "listing every orphaned source. "
+            "Remediation: run without --strict-lock to prune, or restore the "
+            "missing KANON_SOURCE_<name>_* triples in .kanon."
+        ),
+    )
+    parser.add_argument(
+        "--strict-drift",
+        action="store_true",
+        default=False,
+        help=(
+            "Upgrade branch drift to a hard error. Branch drift occurs when "
+            "the lockfile records a SHA for a branch-shaped source but the "
+            "branch's current tip on the remote is a different SHA. Without "
+            "this flag, the locked SHA is reused and an info-line is emitted. "
+            "With this flag, kanon exits with an error listing every drifted "
+            "source. "
+            "Remediation: run 'kanon install --refresh-lock-source <source>' "
+            "to accept the new branch tip."
+        ),
+    )
+
     parser.set_defaults(func=_run)
 
 
@@ -163,6 +193,8 @@ def _run(args) -> int | None:
             catalog_source=args.catalog_source,
             refresh_lock=args.refresh_lock,
             refresh_lock_source=args.refresh_lock_source,
+            strict_lock=args.strict_lock,
+            strict_drift=args.strict_drift,
         )
     except (InstallError, OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

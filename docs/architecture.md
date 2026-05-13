@@ -93,6 +93,7 @@ which returns an `InstallClassification` NamedTuple containing `state`, `compute
 | `LOCKFILE_UNREACHABLE` | Resolver discovers a lockfile SHA is no longer reachable on remote | Hard error. Names the source, SHA, and remote URL. | `LockfileUnreachableShaError` | `kanon install --refresh-lock-source <name>` |
 | `LOCKFILE_SOURCE_MISMATCH` | `lockfile.[catalog].source` differs from CLI/env catalog source (when CLI/env is set) | Hard error. Names both values. The lockfile is authoritative. | `CatalogSourceMismatchError` | `kanon install --refresh-lock` |
 | `REFRESH_LOCK` | Operator passed `--refresh-lock` | Short-circuit: ignore lockfile state entirely. Resolve every transitive version fresh. Overwrite `.kanon.lock`. Emit info-line: `"lockfile rebuilt from .kanon (N sources, M projects)"`. Lockfile catalog-source fallback is DISABLED on this path. | -- | Requires CLI or env-var catalog source. |
+| `REFRESH_LOCK_SOURCE` | Operator passed `--refresh-lock-source <name>` | Short-circuit: re-resolve exactly the named source's chain while preserving every other lockfile entry verbatim. Emit info-line: `"lockfile partially rebuilt: source <name> (M projects refreshed; K projects preserved)"`. Lockfile catalog-source fallback is DISABLED on this path. `<name>` is resolved by literal KANON_SOURCE key first, then via `derive_source_name`. Raises `UnknownSourceError` if neither matches. | `UnknownSourceError` | Requires CLI or env-var catalog source; use a known source name or catalog entry name. |
 
 ### State Classification Logic
 
@@ -122,7 +123,14 @@ The `REFRESH_LOCK` state is triggered by the `--refresh-lock` CLI flag
 returning `REFRESH_LOCK` regardless of lockfile presence or hash state. The
 `computed_hash` and `lockfile` fields are `None` in this state (the lockfile is
 ignored entirely). The `--refresh-lock` flag is mutually exclusive with
-`--refresh-lock-source` (added in a future task) at the argparse level.
+`--refresh-lock-source` at the argparse level.
+
+The `REFRESH_LOCK_SOURCE` state is triggered by the `--refresh-lock-source <name>`
+CLI flag (`refresh_lock_source=<name>` kwarg). The existing lockfile is read for
+the partial merge: all other sources' entries are preserved verbatim. The name is
+resolved in two steps -- literal KANON_SOURCE key match first, then via
+`derive_source_name` normalisation. Raises `UnknownSourceError` if neither step
+matches. The `--refresh-lock-source` flag is mutually exclusive with `--refresh-lock`.
 
 ---
 
@@ -167,6 +175,7 @@ All install-state hard errors inherit from `InstallError(Exception)`:
 | `LockfileUnreachableShaError` | A lockfile SHA is no longer reachable on the remote (`LOCKFILE_UNREACHABLE` state). | `source_name`, `sha`, `remote_url` |
 | `CatalogSourceMismatchError` | CLI/env catalog source differs from lockfile's `[catalog].source` (`LOCKFILE_SOURCE_MISMATCH` state). | `lockfile_source`, `cli_env_source` |
 | `MissingCatalogSourceError` | No catalog source is available from CLI, env, or lockfile fallback. | `command` |
+| `UnknownSourceError` | `--refresh-lock-source <name>` does not match any known source by direct lookup or `derive_source_name`. | `name`, `known_names` |
 
 Each exception's `__str__` renders in the spec's standard three-line error
 shape: `ERROR: <one-line summary>`, optional context lines (wrapped at 80

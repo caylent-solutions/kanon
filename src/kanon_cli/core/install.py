@@ -19,6 +19,7 @@ Every ``kanon install`` invocation inspects the five-row state matrix:
   LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs; hard error.
   LOCKFILE_UNREACHABLE   -- lockfile SHA no longer reachable on remote; hard error.
   LOCKFILE_SOURCE_MISMATCH -- lockfile catalog source differs from CLI/env; hard error.
+  REFRESH_LOCK_SOURCE    -- operator requested partial lockfile rebuild via --refresh-lock-source.
 
 Exception hierarchy:
 
@@ -27,6 +28,7 @@ Exception hierarchy:
   LockfileUnreachableShaError -- a lockfile SHA is no longer reachable on remote.
   CatalogSourceMismatchError  -- lockfile catalog source differs from CLI/env source.
   MissingCatalogSourceError   -- no catalog source from CLI, env, or lockfile fallback.
+  UnknownSourceError          -- --refresh-lock-source name does not match any source.
 """
 
 from __future__ import annotations
@@ -58,6 +60,7 @@ from kanon_cli.core.lockfile import (
 )
 from kanon_cli.core.marketplace import install_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
+from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.version import resolve_version
 
 
@@ -80,6 +83,11 @@ _REFRESH_LOCK_MISSING_CATALOG_REMEDIATION = (
     "--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
 )
 
+# Remediation text for --refresh-lock-source missing catalog (same constraint).
+_REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION = (
+    "--refresh-lock-source requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
+)
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -89,7 +97,7 @@ _REFRESH_LOCK_MISSING_CATALOG_REMEDIATION = (
 class InstallState(enum.Enum):
     """Enumeration of the lockfile state-machine rows (spec Section 4.7).
 
-    The six rows are:
+    The seven rows are:
     - LOCKFILE_ABSENT:          .kanon.lock absent; resolve fresh, write lockfile.
     - LOCKFILE_CONSISTENT:      .kanon.lock present and kanon_hash matches; replay SHAs.
     - LOCKFILE_HASH_MISMATCH:   .kanon.lock present but kanon_hash differs; hard error.
@@ -97,6 +105,8 @@ class InstallState(enum.Enum):
     - LOCKFILE_SOURCE_MISMATCH: lockfile catalog source differs from CLI/env; hard error.
     - REFRESH_LOCK:             operator requested a full lockfile rebuild via --refresh-lock;
                                 short-circuits the normal state classification.
+    - REFRESH_LOCK_SOURCE:      operator requested partial rebuild via --refresh-lock-source;
+                                re-resolves exactly one source chain, preserves all others.
     """
 
     LOCKFILE_ABSENT = "lockfile-absent"
@@ -105,6 +115,7 @@ class InstallState(enum.Enum):
     LOCKFILE_UNREACHABLE = "lockfile-unreachable"
     LOCKFILE_SOURCE_MISMATCH = "lockfile-catalog-source-mismatch"
     REFRESH_LOCK = "refresh-lock"
+    REFRESH_LOCK_SOURCE = "refresh-lock-source"
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +236,34 @@ class MissingCatalogSourceError(InstallError):
         if self.remediation is not None:
             return base + "\n" + self.remediation
         return base
+
+
+class UnknownSourceError(InstallError):
+    """Raised when --refresh-lock-source <name> does not match any top-level source.
+
+    Spec row: ``--refresh-lock-source <name>`` where ``<name>`` is not a known
+    KANON_SOURCE_<name> key and does not match via ``derive_source_name``.
+
+    Args:
+        name: The name supplied by the operator.
+        known_names: The list of known source names from the lockfile.
+    """
+
+    def __init__(self, name: str, known_names: list[str]) -> None:
+        self.name = name
+        self.known_names = known_names
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        known_list = ", ".join(sorted(self.known_names)) if self.known_names else "(none)"
+        return (
+            f"ERROR: Source name {self.name!r} not found.\n"
+            f"  Known source names: {known_list}\n"
+            f"  Resolution: '{self.name}' was tried as a literal KANON_SOURCE_<name> key "
+            f"and via derive_source_name (lowercased, hyphens to underscores).\n"
+            f"  Remediation: use one of the known source names above, or the catalog "
+            f"entry name that normalises to one of them."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -399,14 +438,19 @@ def _resolve_catalog_source(
             )
         return cli_env_source
 
-    # On the refresh-lock path the lockfile fallback is DISABLED.
-    # The operator is explicitly rebuilding the lockfile and must supply a
-    # source via CLI or env var; falling back to a stale lockfile entry would
-    # silently reuse the old catalog, defeating the purpose of --refresh-lock.
+    # On the refresh-lock and refresh-lock-source paths the lockfile fallback is
+    # DISABLED.  The operator is explicitly rebuilding (part of) the lockfile and
+    # must supply a source via CLI or env var; falling back to a stale lockfile
+    # entry would silently reuse the old catalog, defeating the purpose of the flag.
     if install_state is InstallState.REFRESH_LOCK:
         raise MissingCatalogSourceError(
             command="install",
             remediation=_REFRESH_LOCK_MISSING_CATALOG_REMEDIATION,
+        )
+    if install_state is InstallState.REFRESH_LOCK_SOURCE:
+        raise MissingCatalogSourceError(
+            command="install",
+            remediation=_REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION,
         )
 
     # No CLI/env source -- use lockfile fallback only in the consistent state.
@@ -416,14 +460,22 @@ def _resolve_catalog_source(
     raise MissingCatalogSourceError(command="install")
 
 
-def _emit_install_state(state: InstallState, sources: int, projects: int) -> None:
+def _emit_install_state(
+    state: InstallState,
+    sources: int,
+    projects: int,
+    refreshed_source_name: str | None = None,
+    refreshed_count: int = 0,
+    preserved_count: int = 0,
+) -> None:
     """Print the spec's verbatim info-line for the given install state to stdout.
 
-    Three states produce an info-line (spec Section 4.7):
-    - LOCKFILE_ABSENT:     ``"lockfile rebuilt from .kanon (N sources, M projects)"``
-    - LOCKFILE_CONSISTENT: ``"installing from lockfile (N sources, M projects)"``
-    - REFRESH_LOCK:        ``"lockfile rebuilt from .kanon (N sources, M projects)"``
+    Four states produce an info-line (spec Section 4.7):
+    - LOCKFILE_ABSENT:        ``"lockfile rebuilt from .kanon (N sources, M projects)"``
+    - LOCKFILE_CONSISTENT:    ``"installing from lockfile (N sources, M projects)"``
+    - REFRESH_LOCK:           ``"lockfile rebuilt from .kanon (N sources, M projects)"``
       (same text as LOCKFILE_ABSENT -- the operator's intent is equivalent)
+    - REFRESH_LOCK_SOURCE:    ``"lockfile partially rebuilt: source <name> (M projects refreshed; K projects preserved)"``
 
     Other states are not emitted by this helper (they result in exceptions).
 
@@ -431,11 +483,22 @@ def _emit_install_state(state: InstallState, sources: int, projects: int) -> Non
         state: The ``InstallState`` for the current install invocation.
         sources: The number of top-level sources declared in ``.kanon``.
         projects: The total number of resolved projects across all sources.
+        refreshed_source_name: The source name that was refreshed. Required when
+            ``state`` is ``REFRESH_LOCK_SOURCE``; ignored for other states.
+        refreshed_count: The number of projects in the refreshed source. Used
+            when ``state`` is ``REFRESH_LOCK_SOURCE``.
+        preserved_count: The total number of projects in all preserved sources.
+            Used when ``state`` is ``REFRESH_LOCK_SOURCE``.
     """
     if state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         print(f"lockfile rebuilt from .kanon ({sources} sources, {projects} projects)")
     elif state is InstallState.LOCKFILE_CONSISTENT:
         print(f"installing from lockfile ({sources} sources, {projects} projects)")
+    elif state is InstallState.REFRESH_LOCK_SOURCE:
+        print(
+            f"lockfile partially rebuilt: source {refreshed_source_name} "
+            f"({refreshed_count} projects refreshed; {preserved_count} projects preserved)"
+        )
 
 
 class _RefResolution(NamedTuple):
@@ -443,6 +506,128 @@ class _RefResolution(NamedTuple):
 
     sha: str
     resolved_ref: str
+
+
+# ---------------------------------------------------------------------------
+# --refresh-lock-source helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_source_name(name: str, lockfile: Lockfile) -> SourceEntry:
+    """Resolve a --refresh-lock-source name to a ``SourceEntry`` in two steps.
+
+    Step 1: Try ``name`` as a literal KANON_SOURCE_<name> key by comparing it
+    directly to each ``SourceEntry.name`` in the lockfile.
+
+    Step 2: If no direct match, normalise ``name`` via ``derive_source_name``
+    (lowercase, hyphens to underscores) and compare to each
+    ``SourceEntry.name``.
+
+    If neither step matches, raises ``UnknownSourceError`` listing the known
+    source names.
+
+    Args:
+        name: The value supplied to ``--refresh-lock-source``.
+        lockfile: The currently parsed lockfile containing known ``SourceEntry`` objects.
+
+    Returns:
+        The ``SourceEntry`` whose ``name`` matches, either directly or via
+        ``derive_source_name``.
+
+    Raises:
+        UnknownSourceError: If ``name`` does not match any source in the lockfile
+            by either the direct or the ``derive_source_name`` resolution path.
+    """
+    # Step 1: direct literal match.
+    for entry in lockfile.sources:
+        if entry.name == name:
+            return entry
+
+    # Step 2: normalise via derive_source_name and compare.
+    normalised = derive_source_name(name)
+    for entry in lockfile.sources:
+        if entry.name == normalised:
+            return entry
+
+    known = [e.name for e in lockfile.sources]
+    raise UnknownSourceError(name=name, known_names=known)
+
+
+def _refresh_one_source(
+    source_name: str,
+    source_data: dict,
+) -> SourceEntry:
+    """Re-resolve one source's manifest chain and return a rebuilt ``SourceEntry``.
+
+    Resolves the source URL and revision to a concrete git ref + SHA via
+    ``git ls-remote``, constructing a fresh ``SourceEntry``.  Any transitive
+    ``<include>`` chain resolution happens in the subsequent ``repo init`` /
+    ``repo sync`` steps; this function only records the top-level source's
+    resolved SHA.
+
+    Args:
+        source_name: The KANON_SOURCE_<name> key for this source.
+        source_data: The parsed source dict from ``parse_kanonenv`` containing
+            ``url``, ``revision``, and ``path`` keys.
+
+    Returns:
+        A freshly-resolved ``SourceEntry`` for the named source.
+
+    Raises:
+        ValueError: If the ref is not found on the remote or if git ls-remote fails.
+    """
+    resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+    ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
+    return SourceEntry(
+        name=source_name,
+        url=source_data["url"],
+        revision_spec=source_data["revision"],
+        resolved_ref=ref_resolution.resolved_ref,
+        resolved_sha=ref_resolution.sha,
+        path=source_data["path"],
+    )
+
+
+def _merge_partial_lockfile(
+    old_lockfile: Lockfile,
+    refreshed_source: SourceEntry,
+    new_kanon_hash: str,
+) -> Lockfile:
+    """Replace exactly one ``SourceEntry`` in the lockfile, preserving all others.
+
+    The ``[catalog]`` block and all other ``SourceEntry`` objects are carried
+    over verbatim from ``old_lockfile``.  The top-level ``kanon_hash`` is
+    updated to the freshly-computed value so the rewritten lockfile passes the
+    consistency check on the next ``kanon install``.
+
+    Args:
+        old_lockfile: The existing parsed lockfile.
+        refreshed_source: The rebuilt ``SourceEntry`` for the refreshed source.
+            Its ``name`` must match exactly one entry in ``old_lockfile.sources``.
+        new_kanon_hash: The freshly-computed ``kanon_hash`` for the current
+            ``.kanon`` content.
+
+    Returns:
+        A new ``Lockfile`` instance with the refreshed source replaced and all
+        other fields (including ``catalog``) preserved from ``old_lockfile``.
+
+    Raises:
+        UnknownSourceError: If ``refreshed_source.name`` is not found in
+            ``old_lockfile.sources``.
+    """
+    known = [e.name for e in old_lockfile.sources]
+    if refreshed_source.name not in known:
+        raise UnknownSourceError(name=refreshed_source.name, known_names=known)
+
+    new_sources = [refreshed_source if e.name == refreshed_source.name else e for e in old_lockfile.sources]
+    return Lockfile(
+        schema_version=old_lockfile.schema_version,
+        generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        generator=old_lockfile.generator,
+        kanon_hash=new_kanon_hash,
+        catalog=old_lockfile.catalog,
+        sources=new_sources,
+    )
 
 
 def _check_sha_reachable(url: str, sha: str, source_name: str) -> None:
@@ -753,6 +938,7 @@ def _run_install(
     lockfile_path: pathlib.Path,
     catalog_source: str | None,
     refresh_lock: bool = False,
+    refresh_lock_source: str | None = None,
 ) -> None:
     """Execute the install lifecycle without acquiring the concurrency lock.
 
@@ -764,6 +950,7 @@ def _run_install(
     - LOCKFILE_CONSISTENT: install exactly the SHAs in the lockfile; skip resolve.
     - LOCKFILE_HASH_MISMATCH: raise KanonHashMismatchError immediately.
     - REFRESH_LOCK: ignore lockfile entirely, re-resolve fresh, overwrite lockfile.
+    - REFRESH_LOCK_SOURCE: re-resolve exactly one source chain, preserve all others.
 
     All errors propagate unconditionally. There is no fallback logic.
 
@@ -775,6 +962,9 @@ def _run_install(
         refresh_lock: When ``True``, short-circuit to ``InstallState.REFRESH_LOCK``
             regardless of lockfile presence or hash state.  The lockfile fallback
             in ``_resolve_catalog_source`` is disabled on this path.
+        refresh_lock_source: When set, re-resolve exactly the named source chain
+            while preserving all other lockfile entries.  The lockfile fallback
+            in ``_resolve_catalog_source`` is disabled on this path.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
@@ -785,6 +975,8 @@ def _run_install(
             disabled and the remediation text explains this constraint.
         CatalogSourceMismatchError: If the resolved catalog source differs from
             the lockfile's recorded source in the consistent state.
+        UnknownSourceError: If ``refresh_lock_source`` does not match any known
+            top-level source name (by literal or derive_source_name match).
         ValueError: If the catalog source is not in ``url@ref`` form, if
             git ls-remote fails or a ref is not found, if marketplace install
             is requested but CLAUDE_MARKETPLACES_DIR is not configured, or on
@@ -793,22 +985,34 @@ def _run_install(
         RepoCommandError: If any repo sub-command exits non-zero.
     """
     # Step 1: Classify the lockfile state.
-    # The classification result carries the pre-computed hash and parsed lockfile
-    # to avoid recomputing them later in the pipeline (DRY).
+    # When refresh_lock_source is set, we short-circuit to REFRESH_LOCK_SOURCE.
     # When refresh_lock=True, _classify_install_state short-circuits to REFRESH_LOCK.
-    classification = _classify_install_state(kanonenv_path, lockfile_path, refresh_lock=refresh_lock)
-    install_state = classification.state
-    existing_lockfile: Lockfile | None = classification.lockfile
+    # Otherwise run the normal five-row classification.
+    install_state: InstallState
+    existing_lockfile: Lockfile | None
+    lockfile_hash_mismatch_lockfile: Lockfile | None = None
+    lockfile_hash_mismatch_computed: str | None = None
+
+    if refresh_lock_source is not None:
+        # REFRESH_LOCK_SOURCE path: read the existing lockfile for the partial merge.
+        # If absent, proceed as REFRESH_LOCK_SOURCE with no existing lockfile
+        # (the partial merge step falls back to a full write in that case).
+        install_state = InstallState.REFRESH_LOCK_SOURCE
+        existing_lockfile = read_lockfile_if_present(lockfile_path)
+    else:
+        classification = _classify_install_state(kanonenv_path, lockfile_path, refresh_lock=refresh_lock)
+        install_state = classification.state
+        existing_lockfile = classification.lockfile
+        if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
+            lockfile_hash_mismatch_lockfile = classification.lockfile
+            lockfile_hash_mismatch_computed = classification.computed_hash
 
     # Step 2: On hash mismatch, fail fast with a structured error.
-    # Both values were already computed by _classify_install_state; use them directly.
     if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
-        # Both fields are always populated by _classify_install_state in the
-        # LOCKFILE_HASH_MISMATCH branch. cast() communicates this to the type
-        # checker without stripping the check at runtime (unlike assert, which
-        # Python's -O flag would remove).
-        existing_lockfile_nn = cast(Lockfile, classification.lockfile)
-        computed_hash_nn = cast(str, classification.computed_hash)
+        # Both fields are populated by _classify_install_state in the HASH_MISMATCH
+        # branch (assigned above).  cast() communicates non-None to the type checker.
+        existing_lockfile_nn = cast(Lockfile, lockfile_hash_mismatch_lockfile)
+        computed_hash_nn = cast(str, lockfile_hash_mismatch_computed)
         raise KanonHashMismatchError(
             lockfile_hash=existing_lockfile_nn.kanon_hash,
             computed_hash=computed_hash_nn,
@@ -860,15 +1064,66 @@ def _run_install(
     # Step 5: Resolve SHAs and sync sources.
     # In the LOCKFILE_CONSISTENT state, replay the pinned SHAs from the lockfile
     # instead of calling resolve_version() (which would query the remote).
+    # In the REFRESH_LOCK_SOURCE state, re-resolve only the named source; replay
+    # all others from the existing lockfile verbatim.
     # resolved_entries: populated for lockfile writing.
     resolved_entries: list[SourceEntry] = []
+
+    # For REFRESH_LOCK_SOURCE: resolve the target entry from the existing lockfile.
+    # Do this before the per-source loop so we can fail fast with UnknownSourceError
+    # before touching any source directories.
+    # refresh_lock_source is non-None when install_state is REFRESH_LOCK_SOURCE.
+    refresh_lock_source_nn: str = cast(str, refresh_lock_source)
+    target_source_entry: SourceEntry | None = None
+    if install_state is InstallState.REFRESH_LOCK_SOURCE and existing_lockfile is not None:
+        target_source_entry = _resolve_source_name(refresh_lock_source_nn, existing_lockfile)
+    elif install_state is InstallState.REFRESH_LOCK_SOURCE and existing_lockfile is None:
+        # No lockfile exists -- treat the named source as a synthetic lookup against
+        # the .kanon source names directly, then resolve fresh.
+        if refresh_lock_source_nn not in source_names:
+            normalised = derive_source_name(refresh_lock_source_nn)
+            if normalised not in source_names:
+                raise UnknownSourceError(name=refresh_lock_source_nn, known_names=source_names)
+        # target_source_entry remains None; the per-source loop resolves fresh.
 
     for name in source_names:
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
 
-        if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
+        if install_state is InstallState.REFRESH_LOCK_SOURCE:
+            # Determine whether this source is the one being refreshed.
+            is_refresh_target = (target_source_entry is not None and target_source_entry.name == name) or (
+                # Lockfile-absent path: match by name or derive_source_name.
+                existing_lockfile is None
+                and (name == refresh_lock_source_nn or name == derive_source_name(refresh_lock_source_nn))
+            )
+
+            if is_refresh_target:
+                # Re-resolve this source fresh.
+                new_entry = _refresh_one_source(name, source_data)
+                resolved_entries.append(new_entry)
+                resolved_revision = new_entry.resolved_sha
+            elif existing_lockfile is not None:
+                # Preserve this source's entry verbatim from the existing lockfile.
+                pinned = next(
+                    (e for e in existing_lockfile.sources if e.name == name),
+                    None,
+                )
+                if pinned is not None:
+                    resolved_revision = pinned.resolved_sha
+                    resolved_entries.append(pinned)
+                else:
+                    # Source not in lockfile -- resolve fresh.
+                    new_entry = _refresh_one_source(name, source_data)
+                    resolved_entries.append(new_entry)
+                    resolved_revision = new_entry.resolved_sha
+            else:
+                # No lockfile -- resolve all sources fresh.
+                new_entry = _refresh_one_source(name, source_data)
+                resolved_entries.append(new_entry)
+                resolved_revision = new_entry.resolved_sha
+        elif install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
             # Replay: find the pinned entry for this source.
             pinned = next(
                 (e for e in existing_lockfile.sources if e.name == name),
@@ -934,7 +1189,27 @@ def _run_install(
     update_gitignore(base_dir)
 
     # Step 6: Emit the spec's info-line for the current state.
-    _emit_install_state(install_state, sources=len(source_names), projects=len(package_owners))
+    if install_state is InstallState.REFRESH_LOCK_SOURCE and target_source_entry is not None:
+        # Compute refreshed vs preserved project counts from resolved_entries.
+        # Each SourceEntry carries a projects list populated during resolution; we
+        # count projects belonging to the refreshed source (M) and all other sources (K).
+        refreshed_name = target_source_entry.name
+        refreshed_count = sum(
+            len(e.projects) for e in resolved_entries if e.name == refreshed_name
+        )
+        preserved_count = sum(
+            len(e.projects) for e in resolved_entries if e.name != refreshed_name
+        )
+        _emit_install_state(
+            install_state,
+            sources=len(source_names),
+            projects=len(package_owners),
+            refreshed_source_name=refreshed_name,
+            refreshed_count=refreshed_count,
+            preserved_count=preserved_count,
+        )
+    else:
+        _emit_install_state(install_state, sources=len(source_names), projects=len(package_owners))
 
     _print_package_summary(package_owners, source_names)
 
@@ -943,10 +1218,11 @@ def _run_install(
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
 
-    # Step 7: Write the lockfile when state is LOCKFILE_ABSENT or REFRESH_LOCK.
-    # In the LOCKFILE_CONSISTENT state the lockfile is authoritative and
-    # must not be modified.  In the REFRESH_LOCK state the operator explicitly
-    # requested a full rebuild, so the lockfile is always overwritten.
+    # Step 7: Write the lockfile.
+    # - LOCKFILE_ABSENT: write fresh lockfile.
+    # - REFRESH_LOCK: full rebuild; overwrite lockfile.
+    # - REFRESH_LOCK_SOURCE: partial rebuild; merge one source into old lockfile.
+    # - LOCKFILE_CONSISTENT: lockfile is authoritative; do NOT rewrite.
     if install_state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         # In the LOCKFILE_ABSENT state, computed_hash is always None because
         # _classify_install_state does not call kanon_hash when there is no
@@ -982,6 +1258,51 @@ def _run_install(
         )
         write_lockfile(lf, lockfile_path)
 
+    elif install_state is InstallState.REFRESH_LOCK_SOURCE:
+        # Partial rebuild: merge the refreshed source into the existing lockfile.
+        new_kanon_hash = _kanon_hash(kanonenv_path)
+        if existing_lockfile is not None and target_source_entry is not None:
+            # Find the freshly-resolved entry for the target source.
+            refreshed_entry = next(
+                (e for e in resolved_entries if e.name == target_source_entry.name),
+                None,
+            )
+            if refreshed_entry is None:
+                raise ValueError(
+                    f"Internal error: refreshed entry for source "
+                    f"'{target_source_entry.name}' not found in resolved_entries."
+                )
+            merged_lf = _merge_partial_lockfile(
+                old_lockfile=existing_lockfile,
+                refreshed_source=refreshed_entry,
+                new_kanon_hash=new_kanon_hash,
+            )
+            write_lockfile(merged_lf, lockfile_path)
+        else:
+            # No existing lockfile -- write a full lockfile as if LOCKFILE_ABSENT.
+            if "@" not in effective_catalog_source:
+                raise ValueError(
+                    f"catalog source must be in <url>@<ref> form; got: {effective_catalog_source!r}",
+                )
+            catalog_url, catalog_ref = effective_catalog_source.rsplit("@", 1)
+            catalog_resolution = _resolve_ref_to_sha(catalog_url, catalog_ref)
+            catalog_block = CatalogBlock(
+                source=effective_catalog_source,
+                url=catalog_url,
+                revision_spec=catalog_ref,
+                resolved_ref=catalog_resolution.resolved_ref,
+                resolved_sha=catalog_resolution.sha,
+            )
+            lf = Lockfile(
+                schema_version=CURRENT_SCHEMA_VERSION,
+                generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                generator=f"kanon-cli/{__version__}",
+                kanon_hash=new_kanon_hash,
+                catalog=catalog_block,
+                sources=resolved_entries,
+            )
+            write_lockfile(lf, lockfile_path)
+
     print("\nkanon install: done.")
 
 
@@ -990,6 +1311,7 @@ def install(
     lock_file_path: pathlib.Path | None = None,
     catalog_source: str | None = None,
     refresh_lock: bool = False,
+    refresh_lock_source: str | None = None,
 ) -> None:
     """Execute the full Kanon install lifecycle.
 
@@ -1008,16 +1330,21 @@ def install(
       2. Acquire exclusive file lock inside .kanon-data/.
       3. Classify the lockfile state via _classify_install_state.
          When refresh_lock=True, short-circuits to InstallState.REFRESH_LOCK.
+         When refresh_lock_source is set, uses InstallState.REFRESH_LOCK_SOURCE.
       4. Resolve the effective catalog source via _resolve_catalog_source.
-         On the REFRESH_LOCK path, the lockfile fallback is disabled.
+         On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths, the lockfile
+         fallback is disabled.
       5. Parse .kanon and validate sources.
       6. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
       7. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
+         On the REFRESH_LOCK_SOURCE path, only the named source is re-resolved;
+         all other sources replay their pinned SHAs from the existing lockfile.
       8. Aggregate symlinks into .packages/.
       9. Update .gitignore.
       10. Emit state info-line via _emit_install_state.
       11. If KANON_MARKETPLACE_INSTALL=true: run install script.
-      12. Write .kanon.lock when state is LOCKFILE_ABSENT or REFRESH_LOCK.
+      12. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK;
+          partial merge for REFRESH_LOCK_SOURCE; unchanged for LOCKFILE_CONSISTENT.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
@@ -1032,16 +1359,25 @@ def install(
             rebuild it from scratch.  The lockfile fallback for catalog source
             resolution is disabled on this path.  Default ``False`` preserves
             prior behaviour.
+        refresh_lock_source: When set to a source name or catalog entry name,
+            re-resolve exactly that source's chain while preserving every other
+            lockfile entry verbatim.  Mutually exclusive with ``refresh_lock``
+            (enforced at the CLI level by argparse).  The lockfile fallback for
+            catalog source resolution is disabled on this path.  Default ``None``
+            preserves prior behaviour.
 
     Raises:
         KanonHashMismatchError: If the lockfile exists but its kanon_hash does
             not match the freshly-computed hash of the .kanon file.
         MissingCatalogSourceError: If the consistent state requires a catalog
             source but none can be resolved from cli arg, env var, or lockfile.
-            On the REFRESH_LOCK path the lockfile fallback is disabled and the
-            error message includes the refresh-specific remediation text.
+            On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths the lockfile
+            fallback is disabled and the error message includes the
+            refresh-specific remediation text.
         CatalogSourceMismatchError: If the CLI/env catalog source differs from
             the lockfile's recorded source in the consistent state.
+        UnknownSourceError: If ``refresh_lock_source`` does not match any known
+            top-level source name by direct lookup or via ``derive_source_name``.
         ValueError: If marketplace install is requested but
             CLAUDE_MARKETPLACES_DIR is not configured, or on package collision.
         OSError: If the managed data directory or a source directory cannot be
@@ -1062,4 +1398,10 @@ def install(
     concurrency_lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
     with open(concurrency_lock_path, "w") as _lock_fd:
         fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
-        _run_install(kanonenv_path, resolved_lockfile_path, catalog_source, refresh_lock=refresh_lock)
+        _run_install(
+            kanonenv_path,
+            resolved_lockfile_path,
+            catalog_source,
+            refresh_lock=refresh_lock,
+            refresh_lock_source=refresh_lock_source,
+        )

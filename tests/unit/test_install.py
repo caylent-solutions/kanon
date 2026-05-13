@@ -224,7 +224,7 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         monkeypatch.setenv("KANON_CATALOG_SOURCE", self._CATALOG_SOURCE)
-        args = argparse.Namespace(kanonenv_path=kanonenv, catalog_source=None, refresh_lock=False)
+        args = argparse.Namespace(kanonenv_path=kanonenv, catalog_source=None, refresh_lock=False, refresh_lock_source=None)
         with (
             patch(
                 "kanon_cli.core.install.create_source_dirs",

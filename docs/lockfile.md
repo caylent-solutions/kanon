@@ -356,7 +356,53 @@ the purpose of the rebuild.
 **What is modified.** Only `.kanon.lock` and the per-source workspaces under
 `.kanon-data/` are rewritten. The `.kanon` file is never modified.
 
-Mutually exclusive with `--refresh-lock-source` (added in a future task).
+Mutually exclusive with `--refresh-lock-source`.
+
+### `--refresh-lock-source <name>`
+
+`kanon install --refresh-lock-source <name>` re-resolves exactly one top-level
+source's full chain (the manifest XML at its current revision and every transitive
+`<include>` reference) while preserving every other top-level source's lockfile
+entries verbatim. The info-line emitted is:
+
+```
+lockfile partially rebuilt: source <name> (M projects refreshed; K projects preserved)
+```
+
+where M is the refreshed source's project count and K is the sum of all preserved
+sources' project counts.
+
+**Accepted forms for `<name>`.** The `<name>` argument is resolved in two steps:
+
+1. **Literal source key** -- `<name>` is compared directly to the `KANON_SOURCE_<name>_*`
+   keys discovered in `.kanon`. If a match is found, that source is refreshed.
+
+2. **Catalog entry name via `derive_source_name`** -- if no literal match is found,
+   `<name>` is normalised via `derive_source_name` (lowercase, hyphens replaced
+   with underscores) and compared again. This allows passing the human-readable
+   catalog entry name (e.g. `My-Tool`) when the source key is the normalised form
+   (`my_tool`).
+
+If neither step matches, `kanon install` exits with `UnknownSourceError` listing
+the known source names and the `derive_source_name` resolution that was attempted.
+
+**Catalog source requirement.** The lockfile fallback for the catalog source is
+DISABLED on this path. You MUST supply a catalog source via `--catalog-source` or
+the `KANON_CATALOG_SOURCE` environment variable. If neither is set, kanon exits with:
+
+```
+ERROR: install requires a catalog source.
+...
+--refresh-lock-source requires a CLI or env-var catalog source; the lockfile
+fallback is disabled on this path.
+```
+
+**What is modified.** Only `.kanon.lock` is rewritten -- specifically, the one
+`[[sources]]` entry for the named source. All other `[[sources]]` entries are
+carried over byte-for-byte. The `kanon_hash` field is updated to the freshly-
+computed value over `.kanon`. The `[catalog]` block is preserved unchanged.
+
+Mutually exclusive with `--refresh-lock`.
 
 ---
 

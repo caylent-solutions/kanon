@@ -84,8 +84,7 @@ def register(subparsers) -> None:
     )
     add_catalog_source_arg(parser)
 
-    # --refresh-lock and --refresh-lock-source (T3) are mutually exclusive.
-    # T3 adds --refresh-lock-source to this same group when it lands.
+    # --refresh-lock and --refresh-lock-source are mutually exclusive (spec Section 4.7).
     refresh_group = parser.add_mutually_exclusive_group()
     refresh_group.add_argument(
         "--refresh-lock",
@@ -94,6 +93,19 @@ def register(subparsers) -> None:
         help=(
             "Ignore the existing lockfile, re-resolve every transitive version from "
             "scratch, and overwrite .kanon.lock with the new state. "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "the lockfile fallback is disabled on this path."
+        ),
+    )
+    refresh_group.add_argument(
+        "--refresh-lock-source",
+        metavar="NAME",
+        default=None,
+        help=(
+            "Re-resolve exactly one top-level source's full chain while preserving "
+            "every other source's lockfile entries verbatim. NAME may be a source "
+            "name (the KANON_SOURCE_<name> key) or a catalog entry name resolved "
+            "via derive_source_name. "
             "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
             "the lockfile fallback is disabled on this path."
         ),
@@ -150,6 +162,7 @@ def _run(args) -> int | None:
             args.kanonenv_path,
             catalog_source=args.catalog_source,
             refresh_lock=args.refresh_lock,
+            refresh_lock_source=args.refresh_lock_source,
         )
     except (InstallError, OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

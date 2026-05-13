@@ -1,380 +1,249 @@
 # Kanon Architecture: Install Engine Internals
 
-## Overview
+This document describes the internals of the `kanon install` engine for
+**kanon contributors** and **advanced operators** who want to understand what
+happens during `kanon install`.
 
-This document describes the internals of the `kanon install` engine -- the
-embedded repo-fork install pipeline, the lockfile state machine, the directory
-layout under the install workspace, and the error-propagation contract.
-
-For operator-facing usage, see `docs/lifecycle.md`. For the lockfile schema,
-see `docs/lockfile.md`. For configuration, see `docs/configuration.md`.
-
----
-
-## Embedded Repo Fork
-
-Kanon bundles a fork of the `repo` tool (Google repo) under
-`src/kanon_cli/repo/`. No external `repo` binary is required -- the fork is
-part of the kanon wheel and is invoked via the Python API in
-`src/kanon_cli/core/install.py`.
-
-**Why kanon does not use an external repo tool.** The bundled fork allows kanon
-to pin a specific, tested version of repo and avoid incompatibilities between
-the upstream tool's rolling releases and kanon's expectations. The fork is
-treated as a vendored dependency; it is NOT modified by kanon feature work and
-is carved out from mypy and bandit scopes per `CLAUDE.md`.
+For operator-facing usage see `docs/lifecycle.md`.
+For the lockfile schema see [`docs/lockfile.md`](lockfile.md).
+For configuration see [`docs/configuration.md`](configuration.md).
+For the security model see [`docs/security-model.md`](security-model.md).
 
 ---
 
-## Install Workspace Directory Layout
+## Audience
 
-After `kanon install` completes, the project directory contains:
+This document is written for two audiences:
 
-```
+- **Kanon contributors** working on the install engine, lockfile state machine,
+  or the embedded repo-fork carve-out (`src/kanon_cli/repo/`).
+- **Advanced operators** who need to understand the exact directory layout
+  produced by `kanon install`, the lockfile-to-clone mapping, the retry
+  policy, and the error-propagation contract so they can diagnose failures
+  without opening the source code.
+
+Operators who only need day-to-day usage guidance should read
+[`docs/lifecycle.md`](lifecycle.md) instead.
+
+---
+
+## Embedded repo-fork install engine
+
+Kanon vendors a fork of Google's `repo` tool at `src/kanon_cli/repo/`.
+
+### Vendored carve-out
+
+The fork is shipped as part of the kanon wheel. No external `repo` binary is
+required or used. The vendored path is a declared scope carve-out in
+`CLAUDE.md`: mypy and bandit do not check `src/kanon_cli/repo/`. This
+carve-out is a scope demarcation, not a bypass annotation; it must not be
+extended to any other path.
+
+Operators never invoke `repo` directly. The CLI entry points are
+`kanon install`, `kanon add`, and `kanon remove`. The embedded fork is an
+implementation detail.
+
+### Call sequence
+
+For each source listed in the resolved lockfile, `core/install.py` calls the
+fork in three steps:
+
+1. **`repo_init`** -- initialises a repo workspace inside
+   `.kanon-data/sources/<name>/` using the manifest XML URL and the resolved
+   revision. Raises `RepoCommandError` on non-zero exit.
+
+2. **`repo_envsubst`** -- expands `${GITBASE}` and `${CLAUDE_MARKETPLACES_DIR}`
+   variable references inside the manifest XML before sync.
+
+3. **`repo_sync`** -- clones every `<project>` referenced by the manifest XML
+   at the locked SHA. Walks `<include>` chains transitively. Raises
+   `RepoCommandError` on non-zero exit.
+
+All three functions are defined in `src/kanon_cli/repo/` and are called
+exclusively from `core/install.py::_run_install`.
+
+---
+
+## Directory layout
+
+After `kanon install` completes, the project directory contains the following
+layout. Operators must treat `.kanon-data/` as opaque; use `.kanon.lock` as
+the source of truth for which clones exist.
+
+```text
 <project-root>/
-  .kanon                    # operator-authored config file
-  .kanon.lock               # generated lockfile (commit this)
+  .kanon                        # operator-authored config file
+  .kanon.lock                   # generated lockfile (commit this)
+  .gitignore                    # auto-updated by kanon install (idempotent)
   .kanon-data/
-    .kanon-install.lock     # fcntl exclusive lock (harmless if stale)
+    .kanon-install.lock         # flock-managed concurrency lock
     sources/
-      <source-name>/        # one directory per top-level source
-        .repo/              # managed by the embedded repo fork
-        ...                 # cloned project directories
-        .packages/          # per-source package symlinks
-  .packages/                # top-level aggregated package symlinks
-  .gitignore                # updated by kanon install (idempotent)
+      <source-name>/            # one directory per top-level source
+        .repo/                  # managed by the embedded repo fork
+        <project-dir>/          # cloned project directories
+        .packages/              # per-source package symlinks
+  .packages/                    # aggregated symlinks (operator-facing)
 ```
 
-The `.kanon-data/sources/<name>/.packages/` directories are populated by
-`repo sync`. The top-level `.packages/` directory is populated by
-`aggregate_symlinks` in `core/install.py`, which creates symlinks from each
-per-source `.packages/*` entry to the top-level directory.
+Key paths:
 
-Operators MUST treat the `.kanon-data/` directory layout as opaque. Use the
-lockfile as the source of truth for which clones exist. If the directory
-becomes inconsistent (e.g. after a SIGTERM mid-clone), run
-`kanon clean --orphans` to prune and recover.
+- **`.kanon-data/sources/<name>/`** -- per-source workspace holding the
+  manifest XML, transitive includes, and repo state. One directory per
+  top-level source declared in `.kanon`.
+- **`.kanon-data/.kanon-install.lock`** -- `fcntl.flock(LOCK_EX)` file.
+  All workspace-mutating commands acquire this lock before any filesystem
+  mutation. A stale lock left by a killed process is harmless; the next
+  invocation reopens and re-acquires it.
+- **`.packages/`** -- aggregated symlinks pointing into the per-source
+  `.packages/*` entries. This is the only directory operators need to
+  reference in downstream tooling.
+- **`.gitignore`** -- `kanon install` appends `.packages/` and
+  `.kanon-data/` (idempotent; no duplicate entries are written).
+
+If the `.kanon-data/` directory layout becomes inconsistent (for example after
+a SIGTERM mid-clone), run `kanon clean` to prune and recover.
 
 ---
 
-## Install Engine Steps (spec Section 4.7.1)
+## Lockfile-to-clone mapping
 
-The engine is implemented in `core/install.py::_run_install` (inner) and
-`core/install.py::install` (outer, acquires the concurrency lock). Steps:
+For each `[[sources]]` entry in `.kanon.lock`, the install engine:
 
-1. **Classify lockfile state.** Call `_classify_install_state(kanon_path, lockfile_path)` to determine which of the five state-machine rows applies.
-2. **Resolve catalog source.** Call `_resolve_catalog_source(...)` to determine the effective catalog source following the three-tier precedence rule. `MissingCatalogSourceError` is raised unconditionally when all three sources are unset.
-3. **Resolve top-level sources.** Parse `.kanon` triples via `parse_kanonenv`. In the `LOCKFILE_ABSENT` state, resolve each source URL and revision to a concrete git ref + SHA via `git ls-remote`. In the `LOCKFILE_CONSISTENT` state, skip fresh resolution and replay the pinned SHAs from the lockfile instead (one git ls-remote call per source to verify SHA reachability; no version re-resolution via the catalog).
-4. **Create per-source workspaces** under `.kanon-data/sources/<source-name>/`. Fail fast with `OSError` if any directory cannot be created.
-5. **`repo init`** per source -- `repo init -u <url> -b <resolved-revision> -m <manifest-path>` via `kanon_cli.repo.repo_init`. Raises `RepoCommandError` on non-zero exit.
-6. **`repo envsubst`** -- expands `${GITBASE}` and `${CLAUDE_MARKETPLACES_DIR}` references inside the manifest XML.
-7. **`repo sync`** per source -- clones each `<project>` at the resolved SHA. Walks `<include>` chains transitively.
-8. **Aggregate symlinks** into `.packages/` via `aggregate_symlinks`. Raises `ValueError` on package name collision.
-9. **Update `.gitignore`** with `.packages/` and `.kanon-data/` (idempotent append).
-10. **Emit info-line.** Call `_emit_install_state(state, sources, projects)` to print the spec's verbatim status line (after aggregate symlinks so the project count is known).
-11. **Marketplace install** (gated on `KANON_MARKETPLACE_INSTALL=true`; runs in `LOCKFILE_ABSENT` and `LOCKFILE_CONSISTENT` states only -- hard-error states exit before reaching this step): clean and populate `CLAUDE_MARKETPLACES_DIR`, then run `install_marketplace_plugins`.
-12. **Write `.kanon.lock`** atomically (write-temp-then-rename) via `write_lockfile`. Runs only in the `LOCKFILE_ABSENT` state (the lockfile is generated for the first time). In the `LOCKFILE_CONSISTENT` state the lockfile is authoritative and is **not** rewritten. Hard-error states (`LOCKFILE_HASH_MISMATCH`, `LOCKFILE_UNREACHABLE`, `LOCKFILE_SOURCE_MISMATCH`) raise before reaching this step.
+1. Reads the locked SHA from `lockfile.sources[n].resolved_sha`.
+2. Creates `.kanon-data/sources/<name>/` if it does not exist.
+3. Calls `repo_init` with the manifest URL and the locked SHA, initialising
+   a repo workspace inside `.kanon-data/sources/<name>/`.
+4. Calls `repo_sync` to clone every `<project>` referenced by the manifest
+   XML at exactly the locked SHA. Transitive `<include>` chains are walked
+   fully.
+5. Symlinks from `.kanon-data/sources/<name>/.packages/*` are aggregated
+   into the top-level `.packages/` directory by `aggregate_symlinks` in
+   `core/install.py`. A `ValueError` is raised immediately on package name
+   collision.
 
----
+In the `LOCKFILE_CONSISTENT` state (hash unchanged), locked SHAs are
+replayed verbatim from the lockfile. No version re-resolution via the
+catalog occurs. One `git ls-remote` call per source verifies SHA
+reachability; if a SHA is no longer reachable a `LockfileUnreachableShaError`
+is raised naming the source, SHA, and remote URL.
 
-## Lockfile State Machine (spec Section 4.7)
+In the `LOCKFILE_ABSENT` state, each source URL and revision is resolved to
+a concrete git ref and SHA via `git ls-remote` before `repo_init` is called.
+The resulting SHAs are written to `.kanon.lock` atomically at the end of the
+install step (write-temp-then-rename).
 
-Every `kanon install` invocation runs through the five-row state matrix below.
-The state is determined by `_classify_install_state(kanon_path, lockfile_path)`
-which returns an `InstallClassification` NamedTuple containing `state`, `computed_hash`, and `lockfile` fields.
-
-### State Matrix
-
-| State | Condition | Behaviour | Error class | Remediation |
-|-------|-----------|-----------|-------------|-------------|
-| `LOCKFILE_ABSENT` | `.kanon.lock` does not exist | Resolve every transitive version fresh. Install. Write `.kanon.lock` capturing resolved SHAs + catalog source + `kanon_hash`. Emit info-line: `"lockfile rebuilt from .kanon (N sources, M projects)"`. | -- | -- |
-| `LOCKFILE_CONSISTENT` | `.kanon.lock` exists AND `kanon_hash` in lockfile matches freshly-computed `kanon_hash(.kanon)` | Install EXACTLY the SHAs in the lockfile. Do NOT re-resolve. Ignore newer tags. Emit info-line: `"installing from lockfile (N sources, M projects)"`. Catalog source MAY be read from `lockfile.[catalog].source` when no CLI/env source is set. In this state, orphaned lock entries and branch drift are detected and handled per the strictness flags (see below). | -- | -- |
-| `LOCKFILE_HASH_MISMATCH` | `.kanon.lock` exists but `kanon_hash` does not match | Hard error. | `KanonHashMismatchError` | `kanon install --refresh-lock` or `--refresh-lock-source <name>` |
-| `LOCKFILE_UNREACHABLE` | Resolver discovers a lockfile SHA is no longer reachable on remote | Hard error. Names the source, SHA, and remote URL. | `LockfileUnreachableShaError` | `kanon install --refresh-lock-source <name>` |
-| `LOCKFILE_SOURCE_MISMATCH` | `lockfile.[catalog].source` differs from CLI/env catalog source (when CLI/env is set) | Hard error. Names both values. The lockfile is authoritative. | `CatalogSourceMismatchError` | `kanon install --refresh-lock` |
-| `REFRESH_LOCK` | Operator passed `--refresh-lock` | Short-circuit: ignore lockfile state entirely. Resolve every transitive version fresh. Overwrite `.kanon.lock`. Emit info-line: `"lockfile rebuilt from .kanon (N sources, M projects)"`. Lockfile catalog-source fallback is DISABLED on this path. | -- | Requires CLI or env-var catalog source. |
-| `REFRESH_LOCK_SOURCE` | Operator passed `--refresh-lock-source <name>` | Short-circuit: re-resolve exactly the named source's chain while preserving every other lockfile entry verbatim. Emit info-line: `"lockfile partially rebuilt: source <name> (M projects refreshed; K projects preserved)"`. Lockfile catalog-source fallback is DISABLED on this path. `<name>` is resolved by literal KANON_SOURCE key first, then via `derive_source_name`. Raises `UnknownSourceError` if neither matches. | `UnknownSourceError` | Requires CLI or env-var catalog source; use a known source name or catalog entry name. |
-
-### State Classification Logic
-
-`_classify_install_state` returns an `InstallClassification(state, computed_hash, lockfile)`
-NamedTuple -- not a bare `InstallState` enum -- so the caller receives the pre-computed
-hash and parsed lockfile without needing to recompute them.
-
-```
-_classify_install_state(kanon_path, lockfile_path, refresh_lock=False) -> InstallClassification:
-  if refresh_lock:
-    return InstallClassification(REFRESH_LOCK, computed_hash=None, lockfile=None)
-  if lockfile_path does not exist:
-    return InstallClassification(LOCKFILE_ABSENT, computed_hash=None, lockfile=None)
-  lockfile = read_lockfile(lockfile_path)
-  computed_hash = kanon_hash(kanon_path)
-  if computed_hash == lockfile.kanon_hash:
-    return InstallClassification(LOCKFILE_CONSISTENT, computed_hash, lockfile)
-  return InstallClassification(LOCKFILE_HASH_MISMATCH, computed_hash, lockfile)
-```
-
-The `LOCKFILE_UNREACHABLE` and `LOCKFILE_SOURCE_MISMATCH` states are detected
-later in the pipeline (during resolver output analysis and catalog-source
-validation) and are surfaced as exceptions rather than `InstallState` values.
-
-The `REFRESH_LOCK` state is triggered by the `--refresh-lock` CLI flag
-(`refresh_lock=True` kwarg). It short-circuits the normal hash comparison,
-returning `REFRESH_LOCK` regardless of lockfile presence or hash state. The
-`computed_hash` and `lockfile` fields are `None` in this state (the lockfile is
-ignored entirely). The `--refresh-lock` flag is mutually exclusive with
-`--refresh-lock-source` at the argparse level.
-
-The `REFRESH_LOCK_SOURCE` state is triggered by the `--refresh-lock-source <name>`
-CLI flag (`refresh_lock_source=<name>` kwarg). The existing lockfile is read for
-the partial merge: all other sources' entries are preserved verbatim. The name is
-resolved in two steps -- literal KANON_SOURCE key match first, then via
-`derive_source_name` normalisation. Raises `UnknownSourceError` if neither step
-matches. The `--refresh-lock-source` flag is mutually exclusive with `--refresh-lock`.
+Cross-reference: [`docs/lockfile.md`](lockfile.md) describes the lockfile
+TOML schema and the `kanon_hash` field in detail.
 
 ---
 
-## Catalog-Source Precedence (spec Section 4 header)
-
-`_resolve_catalog_source` implements the three-tier precedence rule:
-
-1. **`--catalog-source` CLI flag** -- highest priority. Passed as `cli_arg`.
-   **Note:** `--catalog-source` is not yet registered on the `kanon install`
-   subcommand (pending task E1-F4-S1-T1). Currently only `KANON_CATALOG_SOURCE`
-   and the lockfile fallback are active for `kanon install`.
-2. **`KANON_CATALOG_SOURCE` env var** -- second priority. Passed as `env_value`.
-3. **`lockfile.[catalog].source`** -- lockfile fallback. Applies ONLY in the
-   `LOCKFILE_CONSISTENT` state and ONLY when both CLI flag and env var are
-   unset. This is the documented exception to the NO-FALLBACK rule.
-
-**Special case: `REFRESH_LOCK` state.** When `install_state == REFRESH_LOCK`
-(i.e. `--refresh-lock` was passed), the lockfile fallback (tier 3) is DISABLED.
-The operator MUST supply a catalog source via CLI or env var. If neither is set,
-`MissingCatalogSourceError` is raised with the refresh-specific remediation text:
-`"--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback
-is disabled on this path."` This constraint prevents silent reuse of a stale
-catalog source when the operator is explicitly rebuilding the lockfile.
-
-When CLI/env is set and differs from the lockfile's recorded source, a
-`CatalogSourceMismatchError` is raised (the lockfile is authoritative; the
-operator must explicitly refresh to change catalogs).
-
-When all three sources are unset (or the lockfile fallback is inapplicable),
-`MissingCatalogSourceError` is raised with the spec's canonical error text.
-See `docs/configuration.md` for how to configure a catalog source.
-
----
-
-## `<include>` Cycle Detection and Diamond Handling
-
-### Implementation
-
-The `<include>` chain resolver is implemented in `core/include_walker.py` as the
-`_walk_includes(start_xml_path, manifest_repo) -> IncludeTree` function. It uses a
-depth-first search (DFS) with two sets to handle cycles and diamonds:
-
-- **`active_path`** (ordered list): repo-relative canonical paths of ancestors on the
-  current DFS branch. Every path is appended before recursing and popped after the subtree
-  is fully processed.
-- **`done`** (set): repo-relative canonical paths whose subtrees have been fully processed.
-  A path is added to `done` after it is popped from `active_path`.
-
-Algorithm (per visit of a node):
-
-```
-visit(abs_path):
-  canonical = normpath(abs_path relative to manifest_repo)
-  if canonical in active_path:
-    CYCLE -- raise IncludeCycleError(rendered cycle)
-  active_path.append(canonical)
-  child_nodes = []
-  for child_path in xml_includes(abs_path):
-    child_canonical = normpath(child_path relative to manifest_repo)
-    if child_canonical in done:
-      DIAMOND -- skip this child (already processed at first-walked position)
-      continue
-    child_nodes.append(visit(child_path))
-  active_path.pop()
-  done.add(canonical)
-  return IncludeTree(path=canonical, includes=child_nodes)
-```
-
-Note: the `done` check is performed in the **parent's child-iteration loop** before
-calling `visit()` on the child -- `visit()` is never called on a node that is already
-in `done`.  This differs from a naive two-set design where `visit()` might be called
-and return early; the actual implementation avoids the redundant call entirely.
-
-### Cycle error format
-
-When a cycle is detected, `IncludeCycleError` is raised with a message of the form:
-
-```
-include cycle: <p0> -> <p1> -> ... -> <pn> -> <p0>
-```
-
-where `p0` is the canonical node that was already on `active_path` and `pn` is the last
-visited node before the cycle was detected. All paths are **repo-relative** (not absolute
-filesystem paths) so the message is portable across operator machines.
-
-Self-cycle example: `include cycle: a.xml -> a.xml`
-
-Triangle example: `include cycle: a.xml -> b.xml -> c.xml -> a.xml`
-
-### Diamond deduplication
-
-When `_walk_includes` encounters a node that is already in `done` (reached via a second
-path through the graph -- a diamond), the second visit is a no-op for include traversal.
-The shared node's subtree is **not** re-processed; it appears in the `IncludeTree` only
-at its **first-walked position**.
-
-See `docs/lockfile.md` for the corresponding lockfile serialisation rule.
-
-### Path canonicalisation
-
-All paths compared for cycle and diamond detection are canonicalised via
-`_canonicalize_include_path(abs_path, manifest_repo)`, which:
-
-1. Computes the path relative to `manifest_repo`.
-2. Applies `os.path.normpath` to resolve `./` prefixes, `..` segments, and redundant
-   separators.
-
-This means `./foo.xml` and `foo.xml` are treated as the same node, preventing trivial
-cycle-bypass attempts via path aliasing.
-
----
-
-## Exception Classes
-
-All install-state hard errors inherit from `InstallError(Exception)`:
-
-| Exception class | Raised when | Key fields |
-|-----------------|-------------|------------|
-| `KanonHashMismatchError` | `.kanon` has been modified since the lockfile was written (`LOCKFILE_HASH_MISMATCH` state). | `lockfile_hash`, `computed_hash` |
-| `LockfileUnreachableShaError` | A lockfile SHA is no longer reachable on the remote (`LOCKFILE_UNREACHABLE` state). | `source_name`, `sha`, `remote_url` |
-| `CatalogSourceMismatchError` | CLI/env catalog source differs from lockfile's `[catalog].source` (`LOCKFILE_SOURCE_MISMATCH` state). | `lockfile_source`, `cli_env_source` |
-| `MissingCatalogSourceError` | No catalog source is available from CLI, env, or lockfile fallback. | `command` |
-| `UnknownSourceError` | `--refresh-lock-source <name>` does not match any known source by direct lookup or `derive_source_name`. | `name`, `known_names` |
-| `OrphanedLockEntryError` | `--strict-lock` is set and the lockfile contains sources absent from `.kanon` (`LOCKFILE_CONSISTENT` state only). | `orphaned_names` |
-| `BranchDriftError` | `--strict-drift` is set and one or more branch-shaped sources have a remote tip that differs from the locked SHA (`LOCKFILE_CONSISTENT` state only). | `reports` (list of `BranchDriftReport`) |
-| `IncludeCycleError` | `_walk_includes` detects a cycle in the `<include>` chain. | `cycle_path` (list of repo-relative path strings) |
-| `MalformedIncludeError` | An `<include>` element is missing the required `name` attribute (fail-fast; not silently skipped). | `xml_file` (path to the containing XML file) |
-
-Each exception's `__str__` renders in the spec's standard three-line error
-shape: `ERROR: <one-line summary>`, optional context lines (wrapped at 80
-columns), and a remediation line.
-
----
-
-## Orphan and Drift Handling (LOCKFILE_CONSISTENT State)
-
-When the install state is `LOCKFILE_CONSISTENT`, two additional checks run
-before the per-source resolution loop (step 5a):
-
-### Orphaned Lock Entries
-
-An orphaned lock entry is a `[[sources]]` row in `.kanon.lock` whose `name`
-does not match any `KANON_SOURCE_*` triple in the current `.kanon` file (e.g.
-after `kanon remove` without a subsequent `kanon install`).
-
-**Default behaviour (no `--strict-lock`).** Each orphaned source is logged
-with an info-line (`pruned orphaned lock entry: <name>`) and removed from the
-lockfile when it is rewritten at the end of the install step. The install
-continues normally using the remaining, non-orphaned lockfile entries.
-
-**With `--strict-lock`.** `OrphanedLockEntryError` is raised immediately,
-listing all orphaned source names. The install is aborted. Remediation: run
-`kanon install` without `--strict-lock` to prune the entries automatically, or
-restore the missing `KANON_SOURCE_<name>_*` triples in `.kanon`.
-
-### Branch Drift
-
-Branch drift occurs when a branch-shaped source (a source whose `revision_spec`
-is not a PEP 440 specifier and not a `refs/tags/` ref) has a remote branch tip
-that differs from the SHA recorded in the lockfile. This indicates the branch
-has advanced since the lockfile was written.
-
-**Branch-shape detection.** `_is_branch_shaped_spec(revision_spec)` returns
-`True` when the spec is not a non-empty PEP 440 `SpecifierSet` and does not
-start with `refs/tags/`. Plain names (`main`, `dev`) and `refs/heads/<name>`
-refs are both branch-shaped.
-
-**Default behaviour (no `--strict-drift`).** Each drifted source is logged
-with an info-line naming the branch, locked SHA, and current remote tip. The
-install continues using the locked SHA. The reachability check for drifted
-sources is skipped (the old SHA may no longer be a ref head on the remote even
-though it exists in commit history).
-
-**With `--strict-drift`.** `BranchDriftError` is raised immediately, carrying
-a list of `BranchDriftReport` NamedTuples (`source_name`, `branch`,
-`locked_sha`, `current_sha`). The install is aborted. Remediation: run
-`kanon install --refresh-lock-source <source>` to accept the new branch tip.
-
-### Interaction Between Both Flags
-
-The orphan check runs before the drift check. When both events are present and
-both strict flags are set, `OrphanedLockEntryError` is raised first.
-
----
-
-## Retry Policy
+## Retry policy
 
 `git ls-remote` calls inside the embedded repo fork
 (`src/kanon_cli/repo/project.py::_run_ls_remote_with_retry`) are retried up
-to `KANON_GIT_RETRY_COUNT` times (default 3) with a delay of
-`KANON_GIT_RETRY_DELAY` seconds (default 1) between attempts. Authentication
-errors are not retried. `repo init` and `repo sync` calls from
-`core/install.py` are single-shot and not retried via this mechanism.
+to `KANON_GIT_RETRY_COUNT` times (default 3). The delay before each retry
+uses exponential backoff: `delay = KANON_GIT_RETRY_DELAY * (2 ** (attempt -
+1))`, where `KANON_GIT_RETRY_DELAY` (default 1 second) is the base delay.
+Attempt 1 waits the base delay; attempt 2 waits twice that; attempt 3 waits
+four times that.
+
+`KANON_GIT_RETRY_DELAY` is the **only** sleep-based wait in non-vendored
+kanon code. The vendored fork at `src/kanon_cli/repo/` also contains a
+separate exponential-backoff sleep inside `retry_fetches` (controlled by
+`KANON_MAX_RETRY_SLEEP_SEC` and `KANON_RETRY_JITTER_PERCENT`), but that code
+is inside the vendored carve-out and is not part of the kanon source
+surface. Every other synchronization mechanism in non-vendored kanon code
+uses readiness detection or event-driven callbacks.
+
+**Authentication-error bypass.** When the `git ls-remote` stderr output
+matches any pattern in `GIT_AUTH_ERROR_PATTERNS` (defined in
+`src/kanon_cli/constants.py`), the retry loop exits immediately and the
+error is surfaced without further attempts. Retrying an auth failure would
+only produce identical failures and waste time.
+
+`repo_init` and `repo_sync` calls from `core/install.py` are single-shot
+and are not retried by this mechanism.
+
+Both `KANON_GIT_RETRY_COUNT` and `KANON_GIT_RETRY_DELAY` are read at call
+time from the environment; their defaults are defined in
+`src/kanon_cli/constants.py` (`GIT_RETRY_COUNT_DEFAULT` and
+`GIT_RETRY_DELAY_DEFAULT`).
 
 ---
 
-## Concurrency Serialization
+## Error propagation
 
-All workspace-mutating subcommands acquire an exclusive `fcntl.flock(LOCK_EX)`
-on `.kanon-data/.kanon-install.lock` via the shared context manager
-`kanon_workspace_lock(workspace_root)` (implemented in
-`src/kanon_cli/utils/concurrency.py`) before performing any filesystem
-mutations.
+Every git stderr line produced by the embedded engine is surfaced verbatim
+to the operator's terminal with a prefix identifying the source name, for
+example:
 
-The commands that acquire the lock are:
+```text
+[source: my-org-packages] error: Repository not found.
+[source: my-org-packages] fatal: Could not read from remote repository.
+```
 
-| Command | Lock scope |
-|---------|-----------|
-| `kanon install` | Entire install pipeline (repo init, sync, symlink aggregation, lockfile write) |
-| `kanon add` | Normal (non-dry-run) write path only -- dry-run skips the lock |
-| `kanon remove` | Normal (non-dry-run) write path only -- dry-run skips the lock |
-| `kanon doctor --refresh-completion-cache` | Completion-cache refresh only (not yet wired into the CLI; registration deferred to the task that owns cli.py) |
+The full error-propagation contract:
 
-This serializes concurrent invocations of any of these commands on the same
-project directory. The `.kanon-data/` directory is created eagerly inside
-`kanon_workspace_lock` before the lock file is opened, so the directory always
-exists when the lock is held.
-
-The lock is released automatically when the `with` block exits (including on
-exception). A stale lock file left by a killed process is harmless -- the next
-invocation reopens and re-acquires it.
-
----
-
-## Atomicity Contract
-
-Writes to the lockfile use a write-temp-then-rename pattern (see
-`core/lockfile.py::write_lockfile` and `docs/lockfile.md` for details). A
-SIGTERM mid-install leaves either the prior lockfile or the new lockfile,
-never a partial file.
-
-Per-project clones (which touch many files in `.kanon-data/sources/<name>/`)
-are NOT atomic in aggregate. A SIGTERM during a `repo sync` may leave a
-partially-cloned project directory. Use `kanon clean --orphans` to recover.
-
----
-
-## Error-Propagation Contract
-
-- `install` (outer): acquires the concurrency lock via `kanon_workspace_lock`;
-  raises `OSError` if the `.kanon-data/` directory cannot be created.
+- `install` (outer): acquires the concurrency lock via
+  `kanon_workspace_lock`; raises `OSError` if `.kanon-data/` cannot be
+  created.
 - `_run_install` (inner): propagates all exceptions from sub-steps without
   catching and discarding. Callers see the original exception type.
-- Library code (all functions in `core/install.py`) NEVER calls `sys.exit()`.
-  Only CLI command handlers in `src/kanon_cli/commands/` or `cli.py` exit.
+- Library code in `core/install.py` never calls `sys.exit()`. Only CLI
+  command handlers in `src/kanon_cli/commands/` or `cli.py` exit.
 - Every error path produces a clear, actionable message sent to stderr. No
   silent failures, no swallowed exceptions.
+
+Hard-error states (`LOCKFILE_HASH_MISMATCH`, `LOCKFILE_UNREACHABLE`,
+`LOCKFILE_SOURCE_MISMATCH`) raise typed exception subclasses of
+`InstallError(Exception)` before any filesystem mutation occurs. Each
+exception renders in the spec's standard three-line shape:
+
+```text
+ERROR: <one-line summary>
+<context lines wrapped at 80 columns>
+Remediation: <operator next step>
+```
+
+Cross-reference: [`docs/security-model.md`](security-model.md) describes
+which errors are never silenced for security reasons.
+
+---
+
+## Why kanon doesn't use an external repo tool
+
+Kanon vendors the `repo` fork rather than depending on the system `repo`
+binary for the following reasons:
+
+1. **Deterministic install behaviour.** A vendored fork is pinned to a
+   specific, tested revision. Upstream `repo` has a rolling release model;
+   depending on the system binary would expose kanon to unexpected breakage
+   from operator-controlled upgrades.
+
+2. **No external binary dependency.** Operators do not need to install or
+   manage a separate `repo` tool. The kanon wheel is self-contained. This
+   simplifies CI pipelines and reduces the operator's setup burden.
+
+3. **Controlled error reporting.** The fork exposes a Python API
+   (`repo_init`, `repo_envsubst`, `repo_sync`) that allows kanon to capture
+   stderr verbatim and prefix it with the source name before surfacing it to
+   the operator. A subprocess call to an external binary would make this
+   structured forwarding harder.
+
+4. **No provider-specific tooling.** Per spec Section 3.6, kanon never calls
+   provider HTTP APIs (`api.github.com`, `gitlab.com/api`, etc.) and never
+   shells out to provider CLIs (`gh`, `glab`, `bb`, `tea`). All git
+   interaction is via the `git` binary only. Vendoring `repo` keeps this
+   boundary clean; there is no temptation to use provider-specific
+   extensions bundled with third-party repo tools.
+
+---
+
+## See also
+
+- [`docs/lockfile.md`](lockfile.md) -- lockfile TOML schema, `kanon_hash`
+  field, and the five-row install state matrix.
+- [`docs/configuration.md`](configuration.md) -- all environment variables,
+  including `KANON_CATALOG_SOURCE` and `KANON_GIT_LS_REMOTE_TIMEOUT`.
+- [`docs/security-model.md`](security-model.md) -- the no-provider-API rule,
+  the no-credentials-caching rule, and the auth-error pattern list.

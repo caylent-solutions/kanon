@@ -37,6 +37,7 @@ from kanon_cli.constants import (
     KANON_KANON_FILE_ENV,
 )
 from kanon_cli.core.metadata import derive_source_name
+from kanon_cli.utils.concurrency import kanon_workspace_lock
 
 
 # ---------------------------------------------------------------------------
@@ -372,27 +373,31 @@ def run_remove(args: argparse.Namespace) -> int:
         _render_remove_dry_run_diff(lines, all_removal_indices)
         return 0
 
-    # Normal write path: detect line endings, apply file-writing rules, write.
-    dominant_ending = _detect_dominant_line_ending(raw_text)
-    if dominant_ending is None:
-        # Mixed line endings -- warn and normalise to LF.
-        print(
-            f".kanon file {kanon_file} has mixed line endings; normalising to LF",
-            file=sys.stderr,
-        )
-        dominant_ending = "\n"
+    # Normal write path: acquire the workspace exclusive lock before any file
+    # write so a concurrent kanon install cannot read a half-written .kanon.
+    workspace_root = kanon_file.resolve().parent
+    with kanon_workspace_lock(workspace_root):
+        # Detect line endings, apply file-writing rules, write.
+        dominant_ending = _detect_dominant_line_ending(raw_text)
+        if dominant_ending is None:
+            # Mixed line endings -- warn and normalise to LF.
+            print(
+                f".kanon file {kanon_file} has mixed line endings; normalising to LF",
+                file=sys.stderr,
+            )
+            dominant_ending = "\n"
 
-    # Build kept lines (all lines except the removal set).
-    kept_lines = [line for idx, line in enumerate(lines) if idx not in all_removal_indices]
-    kept_text = "".join(kept_lines)
+        # Build kept lines (all lines except the removal set).
+        kept_lines = [line for idx, line in enumerate(lines) if idx not in all_removal_indices]
+        kept_text = "".join(kept_lines)
 
-    # Apply file-writing rules (blank-run collapse, trailing newline, line endings).
-    final_text = _apply_file_writing_rules(kept_text, dominant_ending)
+        # Apply file-writing rules (blank-run collapse, trailing newline, line endings).
+        final_text = _apply_file_writing_rules(kept_text, dominant_ending)
 
-    # Write the file using raw bytes to preserve the exact line ending chosen.
-    kanon_file.write_bytes(final_text.encode("utf-8"))
+        # Write the file using raw bytes to preserve the exact line ending chosen.
+        kanon_file.write_bytes(final_text.encode("utf-8"))
 
-    # Emit one summary line per removed source.
+    # Emit one summary line per removed source (outside lock -- read-only).
     for _input_name, normalized, _indices in removal_plan:
         key_names = f"KANON_SOURCE_{normalized}_URL, KANON_SOURCE_{normalized}_REVISION, KANON_SOURCE_{normalized}_PATH"
         print(f"Removed {key_names} from {kanon_file}")

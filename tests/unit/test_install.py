@@ -341,3 +341,88 @@ class TestInstallLifecycle:
         assert "3.0.0" in all_args, (
             f"repo_init must be called with the resolved revision '3.0.0', but call args were: {mock_init.call_args!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for workspace lock integration in install()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInstallWorkspaceLock:
+    """install() acquires kanon_workspace_lock, creating .kanon-data/ eagerly."""
+
+    _CATALOG_SOURCE = "https://example.com/catalog.git@main"
+    _FAKE_REF_RESOLUTION = MagicMock(
+        ref="refs/tags/1.0.0",
+        sha="abc123",
+    )
+
+    def test_install_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
+        """install() creates .kanon-data/ via kanon_workspace_lock eager-create.
+
+        A fresh workspace with no prior .kanon-data/ must end up with the
+        directory after install() runs (even if the install fails later).
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        from kanon_cli.core.install import _RefResolution
+
+        fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        assert not (tmp_path / ".kanon-data").exists()
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+
+        assert (tmp_path / ".kanon-data").is_dir(), (
+            "install() must create .kanon-data/ as a side effect of kanon_workspace_lock eager-create"
+        )
+
+    def test_install_lock_file_created_in_kanon_data(self, tmp_path: pathlib.Path) -> None:
+        """install() creates the workspace lock file inside .kanon-data/.
+
+        After install() completes, the lock file must persist at
+        .kanon-data/INSTALL_LOCK_FILENAME so subsequent invocations can
+        lock on the same file.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        from kanon_cli.constants import INSTALL_LOCK_FILENAME
+        from kanon_cli.core.install import _RefResolution
+
+        fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+
+        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"

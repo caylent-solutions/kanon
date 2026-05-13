@@ -241,6 +241,92 @@ kanon install --refresh-lock-source <name> --catalog-source <url>@<ref>
 
 ---
 
+## Another kanon Process Is Running (Workspace Lock Contention)
+
+### Symptom
+
+A `kanon install`, `kanon add`, `kanon remove`, or
+`kanon doctor --refresh-completion-cache` (not yet wired into the CLI;
+registration deferred to the task that owns cli.py) invocation appears to hang
+indefinitely without producing any output.
+
+### Cause
+
+Each of those commands acquires an exclusive `fcntl.flock` on
+`.kanon-data/.kanon-install.lock` before mutating the workspace. If another
+kanon process is already holding the lock, the waiting process blocks until the
+holder releases it.
+
+This is intentional: serialization prevents a concurrent `kanon install` and
+`kanon add` from producing a partially-written `.kanon` file.
+
+### Diagnosis
+
+Use `lsof` to determine which process holds the lock:
+
+```bash
+lsof .kanon-data/.kanon-install.lock
+```
+
+Sample output:
+
+```
+COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+kanon   12345  alice    3uW  REG  ...        0    ... .kanon-data/.kanon-install.lock
+```
+
+The `W` flag in the `FD` column indicates the process holds a write (exclusive)
+lock. The `PID` column identifies the holder.
+
+If `lsof` is not available, use `fuser`:
+
+```bash
+fuser .kanon-data/.kanon-install.lock
+```
+
+### Resolution
+
+**Option 1: Wait for the holder to finish.**
+
+If the process shown by `lsof` is a legitimate `kanon install` or `kanon add`
+run (e.g. a CI job), the waiting invocation will automatically proceed once the
+holder exits. No manual intervention is needed.
+
+**Option 2: Terminate the holder if it is stale.**
+
+If the holding process is a hung or orphaned process (a killed install that left
+an open file descriptor), the OS holds the lock on behalf of that open FD and
+will release it automatically once the process exits or the FD is closed. Verify
+whether the process is still alive:
+
+```bash
+ps -p <PID>
+```
+
+If `lsof` shows a PID that no longer appears in `ps` output, the process has
+already exited and its lock is already released -- re-run your kanon command.
+The `lsof` result may be a stale snapshot from a race between the process exit
+and your query.
+
+If the process is alive but unresponsive (stuck in `repo sync`, for example),
+terminate it:
+
+```bash
+kill <PID>         # SIGTERM -- allows cleanup
+kill -9 <PID>      # SIGKILL -- if SIGTERM is ignored
+```
+
+After the holder exits the OS releases the lock. The waiting kanon command will
+then proceed.
+
+**Note on stale lock files.** A stale `.kanon-data/.kanon-install.lock` file
+(one left behind by a process that was killed) is harmless. The lock is held
+on the open file descriptor, not the filename, so the next kanon invocation
+opens the file and acquires a fresh exclusive lock. You do not need to delete
+the lock file manually.
+
+---
+
 ## Insecure Remote URL
 
 ### Symptom

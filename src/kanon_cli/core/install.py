@@ -6,9 +6,11 @@ per source, aggregates symlinks into ``.packages/``, detects collisions,
 updates ``.gitignore``, and optionally installs marketplace plugins.
 
 Concurrent installs on the same project directory are serialized via an
-exclusive file lock on ``.kanon-data/.kanon-install.lock``. This
-prevents interleaved filesystem mutations when two ``kanon install`` processes
-are started simultaneously.
+exclusive workspace lock on ``.kanon-data/.kanon-install.lock`` (via
+``kanon_workspace_lock`` in ``utils/concurrency.py``). The same lock is
+shared with ``kanon add``, ``kanon remove``, and
+``kanon doctor --refresh-completion-cache`` so all mutating commands
+serialise on a single per-workspace lock.
 
 Lockfile state machine (spec Section 4.7)
 -----------------------------------------
@@ -48,7 +50,6 @@ from __future__ import annotations
 
 import datetime
 import enum
-import fcntl
 import os
 import pathlib
 import shutil
@@ -61,7 +62,6 @@ import kanon_cli.repo as _repo
 from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
-    INSTALL_LOCK_FILENAME,
     KANON_ALLOW_INSECURE_REMOTES,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
@@ -88,6 +88,7 @@ from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
+from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.version import resolve_version
 
 # Re-export include-walker symbols so call-sites can import from either module.
@@ -1916,38 +1917,39 @@ def install(
 ) -> None:
     """Execute the full Kanon install lifecycle.
 
-    Acquires an exclusive file lock on ``.kanon-data/.kanon-install.lock``
-    before performing any filesystem mutations. This serializes concurrent
-    invocations so that two simultaneous ``kanon install`` runs on the same
-    project directory do not interleave their writes.
+    Acquires an exclusive workspace lock via ``kanon_workspace_lock`` on
+    ``.kanon-data/.kanon-install.lock`` before performing any filesystem
+    mutations. This serializes concurrent invocations so that two simultaneous
+    ``kanon install`` runs on the same project directory do not interleave their
+    writes. The same lock is acquired by ``kanon add``, ``kanon remove``, and
+    ``kanon doctor --refresh-completion-cache`` so all mutating commands
+    serialise on a single per-workspace lock.
 
     The ``.kanon-data/`` directory is created eagerly before the lock is
-    acquired, using the same error-wrapping convention as ``create_source_dirs``
-    so that a read-only project directory surfaces as an ``OSError`` with the
-    ``"Cannot create source directory"`` prefix.
+    acquired (inside ``kanon_workspace_lock``) so that a first invocation in a
+    fresh workspace does not fail with ``FileNotFoundError``.
 
     Steps:
-      1. Create .kanon-data/ directory (fail fast on permission errors).
-      2. Acquire exclusive file lock inside .kanon-data/.
-      3. Classify the lockfile state via _classify_install_state.
+      1. Acquire exclusive workspace lock (creates .kanon-data/ if absent).
+      2. Classify the lockfile state via _classify_install_state.
          When refresh_lock=True, short-circuits to InstallState.REFRESH_LOCK.
          When refresh_lock_source is set, uses InstallState.REFRESH_LOCK_SOURCE.
-      4. Resolve the effective catalog source via _resolve_catalog_source.
+      3. Resolve the effective catalog source via _resolve_catalog_source.
          On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths, the lockfile
          fallback is disabled.
-      5. Parse .kanon and validate sources.
-      5a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
+      4. Parse .kanon and validate sources.
+      4a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
          Prune orphans (or raise OrphanedLockEntryError with --strict-lock).
          Log drift info-lines (or raise BranchDriftError with --strict-drift).
-      6. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
-      7. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
+      5. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
+      6. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
          On the REFRESH_LOCK_SOURCE path, only the named source is re-resolved;
          all other sources replay their pinned SHAs from the existing lockfile.
-      8. Aggregate symlinks into .packages/.
-      9. Update .gitignore.
-      10. Emit state info-line via _emit_install_state.
-      11. If KANON_MARKETPLACE_INSTALL=true: run install script.
-      12. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK;
+      7. Aggregate symlinks into .packages/.
+      8. Update .gitignore.
+      9. Emit state info-line via _emit_install_state.
+      10. If KANON_MARKETPLACE_INSTALL=true: run install script.
+      11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK;
           partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
           LOCKFILE_CONSISTENT with orphans; unchanged for LOCKFILE_CONSISTENT
           without orphans.
@@ -2005,14 +2007,7 @@ def install(
     kanonenv_path = kanonenv_path.resolve()
     base_dir = kanonenv_path.parent
 
-    kanon_data_dir = base_dir / ".kanon-data"
-    try:
-        kanon_data_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise OSError(f"Cannot create source directory {kanon_data_dir}: {exc.strerror}") from exc
-    concurrency_lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
-    with open(concurrency_lock_path, "w") as _lock_fd:
-        fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
+    with kanon_workspace_lock(base_dir):
         _run_install(
             kanonenv_path,
             lock_file_path,

@@ -329,11 +329,29 @@ errors are not retried. `repo init` and `repo sync` calls from
 
 ## Concurrency Serialization
 
-`install` acquires an exclusive `fcntl.flock(LOCK_EX)` on
-`.kanon-data/.kanon-install.lock` before performing any filesystem mutations.
-This serializes concurrent `kanon install` invocations on the same project
-directory. The lock is released automatically on process exit; a stale lock
-file left by a killed process is harmless.
+All workspace-mutating subcommands acquire an exclusive `fcntl.flock(LOCK_EX)`
+on `.kanon-data/.kanon-install.lock` via the shared context manager
+`kanon_workspace_lock(workspace_root)` (implemented in
+`src/kanon_cli/utils/concurrency.py`) before performing any filesystem
+mutations.
+
+The commands that acquire the lock are:
+
+| Command | Lock scope |
+|---------|-----------|
+| `kanon install` | Entire install pipeline (repo init, sync, symlink aggregation, lockfile write) |
+| `kanon add` | Normal (non-dry-run) write path only -- dry-run skips the lock |
+| `kanon remove` | Normal (non-dry-run) write path only -- dry-run skips the lock |
+| `kanon doctor --refresh-completion-cache` | Completion-cache refresh only (not yet wired into the CLI; registration deferred to the task that owns cli.py) |
+
+This serializes concurrent invocations of any of these commands on the same
+project directory. The `.kanon-data/` directory is created eagerly inside
+`kanon_workspace_lock` before the lock file is opened, so the directory always
+exists when the lock is held.
+
+The lock is released automatically when the `with` block exits (including on
+exception). A stale lock file left by a killed process is harmless -- the next
+invocation reopens and re-acquires it.
 
 ---
 
@@ -352,8 +370,8 @@ partially-cloned project directory. Use `kanon clean --orphans` to recover.
 
 ## Error-Propagation Contract
 
-- `install` (outer): acquires the concurrency lock; raises `OSError` if the
-  `.kanon-data/` directory cannot be created.
+- `install` (outer): acquires the concurrency lock via `kanon_workspace_lock`;
+  raises `OSError` if the `.kanon-data/` directory cannot be created.
 - `_run_install` (inner): propagates all exceptions from sub-steps without
   catching and discarding. Callers see the original exception type.
 - Library code (all functions in `core/install.py`) NEVER calls `sys.exit()`.

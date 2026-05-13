@@ -33,6 +33,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.core.metadata import (
     CatalogMetadata,
     CatalogMetadataParseError,
@@ -715,8 +716,9 @@ def run_add(args: argparse.Namespace) -> int:
         resolved_entries.append((source_name, rel_path, lines))
 
     # Step 5: Write phase -- all entries resolved successfully; now write to disk.
-    # For --dry-run: print diffs without any file modification.
-    # For normal runs: ensure the header exists, then append/overwrite each triple.
+    # For --dry-run: print diffs without any file modification (no lock needed).
+    # For normal runs: acquire the workspace lock, ensure the header exists,
+    # then append/overwrite each triple.
     if dry_run:
         for source_name, _rel_path, lines in resolved_entries:
             _render_dry_run_diff(
@@ -727,31 +729,36 @@ def run_add(args: argparse.Namespace) -> int:
             )
         return 0
 
-    # Normal (non-dry-run) write path: create header if file does not exist,
-    # then append or overwrite each resolved triple in argument order.
-    _write_standard_header(kanon_file)
+    # Normal (non-dry-run) write path: acquire the workspace exclusive lock
+    # before any file write so a concurrent kanon install cannot read a
+    # half-written .kanon file.
+    workspace_root = kanon_file.resolve().parent
+    with kanon_workspace_lock(workspace_root):
+        # Create header if file does not exist, then append or overwrite each
+        # resolved triple in argument order.
+        _write_standard_header(kanon_file)
 
-    for source_name, _rel_path, lines in resolved_entries:
-        if force and kanon_file.exists():
-            # Check whether an existing block is present; if so, overwrite it.
-            existing_url, _, _ = _read_existing_triple_block(kanon_file, source_name)
-            if existing_url is not None:
-                _overwrite_triple_block(
-                    dest=kanon_file,
-                    source_name=source_name,
-                    lines=lines,
-                )
+        for source_name, _rel_path, lines in resolved_entries:
+            if force and kanon_file.exists():
+                # Check whether an existing block is present; if so, overwrite it.
+                existing_url, _, _ = _read_existing_triple_block(kanon_file, source_name)
+                if existing_url is not None:
+                    _overwrite_triple_block(
+                        dest=kanon_file,
+                        source_name=source_name,
+                        lines=lines,
+                    )
+                else:
+                    _append_triple_block(
+                        dest=kanon_file,
+                        source_name=source_name,
+                        lines=lines,
+                    )
             else:
                 _append_triple_block(
                     dest=kanon_file,
                     source_name=source_name,
                     lines=lines,
                 )
-        else:
-            _append_triple_block(
-                dest=kanon_file,
-                source_name=source_name,
-                lines=lines,
-            )
 
     return 0

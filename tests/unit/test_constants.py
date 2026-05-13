@@ -388,6 +388,29 @@ class TestKanonLockFileConstant:
 
 
 @pytest.mark.unit
+class TestKanonCompletionCacheDir:
+    """Tests for KANON_COMPLETION_CACHE_DIR constant (E3-F3-S1-T9 AC-FUNC-001)."""
+
+    def test_constant_value_equals_completion_cache(self) -> None:
+        """KANON_COMPLETION_CACHE_DIR equals the string 'completion-cache'."""
+        from kanon_cli.constants import KANON_COMPLETION_CACHE_DIR
+
+        assert KANON_COMPLETION_CACHE_DIR == "completion-cache"
+
+    def test_constant_is_string(self) -> None:
+        """KANON_COMPLETION_CACHE_DIR is a str."""
+        from kanon_cli.constants import KANON_COMPLETION_CACHE_DIR
+
+        assert isinstance(KANON_COMPLETION_CACHE_DIR, str)
+
+    def test_constant_is_non_empty(self) -> None:
+        """KANON_COMPLETION_CACHE_DIR is a non-empty string."""
+        from kanon_cli.constants import KANON_COMPLETION_CACHE_DIR
+
+        assert len(KANON_COMPLETION_CACHE_DIR) > 0
+
+
+@pytest.mark.unit
 class TestKanonAllowInsecureRemotesConstant:
     """Tests for KANON_ALLOW_INSECURE_REMOTES constant (E3-F3-S1-T8 AC-FUNC-001)."""
 

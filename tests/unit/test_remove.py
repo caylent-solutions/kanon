@@ -632,3 +632,70 @@ class TestRunRemoveAtomicity:
         assert "KANON_SOURCE_foo_bar_" not in result
         assert "KANON_SOURCE_baz_qux_" not in result
         assert "GITBASE=x" in result
+
+
+# ---------------------------------------------------------------------------
+# Tests for workspace lock integration in run_remove
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRunRemoveWorkspaceLock:
+    """run_remove wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
+
+    def test_run_remove_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
+        """run_remove creates .kanon-data/ via workspace lock acquisition.
+
+        The kanon_workspace_lock context manager creates .kanon-data/ eagerly;
+        a normal run_remove call in a fresh workspace must create the directory
+        as a side effect of acquiring the write lock.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        content = (
+            "GITBASE=https://git.example.com\n"
+            "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
+            "KANON_SOURCE_alpha_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_alpha_PATH=repo-specs/alpha-marketplace.xml\n"
+        )
+        kanon_file = tmp_path / ".kanon"
+        _write_kanon(kanon_file, content)
+
+        # Pre-condition: .kanon-data/ must not exist.
+        assert not (tmp_path / ".kanon-data").exists()
+
+        args = _make_args(["alpha"], str(kanon_file))
+        run_remove(args)
+
+        assert (tmp_path / ".kanon-data").is_dir(), (
+            "run_remove must create .kanon-data/ via kanon_workspace_lock eager-create "
+            "when the workspace has no prior .kanon-data/ directory"
+        )
+
+    def test_run_remove_dry_run_does_not_create_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
+        """run_remove --dry-run does not acquire the workspace lock or create .kanon-data/.
+
+        The lock is only acquired on the non-dry-run write path.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        content = (
+            "GITBASE=https://git.example.com\n"
+            "KANON_SOURCE_beta_URL=https://example.com/beta.git\n"
+            "KANON_SOURCE_beta_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_beta_PATH=repo-specs/beta-marketplace.xml\n"
+        )
+        kanon_file = tmp_path / ".kanon"
+        _write_kanon(kanon_file, content)
+
+        args = _make_args(["beta"], str(kanon_file), dry_run=True)
+        result = run_remove(args)
+
+        assert result == 0
+        # Dry run must not create .kanon-data/.
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "run_remove --dry-run must not create .kanon-data/; "
+            "the workspace lock is only acquired on the non-dry-run write path"
+        )

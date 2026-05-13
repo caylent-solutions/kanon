@@ -77,6 +77,10 @@ GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")
 # File name for the per-project exclusive lock that serializes concurrent installs.
 INSTALL_LOCK_FILENAME = ".kanon-install.lock"
 
+# -- Doctor command --
+# Subdirectory name under .kanon-data/ where completion-cache files are stored.
+KANON_COMPLETION_CACHE_DIR = "completion-cache"
+
 # -- Color / TTY output --
 # Environment variable name that suppresses ANSI color output when non-empty,
 # following the https://no-color.org convention.

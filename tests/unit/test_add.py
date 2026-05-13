@@ -871,3 +871,163 @@ class TestRunAddHappyPath:
         assert "KANON_SOURCE_entry_a_URL=" in content
         assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content
         assert "KANON_SOURCE_entry_a_PATH=" in content
+
+
+# ---------------------------------------------------------------------------
+# Tests for workspace lock integration in run_add
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRunAddWorkspaceLock:
+    """run_add wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
+
+    def test_run_add_creates_kanon_data_dir(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """run_add creates .kanon-data/ as part of workspace lock acquisition.
+
+        The kanon_workspace_lock context manager creates .kanon-data/ eagerly;
+        this test confirms that a normal run_add call in a fresh workspace
+        (with no pre-existing .kanon-data/) creates the directory.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+            capsys: Pytest stdout/stderr capture fixture.
+        """
+        import textwrap
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        kanon_file = tmp_path / ".kanon"
+        meta = CatalogMetadata(
+            name="entry-b",
+            display_name="Entry B",
+            description="Test.",
+            version="1.0.0",
+        )
+        xml_path = tmp_path / "repo" / "repo-specs" / "entry-b-marketplace.xml"
+        xml_path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-b</name>
+                    <display-name>Entry B</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                    <type>plugin</type>
+                    <owner-name>Owner</owner-name>
+                    <owner-email>o@example.com</owner-email>
+                    <keywords>test</keywords>
+                  </catalog-metadata>
+                </manifest>
+            """)
+        )
+        manifest_root = tmp_path / "repo"
+
+        args = argparse.Namespace(
+            catalog_source="https://example.com/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["entry-b"],
+            force=False,
+            dry_run=False,
+        )
+
+        # Pre-condition: .kanon-data/ must not exist.
+        assert not (tmp_path / ".kanon-data").exists()
+
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, "https://example.com/repo.git", "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, "https://example.com/repo.git")],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+        ):
+            run_add(args)
+
+        assert (tmp_path / ".kanon-data").is_dir(), (
+            "run_add must create .kanon-data/ via kanon_workspace_lock eager-create "
+            "when the workspace has no prior .kanon-data/ directory"
+        )
+
+    def test_run_add_dry_run_does_not_create_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
+        """run_add --dry-run does not acquire the workspace lock and does not create .kanon-data/.
+
+        The lock is only acquired on the non-dry-run write path. Dry runs only
+        read the existing .kanon file (or check for collisions) and print diffs
+        without any on-disk changes.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        import textwrap
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        kanon_file = tmp_path / ".kanon"
+        meta = CatalogMetadata(
+            name="entry-c",
+            display_name="Entry C",
+            description="Test.",
+            version="1.0.0",
+        )
+        xml_path = tmp_path / "repo" / "repo-specs" / "entry-c-marketplace.xml"
+        xml_path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-c</name>
+                    <display-name>Entry C</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                    <type>plugin</type>
+                    <owner-name>Owner</owner-name>
+                    <owner-email>o@example.com</owner-email>
+                    <keywords>test</keywords>
+                  </catalog-metadata>
+                </manifest>
+            """)
+        )
+        manifest_root = tmp_path / "repo"
+
+        args = argparse.Namespace(
+            catalog_source="https://example.com/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["entry-c"],
+            force=False,
+            dry_run=True,
+        )
+
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, "https://example.com/repo.git", "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, "https://example.com/repo.git")],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+        ):
+            result = run_add(args)
+
+        assert result == 0
+        # Dry run must not create .kanon-data/ -- the lock is not acquired.
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "run_add --dry-run must not create .kanon-data/; "
+            "the workspace lock is only acquired on the non-dry-run write path"
+        )

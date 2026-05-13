@@ -188,3 +188,42 @@ KANON_WHY_FORMAT = "KANON_WHY_FORMAT"
 # Default output format for 'kanon why' when neither --format nor
 # KANON_WHY_FORMAT are set.
 KANON_WHY_FORMAT_DEFAULT = "text"
+
+# -- kanon why closest-match suggestion thresholds --
+# Maximum Levenshtein edit distance for a candidate to be considered a close
+# match during not-found suggestion. Only candidates with distance <= this
+# value are eligible. Overridable via the KANON_WHY_SUGGEST_MAX_DISTANCE env var.
+_raw_why_suggest_max_distance = os.environ.get("KANON_WHY_SUGGEST_MAX_DISTANCE")
+if _raw_why_suggest_max_distance is not None:
+    try:
+        KANON_WHY_SUGGEST_MAX_DISTANCE: int = int(_raw_why_suggest_max_distance)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; "
+            f"got {_raw_why_suggest_max_distance!r}"
+        )
+    if KANON_WHY_SUGGEST_MAX_DISTANCE < 0:
+        raise SystemExit(
+            f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; "
+            f"got {KANON_WHY_SUGGEST_MAX_DISTANCE}"
+        )
+else:
+    KANON_WHY_SUGGEST_MAX_DISTANCE = 3
+
+# Maximum number of close-match suggestions to include in the not-found error
+# message. Suggestions are sorted ascending by (distance, value) and truncated
+# to this count. Overridable via the KANON_WHY_SUGGEST_TOP_N env var.
+_raw_why_suggest_top_n = os.environ.get("KANON_WHY_SUGGEST_TOP_N")
+if _raw_why_suggest_top_n is not None:
+    try:
+        KANON_WHY_SUGGEST_TOP_N: int = int(_raw_why_suggest_top_n)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {_raw_why_suggest_top_n!r}"
+        )
+    if KANON_WHY_SUGGEST_TOP_N < 0:
+        raise SystemExit(
+            f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {KANON_WHY_SUGGEST_TOP_N}"
+        )
+else:
+    KANON_WHY_SUGGEST_TOP_N = 3

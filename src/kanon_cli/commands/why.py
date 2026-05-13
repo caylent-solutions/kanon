@@ -38,8 +38,11 @@ from kanon_cli.constants import (
     KANON_LOCK_FILE,
     KANON_WHY_FORMAT,
     KANON_WHY_FORMAT_DEFAULT,
+    KANON_WHY_SUGGEST_MAX_DISTANCE,
+    KANON_WHY_SUGGEST_TOP_N,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
+from kanon_cli.utils.levenshtein import levenshtein_distance
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
 from kanon_cli.core.metadata import derive_source_name
@@ -442,6 +445,11 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
     All three categories (URL, XML path, source name) are evaluated. The strategy
     is NOT stop-at-first-match -- every category is checked regardless of prior hits.
 
+    When zero matches are found, the not-found error message includes a closest-match
+    suggestion list (up to KANON_WHY_SUGGEST_TOP_N candidates within
+    KANON_WHY_SUGGEST_MAX_DISTANCE Levenshtein edit distance). When no candidates are
+    within the threshold, the message states that no close matches were found.
+
     Args:
         tree: The fully resolved dependency tree.
         argument: The raw argument string from the CLI.
@@ -475,10 +483,24 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
         hits.append(_MatchHit(category="source_name", label=f"source name '{node.name}'", node=node))
 
     if len(hits) == 0:
-        print(
-            f"ERROR: {argument} not found in resolved tree",
-            file=sys.stderr,
+        universe = _build_suggestion_universe(tree)
+        suggestions = _suggest_closest_matches(
+            argument,
+            universe,
+            max_distance=KANON_WHY_SUGGEST_MAX_DISTANCE,
+            top_n=KANON_WHY_SUGGEST_TOP_N,
         )
+        if suggestions:
+            suggestion_lines = "\n".join(f"  {s}" for s in suggestions)
+            print(
+                f"ERROR: {argument} not found in resolved tree\nDid you mean one of:\n{suggestion_lines}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"ERROR: {argument} not found in resolved tree\nNo close matches found.",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     if len(hits) >= 2:
@@ -493,6 +515,77 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
         sys.exit(1)
 
     return hits[0]
+
+
+# ---------------------------------------------------------------------------
+# Closest-match suggestion (spec Section 4.5 step 5)
+# ---------------------------------------------------------------------------
+
+
+def _build_suggestion_universe(tree: ResolvedTree) -> list[str]:
+    """Build the universe of candidate strings for closest-match suggestions.
+
+    The universe is the union of:
+    - Every top-level source name (as stored in the tree, not normalized).
+    - Every include node's path_in_repo value (XML manifest paths).
+    - Every project node's canonical_url value.
+
+    Args:
+        tree: The fully resolved dependency tree.
+
+    Returns:
+        A list of all candidate strings (may contain duplicates if the tree
+        has repeated entries, but duplicates are harmless for the suggester).
+    """
+    candidates: list[str] = []
+
+    def _collect(node: ChainNode) -> None:
+        if node.kind == "source":
+            candidates.append(node.name)
+        elif node.kind == "include" and node.ref is not None:
+            candidates.append(node.ref)
+        elif node.kind == "project" and node.canonical_url is not None:
+            candidates.append(node.canonical_url)
+        for child in node.children:
+            _collect(child)
+
+    for source_node in tree.sources:
+        _collect(source_node)
+
+    return candidates
+
+
+def _suggest_closest_matches(
+    argument: str,
+    universe: list[str],
+    max_distance: int,
+    top_n: int,
+) -> list[str]:
+    """Return the top closest matches from the universe to the argument.
+
+    Only candidates with Levenshtein edit distance <= max_distance are eligible.
+    Results are sorted ascending by (distance, candidate_value) for deterministic
+    output, and truncated to at most top_n entries.
+
+    Args:
+        argument: The string to compare against.
+        universe: The list of candidate strings to search.
+        max_distance: Maximum edit distance for a candidate to be eligible.
+        top_n: Maximum number of candidates to return.
+
+    Returns:
+        A list of at most top_n candidate strings, sorted ascending by
+        (distance, lexicographic value). Empty list when no candidate is
+        within max_distance.
+    """
+    scored: list[tuple[int, str]] = []
+    for candidate in universe:
+        dist = levenshtein_distance(argument, candidate)
+        if dist <= max_distance:
+            scored.append((dist, candidate))
+
+    scored.sort(key=lambda pair: (pair[0], pair[1]))
+    return [candidate for _, candidate in scored[:top_n]]
 
 
 # ---------------------------------------------------------------------------

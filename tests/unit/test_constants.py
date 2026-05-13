@@ -648,3 +648,168 @@ class TestKanonWhyFormatConstants:
         from kanon_cli.constants import KANON_WHY_FORMAT_DEFAULT
 
         assert isinstance(KANON_WHY_FORMAT_DEFAULT, str)
+
+
+@pytest.mark.unit
+class TestKanonWhySuggestConstants:
+    """Tests for KANON_WHY_SUGGEST_MAX_DISTANCE and KANON_WHY_SUGGEST_TOP_N (AC-FUNC-005)."""
+
+    def test_max_distance_env_var_name_exists(self) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE constant exists and is an int."""
+        from kanon_cli.constants import KANON_WHY_SUGGEST_MAX_DISTANCE
+
+        assert isinstance(KANON_WHY_SUGGEST_MAX_DISTANCE, int)
+
+    def test_max_distance_default_value_is_3(self) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE defaults to 3."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_WHY_SUGGEST_MAX_DISTANCE", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_SUGGEST_MAX_DISTANCE == 3
+        finally:
+            if saved is not None:
+                os.environ["KANON_WHY_SUGGEST_MAX_DISTANCE"] = saved
+            importlib.reload(constants)
+
+    def test_max_distance_is_non_negative(self) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE is a non-negative integer (0 disables suggestions)."""
+        from kanon_cli.constants import KANON_WHY_SUGGEST_MAX_DISTANCE
+
+        assert KANON_WHY_SUGGEST_MAX_DISTANCE >= 0
+
+    def test_max_distance_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_MAX_DISTANCE", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_SUGGEST_MAX_DISTANCE == 5
+        finally:
+            monkeypatch.delenv("KANON_WHY_SUGGEST_MAX_DISTANCE", raising=False)
+            importlib.reload(constants)
+
+    def test_max_distance_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE set to a non-integer env var raises ValueError."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_MAX_DISTANCE", "not-a-number")
+        with pytest.raises((ValueError, SystemExit)):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_MAX_DISTANCE", raising=False)
+        importlib.reload(constants)
+
+    def test_top_n_env_var_name_exists(self) -> None:
+        """KANON_WHY_SUGGEST_TOP_N constant exists and is an int."""
+        from kanon_cli.constants import KANON_WHY_SUGGEST_TOP_N
+
+        assert isinstance(KANON_WHY_SUGGEST_TOP_N, int)
+
+    def test_top_n_default_value_is_3(self) -> None:
+        """KANON_WHY_SUGGEST_TOP_N defaults to 3."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_WHY_SUGGEST_TOP_N", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_SUGGEST_TOP_N == 3
+        finally:
+            if saved is not None:
+                os.environ["KANON_WHY_SUGGEST_TOP_N"] = saved
+            importlib.reload(constants)
+
+    def test_top_n_is_non_negative(self) -> None:
+        """KANON_WHY_SUGGEST_TOP_N is a non-negative integer (0 disables suggestions)."""
+        from kanon_cli.constants import KANON_WHY_SUGGEST_TOP_N
+
+        assert KANON_WHY_SUGGEST_TOP_N >= 0
+
+    def test_top_n_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_TOP_N env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_TOP_N", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_SUGGEST_TOP_N == 5
+        finally:
+            monkeypatch.delenv("KANON_WHY_SUGGEST_TOP_N", raising=False)
+            importlib.reload(constants)
+
+    def test_top_n_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_TOP_N set to a non-integer env var raises ValueError."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_TOP_N", "not-a-number")
+        with pytest.raises((ValueError, SystemExit)):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_TOP_N", raising=False)
+        importlib.reload(constants)
+
+    def test_max_distance_negative_value_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_MAX_DISTANCE", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_MAX_DISTANCE", raising=False)
+        importlib.reload(constants)
+
+    def test_max_distance_non_int_raises_system_exit_with_error_message(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """KANON_WHY_SUGGEST_MAX_DISTANCE set to a non-integer raises SystemExit with ERROR: message."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_MAX_DISTANCE", "abc")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_MAX_DISTANCE", raising=False)
+        importlib.reload(constants)
+
+    def test_top_n_negative_value_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_SUGGEST_TOP_N set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_TOP_N", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_TOP_N", raising=False)
+        importlib.reload(constants)
+
+    def test_top_n_non_int_raises_system_exit_with_error_message(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """KANON_WHY_SUGGEST_TOP_N set to a non-integer raises SystemExit with ERROR: message."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_SUGGEST_TOP_N", "xyz")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WHY_SUGGEST_TOP_N", raising=False)
+        importlib.reload(constants)

@@ -222,6 +222,62 @@ kanon why https://github.com/org/myproject --format text
 The constant `KANON_WHY_FORMAT` (env var name) and `KANON_WHY_FORMAT_DEFAULT` (default
 value `"text"`) are both defined in `src/kanon_cli/constants.py`.
 
+## KANON_WHY_SUGGEST_MAX_DISTANCE
+
+Controls the maximum Levenshtein edit distance for closest-match suggestions when `kanon why`
+cannot find the requested argument in the resolved dependency tree.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_WHY_SUGGEST_MAX_DISTANCE` | `3` | Maximum edit distance (insertions, deletions, substitutions) for a candidate to appear in the suggestion list on not-found. |
+
+Only candidates whose Levenshtein distance to the argument is less than or equal to this value
+are eligible. The candidate universe is the union of all source names, XML manifest paths, and
+canonical project URLs in the resolved tree.
+
+This variable is optional. When unset, the default value of `3` is used. The value must be a
+non-negative integer parseable by Python `int()`; a non-integer value causes an error at startup.
+
+```bash
+# Use the default threshold of 3
+kanon why fooo
+
+# Narrow the suggestion window to distance 1 only
+KANON_WHY_SUGGEST_MAX_DISTANCE=1 kanon why fooo
+
+# Disable suggestions entirely (threshold 0 means only exact matches are eligible)
+KANON_WHY_SUGGEST_MAX_DISTANCE=0 kanon why fooo
+```
+
+The constant `KANON_WHY_SUGGEST_MAX_DISTANCE` (default `3`) is defined in
+`src/kanon_cli/constants.py`.
+
+## KANON_WHY_SUGGEST_TOP_N
+
+Controls the maximum number of closest-match suggestions shown when `kanon why` cannot find
+the requested argument in the resolved dependency tree.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_WHY_SUGGEST_TOP_N` | `3` | Maximum number of candidates to display in the suggestion list on not-found. Results are sorted ascending by edit distance, with ties broken lexicographically. |
+
+This variable is optional. When unset, the default value of `3` is used. The value must be a
+non-negative integer parseable by Python `int()`; a non-integer value causes an error at startup.
+
+```bash
+# Use the default cap of 3 suggestions
+kanon why fooo
+
+# Show only the single closest match
+KANON_WHY_SUGGEST_TOP_N=1 kanon why fooo
+
+# Show up to 5 suggestions
+KANON_WHY_SUGGEST_TOP_N=5 kanon why fooo
+```
+
+The constant `KANON_WHY_SUGGEST_TOP_N` (default `3`) is defined in
+`src/kanon_cli/constants.py`.
+
 ## kanon repo Subcommand
 
 The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct

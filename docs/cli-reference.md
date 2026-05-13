@@ -279,8 +279,31 @@ every node already has its resolved SHA).
    <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
    ```
 
-6. If the argument is not found across all three categories, the command exits non-zero:
-   `ERROR: <arg> not found in resolved tree`
+6. **Not-found with closest-match suggestion (spec Section 4.5 step 5).**
+   If the argument is not found across all three categories, the command exits non-zero
+   with a closest-match suggestion list drawn from the union of all source names, XML
+   manifest paths, and project URLs in the resolved tree.
+
+   Candidates are ranked by Levenshtein edit distance (insertions, deletions,
+   substitutions -- no transpositions) to the argument. Only candidates with distance
+   `<= KANON_WHY_SUGGEST_MAX_DISTANCE` (default 3) are eligible. Results are sorted
+   ascending by `(distance, value)` and capped to `KANON_WHY_SUGGEST_TOP_N` (default 3).
+
+   When at least one candidate is within the threshold:
+
+   ```
+   ERROR: fooo not found in resolved tree
+   Did you mean one of:
+     foo
+     repo-specs/foo/foo.xml
+   ```
+
+   When no candidate is within the threshold:
+
+   ```
+   ERROR: xyzzy not found in resolved tree
+   No close matches found.
+   ```
 
 **Flags:**
 

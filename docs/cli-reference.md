@@ -219,7 +219,8 @@ kanon outdated \
 
 ### `kanon why`
 
-Explain why a transitive project is in the resolved dependency tree.
+Explain why a transitive project, XML manifest include, or catalog source is in the
+resolved dependency tree.
 
 Reads the `.kanon` file and resolves the full dependency tree. When a `.kanon.lock`
 file is present, the tree is built from lockfile entries (no network calls needed --
@@ -238,23 +239,54 @@ every node already has its resolved SHA).
      from the lockfile -- every node carries its resolved SHA. No `git ls-remote` calls.
    - Otherwise, live-resolution is not yet implemented. Exit with a clear error message
      directing the user to run `kanon install`.
-3. Locate all `<project>` nodes whose canonicalized URL equals the canonicalized argument
-   (via `core/url.py::canonicalize_repo_url`). SCP shorthand, `https://`, `ssh://`,
-   trailing `.git`, and trailing `/` are all normalised before comparison.
-4. For every chain in the tree ending at the requested project, print one line:
+3. **Argument matching -- all three categories are evaluated before deciding (no short-circuit):**
+
+   **(a) `<project>` repo URL (most common).**
+   The argument is attempted through `core/url.py::canonicalize_repo_url`. When
+   canonicalization succeeds, the canonical form is matched against every `<project>`
+   node's stored canonical URL. SCP shorthand (`git@github.com:org/repo.git`),
+   `https://`, `ssh://`, trailing `.git`, and trailing `/` are all normalised before
+   comparison.
+
+   **(b) Transitive XML manifest path.**
+   The argument is matched by exact string equality against every `<include>` node's
+   `path_in_repo` value (e.g., `repo-specs/git-connection/remote.xml`). Partial paths
+   do NOT match -- the full manifest-relative path is required.
+
+   **(c) Top-level source name.**
+   The argument is normalized via `derive_source_name()` (lowercase, replace `-` with
+   `_`) and compared against the normalized set of `KANON_SOURCE_<name>_*` tokens from
+   the `.kanon` file. This makes matching case- and separator-insensitive: argument
+   `Foo-Bar` matches source token `FOO_BAR` because both normalize to `foo_bar`.
+
+4. **Ambiguity detection (spec Section 4.5 step 3).**
+   If the argument matches in two or more categories, the command exits non-zero with
+   an error listing every matching interpretation (category name + matched value):
+
+   ```
+   ERROR: argument 'Repo-Specs-Foo' is ambiguous -- matches multiple categories:
+   XML manifest path 'Repo-Specs-Foo'; source name 'REPO_SPECS_FOO'.
+   Pass the argument in its canonical form to disambiguate ...
+   ```
+
+   This condition is "extremely unlikely but possible with `file://` test fixtures"
+   (spec Section 4.5 step 3) -- for example, when a `file://` URL happens to equal
+   an XML manifest path stored in the lockfile.
+
+5. For every chain in the tree passing through the matched node, print one line:
 
    ```
    <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
    ```
 
-5. If the argument is not found in the resolved tree, the command exits non-zero with:
+6. If the argument is not found across all three categories, the command exits non-zero:
    `ERROR: <arg> not found in resolved tree`
 
 **Flags:**
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `<project-url>` (positional) | -- | required | Project URL to look up. |
+| `<project-url-or-name>` (positional) | -- | required | Project URL, XML manifest path, or source name to look up. |
 | `--catalog-source` | `KANON_CATALOG_SOURCE` | -- | Catalog source as `<git-url>@<ref>`. Required only when `.kanon.lock` is absent. |
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` file. |
@@ -271,6 +303,21 @@ kanon why https://github.com/org/myproject \
 # SCP shorthand and https:// forms are canonicalized -- both match the same project
 kanon why git@github.com:org/myproject.git \
   --kanon-file ./.kanon
+
+# Look up chains that pass through a specific XML manifest path
+kanon why repo-specs/git-connection/remote.xml \
+  --kanon-file ./.kanon \
+  --lock-file ./.kanon.lock
+
+# Look up all chains starting from a named source (case- and separator-insensitive)
+kanon why my-source \
+  --kanon-file ./.kanon \
+  --lock-file ./.kanon.lock
+
+# Disambiguate an ambiguous argument by using the full canonical project URL
+kanon why https://github.com/org/myproject \
+  --kanon-file ./.kanon \
+  --lock-file ./.kanon.lock
 ```
 
 ### `kanon bootstrap`

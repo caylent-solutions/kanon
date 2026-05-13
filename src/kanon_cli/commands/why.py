@@ -2,13 +2,26 @@
 
 Reads the .kanon file, resolves the full dependency tree (from .kanon.lock when
 present; otherwise live-resolves against the catalog), locates all chains ending
-at the requested project URL, and prints one chain per line.
+at the requested node, and prints one chain per line.
 
 Chain format (text mode):
   <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
 
+Argument matching (spec Section 4.5 step 2):
+  All three categories are evaluated before deciding. No early-exit on first hit.
+  (a) <project> repo URL -- canonicalized via canonicalize_repo_url. Match against
+      every <project> node's canonicalized URL.
+  (b) Transitive XML manifest path -- exact-string equality against every <include>
+      node's path_in_repo (ref) value.
+  (c) Top-level source name -- normalized via derive_source_name so that case and
+      dash/underscore differences are treated as equivalent.
+
+Ambiguity (spec Section 4.5 step 3):
+  If two or more categories match, a hard error is raised naming every interpretation
+  so the operator knows how to disambiguate.
+
 Spec reference: spec/kanon-list-add-lock-features-spec.md Section 4.5
-behaviour steps 1, 2 (item a), 4 (text format). Section 7 for KANON_WHY_FORMAT.
+behaviour steps 1-3, 5 (text format). Section 7 for KANON_WHY_FORMAT.
 """
 
 from __future__ import annotations
@@ -29,6 +42,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
+from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
@@ -276,6 +290,211 @@ def _walk_chains(tree: ResolvedTree, target_canonical_url: str) -> list[list[Cha
     return found_chains
 
 
+def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[list[ChainNode]]:
+    """Walk the resolved tree DFS and collect all chains passing through the target node.
+
+    Used when the argument matched an include or source node (not a project URL).
+    For source nodes, chains include all descendants under that source.
+    For include nodes, chains include the include node and all project nodes under it.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        target_node: The ChainNode (source or include kind) to find and report chains for.
+
+    Returns:
+        A list of chains. Each chain is a list of ChainNode objects starting from
+        a top-level source down to a leaf project node that passes through target_node.
+        When target_node is a source node, returns all chains starting at that source.
+        When target_node is an include node, returns all chains passing through it.
+        Returns an empty list when no chains pass through the target node.
+    """
+    found_chains: list[list[ChainNode]] = []
+
+    def _dfs_collect_all_leaves(node: ChainNode, path: list[ChainNode]) -> None:
+        """Collect all chains from the current node to every leaf (project) descendant."""
+        current_path = path + [node]
+        if node.kind == "project":
+            found_chains.append(current_path)
+            return
+        for child in node.children:
+            _dfs_collect_all_leaves(child, current_path)
+
+    def _dfs_find(node: ChainNode, path: list[ChainNode]) -> None:
+        """Walk the tree looking for target_node; once found, collect all descendant chains."""
+        if node is target_node:
+            _dfs_collect_all_leaves(node, path)
+            return
+        for child in node.children:
+            _dfs_find(child, path + [node])
+
+    for source_node in tree.sources:
+        _dfs_find(source_node, [])
+
+    return found_chains
+
+
+# ---------------------------------------------------------------------------
+# Three-category argument matchers
+# ---------------------------------------------------------------------------
+
+
+def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
+    """Match the argument against project nodes by canonicalized URL.
+
+    Attempts to canonicalize the argument. If canonicalization fails (argument is
+    not a valid URL), returns an empty list -- no match in this category.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        argument: The raw argument string from the CLI.
+
+    Returns:
+        List of project ChainNode objects whose canonical_url equals
+        canonicalize_repo_url(argument). Empty when no match or when
+        canonicalization raises ValueError.
+    """
+    try:
+        target_canonical = canonicalize_repo_url(argument)
+    except ValueError:
+        return []
+
+    matches: list[ChainNode] = []
+
+    def _collect_projects(node: ChainNode) -> None:
+        if node.kind == "project" and node.canonical_url == target_canonical:
+            matches.append(node)
+        for child in node.children:
+            _collect_projects(child)
+
+    for source_node in tree.sources:
+        _collect_projects(source_node)
+
+    return matches
+
+
+def _match_by_xml_path(tree: ResolvedTree, argument: str) -> list[ChainNode]:
+    """Match the argument against include nodes by exact path_in_repo string equality.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        argument: The raw argument string from the CLI.
+
+    Returns:
+        List of include ChainNode objects whose ref (path_in_repo) exactly equals
+        the argument. Empty when no match.
+    """
+    matches: list[ChainNode] = []
+
+    def _collect_includes(node: ChainNode) -> None:
+        if node.kind == "include" and node.ref == argument:
+            matches.append(node)
+        for child in node.children:
+            _collect_includes(child)
+
+    for source_node in tree.sources:
+        _collect_includes(source_node)
+
+    return matches
+
+
+def _match_by_source_name(tree: ResolvedTree, argument: str) -> list[ChainNode]:
+    """Match the argument against top-level source nodes via derive_source_name normalization.
+
+    The argument and each source node's name are both normalized with
+    derive_source_name before comparison, so case differences and dash/underscore
+    differences are ignored.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        argument: The raw argument string from the CLI.
+
+    Returns:
+        List of source ChainNode objects whose normalized name equals the normalized
+        argument. Empty when no match.
+    """
+    normalized_arg = derive_source_name(argument)
+    return [source for source in tree.sources if derive_source_name(source.name) == normalized_arg]
+
+
+# ---------------------------------------------------------------------------
+# Ambiguity-aware match resolution
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _MatchHit:
+    """A single match result from one of the three matching categories.
+
+    Attributes:
+        category: One of 'url', 'xml_path', 'source_name'.
+        label: Human-readable description of the matched value for the error message.
+        node: The matched ChainNode.
+    """
+
+    category: str
+    label: str
+    node: ChainNode
+
+
+def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
+    """Evaluate all three matching categories and return the single unambiguous hit.
+
+    All three categories (URL, XML path, source name) are evaluated. The strategy
+    is NOT stop-at-first-match -- every category is checked regardless of prior hits.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        argument: The raw argument string from the CLI.
+
+    Returns:
+        The single _MatchHit when exactly one category produces a result.
+
+    Raises:
+        SystemExit(1): When zero matches are found across all categories (not-found).
+        SystemExit(1): When two or more matches are found across categories (ambiguity).
+    """
+    hits: list[_MatchHit] = []
+
+    # (a) URL category
+    url_nodes = _match_by_url(tree, argument)
+    for node in url_nodes:
+        assert node.canonical_url is not None, (
+            f"project node {node.name!r} matched by URL but has no canonical_url (internal invariant)"
+        )
+        url_label = node.canonical_url
+        hits.append(_MatchHit(category="url", label=f"project URL '{url_label}'", node=node))
+
+    # (b) XML path category
+    xml_nodes = _match_by_xml_path(tree, argument)
+    for node in xml_nodes:
+        hits.append(_MatchHit(category="xml_path", label=f"XML manifest path '{node.ref}'", node=node))
+
+    # (c) Source name category
+    src_nodes = _match_by_source_name(tree, argument)
+    for node in src_nodes:
+        hits.append(_MatchHit(category="source_name", label=f"source name '{node.name}'", node=node))
+
+    if len(hits) == 0:
+        print(
+            f"ERROR: {argument} not found in resolved tree",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if len(hits) >= 2:
+        interpretations = "; ".join(h.label for h in hits)
+        print(
+            f"ERROR: argument '{argument}' is ambiguous -- matches multiple categories: {interpretations}.\n"
+            "Pass the argument in its canonical form to disambiguate (e.g., use the full "
+            "canonical project URL for URL matching, or the exact XML manifest path for "
+            "XML-path matching, or the exact source name token for source-name matching).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return hits[0]
+
+
 # ---------------------------------------------------------------------------
 # Text rendering
 # ---------------------------------------------------------------------------
@@ -341,7 +560,11 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "Reads the .kanon file, resolves the full dependency tree\n"
             "(from .kanon.lock when present, else live-resolves against\n"
             "the catalog), and prints every chain reaching the requested\n"
-            "project URL.\n\n"
+            "node.\n\n"
+            "Argument matching (all three categories evaluated):\n"
+            "  (a) <project> repo URL -- canonicalized via canonicalize_repo_url.\n"
+            "  (b) Transitive XML manifest path -- exact-string equality.\n"
+            "  (c) Top-level source name -- normalized via derive_source_name.\n\n"
             "Chain format:\n"
             "  <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>\n\n"
             "Catalog source precedence: --catalog-source flag, then\n"
@@ -353,10 +576,12 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
 
     parser.add_argument(
         "target",
-        metavar="<project-url>",
+        metavar="<project-url-or-name>",
         help=(
-            "The project URL to look up. Canonicalized via canonicalize_repo_url "
-            "before matching, so https://, ssh://, and SCP-shorthand forms all work."
+            "The project URL, XML manifest path, or source name to look up. "
+            "Project URLs are canonicalized via canonicalize_repo_url before matching. "
+            "XML manifest paths are matched by exact string equality. "
+            "Source names are normalized via derive_source_name (case- and separator-insensitive)."
         ),
     )
 
@@ -416,11 +641,15 @@ def run(args: argparse.Namespace) -> int:
 
     Reads the .kanon file, resolves the dependency tree (from .kanon.lock
     when present, else live-resolves), finds all chains ending at the
-    requested project URL, and prints them to stdout.
+    requested node, and prints them to stdout.
+
+    Argument matching evaluates all three categories (URL, XML path, source name)
+    before deciding. Zero matches -> not-found error. Two or more matches ->
+    ambiguity hard error. Exactly one match -> chain walker runs.
 
     Args:
         args: Parsed argparse namespace. Expected attributes:
-            - ``target`` (str): the project URL to look up.
+            - ``target`` (str): the project URL, XML path, or source name to look up.
             - ``kanon_file`` (str): path to the .kanon file.
             - ``lock_file`` (str | None): path to the lockfile, or None.
             - ``catalog_source`` (str | None): catalog source string.
@@ -483,15 +712,25 @@ def run(args: argparse.Namespace) -> int:
             )
             sys.exit(1)
 
-    # -- Canonicalize the target URL --
-    try:
-        target_canonical = canonicalize_repo_url(args.target)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
+    # -- Resolve the match (all three categories; ambiguity detection) --
+    # _resolve_match calls sys.exit(1) on zero matches (not-found) or
+    # two-or-more matches (ambiguity). Returns a single _MatchHit on success.
+    hit = _resolve_match(tree, args.target)
 
-    # -- Walk all chains ending at the target --
-    chains = _walk_chains(tree, target_canonical)
+    # -- Walk all chains from the matched node --
+    if hit.category == "url":
+        # URL match: target_canonical is stored on the node
+        target_canonical = hit.node.canonical_url
+        if target_canonical is None:
+            print(
+                f"ERROR: matched project node '{hit.node.name}' has no canonical URL (internal error)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        chains = _walk_chains(tree, target_canonical)
+    else:
+        # XML path or source name match: walk from the matched node itself
+        chains = _walk_chains_from_node(tree, hit.node)
 
     if not chains:
         print(

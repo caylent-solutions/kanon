@@ -81,6 +81,95 @@ def mock_git_ls_remote_output() -> str:
     )
 
 
+def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -> pathlib.Path:
+    """Write a minimal .kanon file with a single source and return its path.
+
+    Shared by unit tests (test_why_ambiguity.py) and integration tests
+    (test_why_ambiguous.py) to avoid cross-layer imports.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(
+        f"GITBASE=https://github.com\n"
+        f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
+        f"KANON_MARKETPLACE_INSTALL=false\n"
+        f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
+        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+    )
+    kanon_file.chmod(0o644)
+    return kanon_file
+
+
+def _write_lockfile(
+    tmp_path: pathlib.Path, source_name: str, project_url: str, include_path: str | None = None
+) -> pathlib.Path:
+    """Write a minimal lockfile with one source, one project, and optionally one include.
+
+    Shared by unit tests (test_why_ambiguity.py) and integration tests
+    (test_why_ambiguous.py) to avoid cross-layer imports.
+    """
+    from kanon_cli.core.lockfile import (
+        CatalogBlock,
+        IncludeEntry,
+        Lockfile,
+        ProjectEntry,
+        SourceEntry,
+        write_lockfile,
+    )
+    from kanon_cli.core.url import canonicalize_repo_url
+
+    includes = []
+    if include_path:
+        includes = [
+            IncludeEntry(
+                name="inc",
+                path_in_repo=include_path,
+                url="https://github.com/org/catalog",
+                resolved_sha="c" * 40,
+                includes=[],
+            )
+        ]
+
+    lockfile = Lockfile(
+        schema_version=1,
+        generated_at="2024-01-01T00:00:00Z",
+        generator="kanon-test",
+        kanon_hash="sha256:" + "a" * 64,
+        catalog=CatalogBlock(
+            source="catalog@HEAD",
+            url="https://github.com/org/catalog",
+            revision_spec="HEAD",
+            resolved_ref="HEAD",
+            resolved_sha="f" * 40,
+        ),
+        sources=[
+            SourceEntry(
+                name=source_name,
+                url="https://github.com/org/catalog",
+                revision_spec="main",
+                resolved_ref="main",
+                resolved_sha="a" * 40,
+                path="./foo",
+                includes=includes,
+                projects=[
+                    ProjectEntry(
+                        name="proj",
+                        url=project_url,
+                        canonical_url=canonicalize_repo_url(project_url),
+                        revision_spec="main",
+                        resolved_ref="main",
+                        resolved_sha="b" * 40,
+                    )
+                ],
+            )
+        ],
+    )
+
+    lock_path = tmp_path / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
 @pytest.fixture()
 def make_install_args():
     """Factory fixture that returns a MagicMock with kanonenv_path set.

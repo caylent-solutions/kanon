@@ -222,6 +222,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "validate": ["xml"],
             "bootstrap": ["list"],
             "list": [],
+            "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
         }
@@ -725,3 +726,73 @@ class TestRemoveSubcommandRegistration:
         help_text = buf.getvalue()
         # Atomicity rule mentioned (AC-DOC-001)
         assert "atomic" in help_text.lower() or "Atomicity" in help_text or "nothing changes" in help_text
+
+
+@pytest.mark.unit
+class TestOutdatedSubcommandRegistration:
+    """Verify 'outdated' subcommand is registered in the CLI parser.
+
+    TDD-paired coverage for the production change in cli.py (register_outdated
+    import and call). Per docs/source-test-atomicity.md, every new production
+    source file has a matching test in the same work unit.
+    """
+
+    def test_outdated_subcommand_is_registered(self) -> None:
+        """build_parser() must include 'outdated' in its subcommand choices."""
+        parser = build_parser()
+        subparsers_action = None
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                subparsers_action = action
+                break
+        assert subparsers_action is not None, "No subparsers action found on parser"
+        assert "outdated" in subparsers_action.choices, (
+            "'outdated' subcommand must be registered in the top-level parser"
+        )
+
+    def test_outdated_subcommand_parses_catalog_source(self) -> None:
+        """'outdated' subcommand accepts --catalog-source."""
+        parser = build_parser()
+        args = parser.parse_args(["outdated", "--catalog-source", "file:///fake@HEAD"])
+        assert args.command == "outdated"
+        assert args.catalog_source == "file:///fake@HEAD"
+
+    def test_outdated_subcommand_parses_kanon_file(self) -> None:
+        """'outdated' subcommand accepts --kanon-file."""
+        parser = build_parser()
+        args = parser.parse_args(["outdated", "--kanon-file", "/tmp/.kanon", "--catalog-source", "file:///x@HEAD"])
+        assert args.kanon_file == "/tmp/.kanon"
+
+    def test_outdated_subcommand_parses_lock_file(self) -> None:
+        """'outdated' subcommand accepts --lock-file."""
+        parser = build_parser()
+        args = parser.parse_args(["outdated", "--catalog-source", "file:///x@HEAD", "--lock-file", "/tmp/.kanon.lock"])
+        assert args.lock_file == "/tmp/.kanon.lock"
+
+    def test_outdated_subcommand_parses_format_table(self) -> None:
+        """'outdated' subcommand accepts --format table."""
+        parser = build_parser()
+        args = parser.parse_args(["outdated", "--catalog-source", "file:///x@HEAD", "--format", "table"])
+        assert args.format == "table"
+
+    def test_outdated_subcommand_has_func_attribute(self) -> None:
+        """'outdated' subcommand sets args.func to the run() entry point."""
+        from kanon_cli.commands.outdated import run
+
+        parser = build_parser()
+        args = parser.parse_args(["outdated", "--catalog-source", "file:///fake@HEAD"])
+        assert args.func is run
+
+    def test_outdated_default_format_is_table(self) -> None:
+        """'outdated' subcommand default format is 'table' (AC-FUNC-007)."""
+        import os
+
+        # Ensure env var is not set so we get the built-in default
+        env_backup = os.environ.pop("KANON_OUTDATED_FORMAT", None)
+        try:
+            parser = build_parser()
+            args = parser.parse_args(["outdated", "--catalog-source", "file:///x@HEAD"])
+            assert args.format == "table"
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_OUTDATED_FORMAT"] = env_backup

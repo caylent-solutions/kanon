@@ -444,3 +444,43 @@ class TestKanonAllowInsecureRemotesConstant:
 
         assert KANON_ALLOW_INSECURE_REMOTES == "KANON_ALLOW_INSECURE_REMOTES"
         assert KANON_LOCK_FILE == "KANON_LOCK_FILE"
+
+
+@pytest.mark.unit
+class TestKanonOutdatedFormatConstant:
+    """Tests for KANON_OUTDATED_FORMAT and KANON_OUTDATED_FORMAT_DEFAULT constants.
+
+    AC-FUNC-007: The default output format for 'kanon outdated' is 'table',
+    controlled by the KANON_OUTDATED_FORMAT env var (constant name stored in
+    KANON_OUTDATED_FORMAT). The default value is stored in KANON_OUTDATED_FORMAT_DEFAULT.
+    """
+
+    def test_kanon_outdated_format_value(self) -> None:
+        """KANON_OUTDATED_FORMAT equals the string 'KANON_OUTDATED_FORMAT'."""
+        from kanon_cli.constants import KANON_OUTDATED_FORMAT
+
+        assert KANON_OUTDATED_FORMAT == "KANON_OUTDATED_FORMAT"
+
+    def test_kanon_outdated_format_is_string(self) -> None:
+        """KANON_OUTDATED_FORMAT is a str."""
+        from kanon_cli.constants import KANON_OUTDATED_FORMAT
+
+        assert isinstance(KANON_OUTDATED_FORMAT, str)
+
+    def test_kanon_outdated_format_default_value(self) -> None:
+        """KANON_OUTDATED_FORMAT_DEFAULT equals 'table'."""
+        from kanon_cli.constants import KANON_OUTDATED_FORMAT_DEFAULT
+
+        assert KANON_OUTDATED_FORMAT_DEFAULT == "table"
+
+    def test_kanon_outdated_format_default_is_string(self) -> None:
+        """KANON_OUTDATED_FORMAT_DEFAULT is a str."""
+        from kanon_cli.constants import KANON_OUTDATED_FORMAT_DEFAULT
+
+        assert isinstance(KANON_OUTDATED_FORMAT_DEFAULT, str)
+
+    def test_kanon_outdated_format_default_is_non_empty(self) -> None:
+        """KANON_OUTDATED_FORMAT_DEFAULT is a non-empty string."""
+        from kanon_cli.constants import KANON_OUTDATED_FORMAT_DEFAULT
+
+        assert len(KANON_OUTDATED_FORMAT_DEFAULT) > 0

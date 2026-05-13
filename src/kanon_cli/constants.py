@@ -143,3 +143,13 @@ KANON_KANON_FILE_DEFAULT = "./.kanon"
 KANON_HEADER_GITBASE = "GITBASE=<YOUR_GIT_ORG_BASE_URL>"
 KANON_HEADER_CLAUDE_MARKETPLACES_DIR = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
 KANON_HEADER_MARKETPLACE_INSTALL = "KANON_MARKETPLACE_INSTALL=<true|false>"
+
+# -- kanon outdated --
+# Environment variable name that controls the output format for 'kanon outdated'.
+# The CLI flag --format takes precedence when both are set.
+# Supported values: "table" (default). Extended to "table","json" in T4.
+KANON_OUTDATED_FORMAT = "KANON_OUTDATED_FORMAT"
+
+# Default output format for 'kanon outdated' when neither --format nor
+# KANON_OUTDATED_FORMAT are set.
+KANON_OUTDATED_FORMAT_DEFAULT = "table"

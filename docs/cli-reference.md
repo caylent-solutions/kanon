@@ -52,6 +52,60 @@ automatically to every sub-command.
 
 ## Commands
 
+### `kanon outdated`
+
+Compare installed sources against the catalog and report which are behind.
+
+Reads the `.kanon` file, resolves the catalog, and emits one row per
+`KANON_SOURCE_<name>_*` block containing:
+
+```
+name | current | latest-matching-spec | latest-available | upgrade-type
+```
+
+**Behaviour (spec Section 4.4):**
+
+1. **Catalog required** -- `--catalog-source` or `KANON_CATALOG_SOURCE` must be
+   set. When neither is present the command exits non-zero with
+   `ERROR: no catalog source configured` and a remediation pointer.
+2. **`.kanon` required** -- the file at `--kanon-file` (default `./.kanon`) must
+   exist. When absent the command exits non-zero naming the missing path.
+3. **Lockfile optional** -- when `.kanon.lock` is present (at `--lock-file` or
+   the default derived path `<kanon-file>.lock`) its `resolved_ref` is used as
+   the `current` column. When absent `current` is live-resolved from the catalog.
+4. **Three columns computed per source:**
+   - `current` -- locked ref or live-resolved ref (version extracted from the tag).
+   - `latest-matching-spec` -- highest ref satisfying the source's `REVISION` constraint.
+   - `latest-available` -- highest ref under the prefix ignoring the constraint.
+5. **`upgrade-type`** -- one of `none`, `patch`, `minor`, `major`, or `prerelease`,
+   derived by comparing `current` vs `latest-matching-spec` via `packaging.version.Version`.
+6. **Exit code** -- always 0. A future release will add `--fail-on-upgrade` to exit non-zero when upgrades are available.
+
+**Flags:**
+
+```
+kanon outdated [--catalog-source <git-url>@<ref>]
+               [--kanon-file <path>]
+               [--lock-file <path>]
+               [--format {table}]
+```
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--catalog-source` | `KANON_CATALOG_SOURCE` | (none) | Manifest repo as `<git_url>@<ref>`. Required. |
+| `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
+| `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the lockfile. Optional; derived from `--kanon-file` when absent. |
+| `--format` | `KANON_OUTDATED_FORMAT` | `table` | Output format. Only `table` supported in this release. |
+
+**Example:**
+
+```bash
+kanon outdated \
+  --catalog-source https://github.com/my-org/manifest-repo.git@main \
+  --kanon-file ./.kanon \
+  --lock-file ./.kanon.lock
+```
+
 ### `kanon bootstrap`
 
 Scaffold a new Kanon project with catalog entry package files.

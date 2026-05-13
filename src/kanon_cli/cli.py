@@ -25,6 +25,7 @@ from kanon_cli.commands.bootstrap import register as register_bootstrap
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.install import register as register_install
 from kanon_cli.commands.list import register as register_list
+from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
@@ -94,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_install(subparsers)
     register_clean(subparsers)
     register_list(subparsers)
+    register_outdated(subparsers)
     register_remove(subparsers)
     register_validate(subparsers)
     register_repo(subparsers)

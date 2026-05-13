@@ -172,6 +172,31 @@ When `KANON_MARKETPLACE_INSTALL=true`:
 
 When `false` (default), marketplace lifecycle is skipped entirely.
 
+## KANON_OUTDATED_FORMAT
+
+Controls the output format of the `kanon outdated` command.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_OUTDATED_FORMAT` | `table` | Output format for `kanon outdated`. Currently only `table` is supported. Additional formats will be added in a future release. |
+
+**Precedence:** `--format` CLI flag wins over `KANON_OUTDATED_FORMAT` env var; the env var wins over
+the built-in default (`table`).
+
+```bash
+# Use the default table format
+kanon outdated --catalog-source file:///catalog@HEAD
+
+# Override via environment variable (only table supported in this release)
+KANON_OUTDATED_FORMAT=table kanon outdated --catalog-source file:///catalog@HEAD
+
+# Override via CLI flag (takes precedence over env var)
+kanon outdated --format table --catalog-source file:///catalog@HEAD
+```
+
+The constant `KANON_OUTDATED_FORMAT` (env var name) and `KANON_OUTDATED_FORMAT_DEFAULT` (default
+value `"table"`) are both defined in `src/kanon_cli/constants.py`.
+
 ## kanon repo Subcommand
 
 The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct

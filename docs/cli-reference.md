@@ -49,6 +49,7 @@ automatically to every sub-command.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KANON_CATALOG_SOURCE` | Remote catalog as `<git_url>@<ref>`. Sets the default for every command that accepts `--catalog-source`. | (none) |
+| `KANON_OUTDATED_JSON_INDENT` | Controls JSON indentation (number of spaces) used by `kanon outdated --format json`. | `2` |
 
 ## Commands
 
@@ -139,7 +140,7 @@ pinned to that exact commit. All three of `current`, `latest-matching-spec`, and
 kanon outdated [--catalog-source <git-url>@<ref>]
                [--kanon-file <path>]
                [--lock-file <path>]
-               [--format {table}]
+               [--format {table,json}]
                [--fail-on-upgrade]
 ```
 
@@ -148,8 +149,60 @@ kanon outdated [--catalog-source <git-url>@<ref>]
 | `--catalog-source` | `KANON_CATALOG_SOURCE` | (none) | Manifest repo as `<git_url>@<ref>`. Required. |
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the lockfile. Optional; derived from `--kanon-file` when absent. |
-| `--format` | `KANON_OUTDATED_FORMAT` | `table` | Output format. Only `table` supported in this release. |
+| `--format` | `KANON_OUTDATED_FORMAT` | `table` | Output format: `table` (default) or `json`. The CLI flag takes precedence over the env var. |
 | `--fail-on-upgrade` | (none) | off | Exit 1 when any source has an available upgrade (`upgrade-type != none`). Default is always exit 0 -- parity with `pip list --outdated`, `npm outdated`, `cargo outdated` (spec Section 0.2). Use this flag in CI pipelines to gate on lockfile freshness. |
+
+#### JSON output format (`--format json`)
+
+When `--format json` is selected (or `KANON_OUTDATED_FORMAT=json` is set), the command emits
+a top-level JSON array to stdout. Each element represents one source from the `.kanon` file
+and contains exactly five keys matching the table column headers:
+
+```json
+[
+  {
+    "name": "<source-name>",
+    "current": "<sha-or-tag-or-ref>",
+    "latest-matching-spec": "<sha-or-tag-or-ref>",
+    "latest-available": "<sha-or-tag-or-ref>",
+    "upgrade-type": "none|patch|minor|major|prerelease|drift"
+  }
+]
+```
+
+Notes:
+
+- Key names use hyphens (matching the table column headers) for parity with human-readable
+  output.
+- The JSON is pretty-printed with 2 spaces of indentation (configurable via the
+  `KANON_OUTDATED_JSON_INDENT` environment variable). A trailing newline is appended for
+  POSIX-tool friendliness.
+- For branch-pinned and SHA-pinned sources, the `current`, `latest-matching-spec`, and
+  `latest-available` fields contain the 12-character truncated SHA (consistent with table
+  output).
+- `--fail-on-upgrade` exit-code logic is independent of format selection: the same source
+  data produces the same exit code regardless of whether `table` or `json` is chosen.
+
+**Example (two sources: one tag-pinned, one branch-pinned):**
+
+```json
+[
+  {
+    "name": "FOO",
+    "current": "1.0.0",
+    "latest-matching-spec": "1.0.1",
+    "latest-available": "1.1.0",
+    "upgrade-type": "patch"
+  },
+  {
+    "name": "MYLIB",
+    "current": "abc123456789",
+    "latest-matching-spec": "def012345678",
+    "latest-available": "def012345678",
+    "upgrade-type": "drift"
+  }
+]
+```
 
 **Example:**
 
@@ -158,6 +211,10 @@ kanon outdated \
   --catalog-source https://github.com/my-org/manifest-repo.git@main \
   --kanon-file ./.kanon \
   --lock-file ./.kanon.lock
+
+kanon outdated \
+  --catalog-source https://github.com/my-org/manifest-repo.git@main \
+  --format json | jq '.[] | select(.["upgrade-type"] != "none")'
 ```
 
 ### `kanon bootstrap`

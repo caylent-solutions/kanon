@@ -29,6 +29,7 @@ Spec reference:
 """
 
 import argparse
+import json
 import os
 import pathlib
 import sys
@@ -42,6 +43,8 @@ from kanon_cli.constants import (
     KANON_LOCK_FILE,
     KANON_OUTDATED_FORMAT,
     KANON_OUTDATED_FORMAT_DEFAULT,
+    KANON_OUTDATED_FORMAT_JSON,
+    KANON_OUTDATED_JSON_INDENT,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
 from kanon_cli.core.catalog import _parse_catalog_source
@@ -379,6 +382,49 @@ def _format_table(rows: list[OutdatedRow]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _row_to_dict(row: OutdatedRow) -> dict[str, str]:
+    """Convert an OutdatedRow to a JSON-ready dict with spec-canonical hyphenated keys.
+
+    The five keys produced match the table column headers exactly:
+    ``name``, ``current``, ``latest-matching-spec``, ``latest-available``,
+    ``upgrade-type``.
+
+    Args:
+        row: A populated :class:`OutdatedRow`.
+
+    Returns:
+        A dict with exactly five string keys and string values.
+    """
+    return {
+        "name": row.name,
+        "current": row.current,
+        "latest-matching-spec": row.latest_matching_spec,
+        "latest-available": row.latest_available,
+        "upgrade-type": row.upgrade_type,
+    }
+
+
+def _format_json(rows: list[OutdatedRow]) -> str:
+    """Format OutdatedRow list as a JSON array with one object per source.
+
+    The JSON shape mirrors the table row-for-row: a top-level array; one object
+    per source; each object has exactly five keys matching the table column
+    headers: ``name``, ``current``, ``latest-matching-spec``,
+    ``latest-available``, ``upgrade-type``.
+
+    Output uses ``sort_keys=False`` to preserve insertion order and is
+    pretty-printed with ``KANON_OUTDATED_JSON_INDENT`` spaces of indentation
+    (default 2). A trailing newline is appended for POSIX-tool friendliness.
+
+    Args:
+        rows: The rows to format.
+
+    Returns:
+        A JSON string ending with a trailing newline.
+    """
+    return json.dumps([_row_to_dict(row) for row in rows], sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT) + "\n"
+
+
 def _derive_lock_file_path(kanon_file: str) -> pathlib.Path:
     """Derive the default lockfile path from the .kanon file path.
 
@@ -528,10 +574,12 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         "--format",
         dest="format",
         default=os.environ.get(KANON_OUTDATED_FORMAT, KANON_OUTDATED_FORMAT_DEFAULT),
-        choices=(KANON_OUTDATED_FORMAT_DEFAULT,),
+        choices=(KANON_OUTDATED_FORMAT_DEFAULT, KANON_OUTDATED_FORMAT_JSON),
         metavar="<format>",
         help=(
-            "Output format. Currently only 'table' is supported. "
+            "Output format: 'table' (default) or 'json'. "
+            "The 'json' format emits a top-level array of objects, one per source, "
+            "with keys: name, current, latest-matching-spec, latest-available, upgrade-type. "
             f"Overridden by the {KANON_OUTDATED_FORMAT} environment variable; "
             "the CLI flag takes precedence when both are set."
         ),
@@ -556,7 +604,7 @@ def run(args: argparse.Namespace) -> int:
             - ``catalog_source`` (str | None): catalog source string.
             - ``kanon_file`` (str): path to the .kanon file.
             - ``lock_file`` (str | None): path to the lockfile, or None.
-            - ``format`` (str): output format (currently only "table").
+            - ``format`` (str): output format -- ``"table"`` or ``"json"``.
             - ``fail_on_upgrade`` (bool): when True, exit 1 if any row has
               an upgrade-type other than ``none``.
 
@@ -637,7 +685,10 @@ def run(args: argparse.Namespace) -> int:
         rows.append(row)
 
     # -- Emit output --
-    print(_format_table(rows), end="")
+    if args.format == KANON_OUTDATED_FORMAT_JSON:
+        print(_format_json(rows), end="")
+    else:
+        print(_format_table(rows), end="")
 
     # -- Exit code gate (AC-FUNC-002 / AC-FUNC-004) --
     if args.fail_on_upgrade and any(row.upgrade_type != "none" for row in rows):

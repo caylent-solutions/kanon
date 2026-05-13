@@ -154,6 +154,19 @@ KANON_OUTDATED_FORMAT = "KANON_OUTDATED_FORMAT"
 # KANON_OUTDATED_FORMAT are set.
 KANON_OUTDATED_FORMAT_DEFAULT = "table"
 
+# JSON format name for 'kanon outdated --format json'.
+KANON_OUTDATED_FORMAT_JSON = "json"
+
+# -- kanon outdated JSON output --
+# Indentation level (in spaces) used by json.dumps when --format json is selected.
+# Controls pretty-print depth without requiring source edits.
+# Overridable via the KANON_OUTDATED_JSON_INDENT environment variable.
+_raw_json_indent = os.environ.get("KANON_OUTDATED_JSON_INDENT")
+if _raw_json_indent is not None:
+    KANON_OUTDATED_JSON_INDENT: int = int(_raw_json_indent)
+else:
+    KANON_OUTDATED_JSON_INDENT = 2
+
 # -- Branch-pinned SHA truncation (spec Section 4.4) --
 # Number of leading hex characters used for the short-SHA display in the
 # 'kanon outdated' table for branch-pinned and SHA-pinned sources.

@@ -112,7 +112,7 @@ Include entries are recursive: each entry may have its own `includes` list.
 |----------------|--------|-------------|---------------------------|
 | `name`          | string | Project name. | Informational; surfaced in error messages. |
 | `url`           | string | Raw project URL (as declared in the catalog XML). | `LOCKFILE_CONSISTENT`: used as the remote for cloning this project. |
-| `canonical_url` | string | Canonical form of `url` (see Validation Rules). | Conflict detection (future `LOCKFILE_URL_CONFLICT` state, T5). |
+| `canonical_url` | string | Canonical form of `url` (see Validation Rules). | Conflict detection: `_detect_canonical_url_conflicts` compares `canonical_url` values across all sources; a mismatch in `resolved_sha` raises `CanonicalUrlConflictError`. |
 | `revision_spec` | string | Revision spec for this project. | Written at lock time; not read back by the state machine. |
 | `resolved_ref`  | string | Resolved git ref. | `LOCKFILE_CONSISTENT`: passed to `repo sync` to check out the project at this ref. |
 | `resolved_sha`  | string | Pinned commit SHA. | `LOCKFILE_CONSISTENT`: pins the project clone at this SHA via repo sync. Note: project SHAs are not individually verified by the LOCKFILE_UNREACHABLE check; only top-level source SHAs are checked via _check_sha_reachable(). Project SHA errors surface as repo sync failures. |
@@ -485,6 +485,79 @@ kanon install --refresh-lock-source <source>
 
 This re-resolves the named source's chain and rewrites its lockfile entry with the
 current branch tip SHA.
+
+---
+
+## Canonical-URL Conflict Detection
+
+### Overview
+
+Every `kanon install` run checks whether two or more top-level sources (or
+`<project>` entries within them) resolve to the same *canonical* repository
+URL but pin different SHAs. This is a hard error: two entries that point at
+the same repository but at different commits cannot both be satisfied simultaneously.
+
+The detector runs on two paths:
+
+- **`LOCKFILE_ABSENT` / `REFRESH_LOCK`**: after all sources are resolved but
+  before the lockfile is written. If a conflict is found, `kanon install`
+  exits with `CanonicalUrlConflictError` and the lockfile is NOT written.
+- **`LOCKFILE_CONSISTENT`**: before replaying the lockfile SHAs. The detector
+  runs against the existing lockfile contents so that a conflict baked into
+  the lockfile surfaces immediately, even without a fresh re-resolve.
+
+### Benign diamonds (allowed)
+
+Two or more entries that share the same canonical URL AND the same `resolved_sha`
+are allowed. This is a "benign diamond" -- multiple sources converge on the same
+version of a dependency, which is not a conflict.
+
+### Conflict format
+
+When a conflict is detected, `kanon install` exits with an error in the
+following format:
+
+```
+ERROR: Canonical-URL conflict -- two or more sources declare the same repository URL with different SHAs.
+  Conflict for canonical URL: https://gitserver/org/example-package
+  source-a/manifest.xml: git@gitserver:org/example-package.git @ aaaa...aaaa
+  source-b/manifest.xml: https://gitserver/org/example-package.git @ bbbb...bbbb
+  both URLs canonicalize to: https://gitserver/org/example-package
+  Remediation: Use `kanon why https://gitserver/org/example-package` to investigate; resolve by removing one source or aligning REVISION values across sources.
+```
+
+Each line in the conflict block shows the source path (in the form
+`<source-name>/<manifest-path>`), the raw URL as declared, and the resolved
+SHA.  The `both URLs canonicalize to:` line shows the canonical form that
+triggered the match.
+
+### URL canonicalization
+
+The canonical URL is computed by `canonicalize_repo_url` (see
+`docs/url-canonicalization.md`). Two URLs that differ only in scheme, user-info,
+trailing `.git`, or trailing `/` are treated as identical:
+
+| Raw URL | Canonical URL |
+|---------|--------------|
+| `git@gitserver:org/pkg.git` | `https://gitserver/org/pkg` |
+| `https://gitserver/org/pkg.git` | `https://gitserver/org/pkg` |
+| `ssh://git@gitserver/org/pkg/` | `https://gitserver/org/pkg` |
+
+All three raw URLs above canonicalize to `https://gitserver/org/pkg` and would
+trigger a conflict if they pinned different SHAs.
+
+### Remediation
+
+**Option 1: Align revisions.** Update both (or all) conflicting sources so they
+declare the same revision for the conflicting repository. After aligning, re-run
+`kanon install` -- if the revisions resolve to the same SHA, the conflict is resolved.
+
+**Option 2: Remove one source.** If one of the conflicting sources is redundant,
+remove it from `.kanon` via `kanon remove <name>` and re-run `kanon install`.
+
+**Investigating:** `kanon why <canonical-url>` shows which sources declare the
+conflicting repository and what revision each pins. This helps identify which
+source's revision to update.
 
 ---
 

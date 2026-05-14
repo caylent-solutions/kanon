@@ -81,6 +81,60 @@ INSTALL_LOCK_FILENAME = ".kanon-install.lock"
 # Subdirectory name under .kanon-data/ where completion-cache files are stored.
 KANON_COMPLETION_CACHE_DIR = "completion-cache"
 
+# Number of recent lines to display from the completion-errors log during
+# `kanon doctor` subcheck 7. Overridable via the
+# KANON_COMPLETION_ERRORS_REPORT_LIMIT environment variable.
+_raw_completion_errors_limit = os.environ.get("KANON_COMPLETION_ERRORS_REPORT_LIMIT")
+if _raw_completion_errors_limit is not None:
+    try:
+        KANON_COMPLETION_ERRORS_REPORT_LIMIT: int = int(_raw_completion_errors_limit)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_COMPLETION_ERRORS_REPORT_LIMIT must be a positive integer; "
+            f"got {_raw_completion_errors_limit!r}"
+        )
+    if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_COMPLETION_ERRORS_REPORT_LIMIT must be a positive integer; "
+            f"got {KANON_COMPLETION_ERRORS_REPORT_LIMIT}"
+        )
+else:
+    KANON_COMPLETION_ERRORS_REPORT_LIMIT = 5
+
+# Name of the environment variable that specifies the kanon cache directory.
+# The cache directory holds the completion-errors log and other cache files
+# written by E7 completion callbacks. When unset, there is no cache directory.
+KANON_CACHE_DIR_ENV = "KANON_CACHE_DIR"
+
+# Filename of the completion-errors log within the cache directory.
+# Doctor subcheck 7 reads the last KANON_COMPLETION_ERRORS_REPORT_LIMIT lines
+# from this file when it exists.
+KANON_COMPLETION_ERRORS_LOG_FILENAME = "completion-errors.log"
+
+# Candidate paths for statically-installed shell completion scripts.
+# Each entry is a (shell, path) pair. Doctor subcheck 9 iterates these pairs
+# and checks files that exist on disk against a freshly generated script.
+# Home-directory paths are expanded via os.path.expanduser() at import time;
+# system-wide paths are used verbatim. Extend this tuple to support additional shells.
+KANON_STATIC_COMPLETION_SEARCH_PATHS: tuple[tuple[str, str], ...] = (
+    ("bash", os.path.expanduser("~/.local/share/bash-completion/completions/kanon")),
+    ("bash", "/etc/bash_completion.d/kanon"),
+    ("zsh", os.path.expanduser("~/.zsh/completions/_kanon")),
+    ("zsh", "/usr/local/share/zsh/site-functions/_kanon"),
+    ("zsh", "/usr/share/zsh/vendor-completions/_kanon"),
+)
+
+# Warning text template for a stale static completion script (subcheck 9).
+# Call with .format(shell_name=<shell>, path=<path>) to produce the final message.
+# The placeholder is named shell_name rather than shell to avoid the bandit B604
+# false positive that flags any .format() with a keyword arg named "shell" as
+# a potential shell-injection issue -- which it is not here.
+KANON_STALE_COMPLETION_SCRIPT_WARNING = (
+    "Stale {shell_name} completion script: {path} does not match the output of "
+    "'kanon completion {shell_name}'. Re-run 'kanon completion {shell_name} > {path}' "
+    "to update it."
+)
+
 # Environment variable name for the git ls-remote / resolve timeout (seconds).
 # Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
 _KANON_RESOLVE_TIMEOUT_ENV = "KANON_RESOLVE_TIMEOUT"

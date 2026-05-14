@@ -199,6 +199,67 @@ Effective catalog source: (none configured); commands requiring a catalog source
 Without the provenance suffix, an operator reading only the URL would not know
 whether it was intentional for this project or a stale variable from another session.
 
+### Subcheck 7: Completion errors report
+
+Reads the most recent `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines (default 5)
+from `${KANON_CACHE_DIR}/completion-errors.log`. This log is written by shell
+completion callback failures (see E7 / `docs/shell-completions.md`).
+
+`kanon doctor` only reads this log -- it does NOT modify, truncate, or rotate it.
+If `KANON_CACHE_DIR` is not set, this subcheck is silently skipped.
+
+**Info notice when the log is absent or empty:**
+```
+INFO: no completion errors recorded
+```
+
+**Warning when recent errors are present:**
+```
+WARN: Recent completion errors (5):
+2026-01-01T12:00:00Z __complete_catalog_entries ValueError: empty response
+2026-01-01T12:00:01Z __complete_source_names FileNotFoundError: .kanon not found
+2026-01-01T12:00:02Z __complete_catalog_entries TimeoutError: git ls-remote timed out after 30s
+2026-01-01T12:00:03Z __complete_source_names ValueError: malformed .kanon line 7
+2026-01-01T12:00:04Z __complete_catalog_entries ConnectionError: name resolution failed
+  Remediation: Inspect ${KANON_CACHE_DIR}/completion-errors.log for details.
+```
+
+When the log contains more than `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines,
+only the most recent `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines are shown.
+Malformed lines (no timestamp, unexpected format) are included verbatim.
+
+### Subcheck 9: Completion-script staleness
+
+When an operator has installed a static shell completion script (as opposed to
+using the dynamic eval-time approach), this subcheck compares the on-disk
+script's SHA-256 hash to a freshly generated script. If the hashes differ, the
+operator's installed script is stale and should be regenerated.
+
+Static completion script discovery uses the candidate paths from
+`KANON_STATIC_COMPLETION_SEARCH_PATHS` (defined in `constants.py`). For each
+path that exists on disk, the comparison is run independently. Multiple shells
+(e.g., bash and zsh) may each have a stale script; one warning is emitted per
+drifted script.
+
+When no static completion scripts are installed at any candidate path, this
+subcheck emits no finding (silent).
+When a static script's hash matches the freshly generated output, no finding
+is emitted for that shell.
+
+**Warning when a bash script is stale (exit 0 -- warn is not error):**
+```
+WARN: Stale bash completion script: /home/user/.local/share/bash-completion/completions/kanon does not match the output of 'kanon completion bash'. Re-run 'kanon completion bash > /home/user/.local/share/bash-completion/completions/kanon' to update it.
+  Remediation: kanon completion bash > /home/user/.local/share/bash-completion/completions/kanon
+```
+
+**Warning when a zsh script is stale:**
+```
+WARN: Stale zsh completion script: /home/user/.zsh/completions/_kanon does not match the output of 'kanon completion zsh'. Re-run 'kanon completion zsh > /home/user/.zsh/completions/_kanon' to update it.
+  Remediation: kanon completion zsh > /home/user/.zsh/completions/_kanon
+```
+
+Multiple shells with stale scripts produce one warning per shell.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -209,6 +270,8 @@ whether it was intentional for this project or a stale variable from another ses
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Seconds to wait between retry attempts |
+| `KANON_CACHE_DIR` | (none) | Directory where completion-errors log is stored; when unset, subcheck 7 is skipped |
+| `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
 
 ## Exit Codes
 

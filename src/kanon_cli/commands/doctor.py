@@ -6,19 +6,21 @@ protected by the workspace lock to prevent concurrent cache refreshes from
 clobbering each other.
 
 Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 4.6 (kanon doctor subchecks 1-5), Section 5.1 (kanon_hash),
+Section 4.6 (kanon doctor subchecks 1-5, 7, 9), Section 5.1 (kanon_hash),
 Section 7 (retry policy, KANON_RESOLVE_TIMEOUT).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -32,10 +34,15 @@ from kanon_cli.constants import (
     GIT_RETRY_COUNT_ENV_VAR,
     GIT_RETRY_DELAY_DEFAULT,
     GIT_RETRY_DELAY_ENV_VAR,
+    KANON_CACHE_DIR_ENV,
     KANON_COMPLETION_CACHE_DIR,
+    KANON_COMPLETION_ERRORS_LOG_FILENAME,
+    KANON_COMPLETION_ERRORS_REPORT_LIMIT,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
+    KANON_STALE_COMPLETION_SCRIPT_WARNING,
+    KANON_STATIC_COMPLETION_SEARCH_PATHS,
     _KANON_RESOLVE_TIMEOUT_DEFAULT,
     _KANON_RESOLVE_TIMEOUT_ENV,
 )
@@ -532,6 +539,131 @@ def _check_effective_catalog_source(
 
 
 # ---------------------------------------------------------------------------
+# Subcheck 7: Completion errors report
+# ---------------------------------------------------------------------------
+
+
+def _check_completion_errors_report(
+    cache_dir: pathlib.Path,
+    limit: int,
+) -> DoctorFinding:
+    """Read recent entries from the completion-errors log and produce a finding.
+
+    Subcheck 7 in spec Section 4.6:
+    - If ``${cache_dir}/completion-errors.log`` is absent or empty, return an
+      info finding with code=NO_COMPLETION_ERRORS.
+    - If present and non-empty, return a warn finding whose message contains
+      the header "Recent completion errors (N):" followed by the last ``limit``
+      lines verbatim. N equals min(total_lines, limit).
+
+    This function is non-mutating: it never writes to, truncates, or rotates
+    the log file.
+
+    Args:
+        cache_dir: Directory where the completion-errors log is stored.
+            Typically the value of the KANON_CACHE_DIR environment variable.
+        limit: Maximum number of recent log lines to include in the finding.
+
+    Returns:
+        A DoctorFinding with kind="info" when no errors are recorded, or
+        kind="warn" when recent errors exist.
+    """
+    log_file = cache_dir / KANON_COMPLETION_ERRORS_LOG_FILENAME
+
+    if not log_file.exists():
+        return DoctorFinding(
+            kind="info",
+            code="NO_COMPLETION_ERRORS",
+            message="no completion errors recorded",
+            remediation="",
+        )
+
+    content = log_file.read_text(encoding="utf-8")
+    lines = [line for line in content.splitlines() if line]
+
+    if not lines:
+        return DoctorFinding(
+            kind="info",
+            code="NO_COMPLETION_ERRORS",
+            message="no completion errors recorded",
+            remediation="",
+        )
+
+    recent = lines[-limit:]
+    count = len(recent)
+    body = "\n".join(recent)
+    message = f"Recent completion errors ({count}):\n{body}"
+
+    return DoctorFinding(
+        kind="warn",
+        code="COMPLETION_ERRORS",
+        message=message,
+        remediation=f"Inspect {log_file} for details.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subcheck 9: Completion-script staleness
+# ---------------------------------------------------------------------------
+
+
+def _check_completion_script_staleness(
+    search_paths: list[tuple[str, str]],
+    completion_generator: Callable[[str], str],
+) -> list[DoctorFinding]:
+    """Check static completion scripts for staleness against a fresh generation.
+
+    Subcheck 9 in spec Section 4.6: For each ``(shell, path)`` pair in
+    ``search_paths``, if the file exists on disk, compute its SHA-256 hash
+    and compare it to the SHA-256 hash of a freshly generated completion script
+    for that shell. When the hashes differ, a warn-level finding is emitted
+    naming the shell and the on-disk path.
+
+    Files that do not exist are silently skipped (no finding emitted).
+    In-sync files produce no finding.
+
+    Args:
+        search_paths: Sequence of (shell, path) pairs to inspect. Each path
+            is checked independently. Multiple pairs may share the same shell
+            name if the shell installs to multiple locations.
+        completion_generator: Callable that accepts a shell name (e.g. "bash"
+            or "zsh") and returns the completion script text for that shell.
+            No subprocess is spawned; this callable runs in-process.
+
+    Returns:
+        List of DoctorFinding instances with kind="warn" for each stale script.
+        Empty when no installed scripts are stale (or none are installed).
+    """
+    findings: list[DoctorFinding] = []
+
+    for shell, path_str in search_paths:
+        script_path = pathlib.Path(path_str)
+        if not script_path.exists():
+            continue
+
+        on_disk_content = script_path.read_text(encoding="utf-8")
+        on_disk_hash = hashlib.sha256(on_disk_content.encode("utf-8")).hexdigest()
+
+        fresh_content = completion_generator(shell)
+        fresh_hash = hashlib.sha256(fresh_content.encode("utf-8")).hexdigest()
+
+        if on_disk_hash != fresh_hash:
+            findings.append(
+                DoctorFinding(
+                    kind="warn",
+                    code="STALE_COMPLETION_SCRIPT",
+                    message=KANON_STALE_COMPLETION_SCRIPT_WARNING.format(
+                        shell_name=shell,
+                        path=path_str,
+                    ),
+                    remediation=f"kanon completion {shell} > {path_str}",
+                )
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Printing helpers
 # ---------------------------------------------------------------------------
 
@@ -554,14 +686,58 @@ def _print_finding(finding: DoctorFinding) -> None:
 
 
 # ---------------------------------------------------------------------------
-# doctor_command -- main entrypoint for 'kanon doctor' (checks 1-5)
+# Completion subchecks runner (7 + 9)
 # ---------------------------------------------------------------------------
 
 
-def doctor_command(args: argparse.Namespace) -> int:
-    """Entry-point for 'kanon doctor' implementing subchecks 1-5.
+def _run_completion_subchecks(
+    completion_generator: Callable[[str], str] | None,
+) -> None:
+    """Run completion subchecks 7 and 9, printing findings to stderr.
 
-    Orchestrates the five consistency checks in order. Prints findings to
+    Subcheck 7 reads the completion-errors log from the KANON_CACHE_DIR when
+    that environment variable is set. Subcheck 9 checks static completion
+    scripts for staleness when a completion_generator is provided.
+
+    Both subchecks always run when invoked (no flag gates). This function
+    encapsulates their logic so both the normal and NO_LOCKFILE code paths
+    in doctor_command can call it without duplication.
+
+    Args:
+        completion_generator: Optional callable for subcheck 9. When None,
+            the staleness check is skipped.
+    """
+    # -- Check 7: completion errors report --
+    cache_dir_str = os.environ.get(KANON_CACHE_DIR_ENV)
+    if cache_dir_str is not None:
+        errors_finding = _check_completion_errors_report(
+            pathlib.Path(cache_dir_str),
+            limit=KANON_COMPLETION_ERRORS_REPORT_LIMIT,
+        )
+        _print_finding(errors_finding)
+
+    # -- Check 9: completion-script staleness --
+    if completion_generator is not None:
+        staleness_findings = _check_completion_script_staleness(
+            search_paths=list(KANON_STATIC_COMPLETION_SEARCH_PATHS),
+            completion_generator=completion_generator,
+        )
+        for finding in staleness_findings:
+            _print_finding(finding)
+
+
+# ---------------------------------------------------------------------------
+# doctor_command -- main entrypoint for 'kanon doctor' (checks 1-5, 7, 9)
+# ---------------------------------------------------------------------------
+
+
+def doctor_command(
+    args: argparse.Namespace,
+    completion_generator: Callable[[str], str] | None = None,
+) -> int:
+    """Entry-point for 'kanon doctor' implementing subchecks 1-5, 7, 9.
+
+    Orchestrates the consistency checks in order. Prints findings to
     stderr via _print_finding. Returns exit code 0 unless at least one
     finding with kind="error" is found.
 
@@ -573,6 +749,13 @@ def doctor_command(args: argparse.Namespace) -> int:
     Checks 2-5 are only run when both files are present and the hash is
     valid.
 
+    Check 7 runs when KANON_CACHE_DIR is set in the environment.
+
+    Check 9 runs when completion_generator is provided (not None). The
+    generator is expected to return the completion script text for the
+    given shell name (e.g. "bash", "zsh"). When None, the staleness check
+    is skipped because the completion subcommand (E7) is not yet wired.
+
     Args:
         args: Parsed argument namespace from argparse. Expected attributes:
             - kanon_file (str | None): path to .kanon file.
@@ -582,6 +765,10 @@ def doctor_command(args: argparse.Namespace) -> int:
               global flags).
             - refresh_completion_cache (bool): legacy flag handled by
               run_doctor; always False when routed through doctor_command.
+        completion_generator: Optional callable accepting a shell name and
+            returning the completion script text for that shell. When
+            provided, subcheck 9 (static-script staleness) is executed.
+            When None, subcheck 9 is skipped.
 
     Returns:
         0 on success (no error-level findings); 1 when any error is found.
@@ -613,9 +800,10 @@ def doctor_command(args: argparse.Namespace) -> int:
 
         if consistency_finding.code == "NO_LOCKFILE":
             _print_finding(consistency_finding)
-            # Lockfile absent: run subcheck 6 with no lockfile object, skip 2-5 and 11.
+            # Lockfile absent: run subchecks 6, 7, 9 with no lockfile; skip 2-5 and 11.
             source_finding = _check_effective_catalog_source(args, dict(os.environ), None)
             print(source_finding.message)
+            _run_completion_subchecks(completion_generator)
             return 0
 
         if consistency_finding.code == "HASH_MISMATCH":
@@ -653,6 +841,9 @@ def doctor_command(args: argparse.Namespace) -> int:
     # -- Check 6: effective catalog source --
     source_finding = _check_effective_catalog_source(args, dict(os.environ), lockfile)
     print(source_finding.message)
+
+    # -- Checks 7 + 9: completion errors and script staleness --
+    _run_completion_subchecks(completion_generator)
 
     return 1 if has_errors else 0
 

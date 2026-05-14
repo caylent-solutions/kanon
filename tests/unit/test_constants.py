@@ -945,3 +945,221 @@ class TestKanonResolveTimeoutConstants:
 
         assert isinstance(_KANON_RESOLVE_TIMEOUT_DEFAULT, int)
         assert _KANON_RESOLVE_TIMEOUT_DEFAULT > 0
+
+
+@pytest.mark.unit
+class TestKanonCompletionErrorsReportLimitConstant:
+    """Tests for KANON_COMPLETION_ERRORS_REPORT_LIMIT constant (E5-F1-S1-T3 AC-FUNC-008)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_COMPLETION_ERRORS_REPORT_LIMIT
+
+        assert isinstance(KANON_COMPLETION_ERRORS_REPORT_LIMIT, int)
+
+    def test_default_value_is_5(self) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT default value is 5."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_COMPLETION_ERRORS_REPORT_LIMIT", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_COMPLETION_ERRORS_REPORT_LIMIT == 5
+        finally:
+            if saved is not None:
+                os.environ["KANON_COMPLETION_ERRORS_REPORT_LIMIT"] = saved
+            importlib.reload(constants)
+
+    def test_is_positive(self) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT is a positive integer."""
+        from kanon_cli.constants import KANON_COMPLETION_ERRORS_REPORT_LIMIT
+
+        assert KANON_COMPLETION_ERRORS_REPORT_LIMIT > 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", "10")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_COMPLETION_ERRORS_REPORT_LIMIT == 10
+        finally:
+            monkeypatch.delenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT set to a non-integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_zero_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT set to 0 raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_negative_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_COMPLETION_ERRORS_REPORT_LIMIT set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_COMPLETION_ERRORS_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonCacheDirEnvConstant:
+    """Tests for KANON_CACHE_DIR_ENV constant (E5-F1-S1-T3 AC-FUNC-008)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_CACHE_DIR_ENV constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+
+        assert isinstance(KANON_CACHE_DIR_ENV, str)
+
+    def test_constant_value_is_kanon_cache_dir(self) -> None:
+        """KANON_CACHE_DIR_ENV equals the string 'KANON_CACHE_DIR'."""
+        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+
+        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
+
+    def test_constant_is_non_empty(self) -> None:
+        """KANON_CACHE_DIR_ENV is a non-empty string."""
+        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+
+        assert len(KANON_CACHE_DIR_ENV) > 0
+
+
+@pytest.mark.unit
+class TestKanonCompletionErrorsLogFilenameConstant:
+    """Tests for KANON_COMPLETION_ERRORS_LOG_FILENAME constant (E5-F1-S1-T3 AC-FUNC-008)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_COMPLETION_ERRORS_LOG_FILENAME constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_COMPLETION_ERRORS_LOG_FILENAME
+
+        assert isinstance(KANON_COMPLETION_ERRORS_LOG_FILENAME, str)
+
+    def test_constant_value_is_completion_errors_log(self) -> None:
+        """KANON_COMPLETION_ERRORS_LOG_FILENAME equals 'completion-errors.log'."""
+        from kanon_cli.constants import KANON_COMPLETION_ERRORS_LOG_FILENAME
+
+        assert KANON_COMPLETION_ERRORS_LOG_FILENAME == "completion-errors.log"
+
+    def test_constant_is_non_empty(self) -> None:
+        """KANON_COMPLETION_ERRORS_LOG_FILENAME is a non-empty string."""
+        from kanon_cli.constants import KANON_COMPLETION_ERRORS_LOG_FILENAME
+
+        assert len(KANON_COMPLETION_ERRORS_LOG_FILENAME) > 0
+
+
+@pytest.mark.unit
+class TestKanonStaticCompletionSearchPathsConstant:
+    """Tests for KANON_STATIC_COMPLETION_SEARCH_PATHS constant (E5-F1-S1-T3 AC-FUNC-008)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_STATIC_COMPLETION_SEARCH_PATHS constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        assert KANON_STATIC_COMPLETION_SEARCH_PATHS is not None
+
+    def test_constant_is_tuple(self) -> None:
+        """KANON_STATIC_COMPLETION_SEARCH_PATHS is a tuple."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        assert isinstance(KANON_STATIC_COMPLETION_SEARCH_PATHS, tuple)
+
+    def test_each_entry_is_two_tuple_of_strings(self) -> None:
+        """Each entry in KANON_STATIC_COMPLETION_SEARCH_PATHS is a (str, str) pair."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        for entry in KANON_STATIC_COMPLETION_SEARCH_PATHS:
+            assert isinstance(entry, tuple), f"Expected tuple entry, got {type(entry)}"
+            assert len(entry) == 2, f"Expected 2-tuple, got length {len(entry)}"
+            shell, path = entry
+            assert isinstance(shell, str), f"Expected shell to be str, got {type(shell)}"
+            assert isinstance(path, str), f"Expected path to be str, got {type(path)}"
+
+    def test_constant_includes_bash_entry(self) -> None:
+        """KANON_STATIC_COMPLETION_SEARCH_PATHS includes at least one bash entry."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        shells = [shell for shell, _ in KANON_STATIC_COMPLETION_SEARCH_PATHS]
+        assert "bash" in shells, "Expected at least one 'bash' entry in search paths"
+
+    def test_constant_includes_zsh_entry(self) -> None:
+        """KANON_STATIC_COMPLETION_SEARCH_PATHS includes at least one zsh entry."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        shells = [shell for shell, _ in KANON_STATIC_COMPLETION_SEARCH_PATHS]
+        assert "zsh" in shells, "Expected at least one 'zsh' entry in search paths"
+
+    def test_paths_are_non_empty_strings(self) -> None:
+        """All path strings in KANON_STATIC_COMPLETION_SEARCH_PATHS are non-empty."""
+        from kanon_cli.constants import KANON_STATIC_COMPLETION_SEARCH_PATHS
+
+        for shell, path in KANON_STATIC_COMPLETION_SEARCH_PATHS:
+            assert len(path) > 0, f"Expected non-empty path for shell {shell!r}"
+
+
+@pytest.mark.unit
+class TestKanonStaleCompletionScriptWarningConstant:
+    """Tests for KANON_STALE_COMPLETION_SCRIPT_WARNING constant (E5-F1-S1-T3 AC-FUNC-008)."""
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_STALE_COMPLETION_SCRIPT_WARNING constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+        assert isinstance(KANON_STALE_COMPLETION_SCRIPT_WARNING, str)
+
+    def test_constant_is_non_empty(self) -> None:
+        """KANON_STALE_COMPLETION_SCRIPT_WARNING is a non-empty string."""
+        from kanon_cli.constants import KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+        assert len(KANON_STALE_COMPLETION_SCRIPT_WARNING) > 0
+
+    def test_template_contains_shell_name_placeholder(self) -> None:
+        """KANON_STALE_COMPLETION_SCRIPT_WARNING contains a {shell_name} placeholder."""
+        from kanon_cli.constants import KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+        assert "{shell_name}" in KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+    def test_template_contains_path_placeholder(self) -> None:
+        """KANON_STALE_COMPLETION_SCRIPT_WARNING contains a {path} placeholder."""
+        from kanon_cli.constants import KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+        assert "{path}" in KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+    def test_template_is_format_compatible(self) -> None:
+        """KANON_STALE_COMPLETION_SCRIPT_WARNING formats correctly with shell_name and path."""
+        from kanon_cli.constants import KANON_STALE_COMPLETION_SCRIPT_WARNING
+
+        rendered = KANON_STALE_COMPLETION_SCRIPT_WARNING.format(
+            shell_name="bash",
+            path="/usr/local/share/bash-completion/completions/kanon",
+        )
+        assert "bash" in rendered
+        assert "/usr/local/share/bash-completion/completions/kanon" in rendered

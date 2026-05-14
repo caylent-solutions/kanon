@@ -27,6 +27,7 @@ behaviour steps 1-3, 5 (text format). Section 7 for KANON_WHY_FORMAT.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import sys
@@ -38,6 +39,8 @@ from kanon_cli.constants import (
     KANON_LOCK_FILE,
     KANON_WHY_FORMAT,
     KANON_WHY_FORMAT_DEFAULT,
+    KANON_WHY_FORMAT_JSON,
+    KANON_WHY_JSON_INDENT,
     KANON_WHY_SUGGEST_MAX_DISTANCE,
     KANON_WHY_SUGGEST_TOP_N,
     MISSING_CATALOG_ERROR_TEMPLATE,
@@ -636,6 +639,67 @@ def _render_text(chains: list[list[ChainNode]]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# JSON rendering
+# ---------------------------------------------------------------------------
+
+
+def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
+    """Convert a single chain (list of ChainNode) into the spec-shaped list of node dicts.
+
+    Each node dict has exactly five keys: kind, name, ref, sha, url.
+
+    Field semantics:
+      - kind: one of 'source', 'include', 'project'.
+      - name: human-readable identifier of the node.
+      - ref: path_in_repo for include nodes; None for source and project nodes.
+      - sha: full 40-char hex SHA.
+      - url: for project nodes, node.canonical_url (canonicalized via canonicalize_repo_url);
+             for source nodes, node.url (raw URL as stored in the lockfile);
+             for include nodes, None (XML manifest paths have no standalone URL).
+
+    Args:
+        chain: A list of ChainNode objects representing one resolved chain.
+
+    Returns:
+        A list of node dicts suitable for JSON serialization.
+    """
+    result: list[dict[str, object]] = []
+    for node in chain:
+        # For project nodes, emit the canonicalized URL so the JSON output
+        # matches the text-renderer and the spec (Section 4.5 step 4).
+        if node.kind == "project":
+            url_value: object = node.canonical_url
+        else:
+            url_value = node.url
+        result.append(
+            {
+                "kind": node.kind,
+                "name": node.name,
+                "ref": node.ref,
+                "sha": node.sha,
+                "url": url_value,
+            }
+        )
+    return result
+
+
+def _render_json(chains: list[list[ChainNode]]) -> str:
+    """Render a list of chains to a JSON string (spec Section 4.5 step 4).
+
+    The output is a top-level JSON array of chains. Each chain is a list of
+    node objects with exactly five keys: kind, name, ref, sha, url.
+
+    Args:
+        chains: A list of chains, each chain being a list of ChainNode objects.
+
+    Returns:
+        A JSON string representation of all chains, terminated with a newline.
+    """
+    serialized: list[list[dict[str, object]]] = [_chain_to_node_dicts(chain) for chain in chains]
+    return json.dumps(serialized, sort_keys=False, indent=KANON_WHY_JSON_INDENT) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # CLI registration
 # ---------------------------------------------------------------------------
 
@@ -712,10 +776,10 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         "--format",
         dest="format",
         default=os.environ.get(KANON_WHY_FORMAT, KANON_WHY_FORMAT_DEFAULT),
-        choices=(KANON_WHY_FORMAT_DEFAULT,),
+        choices=(KANON_WHY_FORMAT_DEFAULT, KANON_WHY_FORMAT_JSON),
         metavar="<format>",
         help=(
-            "Output format: 'text' (default). "
+            "Output format: 'text' (default) or 'json'. "
             f"Overridden by the {KANON_WHY_FORMAT} environment variable; "
             "the CLI flag takes precedence when both are set."
         ),
@@ -746,7 +810,7 @@ def run(args: argparse.Namespace) -> int:
             - ``kanon_file`` (str): path to the .kanon file.
             - ``lock_file`` (str | None): path to the lockfile, or None.
             - ``catalog_source`` (str | None): catalog source string.
-            - ``format`` (str): output format -- 'text'.
+            - ``format`` (str): output format -- 'text' or 'json'.
 
     Returns:
         0 on success. Non-zero on error (but most errors call sys.exit directly).
@@ -833,8 +897,11 @@ def run(args: argparse.Namespace) -> int:
         sys.exit(1)
 
     # -- Render and emit output --
-    lines = _render_text(chains)
-    for line in lines:
-        print(line)
+    if args.format == KANON_WHY_FORMAT_JSON:
+        print(_render_json(chains), end="")
+    else:
+        lines = _render_text(chains)
+        for line in lines:
+            print(line)
 
     return 0

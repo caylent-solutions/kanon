@@ -313,7 +313,39 @@ every node already has its resolved SHA).
 | `--catalog-source` | `KANON_CATALOG_SOURCE` | -- | Catalog source as `<git-url>@<ref>`. Required only when `.kanon.lock` is absent. |
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` file. |
-| `--format` | `KANON_WHY_FORMAT` | `text` | Output format: `text` (default). JSON output is added in a later task. |
+| `--format` | `KANON_WHY_FORMAT` | `text` | Output format: `text` (default) or `json`. See JSON shape below. |
+
+**JSON output shape (`--format json`):**
+
+When `--format json` is selected, stdout receives a well-formed JSON array. Each
+element of the outer array is one chain (a list of node objects). Nodes are ordered
+top-level source first, leaf project last -- the same order as the text format:
+
+```json
+[
+  [
+    {"kind": "source",  "name": "<source-name>", "ref": null,          "sha": "<40-char-hex>", "url": "<catalog-url>"},
+    {"kind": "include", "name": "<manifest-name>","ref": "<xml-path>",  "sha": "<40-char-hex>", "url": null},
+    {"kind": "project", "name": "<project-name>", "ref": null,          "sha": "<40-char-hex>", "url": "<canonical-url>"}
+  ]
+]
+```
+
+Field semantics:
+
+- **`kind`** -- one of `"source"`, `"include"`, `"project"`.
+- **`name`** -- human-readable identifier (source token, XML manifest name, or project name).
+- **`ref`** -- for `include` nodes: the `path_in_repo` value (e.g. `"repo-specs/bar.xml"`);
+  `null` for `source` and `project` nodes.
+- **`sha`** -- full 40-character hex commit SHA (never truncated).
+- **`url`** -- for `project` nodes, the value is `node.canonical_url` (canonicalized via
+  `canonicalize_repo_url`). For `source` nodes, the value is `node.url` (raw URL as stored in
+  the lockfile). For `include` nodes, the value is `null` (XML manifest paths have no standalone
+  URL).
+
+Indent depth is controlled by `KANON_WHY_JSON_INDENT` (default `2`). Only the success-path
+chain output is JSON-encoded. Ambiguity and not-found errors always emit plain-text to stderr
+regardless of `--format`.
 
 **Examples:**
 
@@ -341,6 +373,9 @@ kanon why my-source \
 kanon why https://github.com/org/myproject \
   --kanon-file ./.kanon \
   --lock-file ./.kanon.lock
+
+# Emit JSON output and pipe to jq for processing
+kanon why https://github.com/org/myproject --format json | jq '.[0] | length'
 ```
 
 ### `kanon bootstrap`

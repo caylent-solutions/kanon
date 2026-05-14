@@ -203,7 +203,7 @@ Controls the output format of the `kanon why` command.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `KANON_WHY_FORMAT` | `text` | Output format for `kanon why`. Currently only `text` is supported. JSON output will be added in a later release. |
+| `KANON_WHY_FORMAT` | `text` | Output format for `kanon why`. Supported values: `text` (human-readable arrow-separated chains) and `json` (machine-readable JSON array). |
 
 **Precedence:** `--format` CLI flag wins over `KANON_WHY_FORMAT` env var; the env var wins over
 the built-in default (`text`).
@@ -212,15 +212,39 @@ the built-in default (`text`).
 # Use the default text format
 kanon why https://github.com/org/myproject
 
-# Override via environment variable
-KANON_WHY_FORMAT=text kanon why https://github.com/org/myproject
+# Select JSON format via environment variable
+KANON_WHY_FORMAT=json kanon why https://github.com/org/myproject
 
 # Override via CLI flag (takes precedence over env var)
-kanon why https://github.com/org/myproject --format text
+kanon why https://github.com/org/myproject --format json
 ```
 
 The constant `KANON_WHY_FORMAT` (env var name) and `KANON_WHY_FORMAT_DEFAULT` (default
 value `"text"`) are both defined in `src/kanon_cli/constants.py`.
+
+## KANON_WHY_JSON_INDENT
+
+Controls the JSON indentation level used by `json.dumps` when `kanon why --format json` is
+selected.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_WHY_JSON_INDENT` | `2` | Number of spaces per indentation level in JSON output from `kanon why --format json`. |
+
+This variable is optional. When unset, the default value of `2` is used. The value must be a
+non-negative integer (>= 0) parseable by Python `int()`. Setting the value to `0` produces
+newline-only formatting without indentation, which is valid JSON but difficult to read; a value
+of `1` or greater is recommended for human-readable output.
+
+```bash
+# Use the default indentation of 2 spaces
+kanon why https://github.com/org/myproject --format json
+
+# Use 4-space indentation
+KANON_WHY_JSON_INDENT=4 kanon why https://github.com/org/myproject --format json
+```
+
+The constant `KANON_WHY_JSON_INDENT` (default `2`) is defined in `src/kanon_cli/constants.py`.
 
 ## KANON_WHY_SUGGEST_MAX_DISTANCE
 

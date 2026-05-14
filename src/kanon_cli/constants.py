@@ -157,6 +157,9 @@ KANON_OUTDATED_FORMAT_DEFAULT = "table"
 # JSON format name for 'kanon outdated --format json'.
 KANON_OUTDATED_FORMAT_JSON = "json"
 
+# JSON format name for 'kanon why --format json'.
+KANON_WHY_FORMAT_JSON = "json"
+
 # -- kanon outdated JSON output --
 # Indentation level (in spaces) used by json.dumps when --format json is selected.
 # Controls pretty-print depth without requiring source edits.
@@ -188,6 +191,21 @@ KANON_WHY_FORMAT = "KANON_WHY_FORMAT"
 # Default output format for 'kanon why' when neither --format nor
 # KANON_WHY_FORMAT are set.
 KANON_WHY_FORMAT_DEFAULT = "text"
+
+# -- kanon why JSON output --
+# Indentation level (in spaces) used by json.dumps when --format json is selected.
+# Controls pretty-print depth without requiring source edits.
+# Overridable via the KANON_WHY_JSON_INDENT environment variable.
+_raw_why_json_indent = os.environ.get("KANON_WHY_JSON_INDENT")
+if _raw_why_json_indent is not None:
+    try:
+        KANON_WHY_JSON_INDENT: int = int(_raw_why_json_indent)
+    except ValueError:
+        raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {_raw_why_json_indent!r}")
+    if KANON_WHY_JSON_INDENT < 0:
+        raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {KANON_WHY_JSON_INDENT}")
+else:
+    KANON_WHY_JSON_INDENT = 2
 
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close

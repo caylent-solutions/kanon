@@ -649,6 +649,18 @@ class TestKanonWhyFormatConstants:
 
         assert isinstance(KANON_WHY_FORMAT_DEFAULT, str)
 
+    def test_kanon_why_format_json_is_json_string(self) -> None:
+        """KANON_WHY_FORMAT_JSON is the string literal 'json'."""
+        from kanon_cli.constants import KANON_WHY_FORMAT_JSON
+
+        assert KANON_WHY_FORMAT_JSON == "json"
+
+    def test_kanon_why_format_json_is_string(self) -> None:
+        """KANON_WHY_FORMAT_JSON is a str instance."""
+        from kanon_cli.constants import KANON_WHY_FORMAT_JSON
+
+        assert isinstance(KANON_WHY_FORMAT_JSON, str)
+
 
 @pytest.mark.unit
 class TestKanonWhySuggestConstants:
@@ -812,4 +824,82 @@ class TestKanonWhySuggestConstants:
         with pytest.raises(SystemExit):
             importlib.reload(constants)
         monkeypatch.delenv("KANON_WHY_SUGGEST_TOP_N", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonWhyJsonIndent:
+    """Tests for KANON_WHY_JSON_INDENT constant (E4-F2-S1-T4 AC-DOC-002).
+
+    This constant controls the indentation level used by json.dumps when
+    'kanon why --format json' is selected. It is overridable via the
+    KANON_WHY_JSON_INDENT environment variable.
+    """
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_WHY_JSON_INDENT constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_WHY_JSON_INDENT
+
+        assert isinstance(KANON_WHY_JSON_INDENT, int)
+
+    def test_default_value_is_2(self) -> None:
+        """KANON_WHY_JSON_INDENT default value is 2."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_WHY_JSON_INDENT", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_JSON_INDENT == 2
+        finally:
+            if saved is not None:
+                os.environ["KANON_WHY_JSON_INDENT"] = saved
+            importlib.reload(constants)
+
+    def test_is_non_negative(self) -> None:
+        """KANON_WHY_JSON_INDENT is a non-negative integer (0 is valid for compact output)."""
+        from kanon_cli.constants import KANON_WHY_JSON_INDENT
+
+        assert KANON_WHY_JSON_INDENT >= 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_JSON_INDENT env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_JSON_INDENT", "4")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WHY_JSON_INDENT == 4
+        finally:
+            monkeypatch.delenv("KANON_WHY_JSON_INDENT", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_JSON_INDENT set to a non-integer env var raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_JSON_INDENT", "not-a-number")
+        with pytest.raises(SystemExit) as exc_info:
+            importlib.reload(constants)
+        assert "KANON_WHY_JSON_INDENT" in str(exc_info.value)
+        monkeypatch.delenv("KANON_WHY_JSON_INDENT", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_negative_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WHY_JSON_INDENT set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WHY_JSON_INDENT", "-1")
+        with pytest.raises(SystemExit) as exc_info:
+            importlib.reload(constants)
+        assert "KANON_WHY_JSON_INDENT" in str(exc_info.value)
+        monkeypatch.delenv("KANON_WHY_JSON_INDENT", raising=False)
         importlib.reload(constants)

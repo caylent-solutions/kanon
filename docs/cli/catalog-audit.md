@@ -55,9 +55,8 @@ Use a comma-separated list to run a subset, e.g. `--check metadata,tag-format`.
 One finding per line, prefixed with `ERROR:`, `WARN:`, or `INFO:`:
 
 ```
-ERROR: [M001] Missing required metadata field 'description' -- Add 'description' to the entry's XML file.
-WARN: [S001] Source name 'my_tool' contains underscores -- Rename to 'my-tool' for shell-quoting compatibility.
-INFO: [I001] No issues found in entry 'good-entry'.
+ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <description> is missing or contains only whitespace. Add a non-empty <description> element to the <catalog-metadata> block.
+WARN: [M002] /path/repo-specs/tool-marketplace.xml: recommended <catalog-metadata> field <owner-email> is absent. Consider adding <owner-email> to improve catalog discoverability.
 ```
 
 ### json
@@ -70,8 +69,8 @@ A single JSON object `{"findings": [...]}` written to stdout:
     {
       "kind": "error",
       "code": "M001",
-      "message": "Missing required metadata field 'description'",
-      "remediation": "Add 'description' to the entry's XML file."
+      "message": "/path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <description> is missing or contains only whitespace. Add a non-empty <description> element to the <catalog-metadata> block.",
+      "remediation": ""
     }
   ]
 }
@@ -105,12 +104,80 @@ spec Section 3.6 (trust model / credential isolation).
 `KANON_CACHE_DIR` must be set to use a remote audit target. If unset, `kanon
 catalog audit` exits with an error when a remote source is supplied.
 
+## Metadata check (`--check metadata`)
+
+The `metadata` check inspects every `*-marketplace.xml` file under `repo-specs/` for
+spec Section 3.5 soft-spot rule 1 compliance.
+
+### Required fields
+
+The following fields MUST be present and non-empty in the `<catalog-metadata>` block.
+A missing or whitespace-only value produces one **ERROR** finding per field:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Machine-readable package identifier. |
+| `display-name` | Human-readable label shown in `kanon list` output. |
+| `description` | Short prose description of the package. |
+| `version` | Author-claimed version string (informational; not validated against semver/PEP-440). |
+
+### Recommended fields
+
+The following fields SHOULD be present. A missing field produces one **WARN** finding per field:
+
+| Field | Description |
+|-------|-------------|
+| `type` | Package type string (e.g. `plugin`, `library`). |
+| `owner-name` | Primary owner display name. |
+| `owner-email` | Primary owner contact address. |
+| `keywords` | Comma-separated keyword list for discoverability. |
+
+### Structural rules
+
+| Condition | Finding |
+|-----------|---------|
+| Duplicate child element (e.g. two `<name>` elements) within one `<catalog-metadata>` block | ERROR -- names the duplicated tag |
+| More than one `<catalog-metadata>` block in the file | ERROR -- names the count found |
+| Malformed XML (parse failure) | ERROR -- names the parse error |
+| Zero `<catalog-metadata>` blocks | ERROR |
+
+### Exit code behaviour
+
+`kanon catalog audit --check metadata` exits **1** when any ERROR-level finding is
+present (missing required field, duplicate child, multiple blocks, or malformed XML).
+It exits **0** when only WARN-level findings are present (missing recommended fields).
+The `--strict` flag (T8) will promote WARNs to ERRORs and is not yet active.
+
+### Example output
+
+```
+ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace. Add a non-empty <name> element to the <catalog-metadata> block.
+WARN: [M002] /path/repo-specs/tool-marketplace.xml: recommended <catalog-metadata> field <owner-email> is absent. Consider adding <owner-email> to improve catalog discoverability.
+ERROR: [M006] /path/repo-specs/tool-marketplace.xml: duplicate <name> element inside <catalog-metadata>; each child tag must appear at most once. Remove the extra <name> element.
+ERROR: [M005] /path/repo-specs/tool-marketplace.xml: 2 <catalog-metadata> blocks found; exactly one is required. Remove the extra <catalog-metadata> elements.
+```
+
+JSON equivalent:
+
+```json
+{
+  "findings": [
+    {
+      "kind": "error",
+      "code": "M001",
+      "message": "/path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace. Add a non-empty <name> element to the <catalog-metadata> block.",
+      "remediation": ""
+    }
+  ]
+}
+```
+
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | Audit completed without fatal error. Audit findings (ERROR/WARN/INFO level) do not influence the exit code in this version. |
-| `1` | Fatal error: missing audit target path, clone failure, missing repo-specs/ directory, or invalid environment variable configuration. |
+| `0` | Audit completed. No ERROR-level findings produced by any selected check. WARN-level findings do not affect the exit code (unless `--strict` is active). |
+| `1` | One or more ERROR-level findings produced, OR a fatal error occurred (missing audit target path, clone failure, missing repo-specs/ directory, or invalid environment variable configuration). |
 | `2` | Argument parsing error (invalid `--check` value, etc.). |
 
 ## Error messages

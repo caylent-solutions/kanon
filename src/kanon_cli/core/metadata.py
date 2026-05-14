@@ -39,7 +39,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree.ElementTree import Element, ParseError as XMLParseError
 
-from kanon_cli.constants import RECOMMENDED_CHAR_RE
+from kanon_cli.constants import (
+    KANON_CATALOG_METADATA_RECOMMENDED_FIELDS,
+    KANON_CATALOG_METADATA_REQUIRED_FIELDS,
+    RECOMMENDED_CHAR_RE,
+)
 
 
 class CatalogMetadataParseError(ValueError):
@@ -48,14 +52,6 @@ class CatalogMetadataParseError(ValueError):
     The error message always names the source file path and the specific
     problem so the operator knows exactly what to fix.
     """
-
-
-# Tags that map to required fields on CatalogMetadata.
-_REQUIRED_TAGS: tuple[str, ...] = ("name", "display-name", "description", "version")
-
-# Tags that map to recommended (optional) fields on CatalogMetadata.
-# "keywords" is included here because its absence should emit a warning.
-_RECOMMENDED_TAGS: tuple[str, ...] = ("type", "owner-name", "owner-email", "keywords")
 
 
 @dataclass
@@ -235,6 +231,152 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
         owner_email=owner_email,
         keywords=keywords,
     )
+
+
+@dataclass
+class MetadataAuditIssue:
+    """A single structured issue found by :func:`audit_catalog_metadata`.
+
+    Used by ``kanon catalog audit --check metadata`` to collect per-field
+    findings without re-parsing the XML or raising exceptions.
+
+    Attributes:
+        severity: ``"error"`` or ``"warn"``.
+        code: Short machine-readable identifier for the issue type.
+        message: Human-readable description including the XML file path,
+            the affected field name, and a clear remediation hint.
+    """
+
+    severity: str
+    code: str
+    message: str
+
+
+def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
+    """Inspect one ``*-marketplace.xml`` for catalog-metadata soft-spot rule 1 issues.
+
+    Returns a list of :class:`MetadataAuditIssue` objects (possibly empty).
+    Never raises; all structural and content problems are returned as issues.
+
+    Issues produced (in discovery order):
+
+    - ``"error"`` / ``M003``: malformed XML (parse failure).
+    - ``"error"`` / ``M004``: zero ``<catalog-metadata>`` blocks.
+    - ``"error"`` / ``M005``: more than one ``<catalog-metadata>`` block (names count).
+    - ``"error"`` / ``M006``: duplicate child tag within the single block.
+    - ``"error"`` / ``M001``: required field missing or whitespace-only.
+    - ``"warn"``  / ``M002``: recommended field absent.
+
+    Args:
+        xml_path: Path to the ``*-marketplace.xml`` file.
+
+    Returns:
+        List of :class:`MetadataAuditIssue` objects describing every issue
+        found.  An empty list means the file is fully compliant.
+    """
+    issues: list[MetadataAuditIssue] = []
+
+    try:
+        tree = ET.parse(xml_path)
+    except XMLParseError as exc:
+        issues.append(
+            MetadataAuditIssue(
+                severity="error",
+                code="M003",
+                message=(f"{xml_path}: malformed XML -- {exc}. Repair or regenerate the XML file."),
+            )
+        )
+        return issues
+
+    root = cast(Element, tree.getroot())
+    blocks = root.findall("catalog-metadata")
+
+    if len(blocks) == 0:
+        issues.append(
+            MetadataAuditIssue(
+                severity="error",
+                code="M004",
+                message=(
+                    f"{xml_path}: no <catalog-metadata> block found; "
+                    "exactly one is required. "
+                    "Add a <catalog-metadata> element to the XML file."
+                ),
+            )
+        )
+        return issues
+
+    if len(blocks) > 1:
+        issues.append(
+            MetadataAuditIssue(
+                severity="error",
+                code="M005",
+                message=(
+                    f"{xml_path}: {len(blocks)} <catalog-metadata> blocks found; "
+                    "exactly one is required. "
+                    "Remove the extra <catalog-metadata> elements."
+                ),
+            )
+        )
+        return issues
+
+    block = blocks[0]
+
+    # Check for duplicate child tags.
+    seen_tags: set[str] = set()
+    for child in block:
+        if child.tag in seen_tags:
+            issues.append(
+                MetadataAuditIssue(
+                    severity="error",
+                    code="M006",
+                    message=(
+                        f"{xml_path}: duplicate <{child.tag}> element inside "
+                        "<catalog-metadata>; each child tag must appear at most once. "
+                        f"Remove the extra <{child.tag}> element."
+                    ),
+                )
+            )
+        seen_tags.add(child.tag)
+
+    # If duplicate tags were found, field-level checks are unreliable -- return early.
+    if any(i.code == "M006" for i in issues):
+        return issues
+
+    # Build tag -> stripped text mapping.
+    children: dict[str, str | None] = {child.tag: child.text for child in block}
+
+    # Check required fields.
+    for tag_name in KANON_CATALOG_METADATA_REQUIRED_FIELDS:
+        raw = children.get(tag_name)
+        if raw is None or not raw.strip():
+            issues.append(
+                MetadataAuditIssue(
+                    severity="error",
+                    code="M001",
+                    message=(
+                        f"{xml_path}: required <catalog-metadata> field <{tag_name}> "
+                        "is missing or contains only whitespace. "
+                        f"Add a non-empty <{tag_name}> element to the <catalog-metadata> block."
+                    ),
+                )
+            )
+
+    # Check recommended fields.
+    for tag_name in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS:
+        if tag_name not in children:
+            issues.append(
+                MetadataAuditIssue(
+                    severity="warn",
+                    code="M002",
+                    message=(
+                        f"{xml_path}: recommended <catalog-metadata> field <{tag_name}> "
+                        "is absent. "
+                        f"Consider adding <{tag_name}> to improve catalog discoverability."
+                    ),
+                )
+            )
+
+    return issues
 
 
 def derive_source_name(entry_name: str) -> str:

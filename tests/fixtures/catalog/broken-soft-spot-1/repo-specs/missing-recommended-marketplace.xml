@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- Fixture: missing RECOMMENDED <owner-email> field -->
+<package>
+  <catalog-metadata>
+    <name>missing-email-tool</name>
+    <display-name>Missing Email Tool</display-name>
+    <description>A tool that is missing its recommended owner-email field.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Bob</owner-name>
+    <keywords>infra</keywords>
+  </catalog-metadata>
+</package>

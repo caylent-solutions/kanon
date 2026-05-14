@@ -402,6 +402,25 @@ KANON_CATALOG_AUDIT_FORMAT_DEFAULT = "text"
 # JSON format name for 'kanon catalog audit --format json'.
 KANON_CATALOG_AUDIT_FORMAT_JSON = "json"
 
+# -- kanon catalog audit metadata check field lists --
+# REQUIRED fields: missing or whitespace-only triggers an ERROR finding.
+# Defined here so they are testable data, not inline literals in catalog.py.
+KANON_CATALOG_METADATA_REQUIRED_FIELDS: tuple[str, ...] = (
+    "name",
+    "display-name",
+    "description",
+    "version",
+)
+
+# RECOMMENDED fields: missing any triggers a WARN finding per file.
+# Defined here so they are testable data, not inline literals in catalog.py.
+KANON_CATALOG_METADATA_RECOMMENDED_FIELDS: tuple[str, ...] = (
+    "type",
+    "owner-name",
+    "owner-email",
+    "keywords",
+)
+
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this

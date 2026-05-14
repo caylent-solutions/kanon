@@ -49,6 +49,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_FORMAT_JSON,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
 )
+from kanon_cli.core.metadata import audit_catalog_metadata
 from kanon_cli.core.url import canonicalize_repo_url
 
 
@@ -335,6 +336,47 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Metadata check (T2 -- soft-spot rule 1)
+# ---------------------------------------------------------------------------
+
+
+def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
+    """Check every ``*-marketplace.xml`` under ``repo-specs/`` for metadata issues.
+
+    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` and calls
+    :func:`kanon_cli.core.metadata.audit_catalog_metadata` on each file.
+
+    Converts each :class:`MetadataAuditIssue` returned into an
+    :class:`AuditFinding` using the severity as ``kind`` and the structured
+    ``code`` / ``message`` fields.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Returns:
+        List of :class:`AuditFinding` objects (possibly empty).
+    """
+    repo_specs = target_path / "repo-specs"
+    findings: list[AuditFinding] = []
+
+    for xml_file in sorted(repo_specs.rglob("*-marketplace.xml")):
+        for issue in audit_catalog_metadata(xml_file):
+            findings.append(
+                AuditFinding(
+                    kind=issue.severity,
+                    code=issue.code,
+                    message=issue.message,
+                    remediation="",
+                )
+            )
+
+    return findings
+
+
+AUDIT_CHECK_REGISTRY["metadata"] = _check_metadata
+
+
+# ---------------------------------------------------------------------------
 # audit_command entrypoint
 # ---------------------------------------------------------------------------
 
@@ -345,8 +387,10 @@ def audit_command(args: argparse.Namespace) -> int:
     Resolves the audit target, dispatches the selected checks, prints findings
     in the requested format, and returns an exit code.
 
-    T1 behaviour: always returns 0. T2+ will return 1 when error-level
-    findings are present. T8 will promote warnings to errors under --strict.
+    Returns exit code 1 when any error-level finding is produced.
+    Returns exit code 0 when only warn-level or no findings are present.
+    The --strict flag (not yet active) will promote warnings to errors in a
+    future release.
 
     Args:
         args: Parsed argument namespace. Expected attributes:
@@ -354,10 +398,10 @@ def audit_command(args: argparse.Namespace) -> int:
             check_subset (frozenset[str]): Normalized frozenset of check names.
             format (str): Output format ("text" or "json").
             no_color (bool): Whether to suppress ANSI color.
-            strict (bool): Parsed but not yet acted upon in T1.
+            strict (bool): Parsed but not yet acted upon.
 
     Returns:
-        Integer exit code (0 for T1).
+        Integer exit code.
     """
     target_path = _resolve_audit_target(args.target)
 
@@ -371,7 +415,8 @@ def audit_command(args: argparse.Namespace) -> int:
     if formatted:
         print(formatted)
 
-    return 0
+    has_error = any(f.kind == "error" for f in findings)
+    return 1 if has_error else 0
 
 
 # ---------------------------------------------------------------------------

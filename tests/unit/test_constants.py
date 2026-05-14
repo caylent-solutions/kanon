@@ -1692,3 +1692,89 @@ class TestKanonCatalogAuditFormatConstants:
         )
 
         assert KANON_CATALOG_AUDIT_FORMAT_DEFAULT != KANON_CATALOG_AUDIT_FORMAT_JSON
+
+
+@pytest.mark.unit
+class TestKanonCatalogMetadataFieldLists:
+    """Tests for KANON_CATALOG_METADATA_REQUIRED_FIELDS and
+    KANON_CATALOG_METADATA_RECOMMENDED_FIELDS (AC-FUNC-008 / source-test-atomicity)."""
+
+    def test_required_fields_is_tuple(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert isinstance(KANON_CATALOG_METADATA_REQUIRED_FIELDS, tuple)
+
+    def test_required_fields_contains_name(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert "name" in KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+    def test_required_fields_contains_display_name(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert "display-name" in KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+    def test_required_fields_contains_description(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert "description" in KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+    def test_required_fields_contains_version(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert "version" in KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+    def test_required_fields_length_is_four(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert len(KANON_CATALOG_METADATA_REQUIRED_FIELDS) == 4
+
+    def test_required_fields_all_strings(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_REQUIRED_FIELDS
+
+        assert all(isinstance(f, str) for f in KANON_CATALOG_METADATA_REQUIRED_FIELDS)
+
+    def test_recommended_fields_is_tuple(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert isinstance(KANON_CATALOG_METADATA_RECOMMENDED_FIELDS, tuple)
+
+    def test_recommended_fields_contains_type(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert "type" in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+    def test_recommended_fields_contains_owner_name(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert "owner-name" in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+    def test_recommended_fields_contains_owner_email(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert "owner-email" in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+    def test_recommended_fields_contains_keywords(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert "keywords" in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+    def test_recommended_fields_length_is_four(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert len(KANON_CATALOG_METADATA_RECOMMENDED_FIELDS) == 4
+
+    def test_recommended_fields_all_strings(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+
+        assert all(isinstance(f, str) for f in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS)
+
+    def test_required_and_recommended_are_disjoint(self) -> None:
+        from kanon_cli.constants import (
+            KANON_CATALOG_METADATA_RECOMMENDED_FIELDS,
+            KANON_CATALOG_METADATA_REQUIRED_FIELDS,
+        )
+
+        required = set(KANON_CATALOG_METADATA_REQUIRED_FIELDS)
+        recommended = set(KANON_CATALOG_METADATA_RECOMMENDED_FIELDS)
+        assert required.isdisjoint(recommended)

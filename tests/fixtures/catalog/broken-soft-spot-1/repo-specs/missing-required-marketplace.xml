@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- Fixture: missing REQUIRED <name> field -->
+<package>
+  <catalog-metadata>
+    <display-name>Missing Name Tool</display-name>
+    <description>A tool that is missing its required name field.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Alice</owner-name>
+    <owner-email>alice@example.com</owner-email>
+    <keywords>infra</keywords>
+  </catalog-metadata>
+</package>

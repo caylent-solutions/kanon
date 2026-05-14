@@ -247,6 +247,7 @@ class TestGlobalFlagsSubcommandPropagation:
         """
         minimal: dict[str, list[str]] = {
             "add": ["entry-a", "--catalog-source", "https://example.com/repo.git@main"],
+            "catalog": ["audit"],
             "install": [_FAKE_KANON_PATH],
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
@@ -897,3 +898,101 @@ class TestWhySubcommand:
         finally:
             if env_backup is not None:
                 os.environ["KANON_WHY_FORMAT"] = env_backup
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new 'catalog' subcommand group registration in build_parser()
+# (E5-F2-S1-T1 production change in cli.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCatalogSubcommandRegistration:
+    """build_parser() registers the 'catalog' subcommand group (E5-F2-S1-T1)."""
+
+    def test_catalog_subcommand_registered(self) -> None:
+        """build_parser() includes 'catalog' as a registered subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.command == "catalog"
+
+    def test_catalog_audit_sub_subcommand_registered(self) -> None:
+        """build_parser() includes 'catalog audit' as a registered sub-subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.catalog_command == "audit"
+
+    def test_catalog_audit_default_target_is_dot(self) -> None:
+        """'catalog audit' with no positional arg defaults target to '.'."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.target == "."
+
+    def test_catalog_audit_explicit_target(self) -> None:
+        """'catalog audit /some/path' stores the target path."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit", "/some/path"])
+        assert args.target == "/some/path"
+
+    def test_catalog_audit_check_defaults_to_all(self) -> None:
+        """'catalog audit' --check defaults to the full set of valid checks."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.check == KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_catalog_audit_check_single_value(self) -> None:
+        """'catalog audit --check metadata' parses to frozenset({'metadata'})."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit", "--check", "metadata"])
+        assert args.check == frozenset({"metadata"})
+
+    def test_catalog_audit_check_comma_separated(self) -> None:
+        """'catalog audit --check metadata,tag-format' parses to the expected frozenset."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit", "--check", "metadata,tag-format"])
+        assert args.check == frozenset({"metadata", "tag-format"})
+
+    def test_catalog_audit_format_default_is_text(self) -> None:
+        """'catalog audit' format defaults to 'text'."""
+        import os
+
+        env_backup = os.environ.pop("KANON_CATALOG_AUDIT_FORMAT", None)
+        try:
+            parser = build_parser()
+            args = parser.parse_args(["catalog", "audit"])
+            assert args.format == "text"
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_CATALOG_AUDIT_FORMAT"] = env_backup
+
+    def test_catalog_audit_strict_default_false(self) -> None:
+        """'catalog audit' --strict defaults to False."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.strict is False
+
+    def test_catalog_audit_strict_true_when_passed(self) -> None:
+        """'catalog audit --strict' stores strict=True."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit", "--strict"])
+        assert args.strict is True
+
+    def test_catalog_audit_no_color_default_false(self) -> None:
+        """'catalog audit' --no-color defaults to False."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert args.no_color is False
+
+    def test_catalog_audit_sets_func(self) -> None:
+        """'catalog audit' sets args.func to a callable."""
+        parser = build_parser()
+        args = parser.parse_args(["catalog", "audit"])
+        assert callable(args.func)
+
+    def test_catalog_audit_help_exits_0(self) -> None:
+        """kanon catalog audit --help exits 0 without error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["catalog", "audit", "--help"])
+        assert exc_info.value.code == 0

@@ -1517,3 +1517,178 @@ class TestKanonDoctorRemoteStderrPreviewChars:
             importlib.reload(constants)
         monkeypatch.delenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", raising=False)
         importlib.reload(constants)
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new catalog-audit constants (E5-F2-S1-T1 changes to constants.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditValidChecks:
+    """KANON_CATALOG_AUDIT_VALID_CHECKS contains the five expected check names."""
+
+    def test_is_frozenset(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert isinstance(KANON_CATALOG_AUDIT_VALID_CHECKS, frozenset)
+
+    def test_contains_metadata(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert "metadata" in KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_contains_source_name_derivation(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert "source-name-derivation" in KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_contains_entry_name_uniqueness(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert "entry-name-uniqueness" in KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_contains_remote_url(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert "remote-url" in KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_contains_tag_format(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert "tag-format" in KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    def test_exactly_five_checks(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        assert len(KANON_CATALOG_AUDIT_VALID_CHECKS) == 5
+
+    def test_all_values_are_strings(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        for name in KANON_CATALOG_AUDIT_VALID_CHECKS:
+            assert isinstance(name, str)
+
+    def test_no_underscores_in_check_names(self) -> None:
+        """Check names use hyphens, not underscores, per spec Section 4.8."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_VALID_CHECKS
+
+        for name in KANON_CATALOG_AUDIT_VALID_CHECKS:
+            assert "_" not in name, f"Check name '{name}' should use hyphens, not underscores"
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditCacheTTL:
+    """KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS has the expected default and env-override."""
+
+    def test_default_is_3600(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS
+
+        assert KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS == 3600
+
+    def test_is_positive_int(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS
+
+        assert isinstance(KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS, int)
+        assert KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS > 0
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS env var overrides the default."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", "120")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS == 120
+        finally:
+            monkeypatch.delenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", raising=False)
+            importlib.reload(constants)
+
+    def test_non_int_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS set to non-integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", raising=False)
+        importlib.reload(constants)
+
+    def test_zero_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS=0 raises SystemExit at import."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditCacheSubdir:
+    """KANON_CATALOG_AUDIT_CACHE_SUBDIR is the expected string."""
+
+    def test_value_is_catalog_audit(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_SUBDIR
+
+        assert KANON_CATALOG_AUDIT_CACHE_SUBDIR == "catalog-audit"
+
+    def test_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_SUBDIR
+
+        assert isinstance(KANON_CATALOG_AUDIT_CACHE_SUBDIR, str)
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditFormatEnv:
+    """KANON_CATALOG_AUDIT_FORMAT_ENV holds the correct env var name."""
+
+    def test_env_var_name(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_ENV
+
+        assert KANON_CATALOG_AUDIT_FORMAT_ENV == "KANON_CATALOG_AUDIT_FORMAT"
+
+    def test_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_ENV
+
+        assert isinstance(KANON_CATALOG_AUDIT_FORMAT_ENV, str)
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditFormatConstants:
+    """KANON_CATALOG_AUDIT_FORMAT_DEFAULT and KANON_CATALOG_AUDIT_FORMAT_JSON hold correct values."""
+
+    def test_format_default_value(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_DEFAULT
+
+        assert KANON_CATALOG_AUDIT_FORMAT_DEFAULT == "text"
+
+    def test_format_default_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_DEFAULT
+
+        assert isinstance(KANON_CATALOG_AUDIT_FORMAT_DEFAULT, str)
+
+    def test_format_json_value(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_JSON
+
+        assert KANON_CATALOG_AUDIT_FORMAT_JSON == "json"
+
+    def test_format_json_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_FORMAT_JSON
+
+        assert isinstance(KANON_CATALOG_AUDIT_FORMAT_JSON, str)
+
+    def test_format_default_and_json_are_distinct(self) -> None:
+        from kanon_cli.constants import (
+            KANON_CATALOG_AUDIT_FORMAT_DEFAULT,
+            KANON_CATALOG_AUDIT_FORMAT_JSON,
+        )
+
+        assert KANON_CATALOG_AUDIT_FORMAT_DEFAULT != KANON_CATALOG_AUDIT_FORMAT_JSON

@@ -1,0 +1,506 @@
+"""kanon catalog subcommand group and kanon catalog audit sub-subcommand.
+
+Provides:
+  kanon catalog audit [<dir-or-source>] [--check <subset>] [--format {text,json}]
+    [--no-color] [--strict]
+
+The catalog audit command performs a series of configurable soft-spot checks
+against a manifest repo. The manifest repo is either a local directory (must
+contain a repo-specs/ subdirectory) or a remote <git_url>@<ref> source that
+is cloned into a local cache.
+
+Check dispatch (T1 framework):
+  The check registry AUDIT_CHECK_REGISTRY maps check-name -> callable.
+  T2-T7 register their individual check functions into this registry.
+  T1 wires the framework: the registry exists and is iterated, but starts empty.
+
+Cache layout:
+  ${KANON_CACHE_DIR}/catalog-audit/<sha256(canonicalized url@ref)>/
+  Cached clones are reused when their mtime is within
+  KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS seconds of now.
+
+Output formats:
+  text (default): one finding per line, prefixed with ERROR:, WARN:, or INFO:.
+  json: a single JSON object {"findings": [{...}, ...]} written to stdout.
+
+Spec reference: spec/kanon-list-add-lock-features-spec.md Section 4.8.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+
+from kanon_cli.constants import (
+    KANON_CACHE_DIR_ENV,
+    KANON_CACHE_DIR_MODE,
+    KANON_CATALOG_AUDIT_CACHE_SUBDIR,
+    KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS,
+    KANON_CATALOG_AUDIT_FORMAT_DEFAULT,
+    KANON_CATALOG_AUDIT_FORMAT_ENV,
+    KANON_CATALOG_AUDIT_FORMAT_JSON,
+    KANON_CATALOG_AUDIT_VALID_CHECKS,
+)
+from kanon_cli.core.url import canonicalize_repo_url
+
+
+# ---------------------------------------------------------------------------
+# AuditFinding dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AuditFinding:
+    """A single finding produced by one kanon catalog audit check.
+
+    Attributes:
+        kind: Severity -- one of "info", "warn", or "error".
+        code: Short machine-readable identifier for the finding type.
+        message: Human-readable description of the finding.
+        remediation: Suggested command or action to resolve the finding.
+    """
+
+    kind: str
+    code: str
+    message: str
+    remediation: str
+
+
+# ---------------------------------------------------------------------------
+# Check registry (T2-T7 populate this dict)
+# ---------------------------------------------------------------------------
+
+# Maps check-name to a callable accepting (target_path: pathlib.Path) and
+# returning a list[AuditFinding].  T1 ships with an empty registry;
+# subsequent tasks register their check functions here.
+AUDIT_CHECK_REGISTRY: dict[str, Callable[[pathlib.Path], list[AuditFinding]]] = {}
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_check_subset(value: str) -> frozenset[str]:
+    """Parse and validate a --check value into a normalized frozenset of check names.
+
+    Accepts the single token "all" (expands to the full set) or a
+    comma-separated list of valid individual check names.
+
+    Args:
+        value: The raw string from the --check argument.
+
+    Returns:
+        A frozenset of check names to run.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is empty, contains an unknown
+            check name, or mixes "all" with other values.
+    """
+    if not value:
+        raise argparse.ArgumentTypeError(
+            "ERROR: --check requires a non-empty value. "
+            f"Valid values: all, {', '.join(sorted(KANON_CATALOG_AUDIT_VALID_CHECKS))}."
+        )
+
+    parts = [p.strip() for p in value.split(",")]
+
+    if "all" in parts and len(parts) > 1:
+        raise argparse.ArgumentTypeError(
+            "ERROR: 'all' cannot be combined with other --check values. "
+            "Use '--check all' alone to run every check, "
+            "or list individual check names without 'all'."
+        )
+
+    if "all" in parts:
+        return KANON_CATALOG_AUDIT_VALID_CHECKS
+
+    unknown = [p for p in parts if p not in KANON_CATALOG_AUDIT_VALID_CHECKS]
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"ERROR: Unknown --check value(s): {', '.join(unknown)}. "
+            f"Valid values: all, {', '.join(sorted(KANON_CATALOG_AUDIT_VALID_CHECKS))}."
+        )
+
+    return frozenset(parts)
+
+
+def _resolve_audit_target(target: str) -> pathlib.Path:
+    """Resolve the <dir-or-source> argument to a local directory path.
+
+    If the target contains '@' and looks like a <git_url>@<ref> source,
+    clone it into the catalog-audit cache directory and return the clone path.
+    Otherwise, treat the target as a local filesystem path.
+
+    Args:
+        target: Either a local directory path or a <git_url>@<ref> string.
+
+    Returns:
+        Absolute path to the local directory containing the manifest repo.
+
+    Raises:
+        SystemExit: If the target is a local path that does not exist, does
+            not contain a repo-specs/ subdirectory, or if a remote clone fails.
+    """
+    # Determine whether this looks like a remote source.
+    # A remote source must contain '@' AND either '://' or another '@' before
+    # the last '@' (SSH-style: git@host:org/repo.git@ref).
+    # We use the same last-'@' split logic as core/catalog.py.
+    is_remote = _looks_like_remote_source(target)
+
+    if is_remote:
+        return _clone_audit_target(target)
+
+    local_path = pathlib.Path(target).resolve()
+    if not local_path.exists():
+        print(
+            f"ERROR: Audit target path does not exist: {local_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    _check_repo_specs_dir(local_path)
+    return local_path
+
+
+def _looks_like_remote_source(target: str) -> bool:
+    """Return True if target looks like a <git_url>@<ref> remote source.
+
+    Args:
+        target: The raw target string from the CLI.
+
+    Returns:
+        True if the target should be treated as a remote git source.
+    """
+    # Fast-path: no '@' at all means it cannot be a remote source.
+    if "@" not in target:
+        return False
+
+    # Find the last '@' -- that is the ref delimiter.
+    idx = target.rfind("@")
+    url_part = target[:idx]
+
+    # If the URL part contains '://' it is a scheme URL (https://, ssh://, etc.)
+    if "://" in url_part:
+        return True
+
+    # If the URL part itself contains '@' it is SSH shorthand (git@host:org/repo.git)
+    if "@" in url_part:
+        return True
+
+    # Otherwise the single '@' might just be a Windows path or unusual local path;
+    # do not treat as remote.
+    return False
+
+
+def _clone_audit_target(source: str) -> pathlib.Path:
+    """Clone a <git_url>@<ref> source into the catalog-audit cache and return its path.
+
+    Reuses a cached clone if present and fresh (mtime within
+    KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS).
+
+    Args:
+        source: The raw <git_url>@<ref> string.
+
+    Returns:
+        Path to the cloned repo directory.
+
+    Raises:
+        SystemExit: If KANON_CACHE_DIR is unset, the clone fails, or the
+            cloned repo lacks a repo-specs/ subdirectory.
+    """
+    cache_dir_env = os.environ.get(KANON_CACHE_DIR_ENV)
+    if not cache_dir_env:
+        print(
+            "ERROR: KANON_CACHE_DIR must be set to use a remote audit target. "
+            "Set the environment variable to a writable directory path.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    idx = source.rfind("@")
+    url = source[:idx]
+    ref = source[idx + 1 :]
+
+    if not ref:
+        print(
+            f"ERROR: Empty ref in audit source: '{source}'. Expected '<git_url>@<ref>'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Canonicalize the URL before hashing to ensure consistent cache keys.
+    canonical_url = canonicalize_repo_url(url)
+    cache_key = hashlib.sha256(f"{canonical_url}@{ref}".encode()).hexdigest()
+
+    audit_cache_root = pathlib.Path(cache_dir_env) / KANON_CATALOG_AUDIT_CACHE_SUBDIR
+    clone_path = audit_cache_root / cache_key
+
+    # Reuse existing clone if it is fresh enough.
+    if clone_path.exists():
+        mtime = clone_path.stat().st_mtime
+        age_seconds = time.time() - mtime
+        if age_seconds <= KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS:
+            _check_repo_specs_dir(clone_path)
+            return clone_path
+
+    # Create the cache directory with owner-only permissions (spec Section 3.6).
+    audit_cache_root.mkdir(parents=True, exist_ok=True)
+    audit_cache_root.chmod(KANON_CACHE_DIR_MODE)
+
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", ref, url, str(clone_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"ERROR: Failed to clone audit target {url}@{ref}:\n{result.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    _check_repo_specs_dir(clone_path)
+    return clone_path
+
+
+def _check_repo_specs_dir(path: pathlib.Path) -> None:
+    """Verify that path contains a repo-specs/ subdirectory.
+
+    Args:
+        path: The local directory to check.
+
+    Raises:
+        SystemExit: If path does not contain a repo-specs/ subdirectory.
+    """
+    repo_specs = path / "repo-specs"
+    if not repo_specs.is_dir():
+        print(
+            f"ERROR: Audit target '{path}' does not contain a 'repo-specs/' directory. "
+            "Provide a path to a manifest repo (a git repository whose "
+            "repo-specs/ directory exposes installable kanon dependencies).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
+    """Format a list of AuditFinding objects for output.
+
+    Args:
+        findings: The findings to format.
+        fmt: Output format -- "text" or "json".
+
+    Returns:
+        A string ready to write to stdout. For "text", one finding per line
+        with ERROR:/WARN:/INFO: prefix. For "json", a single JSON object
+        {"findings": [...]}.
+
+    Raises:
+        ValueError: If fmt is not "text" or "json".
+    """
+    if fmt == KANON_CATALOG_AUDIT_FORMAT_JSON:
+        return json.dumps({"findings": [asdict(f) for f in findings]})
+
+    if fmt == KANON_CATALOG_AUDIT_FORMAT_DEFAULT:
+        if not findings:
+            return ""
+        prefix_map = {"error": "ERROR", "warn": "WARN", "info": "INFO"}
+        lines = []
+        for finding in findings:
+            if finding.kind not in prefix_map:
+                raise ValueError(
+                    f"ERROR: Unknown AuditFinding.kind: '{finding.kind}'. Valid values: error, info, warn."
+                )
+            prefix = prefix_map[finding.kind]
+            line = f"{prefix}: [{finding.code}] {finding.message}"
+            if finding.remediation:
+                line = f"{line} -- {finding.remediation}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    raise ValueError(
+        f"ERROR: Unknown output format: '{fmt}'. "
+        f"Valid values: {KANON_CATALOG_AUDIT_FORMAT_DEFAULT}, {KANON_CATALOG_AUDIT_FORMAT_JSON}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# audit_command entrypoint
+# ---------------------------------------------------------------------------
+
+
+def audit_command(args: argparse.Namespace) -> int:
+    """Execute the kanon catalog audit subcommand.
+
+    Resolves the audit target, dispatches the selected checks, prints findings
+    in the requested format, and returns an exit code.
+
+    T1 behaviour: always returns 0. T2+ will return 1 when error-level
+    findings are present. T8 will promote warnings to errors under --strict.
+
+    Args:
+        args: Parsed argument namespace. Expected attributes:
+            target (str): The <dir-or-source> positional argument.
+            check_subset (frozenset[str]): Normalized frozenset of check names.
+            format (str): Output format ("text" or "json").
+            no_color (bool): Whether to suppress ANSI color.
+            strict (bool): Parsed but not yet acted upon in T1.
+
+    Returns:
+        Integer exit code (0 for T1).
+    """
+    target_path = _resolve_audit_target(args.target)
+
+    findings: list[AuditFinding] = []
+    for check_name in sorted(args.check_subset):
+        check_fn = AUDIT_CHECK_REGISTRY.get(check_name)
+        if check_fn is not None:
+            findings.extend(check_fn(target_path))
+
+    formatted = _format_findings(findings, args.format)
+    if formatted:
+        print(formatted)
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# argparse registration
+# ---------------------------------------------------------------------------
+
+
+def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
+    """Register the 'catalog' subcommand group on the top-level argparse subparsers.
+
+    Creates the 'catalog' subparser and registers 'audit' as its sub-subcommand.
+
+    Args:
+        subparsers: The subparsers action from the top-level parser.
+    """
+    catalog_parser: argparse.ArgumentParser = subparsers.add_parser(
+        "catalog",
+        help="Catalog management subcommands.",
+        description="Subcommands for inspecting and auditing manifest repos.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    catalog_subparsers = catalog_parser.add_subparsers(
+        dest="catalog_command",
+        title="catalog subcommands",
+        description="Available catalog operations",
+    )
+
+    _register_audit(catalog_subparsers)
+
+    # If no catalog subcommand is given, print help.
+    def _catalog_help(args: argparse.Namespace) -> int:
+        catalog_parser.print_help()
+        return 2
+
+    catalog_parser.set_defaults(func=_catalog_help)
+
+
+def _register_audit(
+    catalog_subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
+    """Register the 'audit' sub-subcommand on the catalog subparsers.
+
+    Args:
+        catalog_subparsers: The subparsers action from the catalog parser.
+    """
+    valid_checks_list = ", ".join(sorted(KANON_CATALOG_AUDIT_VALID_CHECKS))
+    audit_parser: argparse.ArgumentParser = catalog_subparsers.add_parser(
+        "audit",
+        help="Audit a manifest repo for catalog soft-spot violations.",
+        description=(
+            "Audit a manifest repo for catalog soft-spot violations.\n\n"
+            "TARGET is either a local directory path (must contain repo-specs/) "
+            "or a remote <git_url>@<ref> source. Defaults to '.' (current directory).\n\n"
+            f"Valid --check values: all, {valid_checks_list}.\n\n"
+            "Output format 'text' (default): one finding per line with ERROR:, WARN:, "
+            "or INFO: prefix.\n"
+            "Output format 'json': a single JSON object {\"findings\": [...]} "
+            "written to stdout.\n\n"
+            "Cache layout: ${KANON_CACHE_DIR}/catalog-audit/<sha256>/ -- remote "
+            "sources are cloned once and reused within KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    audit_parser.add_argument(
+        "target",
+        nargs="?",
+        default=".",
+        metavar="<dir-or-source>",
+        help=(
+            "Path to a local manifest repo directory (must contain repo-specs/) "
+            "or a remote '<git_url>@<ref>' catalog source. Defaults to '.' (cwd)."
+        ),
+    )
+
+    audit_parser.add_argument(
+        "--check",
+        dest="check",
+        default="all",
+        type=_parse_check_subset,
+        metavar="<subset>",
+        help=(
+            f"Comma-separated list of checks to run, or 'all' (default). "
+            f"Valid values: all, {valid_checks_list}. "
+            "Cannot mix 'all' with individual check names."
+        ),
+    )
+
+    _format_env_val = os.environ.get(KANON_CATALOG_AUDIT_FORMAT_ENV)
+    _valid_formats = (KANON_CATALOG_AUDIT_FORMAT_DEFAULT, KANON_CATALOG_AUDIT_FORMAT_JSON)
+    if _format_env_val is not None and _format_env_val not in _valid_formats:
+        print(
+            f"ERROR: {KANON_CATALOG_AUDIT_FORMAT_ENV} has invalid value '{_format_env_val}'. "
+            f"Valid values: {KANON_CATALOG_AUDIT_FORMAT_DEFAULT}, {KANON_CATALOG_AUDIT_FORMAT_JSON}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    _format_default = _format_env_val if _format_env_val is not None else KANON_CATALOG_AUDIT_FORMAT_DEFAULT
+
+    audit_parser.add_argument(
+        "--format",
+        dest="format",
+        choices=_valid_formats,
+        default=_format_default,
+        metavar="{text,json}",
+        help=(
+            "Output format. 'text' prints one finding per line with ERROR:/WARN:/INFO: "
+            "prefix. 'json' prints a single JSON object {\"findings\": [...]}. "
+            f"Default: text. Env: {KANON_CATALOG_AUDIT_FORMAT_ENV}."
+        ),
+    )
+
+    audit_parser.add_argument(
+        "--strict",
+        dest="strict",
+        action="store_true",
+        default=False,
+        help=(
+            "Promotes warnings to errors when enabled; exits non-zero when any "
+            "WARN-level finding is present (currently parsed but not yet active)."
+        ),
+    )
+
+    def _run_audit(args: argparse.Namespace) -> int:
+        # Normalize the check_subset attribute from the parsed --check value.
+        # _parse_check_subset is used as the argparse type function, so args.check
+        # already holds the frozenset; store it as check_subset for audit_command.
+        args.check_subset = args.check
+        return audit_command(args)
+
+    audit_parser.set_defaults(func=_run_audit)

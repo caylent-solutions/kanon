@@ -23,6 +23,7 @@ from types import FrameType
 from kanon_cli import __version__
 from kanon_cli.commands.add import register as register_add
 from kanon_cli.commands.bootstrap import register as register_bootstrap
+from kanon_cli.commands.catalog import register as register_catalog
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
@@ -95,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_add(subparsers)
     register_bootstrap(subparsers)
+    register_catalog(subparsers)
     register_install(subparsers)
     register_clean(subparsers)
     register_doctor(subparsers)

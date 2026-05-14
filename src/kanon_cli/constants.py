@@ -352,6 +352,56 @@ if _raw_why_json_indent is not None:
 else:
     KANON_WHY_JSON_INDENT = 2
 
+# -- kanon catalog audit --
+# The five valid subset names for the --check flag of kanon catalog audit.
+# These are the only values accepted individually or in comma-separated combination.
+# The special value "all" expands to this full set at parse time.
+KANON_CATALOG_AUDIT_VALID_CHECKS: frozenset[str] = frozenset(
+    {
+        "metadata",
+        "source-name-derivation",
+        "entry-name-uniqueness",
+        "remote-url",
+        "tag-format",
+    }
+)
+
+# Cache TTL (in seconds) for cloned catalog-audit target repos.
+# A cached clone is reused if its mtime is within this many seconds of now.
+# Overridable via the KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS environment variable.
+_raw_catalog_audit_cache_ttl = os.environ.get("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS")
+if _raw_catalog_audit_cache_ttl is not None:
+    try:
+        KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS: int = int(_raw_catalog_audit_cache_ttl)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS must be a positive integer; "
+            f"got {_raw_catalog_audit_cache_ttl!r}"
+        )
+    if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS must be a positive integer; "
+            f"got {KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS}"
+        )
+else:
+    KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS = 3600
+
+# Subdirectory name under KANON_CACHE_DIR for catalog-audit cloned repos.
+# Full path: ${KANON_CACHE_DIR}/catalog-audit/<sha256-of-canonicalized-url-at-ref>/
+KANON_CATALOG_AUDIT_CACHE_SUBDIR = "catalog-audit"
+
+# Environment variable name that controls the output format for 'kanon catalog audit'.
+# The CLI flag --format takes precedence when both are set.
+# Supported values: "text" (default), "json".
+KANON_CATALOG_AUDIT_FORMAT_ENV = "KANON_CATALOG_AUDIT_FORMAT"
+
+# Default output format for 'kanon catalog audit' when neither --format nor
+# KANON_CATALOG_AUDIT_FORMAT are set.
+KANON_CATALOG_AUDIT_FORMAT_DEFAULT = "text"
+
+# JSON format name for 'kanon catalog audit --format json'.
+KANON_CATALOG_AUDIT_FORMAT_JSON = "json"
+
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this

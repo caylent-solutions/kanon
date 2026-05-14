@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from kanon_cli.core.lockfile import Lockfile
 
 from kanon_cli.constants import (
+    CATALOG_ENV_VAR,
     GIT_AUTH_ERROR_PATTERNS,
     GIT_RETRY_COUNT_DEFAULT,
     GIT_RETRY_COUNT_ENV_VAR,
@@ -38,7 +39,14 @@ from kanon_cli.constants import (
     _KANON_RESOLVE_TIMEOUT_DEFAULT,
     _KANON_RESOLVE_TIMEOUT_ENV,
 )
+from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.utils.concurrency import kanon_workspace_lock
+
+# Sentinel for detecting whether --catalog-source was explicitly supplied on the
+# command line versus left at the argparse default.  argparse sets catalog_source
+# to _UNSET when the user did not supply the flag; any other value (including the
+# string value of KANON_CATALOG_SOURCE) means the user typed it on the CLI.
+_UNSET: object = object()
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +454,84 @@ def _check_dangling_shas(
 
 
 # ---------------------------------------------------------------------------
+# Subcheck 6: Effective catalog source resolution
+# ---------------------------------------------------------------------------
+
+
+def _check_effective_catalog_source(
+    args: argparse.Namespace,
+    env: dict[str, str],
+    lockfile: "Lockfile | None",
+) -> DoctorFinding:
+    """Resolve and report the effective catalog source with its provenance.
+
+    Implements subcheck 6 from spec Section 4.6: determines the effective
+    catalog source by walking the precedence chain (first non-empty wins):
+
+      1. ``--catalog-source`` CLI flag (highest precedence).
+      2. ``KANON_CATALOG_SOURCE`` env var.
+      3. Lockfile ``[catalog].source`` field (when a lockfile is provided).
+      4. None (no catalog source configured).
+
+    This function is pure: it reads no global state directly. All inputs are
+    passed as parameters to enable unit testing without environment mutation.
+
+    The provenance suffix is mandatory in every output path -- without it an
+    operator can read the effective value but cannot tell WHERE it came from.
+    This is the primary mechanism for detecting ``KANON_CATALOG_SOURCE``
+    leakage from a shell profile into an unrelated workspace (spec Section 3.6).
+
+    Precedence disambiguation: ``args.catalog_source`` is set to the
+    ``_UNSET`` sentinel by the argparse default when the user did not supply
+    ``--catalog-source`` on the command line.  Any other value means the user
+    explicitly supplied the flag; that value is attributed to the CLI flag
+    regardless of whether the env var holds an identical string.
+
+    Args:
+        args: Parsed argument namespace. The ``catalog_source`` attribute is
+            the ``_UNSET`` sentinel when the CLI flag was not supplied, or the
+            user-supplied string when it was.
+        env: The process environment dict (pass ``dict(os.environ)`` or a test
+            substitute). Read-only: this function never mutates the dict.
+        lockfile: Optional Lockfile object. When provided, its
+            ``catalog.source`` field participates in the precedence chain.
+
+    Returns:
+        A DoctorFinding with kind="info" whose message contains both the
+        effective value and the provenance suffix.
+    """
+    raw_catalog_source = getattr(args, "catalog_source", _UNSET)
+    cli_value: str | None = None if raw_catalog_source is _UNSET else str(raw_catalog_source)
+    env_value: str | None = env.get(CATALOG_ENV_VAR)
+
+    # Determine provenance by walking the precedence chain.
+    # CLI flag wins unambiguously: catalog_source is not the _UNSET sentinel
+    # only when the user typed --catalog-source on the command line.
+    if cli_value is not None:
+        effective = cli_value
+        provenance = "(from --catalog-source CLI flag)"
+        message = f"Effective catalog source: {effective} {provenance}"
+    elif env_value is not None:
+        effective = env_value
+        provenance = "(from KANON_CATALOG_SOURCE env var)"
+        message = f"Effective catalog source: {effective} {provenance}"
+    elif lockfile is not None and lockfile.catalog.source:
+        effective = lockfile.catalog.source
+        provenance = "(from .kanon.lock [catalog].source)"
+        message = f"Effective catalog source: {effective} {provenance}"
+    else:
+        provenance = "(none configured)"
+        message = f"Effective catalog source: {provenance}; commands requiring a catalog source will fail."
+
+    return DoctorFinding(
+        kind="info",
+        code="EFFECTIVE_CATALOG_SOURCE",
+        message=message,
+        remediation="",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Printing helpers
 # ---------------------------------------------------------------------------
 
@@ -527,14 +613,16 @@ def doctor_command(args: argparse.Namespace) -> int:
 
         if consistency_finding.code == "NO_LOCKFILE":
             _print_finding(consistency_finding)
-            # Skip checks 2-5 and 11 (later tasks); continue with 6-10 (later tasks T2-T5)
+            # Lockfile absent: run subcheck 6 with no lockfile object, skip 2-5 and 11.
+            source_finding = _check_effective_catalog_source(args, dict(os.environ), None)
+            print(source_finding.message)
             return 0
 
         if consistency_finding.code == "HASH_MISMATCH":
             _print_finding(consistency_finding)
             return 1
 
-    # Hash matched -- load the lockfile and run checks 3-5.
+    # Hash matched -- load the lockfile and run checks 3-5 and 6.
     from kanon_cli.core.lockfile import read_lockfile
 
     lockfile = read_lockfile(lock_file)
@@ -561,6 +649,10 @@ def doctor_command(args: argparse.Namespace) -> int:
         _print_finding(finding)
         if finding.kind == "error":
             has_errors = True
+
+    # -- Check 6: effective catalog source --
+    source_finding = _check_effective_catalog_source(args, dict(os.environ), lockfile)
+    print(source_finding.message)
 
     return 1 if has_errors else 0
 
@@ -650,6 +742,14 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "cache refreshes are serialised."
         ),
     )
+
+    # Delegate --catalog-source registration to the shared factory (DRY).
+    # Then override the default to _UNSET so _check_effective_catalog_source
+    # can distinguish a CLI-supplied value from the argparse-injected default.
+    # The env-var fallback baked in by add_catalog_source_arg's default= would
+    # conflate CLI-absent with env-var-present, breaking provenance tracking.
+    add_catalog_source_arg(parser)
+    parser.set_defaults(catalog_source=_UNSET)
 
     parser.set_defaults(func=run_doctor)
 

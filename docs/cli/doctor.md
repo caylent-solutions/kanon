@@ -5,7 +5,7 @@ Run workspace health checks against the current project directory.
 ## Synopsis
 
 ```
-kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache]
+kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache] [--catalog-source <git-url>@<ref>]
 ```
 
 ## Description
@@ -38,6 +38,14 @@ emitted). Exit code is 1 when any error-level finding is detected.
   command exits 0. With this flag, any detected drift causes exit code 1.
   See subcheck 4 (Branch drift) below.
 
+`--catalog-source <git-url>@<ref>`
+: Override the catalog source for this invocation. Takes the form
+  `<git-url>@<ref>` where `ref` is a branch, tag, or commit SHA.
+  When supplied, this flag takes highest precedence in the effective
+  catalog source resolution (see subcheck 6 below). Overrides the
+  `KANON_CATALOG_SOURCE` environment variable and any lockfile
+  `[catalog].source` value.
+
 `--refresh-completion-cache`
 : Refresh the shell completion cache files stored under `.kanon-data/`.
   Acquires the workspace exclusive lock before writing so concurrent
@@ -45,8 +53,7 @@ emitted). Exit code is 1 when any error-level finding is detected.
 
 ## Subchecks
 
-`kanon doctor` runs the following consistency checks in order. Later tasks
-(E5-F1-S1-T2 through T5) add subchecks 6-11.
+`kanon doctor` runs the following consistency checks in order.
 
 ### Subcheck 1: .kanon / .kanon.lock consistency
 
@@ -67,7 +74,7 @@ INFO: No lockfile present; run `kanon install` to generate one.
 ```
 
 When `.kanon.lock` is absent, subchecks 2-5 and 11 are skipped; the command
-exits 0 after emitting the info notice.
+exits 0 after emitting the info notice and running subcheck 6.
 
 ### Subcheck 2: Hand-edit detection (kanon_hash)
 
@@ -133,12 +140,72 @@ may have force-pushed or pruned the commit.
   Remediation: Run 'kanon install --refresh-lock' to rebuild.
 ```
 
+### Subcheck 6: Effective catalog source
+
+Reports the effective catalog source and which configuration layer provided
+it. This check always runs, regardless of whether `.kanon.lock` is present.
+
+Resolution precedence (first non-empty wins):
+
+1. `--catalog-source <git-url>@<ref>` CLI flag (highest priority).
+2. `KANON_CATALOG_SOURCE` environment variable.
+3. Lockfile `[catalog].source` field (only when `.kanon.lock` is present
+   and its `catalog.source` field is non-empty).
+4. None -- no catalog source is configured.
+
+The provenance suffix is mandatory in every output path: it tells the
+operator WHERE the effective value came from, not just what the value is.
+This is how operators detect `KANON_CATALOG_SOURCE` leakage from a shell
+profile into an unrelated workspace (see spec Section 3.6).
+
+**Output printed to stdout:**
+
+When a source is configured (examples for each precedence level):
+```
+Effective catalog source: https://example.com/org/catalog.git@main (from --catalog-source CLI flag)
+Effective catalog source: https://example.com/org/catalog.git@main (from KANON_CATALOG_SOURCE env var)
+Effective catalog source: https://example.com/org/catalog.git@main (from .kanon.lock [catalog].source)
+```
+
+When no source is configured (exit 0, but commands that need a catalog will fail):
+```
+Effective catalog source: (none configured); commands requiring a catalog source will fail.
+```
+
+**Example: detecting a leaked env var**
+
+An operator has `KANON_CATALOG_SOURCE=https://corp.example.com/infra-catalog.git@main` in
+their `.bashrc`, exported globally. They `cd` into an unrelated project and run
+`kanon install`. To check before installing:
+
+```
+$ kanon doctor
+...
+Effective catalog source: https://corp.example.com/infra-catalog.git@main (from KANON_CATALOG_SOURCE env var)
+```
+
+The provenance suffix `(from KANON_CATALOG_SOURCE env var)` immediately reveals that
+the catalog source comes from the environment, not from a local CLI flag or the
+project's lockfile. The operator can then unset the variable before running any
+side-effecting command:
+
+```
+$ unset KANON_CATALOG_SOURCE
+$ kanon doctor
+...
+Effective catalog source: (none configured); commands requiring a catalog source will fail.
+```
+
+Without the provenance suffix, an operator reading only the URL would not know
+whether it was intentional for this project or a stale variable from another session.
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
 | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` configuration file |
 | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` lockfile |
+| `KANON_CATALOG_SOURCE` | (none) | Catalog source as `<git-url>@<ref>`; overridden by `--catalog-source` CLI flag |
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Seconds to wait between retry attempts |
@@ -170,6 +237,18 @@ kanon doctor --kanon-file /path/to/my/.kanon
 Run checks with an explicit lock file path:
 ```
 kanon doctor --kanon-file /path/to/.kanon --lock-file /path/to/.kanon.lock
+```
+
+Check which catalog source is active (subcheck 6) and override with a specific one:
+```
+kanon doctor --catalog-source https://example.com/org/catalog.git@main
+```
+
+Detect a leaked `KANON_CATALOG_SOURCE` env var (look for the provenance suffix in stdout):
+```
+kanon doctor
+# Expected output when env var is set:
+# Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCE env var)
 ```
 
 ## See Also

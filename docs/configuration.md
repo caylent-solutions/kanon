@@ -302,6 +302,71 @@ KANON_WHY_SUGGEST_TOP_N=5 kanon why fooo
 The constant `KANON_WHY_SUGGEST_TOP_N` (default `3`) is defined in
 `src/kanon_cli/constants.py`.
 
+## Doctor Cache Management
+
+The `kanon doctor` command supports two optional cache-management flags:
+`--refresh-completion-cache` (subcheck 8) and `--prune-cache` (subcheck 10).
+The following environment variables control their behaviour.
+
+### KANON_CACHE_PRUNE_AGE_DAYS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files under `${KANON_CACHE_DIR}` whose last-access time is older than this many days are removed by `kanon doctor --prune-cache`. Must be a positive integer. |
+
+This variable is optional. When unset, the default value of `30` is used. Values of 0 or below
+are rejected with a clear error at startup.
+
+```bash
+# Use the default 30-day threshold
+kanon doctor --prune-cache
+
+# Prune files not accessed in the last 7 days
+KANON_CACHE_PRUNE_AGE_DAYS=7 kanon doctor --prune-cache
+```
+
+The constant `KANON_CACHE_PRUNE_AGE_DAYS` (default `30`) is defined in `src/kanon_cli/constants.py`.
+
+### KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth below the current working directory that `kanon doctor --prune-cache` searches for stale `.kanon-data/.kanon-install.lock` files. Bounds filesystem traversal to prevent wandering the entire filesystem in a misconfigured workspace. Must be a positive integer. |
+
+This variable is optional. When unset, the default value of `4` is used. Values of 0 or below
+are rejected with a clear error at startup.
+
+```bash
+# Use the default depth of 4
+kanon doctor --prune-cache
+
+# Restrict scan to 2 levels deep
+KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH=2 kanon doctor --prune-cache
+```
+
+The constant `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` (default `4`) is defined in `src/kanon_cli/constants.py`.
+
+### KANON_DOCTOR_STALE_LOCK_AGE_HOURS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` | `1` | Minimum age in hours for a `.kanon-data/.kanon-install.lock` file to be considered stale by `kanon doctor --prune-cache`. Stale locks are reported as advisory findings only -- doctor never deletes them. Must be a positive integer. |
+
+`fcntl.flock` self-cleans on process exit, so a leftover lock file is harmless. The advisory
+finding is informational: it tells the operator that a lock file is older than expected and
+may correspond to a crashed install. No action is required unless the operator suspects a
+genuine issue.
+
+```bash
+# Use the default 1-hour threshold
+kanon doctor --prune-cache
+
+# Treat locks older than 4 hours as stale
+KANON_DOCTOR_STALE_LOCK_AGE_HOURS=4 kanon doctor --prune-cache
+```
+
+The constant `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` (default `1`) is defined in `src/kanon_cli/constants.py`.
+
 ## kanon repo Subcommand
 
 The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct

@@ -5,17 +5,21 @@ Run workspace health checks against the current project directory.
 ## Synopsis
 
 ```
-kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache] [--catalog-source <git-url>@<ref>]
+kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache] [--prune-cache] [--catalog-source <git-url>@<ref>]
 ```
 
 ## Description
 
 `kanon doctor` inspects a kanon workspace and reports any inconsistencies
 between the `.kanon` configuration file and the `.kanon.lock` lockfile. It
-is read-only when invoked without `--refresh-completion-cache`: it reads
-files and queries remote repositories but does not modify any local state.
-With `--refresh-completion-cache`, it writes completion-cache files under
-`.kanon-data/` (protected by the workspace lock).
+is read-only when invoked without `--refresh-completion-cache` or
+`--prune-cache`: it reads files and queries remote repositories but does
+not modify any local state.
+With `--refresh-completion-cache`, it invalidates all files under
+`${KANON_CACHE_DIR}/completion-cache/`.
+With `--prune-cache`, it removes cache files whose atime is older than
+`KANON_CACHE_PRUNE_AGE_DAYS` days and reports stale install-lock advisories.
+Both flags are independent and may be combined.
 
 Exit code is 0 when all checks pass (or when only info-level findings are
 emitted). Exit code is 1 when any error-level finding is detected.
@@ -47,9 +51,19 @@ emitted). Exit code is 1 when any error-level finding is detected.
   `[catalog].source` value.
 
 `--refresh-completion-cache`
-: Refresh the shell completion cache files stored under `.kanon-data/`.
-  Acquires the workspace exclusive lock before writing so concurrent
-  refreshes are serialised. This flag is independent of the health checks.
+: Subcheck 8: Invalidate all files under `${KANON_CACHE_DIR}/completion-cache/`,
+  recreating the directory empty with mode `0700`. Reports an info finding
+  with the count of files removed. This flag is independent of the health
+  checks. Has no effect when `KANON_CACHE_DIR` is unset.
+
+`--prune-cache`
+: Subcheck 10: Remove files under `${KANON_CACHE_DIR}` whose last-access time
+  is older than `KANON_CACHE_PRUNE_AGE_DAYS` days (default 30). Reports an
+  info finding with the count and total byte size pruned. Also reports any
+  stale `.kanon-data/.kanon-install.lock` files (mtime older than
+  `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` hours) as advisory findings -- doctor
+  does NOT delete them. Has no effect on cache files when `KANON_CACHE_DIR`
+  is unset; stale-lock scan always runs from the current working directory.
 
 ## Subchecks
 
@@ -199,6 +213,23 @@ Effective catalog source: (none configured); commands requiring a catalog source
 Without the provenance suffix, an operator reading only the URL would not know
 whether it was intentional for this project or a stale variable from another session.
 
+### Subcheck 8: Completion-cache invalidation (--refresh-completion-cache)
+
+When `--refresh-completion-cache` is set and `KANON_CACHE_DIR` is configured,
+all files under `${KANON_CACHE_DIR}/completion-cache/` are deleted and the
+directory is recreated empty with mode `0700`. This invalidates any cached
+completion data so the next completion invocation rebuilds the cache from
+scratch.
+
+This subcheck runs BEFORE subchecks 1-5, 7, 9, and 10.
+
+**Info finding after refresh:**
+```
+INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.cache/kanon/completion-cache
+```
+
+When `KANON_CACHE_DIR` is not set, this subcheck is skipped silently.
+
 ### Subcheck 7: Completion errors report
 
 Reads the most recent `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines (default 5)
@@ -260,6 +291,46 @@ WARN: Stale zsh completion script: /home/user/.zsh/completions/_kanon does not m
 
 Multiple shells with stale scripts produce one warning per shell.
 
+### Subcheck 10: Cache pruning and stale-lock advisory (--prune-cache)
+
+When `--prune-cache` is set, two actions occur:
+
+**10a -- Cache prune:** All files under `${KANON_CACHE_DIR}` (recursively)
+whose last-access time (`atime`) is older than `KANON_CACHE_PRUNE_AGE_DAYS`
+days are deleted. The number of deleted files and their combined byte size are
+reported as an info finding.
+
+**10b -- Stale install-lock advisory:** The working directory is scanned
+(recursively, up to `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` levels) for
+`.kanon-data/.kanon-install.lock` files whose mtime is older than
+`KANON_DOCTOR_STALE_LOCK_AGE_HOURS` hours. Each such file is reported as
+an advisory info finding. Doctor does NOT delete these files; `fcntl.flock`
+self-cleans on process exit, so a leftover file on disk is harmless and does
+not block subsequent installs.
+
+This subcheck runs BEFORE subchecks 1-5, 7, and 9, and AFTER subcheck 8
+when both flags are combined.
+
+**Info finding after pruning 2 files totalling 4096 bytes:**
+```
+INFO: Cache pruned: 2 file(s) removed (4096 bytes) with atime older than 30 days
+```
+
+**Advisory finding for a stale install lock:**
+```
+INFO: Advisory: stale install lock found at /path/to/.kanon-data/.kanon-install.lock (mtime older than 1h). fcntl.flock self-cleans on process exit; this file is harmless.
+```
+
+When `KANON_CACHE_DIR` is not set, only the stale-lock scan runs; no cache
+files are pruned.
+
+**Combining both flags:**
+```
+kanon doctor --refresh-completion-cache --prune-cache
+```
+Refresh runs first (subcheck 8), then prune runs (subcheck 10). Both findings
+are emitted. Health checks (subchecks 1-5, 6, 7, 9) always run after.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -270,8 +341,11 @@ Multiple shells with stale scripts produce one warning per shell.
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Seconds to wait between retry attempts |
-| `KANON_CACHE_DIR` | (none) | Directory where completion-errors log is stored; when unset, subcheck 7 is skipped |
+| `KANON_CACHE_DIR` | (none) | Directory where cache files are stored; when unset, subchecks 7, 8, and 10's cache prune are skipped |
 | `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
+| `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |
+| `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth for the stale install-lock scan in `--prune-cache` (subcheck 10) |
+| `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` | `1` | Minimum lock file age in hours to qualify as stale in the advisory scan (subcheck 10) |
 
 ## Exit Codes
 
@@ -312,6 +386,25 @@ Detect a leaked `KANON_CATALOG_SOURCE` env var (look for the provenance suffix i
 kanon doctor
 # Expected output when env var is set:
 # Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCE env var)
+```
+
+Invalidate the completion cache (removes all files under `${KANON_CACHE_DIR}/completion-cache/`):
+```
+kanon doctor --refresh-completion-cache
+# Expected stderr output:
+# INFO: Completion cache refreshed: 5 file(s) removed from /home/user/.cache/kanon/completion-cache
+```
+
+Remove stale cache files older than 30 days and check for stale install locks:
+```
+kanon doctor --prune-cache
+# Expected stderr output:
+# INFO: Cache pruned: 3 file(s) removed (24576 bytes) with atime older than 30 days
+```
+
+Run both refresh and prune together:
+```
+kanon doctor --refresh-completion-cache --prune-cache
 ```
 
 ## See Also

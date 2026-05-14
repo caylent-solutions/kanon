@@ -135,6 +135,69 @@ KANON_STALE_COMPLETION_SCRIPT_WARNING = (
     "to update it."
 )
 
+# -- Doctor cache management (subchecks 8 + 10) --
+# Permission bits for the completion-cache directory, enforcing owner-only
+# access as required by spec Section 3.6 (trust model / credential isolation).
+KANON_CACHE_DIR_MODE = 0o700
+
+# Age threshold in days for the cache prune operation (subcheck 10).
+# Files whose atime is older than this many days are removed by
+# 'kanon doctor --prune-cache'. Overridable via KANON_CACHE_PRUNE_AGE_DAYS.
+_raw_cache_prune_age_days = os.environ.get("KANON_CACHE_PRUNE_AGE_DAYS")
+if _raw_cache_prune_age_days is not None:
+    try:
+        KANON_CACHE_PRUNE_AGE_DAYS: int = int(_raw_cache_prune_age_days)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {_raw_cache_prune_age_days!r}"
+        )
+    if KANON_CACHE_PRUNE_AGE_DAYS <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {KANON_CACHE_PRUNE_AGE_DAYS}"
+        )
+else:
+    KANON_CACHE_PRUNE_AGE_DAYS = 30
+
+# Maximum directory depth for the stale install-lock scan (subcheck 10).
+# The scan walks .kanon-data/.kanon-install.lock files under the current
+# working directory but stops at this depth to bound filesystem traversal.
+# Overridable via KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH.
+_raw_stale_lock_scan_max_depth = os.environ.get("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH")
+if _raw_stale_lock_scan_max_depth is not None:
+    try:
+        KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH: int = int(_raw_stale_lock_scan_max_depth)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer; "
+            f"got {_raw_stale_lock_scan_max_depth!r}"
+        )
+    if KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer; "
+            f"got {KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH}"
+        )
+else:
+    KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH = 4
+
+# Age threshold in hours beyond which a .kanon-install.lock file is considered
+# stale (subcheck 10 advisory). Doctor does NOT delete stale locks; it only
+# reports them. Overridable via KANON_DOCTOR_STALE_LOCK_AGE_HOURS.
+_raw_stale_lock_age_hours = os.environ.get("KANON_DOCTOR_STALE_LOCK_AGE_HOURS")
+if _raw_stale_lock_age_hours is not None:
+    try:
+        KANON_DOCTOR_STALE_LOCK_AGE_HOURS: int = int(_raw_stale_lock_age_hours)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; got {_raw_stale_lock_age_hours!r}"
+        )
+    if KANON_DOCTOR_STALE_LOCK_AGE_HOURS <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; "
+            f"got {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}"
+        )
+else:
+    KANON_DOCTOR_STALE_LOCK_AGE_HOURS = 1
+
 # Environment variable name for the git ls-remote / resolve timeout (seconds).
 # Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
 _KANON_RESOLVE_TIMEOUT_ENV = "KANON_RESOLVE_TIMEOUT"

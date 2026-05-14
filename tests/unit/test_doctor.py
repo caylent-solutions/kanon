@@ -2,13 +2,11 @@
 
 Covers:
 - Subparser registration structure
-- run_doctor --refresh-completion-cache creates .kanon-data/completion-cache/
-- run_doctor --refresh-completion-cache creates .kanon-data/ via workspace lock
+- run_doctor --refresh-completion-cache uses KANON_CACHE_DIR/completion-cache/
 - run_doctor (no flags) health check paths
-- Workspace lock acquisition on --refresh-completion-cache path
 
-AC-FUNC-005: kanon doctor --refresh-completion-cache wraps cache mutation
-in kanon_workspace_lock.
+AC-FUNC-001: kanon doctor --refresh-completion-cache uses KANON_CACHE_DIR.
+AC-FUNC-004: kanon doctor without flags does not mutate the cache.
 """
 
 import argparse
@@ -25,12 +23,14 @@ import pytest
 def _make_refresh_args(
     kanon_file: str | None = None,
     refresh_completion_cache: bool = False,
+    prune_cache: bool = False,
 ) -> argparse.Namespace:
     """Construct a Namespace matching what argparse would produce for 'kanon doctor'.
 
     Args:
         kanon_file: Path to the .kanon file, or None to use the default.
         refresh_completion_cache: Whether --refresh-completion-cache was passed.
+        prune_cache: Whether --prune-cache was passed.
 
     Returns:
         Namespace instance suitable for passing to run_doctor.
@@ -38,6 +38,7 @@ def _make_refresh_args(
     return argparse.Namespace(
         kanon_file=kanon_file,
         refresh_completion_cache=refresh_completion_cache,
+        prune_cache=prune_cache,
     )
 
 
@@ -103,22 +104,60 @@ class TestDoctorSubparser:
 
 
 # ---------------------------------------------------------------------------
-# run_doctor -- workspace lock acquisition on --refresh-completion-cache
+# run_doctor -- --refresh-completion-cache uses KANON_CACHE_DIR
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunDoctorRefreshCompletionCache:
-    """run_doctor --refresh-completion-cache wraps mutation in kanon_workspace_lock."""
+    """run_doctor --refresh-completion-cache invalidates KANON_CACHE_DIR/completion-cache/."""
 
-    def test_refresh_creates_completion_cache_dir(self, tmp_path: pathlib.Path) -> None:
-        """--refresh-completion-cache creates .kanon-data/completion-cache/.
+    def test_refresh_creates_completion_cache_dir_under_cache_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--refresh-completion-cache creates KANON_CACHE_DIR/completion-cache/ with mode 0700.
+
+        When KANON_CACHE_DIR is set, the completion-cache subdir is created there,
+        not under .kanon-data/.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
         """
         from kanon_cli.commands.doctor import run_doctor
 
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+
+        args = _make_refresh_args(
+            kanon_file=str(kanon_file),
+            refresh_completion_cache=True,
+        )
+        result = run_doctor(args)
+
+        assert result == 0
+        completion_cache = cache_dir / "completion-cache"
+        assert completion_cache.is_dir(), (
+            f"--refresh-completion-cache must create KANON_CACHE_DIR/completion-cache/; expected {completion_cache}"
+        )
+
+    def test_refresh_without_cache_dir_does_not_create_kanon_data(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without KANON_CACHE_DIR, --refresh-completion-cache does not create .kanon-data/.
+
+        When KANON_CACHE_DIR is unset, the flag has no filesystem effect.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
+        """
+        from kanon_cli.commands.doctor import run_doctor
+
+        monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
 
@@ -129,48 +168,27 @@ class TestRunDoctorRefreshCompletionCache:
         result = run_doctor(args)
 
         assert result == 0
-        cache_dir = tmp_path / ".kanon-data" / "completion-cache"
-        assert cache_dir.is_dir(), f"run_doctor --refresh-completion-cache must create {cache_dir}"
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "--refresh-completion-cache must not create .kanon-data/ when KANON_CACHE_DIR is unset"
+        )
 
-    def test_refresh_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
-        """--refresh-completion-cache creates .kanon-data/ via workspace lock.
-
-        The kanon_workspace_lock context manager creates .kanon-data/ eagerly
-        before acquiring the lock. A fresh workspace with no prior .kanon-data/
-        must end up with the directory after run_doctor --refresh-completion-cache.
+    def test_refresh_emits_info_finding_to_stderr(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--refresh-completion-cache emits an INFO: finding mentioning the cache.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
-        """
-        from kanon_cli.commands.doctor import run_doctor
-
-        kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
-
-        assert not (tmp_path / ".kanon-data").exists()
-
-        args = _make_refresh_args(
-            kanon_file=str(kanon_file),
-            refresh_completion_cache=True,
-        )
-        run_doctor(args)
-
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "run_doctor --refresh-completion-cache must create .kanon-data/ "
-            "as a side effect of kanon_workspace_lock eager-create"
-        )
-
-    def test_refresh_prints_confirmation(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--refresh-completion-cache prints a confirmation message to stdout.
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
             capsys: Pytest stdout/stderr capture fixture.
         """
         from kanon_cli.commands.doctor import run_doctor
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
 
         args = _make_refresh_args(
             kanon_file=str(kanon_file),
@@ -179,42 +197,11 @@ class TestRunDoctorRefreshCompletionCache:
         run_doctor(args)
 
         captured = capsys.readouterr()
-        assert "completion cache" in captured.out.lower(), (
-            "run_doctor --refresh-completion-cache must print a confirmation "
-            f"mentioning 'completion cache'. stdout: {captured.out!r}"
+        assert "INFO:" in captured.err, (
+            f"run_doctor --refresh-completion-cache must emit an INFO: finding to stderr. stderr: {captured.err!r}"
         )
-
-    @pytest.mark.parametrize(
-        "kanon_file_rel",
-        [".kanon", "subdir/.kanon"],
-        ids=["root", "subdir"],
-    )
-    def test_refresh_resolves_workspace_root_from_kanon_file(self, tmp_path: pathlib.Path, kanon_file_rel: str) -> None:
-        """--refresh-completion-cache resolves workspace root from the kanon file path.
-
-        The workspace root is the parent directory of the .kanon file. The lock
-        and completion-cache dir are created relative to this root, not the cwd.
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-            kanon_file_rel: Relative path of the .kanon file inside tmp_path.
-        """
-        from kanon_cli.commands.doctor import run_doctor
-
-        kanon_file = tmp_path / kanon_file_rel
-        kanon_file.parent.mkdir(parents=True, exist_ok=True)
-        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
-
-        expected_workspace = kanon_file.resolve().parent
-
-        args = _make_refresh_args(
-            kanon_file=str(kanon_file),
-            refresh_completion_cache=True,
-        )
-        run_doctor(args)
-
-        assert (expected_workspace / ".kanon-data" / "completion-cache").is_dir(), (
-            f"completion-cache must be at {expected_workspace}/.kanon-data/completion-cache"
+        assert "completion" in captured.err.lower(), (
+            f"The INFO: finding must mention 'completion'. stderr: {captured.err!r}"
         )
 
 
@@ -419,45 +406,29 @@ class TestRunDoctorHealthChecks:
 
 @pytest.mark.unit
 class TestRefreshCompletionCacheErrors:
-    """_refresh_completion_cache exits non-zero on OSError from mkdir."""
+    """_refresh_completion_cache propagates OSError from mkdir."""
 
-    def test_refresh_exits_nonzero_on_mkdir_oserror(
+    def test_refresh_raises_on_mkdir_oserror(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """_refresh_completion_cache prints an error and exits 1 when mkdir raises OSError.
+        """_refresh_completion_cache raises OSError when mkdir fails.
+
+        The helper propagates the OS-level error; callers decide how to handle it.
+        The error is not swallowed silently.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
             monkeypatch: Pytest monkeypatching fixture.
-            capsys: Pytest stdout/stderr capture fixture.
         """
-        import pathlib
+        from kanon_cli.commands.doctor import _refresh_completion_cache
 
-        from kanon_cli.commands.doctor import run_doctor
-
-        kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
-
-        original_mkdir = pathlib.Path.mkdir
-
-        def _failing_mkdir(self: pathlib.Path, **kwargs: object) -> None:
-            if "completion-cache" in str(self):
-                raise OSError(13, "Permission denied")
-            original_mkdir(self, **kwargs)
-
-        monkeypatch.setattr(pathlib.Path, "mkdir", _failing_mkdir)
-
-        args = _make_refresh_args(
-            kanon_file=str(kanon_file),
-            refresh_completion_cache=True,
-        )
-
-        with pytest.raises(SystemExit) as exc_info:
-            run_doctor(args)
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "ERROR:" in captured.err
+        cache_dir = tmp_path / "completion-cache"
+        # Make the parent unwritable so mkdir fails.
+        tmp_path.chmod(0o555)
+        try:
+            with pytest.raises(OSError):
+                _refresh_completion_cache(cache_dir)
+        finally:
+            tmp_path.chmod(0o755)

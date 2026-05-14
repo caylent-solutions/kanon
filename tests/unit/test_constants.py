@@ -1163,3 +1163,286 @@ class TestKanonStaleCompletionScriptWarningConstant:
         )
         assert "bash" in rendered
         assert "/usr/local/share/bash-completion/completions/kanon" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Doctor cache-management constants (subchecks 8 + 10, E5-F1-S1-T4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestKanonCachePruneAgeDays:
+    """KANON_CACHE_PRUNE_AGE_DAYS is a positive integer defaulting to 30."""
+
+    def test_is_positive_integer(self) -> None:
+        """KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer."""
+        from kanon_cli.constants import KANON_CACHE_PRUNE_AGE_DAYS
+
+        assert isinstance(KANON_CACHE_PRUNE_AGE_DAYS, int)
+        assert KANON_CACHE_PRUNE_AGE_DAYS > 0
+
+    def test_default_is_30(self) -> None:
+        """Default value of KANON_CACHE_PRUNE_AGE_DAYS is 30."""
+        import importlib
+        import os
+        import sys
+
+        # Remove any existing instance to force reload without the env var.
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+
+        env_backup = os.environ.pop("KANON_CACHE_PRUNE_AGE_DAYS", None)
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_CACHE_PRUNE_AGE_DAYS == 30
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_CACHE_PRUNE_AGE_DAYS"] = env_backup
+            # Reload to restore normal module state.
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CACHE_PRUNE_AGE_DAYS can be overridden via environment variable."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_CACHE_PRUNE_AGE_DAYS", "60")
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_CACHE_PRUNE_AGE_DAYS == 60
+        finally:
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_invalid_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer KANON_CACHE_PRUNE_AGE_DAYS raises SystemExit at import."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_CACHE_PRUNE_AGE_DAYS", "notanint")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_CACHE_PRUNE_AGE_DAYS", raising=False)
+                importlib.import_module(mod_name)
+
+    def test_zero_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CACHE_PRUNE_AGE_DAYS=0 raises SystemExit at import."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_CACHE_PRUNE_AGE_DAYS", "0")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_CACHE_PRUNE_AGE_DAYS", raising=False)
+                importlib.import_module(mod_name)
+
+
+@pytest.mark.unit
+class TestKanonDoctorStaleLockScanMaxDepth:
+    """KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH is a positive integer defaulting to 4."""
+
+    def test_is_positive_integer(self) -> None:
+        """KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer."""
+        from kanon_cli.constants import KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH
+
+        assert isinstance(KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH, int)
+        assert KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH > 0
+
+    def test_default_is_4(self) -> None:
+        """Default value of KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH is 4."""
+        import importlib
+        import os
+        import sys
+
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+
+        env_backup = os.environ.pop("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", None)
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH == 4
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH"] = env_backup
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH can be overridden via environment."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", "8")
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH == 8
+        finally:
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_invalid_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH raises SystemExit."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", "bad")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", raising=False)
+                importlib.import_module(mod_name)
+
+    def test_zero_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH=0 raises SystemExit at import."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", "0")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", raising=False)
+                importlib.import_module(mod_name)
+
+
+@pytest.mark.unit
+class TestKanonDoctorStaleLockAgeHours:
+    """KANON_DOCTOR_STALE_LOCK_AGE_HOURS is a positive integer defaulting to 1."""
+
+    def test_is_positive_integer(self) -> None:
+        """KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer."""
+        from kanon_cli.constants import KANON_DOCTOR_STALE_LOCK_AGE_HOURS
+
+        assert isinstance(KANON_DOCTOR_STALE_LOCK_AGE_HOURS, int)
+        assert KANON_DOCTOR_STALE_LOCK_AGE_HOURS > 0
+
+    def test_default_is_1(self) -> None:
+        """Default value of KANON_DOCTOR_STALE_LOCK_AGE_HOURS is 1."""
+        import importlib
+        import os
+        import sys
+
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+
+        env_backup = os.environ.pop("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", None)
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_DOCTOR_STALE_LOCK_AGE_HOURS == 1
+        finally:
+            if env_backup is not None:
+                os.environ["KANON_DOCTOR_STALE_LOCK_AGE_HOURS"] = env_backup
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_STALE_LOCK_AGE_HOURS can be overridden via environment."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", "24")
+        for mod_name in list(sys.modules.keys()):
+            if "kanon_cli.constants" in mod_name:
+                del sys.modules[mod_name]
+        try:
+            import kanon_cli.constants as _c
+
+            assert _c.KANON_DOCTOR_STALE_LOCK_AGE_HOURS == 24
+        finally:
+            for mod_name in list(sys.modules.keys()):
+                if "kanon_cli.constants" in mod_name:
+                    del sys.modules[mod_name]
+            importlib.import_module("kanon_cli.constants")
+
+    def test_invalid_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer KANON_DOCTOR_STALE_LOCK_AGE_HOURS raises SystemExit."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", "notanumber")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", raising=False)
+                importlib.import_module(mod_name)
+
+    def test_zero_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_STALE_LOCK_AGE_HOURS=0 raises SystemExit at import."""
+        import importlib
+        import sys
+
+        monkeypatch.setenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", "0")
+        mod_name = "kanon_cli.constants"
+        original = sys.modules.pop(mod_name, None)
+        try:
+            with pytest.raises(SystemExit):
+                importlib.import_module(mod_name)
+        finally:
+            sys.modules.pop(mod_name, None)
+            if original is not None:
+                sys.modules[mod_name] = original
+            else:
+                monkeypatch.delenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", raising=False)
+                importlib.import_module(mod_name)

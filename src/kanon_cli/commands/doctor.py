@@ -1,26 +1,31 @@
 """kanon doctor subcommand: workspace health checks and cache refresh.
 
-Performs workspace health checks and optionally refreshes the completion cache.
-The --refresh-completion-cache flag mutates completion-cache files and is
-protected by the workspace lock to prevent concurrent cache refreshes from
-clobbering each other.
+Performs workspace health checks and optionally refreshes the completion cache
+or prunes stale cache files.
+The --refresh-completion-cache flag invalidates all files under
+${KANON_CACHE_DIR}/completion-cache/ when KANON_CACHE_DIR is set.
+The --prune-cache flag removes cache files whose atime is older than
+KANON_CACHE_PRUNE_AGE_DAYS days and reports stale install-lock advisories.
 
 Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 4.6 (kanon doctor subchecks 1-5, 7, 9), Section 5.1 (kanon_hash),
-Section 7 (retry policy, KANON_RESOLVE_TIMEOUT).
+Section 4.6 (kanon doctor subchecks 1-5, 7-10), Section 5.1 (kanon_hash),
+Section 7 (retry policy, KANON_RESOLVE_TIMEOUT),
+Section 11 (cache layout), Section 3.6 (cache files user-private mode 0700).
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -34,10 +39,15 @@ from kanon_cli.constants import (
     GIT_RETRY_COUNT_ENV_VAR,
     GIT_RETRY_DELAY_DEFAULT,
     GIT_RETRY_DELAY_ENV_VAR,
+    INSTALL_LOCK_FILENAME,
     KANON_CACHE_DIR_ENV,
+    KANON_CACHE_DIR_MODE,
+    KANON_CACHE_PRUNE_AGE_DAYS,
     KANON_COMPLETION_CACHE_DIR,
     KANON_COMPLETION_ERRORS_LOG_FILENAME,
     KANON_COMPLETION_ERRORS_REPORT_LIMIT,
+    KANON_DOCTOR_STALE_LOCK_AGE_HOURS,
+    KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
@@ -47,7 +57,6 @@ from kanon_cli.constants import (
     _KANON_RESOLVE_TIMEOUT_ENV,
 )
 from kanon_cli.core.cli_args import add_catalog_source_arg
-from kanon_cli.utils.concurrency import kanon_workspace_lock
 
 # Sentinel for detecting whether --catalog-source was explicitly supplied on the
 # command line versus left at the argparse default.  argparse sets catalog_source
@@ -734,12 +743,16 @@ def _run_completion_subchecks(
 def doctor_command(
     args: argparse.Namespace,
     completion_generator: Callable[[str], str] | None = None,
+    now: Callable[[], datetime.datetime] | None = None,
 ) -> int:
-    """Entry-point for 'kanon doctor' implementing subchecks 1-5, 7, 9.
+    """Entry-point for 'kanon doctor' implementing subchecks 1-5, 7-10.
 
     Orchestrates the consistency checks in order. Prints findings to
     stderr via _print_finding. Returns exit code 0 unless at least one
     finding with kind="error" is found.
+
+    Check 8 (--refresh-completion-cache) runs first when the flag is set.
+    Check 10 (--prune-cache) runs next when the flag is set.
 
     Check 1 (kanon_hash / lockfile presence):
     - .kanon absent: hard error, return immediately.
@@ -751,10 +764,10 @@ def doctor_command(
 
     Check 7 runs when KANON_CACHE_DIR is set in the environment.
 
-    Check 9 runs when completion_generator is provided (not None). The
-    generator is expected to return the completion script text for the
-    given shell name (e.g. "bash", "zsh"). When None, the staleness check
-    is skipped because the completion subcommand (E7) is not yet wired.
+    Check 9 runs when completion_generator is provided (not None).
+
+    Check 10 (--prune-cache) also emits an advisory for stale install
+    locks found under the cwd up to KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH.
 
     Args:
         args: Parsed argument namespace from argparse. Expected attributes:
@@ -763,16 +776,24 @@ def doctor_command(
             - strict_drift (bool): promote drift findings to errors.
             - no_color (bool): suppress ANSI color (passed through from
               global flags).
-            - refresh_completion_cache (bool): legacy flag handled by
-              run_doctor; always False when routed through doctor_command.
+            - refresh_completion_cache (bool): subcheck 8 flag.
+            - prune_cache (bool): subcheck 10 flag.
         completion_generator: Optional callable accepting a shell name and
             returning the completion script text for that shell. When
             provided, subcheck 9 (static-script staleness) is executed.
             When None, subcheck 9 is skipped.
+        now: Optional callable returning the current UTC datetime. When None,
+            defaults to ``datetime.datetime.now(tz=datetime.timezone.utc)``.
+            Tests inject a fixed value to avoid wall-clock dependencies.
 
     Returns:
         0 on success (no error-level findings); 1 when any error is found.
     """
+    if now is None:
+
+        def now() -> datetime.datetime:
+            return datetime.datetime.now(tz=datetime.timezone.utc)
+
     kanon_file_str: str | None = getattr(args, "kanon_file", None) or os.environ.get(KANON_KANON_FILE_ENV)
     if kanon_file_str is None:
         kanon_file_str = KANON_KANON_FILE_DEFAULT
@@ -789,6 +810,69 @@ def doctor_command(
     )
 
     strict_drift: bool = getattr(args, "strict_drift", False)
+    do_refresh: bool = getattr(args, "refresh_completion_cache", False)
+    do_prune: bool = getattr(args, "prune_cache", False)
+
+    # Resolve cache_dir from environment (used by subchecks 7, 8, 10).
+    cache_dir_str: str | None = os.environ.get(KANON_CACHE_DIR_ENV)
+    cache_dir: pathlib.Path | None = pathlib.Path(cache_dir_str) if cache_dir_str is not None else None
+
+    # -- Check 8: completion-cache invalidation (--refresh-completion-cache) --
+    if do_refresh and cache_dir is not None:
+        completion_cache_dir = cache_dir / KANON_COMPLETION_CACHE_DIR
+        try:
+            removed = _refresh_completion_cache(completion_cache_dir)
+        except OSError as exc:
+            print(f"ERROR: Failed to refresh completion cache: {exc}", file=sys.stderr)
+            return 1
+        _print_finding(
+            DoctorFinding(
+                kind="info",
+                code="COMPLETION_CACHE_REFRESHED",
+                message=f"Completion cache refreshed: {removed} file(s) removed from {completion_cache_dir}",
+                remediation="",
+            )
+        )
+
+    # -- Check 10a: cache prune (--prune-cache) --
+    if do_prune and cache_dir is not None:
+        age_days = KANON_CACHE_PRUNE_AGE_DAYS
+        count_pruned, total_bytes = _prune_cache(cache_dir, age_days, now)
+        _print_finding(
+            DoctorFinding(
+                kind="info",
+                code="CACHE_PRUNED",
+                message=(
+                    f"Cache pruned: {count_pruned} file(s) removed "
+                    f"({total_bytes} bytes) with atime older than {age_days} days"
+                ),
+                remediation="",
+            )
+        )
+
+    # -- Check 10b: stale install-lock advisory (--prune-cache) --
+    if do_prune:
+        stale_locks = list(
+            _scan_stale_install_locks(
+                root=pathlib.Path.cwd(),
+                max_depth=KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH,
+                age_hours=KANON_DOCTOR_STALE_LOCK_AGE_HOURS,
+                now=now,
+            )
+        )
+        for lock_path in stale_locks:
+            _print_finding(
+                DoctorFinding(
+                    kind="info",
+                    code="STALE_INSTALL_LOCK",
+                    message=(
+                        f"Advisory: stale install lock found at {lock_path} "
+                        f"(mtime older than {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}h). "
+                        f"fcntl.flock self-cleans on process exit; this file is harmless."
+                    ),
+                    remediation="",
+                )
+            )
 
     # -- Check 1: .kanon / .kanon.lock presence + hash match --
     consistency_finding = _check_kanon_hash(kanon_file, lock_file)
@@ -856,13 +940,13 @@ def doctor_command(
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     """Register the 'doctor' subcommand on the top-level argparse subparsers.
 
-    Adds the 'doctor' subparser with flags consumed by subchecks 1-5:
+    Adds the 'doctor' subparser with flags consumed by subchecks 1-5, 8, 10:
     - ``--kanon-file``: path to .kanon (default KANON_KANON_FILE_DEFAULT).
     - ``--lock-file``: path to .kanon.lock (default derived from --kanon-file).
     - ``--strict-drift``: promote branch-drift findings to errors.
     - ``--no-color``: suppress ANSI color output.
-    - ``--refresh-completion-cache``: legacy cache-refresh flag (handled by
-      run_doctor for backward compatibility with earlier tasks).
+    - ``--refresh-completion-cache``: subcheck 8 -- invalidate completion-cache subdir.
+    - ``--prune-cache``: subcheck 10 -- remove stale cache files by atime.
 
     Args:
         subparsers: The subparsers action from the top-level parser.
@@ -872,15 +956,19 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         help="Workspace health checks and cache management.",
         description=(
             "Run workspace health checks against the current project directory.\n\n"
-            "Subchecks implemented by this task (E5-F1-S1-T1):\n"
+            "Subchecks:\n"
             "  1. .kanon / .kanon.lock consistency via kanon_hash\n"
             "  2. Hand-edit detection (kanon_hash mismatch)\n"
             "  3. Orphaned lock entries\n"
             "  4. Branch drift (use --strict-drift to promote to error)\n"
-            "  5. Dangling SHA detection\n\n"
-            "With --refresh-completion-cache, refreshes the shell completion cache\n"
-            "files under .kanon-data/. This mutation is protected by the workspace\n"
-            "lock to prevent concurrent refreshes from producing inconsistent state."
+            "  5. Dangling SHA detection\n"
+            "  8. Completion-cache invalidation (--refresh-completion-cache)\n"
+            " 10. Stale cache pruning + stale-lock advisory (--prune-cache)\n\n"
+            "With --refresh-completion-cache, invalidates the completion-cache subdir\n"
+            "under KANON_CACHE_DIR. With --prune-cache, removes cache files whose\n"
+            "atime exceeds KANON_CACHE_PRUNE_AGE_DAYS days and reports stale\n"
+            "install-lock files as an advisory (does not delete them).\n"
+            "Both flags are independent and may be combined."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -928,9 +1016,24 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         action="store_true",
         default=False,
         help=(
-            "Refresh the shell completion cache files stored under .kanon-data/. "
-            "Acquires the workspace exclusive lock before writing, so concurrent "
-            "cache refreshes are serialised."
+            "Subcheck 8: invalidate the shell completion cache under "
+            "${KANON_CACHE_DIR}/completion-cache/. "
+            "Removes all files there and recreates the directory with mode 0700. "
+            "Reports an info finding with the count of files removed."
+        ),
+    )
+
+    parser.add_argument(
+        "--prune-cache",
+        dest="prune_cache",
+        action="store_true",
+        default=False,
+        help=(
+            f"Subcheck 10: remove cache files under ${{KANON_CACHE_DIR}} whose last-access "
+            f"time is older than KANON_CACHE_PRUNE_AGE_DAYS days (default {KANON_CACHE_PRUNE_AGE_DAYS}). "
+            "Reports an info finding with the count and total byte size pruned. "
+            "Also reports stale .kanon-data/.kanon-install.lock files as advisory "
+            "(does not delete them)."
         ),
     )
 
@@ -953,13 +1056,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
 def run_doctor(args: argparse.Namespace) -> int:
     """Entry-point function for the 'kanon doctor' subcommand.
 
-    Handles the --refresh-completion-cache flag first (legacy path that acquires
-    the workspace lock). For all other invocations, delegates to doctor_command
-    which implements subchecks 1-5.
-
-    When --refresh-completion-cache is set, acquires the workspace exclusive
-    lock (via kanon_workspace_lock) before mutating any completion-cache files.
-    This prevents two concurrent refreshes from clobbering each other.
+    Delegates to doctor_command, which handles all flags including
+    --refresh-completion-cache (subcheck 8) and --prune-cache (subcheck 10).
 
     Args:
         args: Parsed argument namespace from argparse.
@@ -967,44 +1065,163 @@ def run_doctor(args: argparse.Namespace) -> int:
     Returns:
         0 on success; non-zero on failure.
     """
-    refresh_completion_cache: bool = getattr(args, "refresh_completion_cache", False)
-
-    if refresh_completion_cache:
-        kanon_file_str = getattr(args, "kanon_file", None) or os.environ.get(KANON_KANON_FILE_ENV)
-        if kanon_file_str is None:
-            kanon_file_str = KANON_KANON_FILE_DEFAULT
-
-        kanon_file = pathlib.Path(kanon_file_str)
-        workspace_root = kanon_file.resolve().parent
-
-        with kanon_workspace_lock(workspace_root):
-            _refresh_completion_cache(workspace_root)
-        return 0
-
     return doctor_command(args)
 
 
 # ---------------------------------------------------------------------------
-# _refresh_completion_cache -- completion cache refresh helper
+# Subcheck 8: _refresh_completion_cache -- completion cache refresh helper
 # ---------------------------------------------------------------------------
 
 
-def _refresh_completion_cache(workspace_root: pathlib.Path) -> None:
-    """Refresh completion-cache files under .kanon-data/.
+def _refresh_completion_cache(cache_dir: pathlib.Path) -> int:
+    """Invalidate the completion-cache directory and return the count of files removed.
 
-    Called exclusively from within a kanon_workspace_lock context, so callers
-    hold the workspace exclusive lock and no concurrent mutation can occur.
+    Removes the entire ``cache_dir`` tree (including any subdirectories), then
+    recreates the directory with mode ``0700``.
+
+    When ``cache_dir`` does not exist, it is created with mode ``0700`` and 0
+    is returned.
 
     Args:
-        workspace_root: The project root directory (parent of .kanon).
+        cache_dir: Path to the completion-cache directory to invalidate.
+            Typically ``${KANON_CACHE_DIR}/completion-cache``.
+
+    Returns:
+        The number of files that were removed.
     """
-    cache_dir = workspace_root / ".kanon-data" / KANON_COMPLETION_CACHE_DIR
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        print(
-            f"ERROR: Cannot create completion-cache directory {cache_dir}: {exc.strerror}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    print(f"kanon doctor: completion cache refreshed at {cache_dir}")
+    if not cache_dir.exists():
+        cache_dir.mkdir(parents=True, mode=KANON_CACHE_DIR_MODE)
+        return 0
+
+    # Count all files recursively before removal.
+    removed = sum(1 for child in cache_dir.rglob("*") if child.is_file())
+
+    # Remove the entire directory tree and recreate it empty with mode 0700.
+    shutil.rmtree(cache_dir)
+    cache_dir.mkdir(parents=True, mode=KANON_CACHE_DIR_MODE)
+
+    return removed
+
+
+# ---------------------------------------------------------------------------
+# Subcheck 10: _prune_cache -- age-based cache prune helper
+# ---------------------------------------------------------------------------
+
+
+def _prune_cache(
+    cache_dir: pathlib.Path,
+    age_days: int,
+    now: Callable[[], datetime.datetime],
+) -> tuple[int, int]:
+    """Remove cache files whose atime is older than ``age_days`` days.
+
+    Walks all files under ``cache_dir`` recursively and removes those whose
+    atime falls before ``now() - timedelta(days=age_days)``.
+
+    When ``cache_dir`` does not exist, returns (0, 0) immediately.
+
+    Args:
+        cache_dir: Top-level cache directory to prune.
+        age_days: Files whose atime is older than this many days are removed.
+        now: Zero-argument callable returning the current datetime (with
+            timezone info). Injected so tests can pin time without relying on
+            wall-clock behaviour.
+
+    Returns:
+        A tuple ``(count_pruned, total_bytes)`` where ``count_pruned`` is the
+        number of files deleted and ``total_bytes`` is their combined size in
+        bytes.
+    """
+    if not cache_dir.exists():
+        return (0, 0)
+
+    cutoff = now() - datetime.timedelta(days=age_days)
+    count_pruned = 0
+    total_bytes = 0
+
+    for child in list(cache_dir.rglob("*")):
+        if not child.is_file():
+            continue
+        try:
+            file_stat = child.stat()
+        except OSError as exc:
+            print(f"WARN: Cannot stat {child}: {exc}", file=sys.stderr)
+            continue
+        atime = datetime.datetime.fromtimestamp(file_stat.st_atime, tz=datetime.timezone.utc)
+        if atime < cutoff:
+            try:
+                child.unlink()
+            except OSError as exc:
+                print(f"WARN: Cannot remove {child}: {exc}", file=sys.stderr)
+                continue
+            total_bytes += file_stat.st_size
+            count_pruned += 1
+
+    return (count_pruned, total_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Subcheck 10: _scan_stale_install_locks -- advisory stale-lock scanner
+# ---------------------------------------------------------------------------
+
+
+def _scan_stale_install_locks(
+    root: pathlib.Path,
+    max_depth: int,
+    age_hours: int,
+    now: Callable[[], datetime.datetime],
+) -> Iterator[pathlib.Path]:
+    """Yield paths of stale ``.kanon-data/.kanon-install.lock`` files.
+
+    Walks ``root`` up to ``max_depth`` directory levels deep looking for
+    ``<any-dir>/.kanon-data/.kanon-install.lock`` files whose mtime is older
+    than ``age_hours`` hours. Stale lock files are reported as advisory
+    findings; this function does NOT delete them.
+
+    Args:
+        root: Directory from which to start the scan. Typically the current
+            working directory.
+        max_depth: Maximum number of levels to descend below ``root``.
+            A value of 4 means root itself (depth 0) plus four more levels.
+        age_hours: Locks whose mtime is older than this many hours are stale.
+        now: Zero-argument callable returning the current datetime (with
+            timezone info). Injected so tests can pin time.
+
+    Yields:
+        Absolute Path of each stale lock file found.
+    """
+    cutoff = now() - datetime.timedelta(hours=age_hours)
+
+    def _walk(directory: pathlib.Path, current_depth: int) -> Iterator[pathlib.Path]:
+        """Recursively walk directory up to max_depth.
+
+        Args:
+            directory: Current directory being examined.
+            current_depth: Depth level from root (root == 0).
+
+        Yields:
+            Stale lock file paths.
+        """
+        candidate = directory / ".kanon-data" / INSTALL_LOCK_FILENAME
+        if candidate.is_file():
+            try:
+                mtime = datetime.datetime.fromtimestamp(candidate.stat().st_mtime, tz=datetime.timezone.utc)
+                if mtime < cutoff:
+                    yield candidate
+            except OSError as exc:
+                print(f"WARN: Cannot stat {candidate}: {exc}", file=sys.stderr)
+
+        if current_depth >= max_depth:
+            return
+
+        try:
+            children = list(directory.iterdir())
+        except OSError as exc:
+            print(f"WARN: Cannot list {directory}: {exc}", file=sys.stderr)
+            return
+
+        for child in children:
+            if child.is_dir():
+                yield from _walk(child, current_depth + 1)
+
+    yield from _walk(root, 0)

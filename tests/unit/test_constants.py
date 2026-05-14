@@ -1446,3 +1446,74 @@ class TestKanonDoctorStaleLockAgeHours:
             else:
                 monkeypatch.delenv("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", raising=False)
                 importlib.import_module(mod_name)
+
+
+@pytest.mark.unit
+class TestKanonDoctorRemoteStderrPreviewChars:
+    """Tests for KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS (E5-F1-S1-T5 AC-FUNC-007)."""
+
+    def test_is_int(self) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS is an int."""
+        from kanon_cli.constants import KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS
+
+        assert isinstance(KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS, int)
+
+    def test_default_value_is_160(self) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS defaults to 160."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS == 160
+        finally:
+            if saved is not None:
+                os.environ["KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS"] = saved
+            importlib.reload(constants)
+
+    def test_is_positive(self) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS is a positive integer."""
+        from kanon_cli.constants import KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS
+
+        assert KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS > 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS env var overrides the default."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", "80")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS == 80
+        finally:
+            monkeypatch.delenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", raising=False)
+            importlib.reload(constants)
+
+    def test_non_int_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS set to non-integer raises SystemExit at import."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", raising=False)
+        importlib.reload(constants)
+
+    def test_zero_env_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS=0 raises SystemExit at import."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", raising=False)
+        importlib.reload(constants)

@@ -198,6 +198,27 @@ if _raw_stale_lock_age_hours is not None:
 else:
     KANON_DOCTOR_STALE_LOCK_AGE_HOURS = 1
 
+# Maximum number of characters from the first line of stderr to include in a
+# remote-reachability warning finding (subcheck 11). Keeps error output bounded
+# when a git server returns a long diagnostics message.
+# Overridable via the KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS environment variable.
+_raw_remote_stderr_preview = os.environ.get("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS")
+if _raw_remote_stderr_preview is not None:
+    try:
+        KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS: int = int(_raw_remote_stderr_preview)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS must be a positive integer; "
+            f"got {_raw_remote_stderr_preview!r}"
+        )
+    if KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS must be a positive integer; "
+            f"got {KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS}"
+        )
+else:
+    KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS = 160
+
 # Environment variable name for the git ls-remote / resolve timeout (seconds).
 # Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
 _KANON_RESOLVE_TIMEOUT_ENV = "KANON_RESOLVE_TIMEOUT"

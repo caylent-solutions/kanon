@@ -8,7 +8,7 @@ The --prune-cache flag removes cache files whose atime is older than
 KANON_CACHE_PRUNE_AGE_DAYS days and reports stale install-lock advisories.
 
 Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 4.6 (kanon doctor subchecks 1-5, 7-10), Section 5.1 (kanon_hash),
+Section 4.6 (kanon doctor subchecks 1-5, 7-11), Section 5.1 (kanon_hash),
 Section 7 (retry policy, KANON_RESOLVE_TIMEOUT),
 Section 11 (cache layout), Section 3.6 (cache files user-private mode 0700).
 """
@@ -27,7 +27,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from kanon_cli.core.lockfile import Lockfile
@@ -46,6 +46,7 @@ from kanon_cli.constants import (
     KANON_COMPLETION_CACHE_DIR,
     KANON_COMPLETION_ERRORS_LOG_FILENAME,
     KANON_COMPLETION_ERRORS_REPORT_LIMIT,
+    KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS,
     KANON_DOCTOR_STALE_LOCK_AGE_HOURS,
     KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH,
     KANON_KANON_FILE_DEFAULT,
@@ -119,29 +120,28 @@ def _is_branch_revision(revision_spec: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _run_ls_remote(
-    url: str,
-    ref: str,
+def _run_ls_remote_impl(
+    cmd: list[str],
     timeout: int,
     retry_count: int,
     retry_delay: float,
 ) -> tuple[int, str, str]:
-    """Run ``git ls-remote <url> <ref>`` with retry and timeout policy.
+    """Execute a ``git ls-remote`` command with retry and timeout policy.
 
-    Implements the same retry policy as the existing git_runner module:
-    - Retries up to ``retry_count`` times on transient failures.
+    Shared implementation used by both ``_run_ls_remote`` and
+    ``_run_ls_remote_exit_code``.  Callers build the full ``cmd`` list
+    (including any ``--exit-code`` flag and URL/ref arguments) and delegate
+    the retry loop here.
+
+    Retry semantics:
+    - Retries up to ``retry_count`` times on transient non-zero exits.
     - Does NOT retry on auth-error patterns (to avoid credential lockouts).
-    - Enforces ``timeout`` seconds per attempt via the ``timeout`` kwarg.
-
-    When ``ref`` is an empty string, runs ``git ls-remote <url>`` (no ref
-    pattern) to list all refs. This is required for SHA reachability checks
-    since ``git ls-remote --exit-code <url> <sha>`` only matches against
-    ref *names*, not against SHA values in the first column.
+    - Enforces ``timeout`` seconds per attempt via ``subprocess.run`` timeout.
+    - Returns a timeout pseudo-exit-code of 124 (POSIX convention) on
+      ``subprocess.TimeoutExpired``.
 
     Args:
-        url: The git remote URL to query.
-        ref: The ref to look up (branch name or refs/... path). Pass an empty
-            string to list all refs without filtering.
+        cmd: Full command list, e.g. ``["git", "ls-remote", url, ref]``.
         timeout: Per-attempt timeout in seconds.
         retry_count: Maximum number of attempts (1 means no retries).
         retry_delay: Seconds to wait between retries.
@@ -149,10 +149,6 @@ def _run_ls_remote(
     Returns:
         A tuple (returncode, stdout, stderr) from the final attempt.
     """
-    if ref:
-        cmd = ["git", "ls-remote", url, ref]
-    else:
-        cmd = ["git", "ls-remote", url]
     last_returncode = -1
     last_stdout = ""
     last_stderr = ""
@@ -188,6 +184,71 @@ def _run_ls_remote(
                 time.sleep(retry_delay)
 
     return (last_returncode, last_stdout, last_stderr)
+
+
+def _run_ls_remote(
+    url: str,
+    ref: str,
+    timeout: int,
+    retry_count: int,
+    retry_delay: float,
+) -> tuple[int, str, str]:
+    """Run ``git ls-remote <url> <ref>`` with retry and timeout policy.
+
+    Implements the same retry policy as the existing git_runner module:
+    - Retries up to ``retry_count`` times on transient failures.
+    - Does NOT retry on auth-error patterns (to avoid credential lockouts).
+    - Enforces ``timeout`` seconds per attempt via the ``timeout`` kwarg.
+
+    When ``ref`` is an empty string, runs ``git ls-remote <url>`` (no ref
+    pattern) to list all refs. This is required for SHA reachability checks
+    since ``git ls-remote --exit-code <url> <sha>`` only matches against
+    ref *names*, not against SHA values in the first column.
+
+    Args:
+        url: The git remote URL to query.
+        ref: The ref to look up (branch name or refs/... path). Pass an empty
+            string to list all refs without filtering.
+        timeout: Per-attempt timeout in seconds.
+        retry_count: Maximum number of attempts (1 means no retries).
+        retry_delay: Seconds to wait between retries.
+
+    Returns:
+        A tuple (returncode, stdout, stderr) from the final attempt.
+    """
+    if ref:
+        cmd = ["git", "ls-remote", url, ref]
+    else:
+        cmd = ["git", "ls-remote", url]
+    return _run_ls_remote_impl(cmd, timeout, retry_count, retry_delay)
+
+
+def _run_ls_remote_exit_code(
+    url: str,
+    ref: str,
+    timeout: int,
+    retry_count: int,
+    retry_delay: float,
+) -> tuple[int, str, str]:
+    """Run ``git ls-remote --exit-code <url> <ref>`` with retry and timeout policy.
+
+    This variant always passes ``--exit-code`` so that git returns a non-zero
+    exit code when the remote exists but the requested ref is absent (in
+    addition to the normal non-zero on network/auth failures).  Used by
+    subcheck 11 (remote reachability) per spec Section 4.6.
+
+    Args:
+        url: The git remote URL to query.
+        ref: The ref to look up (e.g. ``HEAD``).
+        timeout: Per-attempt timeout in seconds.
+        retry_count: Maximum number of attempts (1 means no retries).
+        retry_delay: Seconds to wait between retries.
+
+    Returns:
+        A tuple (returncode, stdout, stderr) from the final attempt.
+    """
+    cmd = ["git", "ls-remote", "--exit-code", url, ref]
+    return _run_ls_remote_impl(cmd, timeout, retry_count, retry_delay)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +360,50 @@ def _check_orphan_locks(
 
 
 # ---------------------------------------------------------------------------
+# RetryPolicy: shared named tuple for git ls-remote retry parameters
+# ---------------------------------------------------------------------------
+
+
+class RetryPolicy(NamedTuple):
+    """Parameters controlling retry behaviour for git ls-remote calls.
+
+    Attributes:
+        timeout: Per-attempt timeout in seconds.
+        retry_count: Maximum number of attempts (1 means no retries).
+        retry_delay: Seconds to wait between retries.
+    """
+
+    timeout: int
+    retry_count: int
+    retry_delay: float
+
+
+def _read_retry_policy() -> RetryPolicy:
+    """Read the git ls-remote retry policy from environment variables.
+
+    Reads the three environment variables that govern the retry and timeout
+    behaviour for all ``git ls-remote`` calls issued by ``kanon doctor``:
+
+    - ``KANON_RESOLVE_TIMEOUT`` -- per-attempt timeout in seconds (default
+      ``_KANON_RESOLVE_TIMEOUT_DEFAULT``).
+    - ``KANON_GIT_RETRY_COUNT`` -- maximum number of attempts, 1 means no
+      retries (default ``GIT_RETRY_COUNT_DEFAULT``).
+    - ``KANON_GIT_RETRY_DELAY`` -- seconds to wait between retries (default
+      ``GIT_RETRY_DELAY_DEFAULT``).
+
+    Extracting this into a factory keeps each call site DRY and makes it easy
+    to override all three values in a single place for testing.
+
+    Returns:
+        A ``RetryPolicy`` named tuple populated from the current environment.
+    """
+    timeout = int(os.environ.get(_KANON_RESOLVE_TIMEOUT_ENV, str(_KANON_RESOLVE_TIMEOUT_DEFAULT)))
+    retry_count = int(os.environ.get(GIT_RETRY_COUNT_ENV_VAR, str(GIT_RETRY_COUNT_DEFAULT)))
+    retry_delay = float(os.environ.get(GIT_RETRY_DELAY_ENV_VAR, str(GIT_RETRY_DELAY_DEFAULT)))
+    return RetryPolicy(timeout=timeout, retry_count=retry_count, retry_delay=retry_delay)
+
+
+# ---------------------------------------------------------------------------
 # Subcheck 4: Branch drift
 # ---------------------------------------------------------------------------
 
@@ -327,9 +432,7 @@ def _check_branch_drift(
     Returns:
         List of DoctorFinding instances (empty when no drift detected).
     """
-    timeout = int(os.environ.get(_KANON_RESOLVE_TIMEOUT_ENV, str(_KANON_RESOLVE_TIMEOUT_DEFAULT)))
-    retry_count = int(os.environ.get(GIT_RETRY_COUNT_ENV_VAR, str(GIT_RETRY_COUNT_DEFAULT)))
-    retry_delay = float(os.environ.get(GIT_RETRY_DELAY_ENV_VAR, str(GIT_RETRY_DELAY_DEFAULT)))
+    _policy = _read_retry_policy()
 
     findings: list[DoctorFinding] = []
     for source in lockfile.sources:
@@ -341,9 +444,9 @@ def _check_branch_drift(
         returncode, stdout, stderr = _run_ls_remote(
             url=source.url,
             ref=ref,
-            timeout=timeout,
-            retry_count=retry_count,
-            retry_delay=retry_delay,
+            timeout=_policy.timeout,
+            retry_count=_policy.retry_count,
+            retry_delay=_policy.retry_delay,
         )
 
         if returncode != 0:
@@ -411,9 +514,7 @@ def _check_dangling_shas(
     Returns:
         List of DoctorFinding instances with kind=error for each dangling SHA.
     """
-    timeout = int(os.environ.get(_KANON_RESOLVE_TIMEOUT_ENV, str(_KANON_RESOLVE_TIMEOUT_DEFAULT)))
-    retry_count = int(os.environ.get(GIT_RETRY_COUNT_ENV_VAR, str(GIT_RETRY_COUNT_DEFAULT)))
-    retry_delay = float(os.environ.get(GIT_RETRY_DELAY_ENV_VAR, str(GIT_RETRY_DELAY_DEFAULT)))
+    _policy = _read_retry_policy()
 
     findings: list[DoctorFinding] = []
     for source in lockfile.sources:
@@ -432,9 +533,9 @@ def _check_dangling_shas(
         returncode, stdout, stderr = _run_ls_remote(
             url=source.url,
             ref="",
-            timeout=timeout,
-            retry_count=retry_count,
-            retry_delay=retry_delay,
+            timeout=_policy.timeout,
+            retry_count=_policy.retry_count,
+            retry_delay=_policy.retry_delay,
         )
 
         if returncode != 0:
@@ -465,6 +566,108 @@ def _check_dangling_shas(
                     remediation="Run 'kanon install --refresh-lock' to rebuild.",
                 )
             )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Subcheck 11: Remote reachability sanity check
+# ---------------------------------------------------------------------------
+
+
+def _check_remote_reachability(
+    lockfile: "Lockfile",
+    ls_remote_callable: Callable[[str, str, int, int, float], tuple[int, str, str]],
+    retry_policy: RetryPolicy,
+) -> list[DoctorFinding]:
+    """Check that every distinct remote URL in the lockfile is reachable.
+
+    Subcheck 11 in spec Section 4.6: For each distinct canonicalized URL
+    recorded in the lockfile, run ``ls_remote_callable(url, 'HEAD', ...)``
+    subject to ``retry_policy``. A non-zero exit code from any call produces
+    a WARNING finding (not an error) including:
+    - The canonicalized URL.
+    - The exit code.
+    - The first line of stderr truncated at
+      ``KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS`` characters.
+    - A remediation hint referencing ``docs/git-auth-setup.md``.
+
+    Deduplication uses ``canonicalize_repo_url`` so that SSH and HTTPS forms
+    of the same repository are treated as one remote.
+
+    Auth-error patterns (``GIT_AUTH_ERROR_PATTERNS``) skip retries (enforced
+    inside ``ls_remote_callable``) but still produce a warning finding.
+
+    This function is pure: no stdout/stderr side effects.
+
+    Args:
+        lockfile: A Lockfile dataclass instance.
+        ls_remote_callable: Callable with signature
+            ``(url, ref, timeout, retry_count, retry_delay) -> (returncode, stdout, stderr)``.
+            Unit tests inject a stub; production wires ``_run_ls_remote_exit_code``.
+        retry_policy: Named tuple with timeout, retry_count, retry_delay fields.
+
+    Returns:
+        List of DoctorFinding instances with kind="warn" for each unreachable
+        remote URL. Empty list when all remotes are reachable.
+    """
+    from kanon_cli.core.url import canonicalize_repo_url
+
+    # Build a mapping from canonical URL -> raw URL (first occurrence wins).
+    # Deduplication ensures each distinct remote is checked exactly once.
+    # A URL that cannot be canonicalized is malformed; emit a warning finding
+    # and skip it (it cannot be de-duplicated against other entries).
+    seen: dict[str, str] = {}
+    findings: list[DoctorFinding] = []
+    for source in lockfile.sources:
+        try:
+            canonical = canonicalize_repo_url(source.url)
+        except ValueError as exc:
+            findings.append(
+                DoctorFinding(
+                    kind="warn",
+                    code="REMOTE_URL_INVALID",
+                    message=f"lockfile source '{source.name}' has an unrecognized URL format: {source.url!r} ({exc})",
+                    remediation=(
+                        "Update the lockfile source URL to use https:// or git@ (SCP) format. "
+                        "See docs/git-auth-setup.md for supported URL schemes."
+                    ),
+                )
+            )
+            continue
+        if canonical not in seen:
+            seen[canonical] = source.url
+
+    for canonical_url, raw_url in seen.items():
+        returncode, _stdout, stderr = ls_remote_callable(
+            raw_url,
+            "HEAD",
+            retry_policy.timeout,
+            retry_policy.retry_count,
+            retry_policy.retry_delay,
+        )
+
+        if returncode == 0:
+            continue
+
+        # Extract and truncate the first line of stderr.
+        first_stderr_line = stderr.splitlines()[0] if stderr.strip() else ""
+        stderr_preview = first_stderr_line[:KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS]
+
+        findings.append(
+            DoctorFinding(
+                kind="warn",
+                code="REMOTE_UNREACHABLE",
+                message=(
+                    f"remote unreachable: {canonical_url} "
+                    f"(exit code {returncode})" + (f"; stderr: {stderr_preview}" if stderr_preview else "")
+                ),
+                remediation=(
+                    f"Check network access and git credentials for {canonical_url}. "
+                    f"See docs/git-auth-setup.md for SSH key and credential helper setup."
+                ),
+            )
+        )
 
     return findings
 
@@ -745,7 +948,7 @@ def doctor_command(
     completion_generator: Callable[[str], str] | None = None,
     now: Callable[[], datetime.datetime] | None = None,
 ) -> int:
-    """Entry-point for 'kanon doctor' implementing subchecks 1-5, 7-10.
+    """Entry-point for 'kanon doctor' implementing subchecks 1-5, 7-11.
 
     Orchestrates the consistency checks in order. Prints findings to
     stderr via _print_finding. Returns exit code 0 unless at least one
@@ -759,8 +962,8 @@ def doctor_command(
     - .kanon.lock absent: info notice to stderr; skip checks 2-5 and 11;
       return 0.
 
-    Checks 2-5 are only run when both files are present and the hash is
-    valid.
+    Checks 2-5 and 11 are only run when both files are present and the
+    hash is valid.
 
     Check 7 runs when KANON_CACHE_DIR is set in the environment.
 
@@ -768,6 +971,10 @@ def doctor_command(
 
     Check 10 (--prune-cache) also emits an advisory for stale install
     locks found under the cwd up to KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH.
+
+    Check 11 runs for every distinct canonicalized remote URL recorded in
+    the lockfile. Findings are always warning-level (never error-level);
+    the command still exits 0 when only check 11 produces findings.
 
     Args:
         args: Parsed argument namespace from argparse. Expected attributes:
@@ -922,6 +1129,16 @@ def doctor_command(
         if finding.kind == "error":
             has_errors = True
 
+    # -- Check 11: remote reachability sanity check --
+    remote_findings = _check_remote_reachability(
+        lockfile,
+        _run_ls_remote_exit_code,
+        _read_retry_policy(),
+    )
+    for finding in remote_findings:
+        _print_finding(finding)
+        # Remote-reachability findings are always warnings -- they never set has_errors.
+
     # -- Check 6: effective catalog source --
     source_finding = _check_effective_catalog_source(args, dict(os.environ), lockfile)
     print(source_finding.message)
@@ -963,7 +1180,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "  4. Branch drift (use --strict-drift to promote to error)\n"
             "  5. Dangling SHA detection\n"
             "  8. Completion-cache invalidation (--refresh-completion-cache)\n"
-            " 10. Stale cache pruning + stale-lock advisory (--prune-cache)\n\n"
+            " 10. Stale cache pruning + stale-lock advisory (--prune-cache)\n"
+            " 11. Remote reachability sanity check (warning only; exit 0)\n\n"
             "With --refresh-completion-cache, invalidates the completion-cache subdir\n"
             "under KANON_CACHE_DIR. With --prune-cache, removes cache files whose\n"
             "atime exceeds KANON_CACHE_PRUNE_AGE_DAYS days and reports stale\n"

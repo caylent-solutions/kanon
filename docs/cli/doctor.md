@@ -88,7 +88,7 @@ INFO: No lockfile present; run `kanon install` to generate one.
 ```
 
 When `.kanon.lock` is absent, subchecks 2-5 and 11 are skipped; the command
-exits 0 after emitting the info notice and running subcheck 6.
+exits 0 after emitting the info notice and running subchecks 6, 7, and 9.
 
 ### Subcheck 2: Hand-edit detection (kanon_hash)
 
@@ -221,7 +221,7 @@ directory is recreated empty with mode `0700`. This invalidates any cached
 completion data so the next completion invocation rebuilds the cache from
 scratch.
 
-This subcheck runs BEFORE subchecks 1-5, 7, 9, and 10.
+This subcheck runs BEFORE subchecks 1-5, 7, 9, 10, and 11.
 
 **Info finding after refresh:**
 ```
@@ -291,6 +291,60 @@ WARN: Stale zsh completion script: /home/user/.zsh/completions/_kanon does not m
 
 Multiple shells with stale scripts produce one warning per shell.
 
+### Subcheck 11: Remote reachability sanity check
+
+For every distinct remote URL recorded in the lockfile, runs
+`git ls-remote --exit-code <url> HEAD` (subject to `KANON_RESOLVE_TIMEOUT`
+and the retry policy). URLs are deduplicated using `canonicalize_repo_url`
+before the check, so SSH and HTTPS forms of the same repository are checked
+exactly once.
+
+This check runs ONLY when `.kanon.lock` is present. If the lockfile is absent,
+subcheck 1 short-circuits and subcheck 11 is skipped.
+
+**Difference from subcheck 5 (dangling SHA):**
+
+| | Subcheck 5 (dangling SHA) | Subcheck 11 (remote reachability) |
+|---|---|---|
+| What it checks | Whether a specific locked SHA is still reachable at the remote | Whether the remote URL itself is reachable at all |
+| What triggers it | Non-zero `git ls-remote` exit OR SHA not in any ref's first column | Non-zero `git ls-remote --exit-code <url> HEAD` for any reason |
+| Severity | **error** (exit 1) | **warning** (exit 0) |
+| Retries | Subject to `KANON_GIT_RETRY_COUNT` / `KANON_GIT_RETRY_DELAY` | Same retry policy; auth-error patterns skip retries |
+
+Remote-reachability failures are deliberately warnings rather than errors.
+Network connectivity is transient: a `kanon doctor` run that fails with exit 1
+because the operator's network is down is not useful as a triage tool. The
+warning surfaces the diagnostic -- URL, exit code, first line of stderr -- so
+the operator can investigate (missing SSH key, unconfigured credential helper,
+network outage, repository moved) without blocking a workspace check.
+
+**Warning when a remote is unreachable (exit 0):**
+```
+WARN: remote unreachable: https://example.com/org/repo (exit code 128); stderr: repository not found
+  Remediation: Check network access and git credentials for https://example.com/org/repo. See docs/git-auth-setup.md for SSH key and credential helper setup.
+```
+
+The warning includes:
+- The canonicalized URL (`.git` suffix and user-info stripped).
+- The exit code returned by `git ls-remote --exit-code`.
+- The first line of stderr, truncated at `KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS`
+  characters (default 160) to keep output bounded.
+- A remediation hint referencing `docs/git-auth-setup.md`.
+
+**Auth errors (e.g., missing SSH key):**
+
+Auth-error patterns matching `GIT_AUTH_ERROR_PATTERNS` (e.g., `Permission denied`,
+`Authentication`) skip the retry policy to avoid credential lockouts, but still
+produce the same warning finding. The operator should configure their SSH agent
+or credential helper before re-running:
+
+```
+WARN: remote unreachable: https://github.com/org/repo (exit code 128); stderr: Permission denied (publickey).
+  Remediation: Check network access and git credentials for https://github.com/org/repo. See docs/git-auth-setup.md for SSH key and credential helper setup.
+```
+
+**All remotes reachable:** No finding is emitted.
+
 ### Subcheck 10: Cache pruning and stale-lock advisory (--prune-cache)
 
 When `--prune-cache` is set, two actions occur:
@@ -308,7 +362,7 @@ an advisory info finding. Doctor does NOT delete these files; `fcntl.flock`
 self-cleans on process exit, so a leftover file on disk is harmless and does
 not block subsequent installs.
 
-This subcheck runs BEFORE subchecks 1-5, 7, and 9, and AFTER subcheck 8
+This subcheck runs BEFORE subchecks 1-5, 7, 9, and 11, and AFTER subcheck 8
 when both flags are combined.
 
 **Info finding after pruning 2 files totalling 4096 bytes:**
@@ -329,7 +383,7 @@ files are pruned.
 kanon doctor --refresh-completion-cache --prune-cache
 ```
 Refresh runs first (subcheck 8), then prune runs (subcheck 10). Both findings
-are emitted. Health checks (subchecks 1-5, 6, 7, 9) always run after.
+are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 
 ## Environment Variables
 
@@ -346,6 +400,7 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9) always run after.
 | `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |
 | `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth for the stale install-lock scan in `--prune-cache` (subcheck 10) |
 | `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` | `1` | Minimum lock file age in hours to qualify as stale in the advisory scan (subcheck 10) |
+| `KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS` | `160` | Maximum characters from the first line of `git ls-remote` stderr included in a remote-reachability warning (subcheck 11) |
 
 ## Exit Codes
 

@@ -1,5 +1,7 @@
 """Shared fixtures for kanon-cli tests."""
 
+from __future__ import annotations
+
 import os
 import pathlib
 
@@ -166,6 +168,263 @@ def _write_lockfile(
     )
 
     lock_path = tmp_path / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
+# ---------------------------------------------------------------------------
+# Doctor consistency test helpers (shared between unit and integration tests)
+# ---------------------------------------------------------------------------
+
+#: Minimal valid .kanon content used by doctor unit tests.
+DOCTOR_MINIMAL_KANON_CONTENT = (
+    "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
+    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+    "KANON_MARKETPLACE_INSTALL=false\n"
+)
+
+
+def write_kanon_doctor_unit(
+    tmp_path: pathlib.Path,
+    content: str = DOCTOR_MINIMAL_KANON_CONTENT,
+) -> pathlib.Path:
+    """Write a .kanon file for doctor unit tests and chmod 0o644.
+
+    Used by tests/unit/test_doctor_consistency.py to build minimal workspaces
+    for subcheck unit tests. The content parameter lets callers supply custom
+    source definitions (e.g. SHA-pinned sources for dangling-SHA checks).
+
+    Args:
+        tmp_path: Directory in which to create the .kanon file.
+        content: Full text of the .kanon file.
+
+    Returns:
+        Path to the written .kanon file.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(content, encoding="utf-8")
+    kanon_file.chmod(0o644)
+    return kanon_file
+
+
+def write_lockfile_doctor_unit(
+    tmp_path: pathlib.Path,
+    kanon_hash_val: str = "sha256:" + "a" * 64,
+    source_names: list[str] | None = None,
+    revision_specs: dict[str, str] | None = None,
+    resolved_shas: dict[str, str] | None = None,
+    urls: dict[str, str] | None = None,
+) -> pathlib.Path:
+    """Write a minimal .kanon.lock for doctor unit tests.
+
+    Used by tests/unit/test_doctor_consistency.py. Supports multiple sources
+    via the source_names, revision_specs, resolved_shas, and urls parameters.
+    Defaults build a single source named 'src' with a branch-pinned revision
+    (main) and a fake SHA.
+
+    Args:
+        tmp_path: Directory in which to write .kanon.lock.
+        kanon_hash_val: Value to embed in the lockfile's kanon_hash field.
+        source_names: Names of the sources to include. Defaults to ["src"].
+        revision_specs: Per-source revision strings. Defaults to "main" for all.
+        resolved_shas: Per-source resolved SHA. Defaults to "a" * 40 for all.
+        urls: Per-source URL. Defaults to "https://example.com/org/repo.git" for all.
+
+    Returns:
+        Path to the written .kanon.lock file.
+    """
+    from kanon_cli.core.lockfile import (
+        CatalogBlock,
+        Lockfile,
+        SourceEntry,
+        write_lockfile,
+    )
+
+    if source_names is None:
+        source_names = ["src"]
+    if revision_specs is None:
+        revision_specs = {name: "main" for name in source_names}
+    if resolved_shas is None:
+        resolved_shas = {name: "a" * 40 for name in source_names}
+    if urls is None:
+        urls = {name: "https://example.com/org/repo.git" for name in source_names}
+
+    sources = [
+        SourceEntry(
+            name=name,
+            url=urls[name],
+            revision_spec=revision_specs[name],
+            resolved_ref=revision_specs[name],
+            resolved_sha=resolved_shas[name],
+            path="repo-specs/meta.xml",
+        )
+        for name in source_names
+    ]
+
+    lockfile = Lockfile(
+        schema_version=1,
+        generated_at="2024-01-01T00:00:00Z",
+        generator="kanon-test",
+        kanon_hash=kanon_hash_val,
+        catalog=CatalogBlock(
+            source="",
+            url="",
+            revision_spec="",
+            resolved_ref="",
+            resolved_sha="",
+        ),
+        sources=sources,
+    )
+
+    lock_path = tmp_path / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
+def write_kanon_doctor_integration(
+    directory: pathlib.Path,
+    source_name: str,
+    url: str,
+    revision: str = "main",
+) -> pathlib.Path:
+    """Write a .kanon file for doctor integration tests.
+
+    Used by tests/integration/test_doctor_consistency.py. Writes a single-source
+    .kanon file suitable for subprocess-driven CLI tests.
+
+    Args:
+        directory: Directory in which to create the .kanon file.
+        source_name: Name of the source (used in KANON_SOURCE_<name>_* keys).
+        url: Git URL for the source.
+        revision: Revision spec (branch name or SHA). Defaults to "main".
+
+    Returns:
+        Path to the written .kanon file.
+    """
+    kanon_file = directory / ".kanon"
+    kanon_file.write_text(
+        f"KANON_SOURCE_{source_name}_URL={url}\n"
+        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
+        "KANON_MARKETPLACE_INSTALL=false\n",
+        encoding="utf-8",
+    )
+    kanon_file.chmod(0o644)
+    return kanon_file
+
+
+def write_lockfile_doctor_integration_multi_source(
+    directory: pathlib.Path,
+    kanon_hash_val: str,
+    sources: list[dict],
+) -> pathlib.Path:
+    """Write a minimal .kanon.lock file for multiple sources (doctor integration tests).
+
+    Shared helper used by tests/integration/test_doctor_consistency.py for test
+    cases that require more than one source entry (e.g. orphan lock detection).
+
+    Args:
+        directory: Directory in which to write .kanon.lock.
+        kanon_hash_val: The kanon_hash to embed in the lockfile.
+        sources: List of dicts, each with keys: name, url, revision_spec, resolved_sha.
+
+    Returns:
+        Path to the written .kanon.lock file.
+    """
+    from kanon_cli.core.lockfile import (
+        CatalogBlock,
+        Lockfile,
+        SourceEntry,
+        write_lockfile,
+    )
+
+    source_entries = [
+        SourceEntry(
+            name=s["name"],
+            url=s["url"],
+            revision_spec=s["revision_spec"],
+            resolved_ref=s["revision_spec"],
+            resolved_sha=s["resolved_sha"],
+            path="repo-specs/meta.xml",
+        )
+        for s in sources
+    ]
+
+    lockfile = Lockfile(
+        schema_version=1,
+        generated_at="2024-01-01T00:00:00Z",
+        generator="kanon-test",
+        kanon_hash=kanon_hash_val,
+        catalog=CatalogBlock(
+            source="",
+            url="",
+            revision_spec="",
+            resolved_ref="",
+            resolved_sha="",
+        ),
+        sources=source_entries,
+    )
+    lock_path = directory / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
+def write_lockfile_doctor_integration(
+    directory: pathlib.Path,
+    kanon_hash_val: str,
+    source_name: str,
+    url: str,
+    revision_spec: str,
+    resolved_sha: str,
+) -> pathlib.Path:
+    """Write a minimal .kanon.lock for doctor integration tests.
+
+    Used by tests/integration/test_doctor_consistency.py. Writes a single-source
+    lockfile suitable for subprocess-driven CLI tests.
+
+    Args:
+        directory: Directory in which to write .kanon.lock.
+        kanon_hash_val: Value to embed in the lockfile's kanon_hash field.
+        source_name: Name of the single source entry.
+        url: Git URL for the source.
+        revision_spec: Revision spec string (branch name or SHA).
+        resolved_sha: The resolved SHA to record for the source.
+
+    Returns:
+        Path to the written .kanon.lock file.
+    """
+    from kanon_cli.core.lockfile import (
+        CatalogBlock,
+        Lockfile,
+        SourceEntry,
+        write_lockfile,
+    )
+
+    lockfile = Lockfile(
+        schema_version=1,
+        generated_at="2024-01-01T00:00:00Z",
+        generator="kanon-test",
+        kanon_hash=kanon_hash_val,
+        catalog=CatalogBlock(
+            source="",
+            url="",
+            revision_spec="",
+            resolved_ref="",
+            resolved_sha="",
+        ),
+        sources=[
+            SourceEntry(
+                name=source_name,
+                url=url,
+                revision_spec=revision_spec,
+                resolved_ref=revision_spec,
+                resolved_sha=resolved_sha,
+                path="repo-specs/meta.xml",
+            )
+        ],
+    )
+    lock_path = directory / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return lock_path
 

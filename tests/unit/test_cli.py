@@ -54,6 +54,36 @@ class TestBuildParser:
         args = parser.parse_args(["validate", "xml", "--repo-root", "/some/path"])
         assert str(args.repo_root) == "/some/path"
 
+    def test_parser_doctor_subcommand(self) -> None:
+        """build_parser() registers the 'doctor' subcommand (AC-FUNC-007)."""
+        parser = build_parser()
+        args = parser.parse_args(["doctor"])
+        assert args.command == "doctor"
+
+    def test_doctor_func_is_run_doctor(self) -> None:
+        """'doctor' subcommand sets args.func to run_doctor (AC-FUNC-007).
+
+        run_doctor is the registered CLI entrypoint; it handles
+        --refresh-completion-cache then delegates to doctor_command.
+        """
+        from kanon_cli.commands.doctor import run_doctor
+
+        parser = build_parser()
+        args = parser.parse_args(["doctor"])
+        assert args.func is run_doctor
+
+    def test_doctor_strict_drift_flag(self) -> None:
+        """'doctor' subcommand accepts --strict-drift flag (AC-FUNC-007)."""
+        parser = build_parser()
+        args = parser.parse_args(["doctor", "--strict-drift"])
+        assert args.strict_drift is True
+
+    def test_doctor_strict_drift_default_false(self) -> None:
+        """'doctor' --strict-drift defaults to False (AC-FUNC-007)."""
+        parser = build_parser()
+        args = parser.parse_args(["doctor"])
+        assert args.strict_drift is False
+
 
 @pytest.mark.unit
 class TestMainDispatch:
@@ -219,6 +249,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "add": ["entry-a", "--catalog-source", "https://example.com/repo.git@main"],
             "install": [_FAKE_KANON_PATH],
             "clean": [_FAKE_KANON_PATH],
+            "doctor": [],
             "validate": ["xml"],
             "bootstrap": ["list"],
             "list": [],

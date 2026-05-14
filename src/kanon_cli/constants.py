@@ -81,6 +81,13 @@ INSTALL_LOCK_FILENAME = ".kanon-install.lock"
 # Subdirectory name under .kanon-data/ where completion-cache files are stored.
 KANON_COMPLETION_CACHE_DIR = "completion-cache"
 
+# Environment variable name for the git ls-remote / resolve timeout (seconds).
+# Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
+_KANON_RESOLVE_TIMEOUT_ENV = "KANON_RESOLVE_TIMEOUT"
+
+# Default timeout (in seconds) for git ls-remote calls made by kanon doctor.
+_KANON_RESOLVE_TIMEOUT_DEFAULT = 30
+
 # -- Color / TTY output --
 # Environment variable name that suppresses ANSI color output when non-empty,
 # following the https://no-color.org convention.

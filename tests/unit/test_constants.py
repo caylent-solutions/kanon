@@ -903,3 +903,45 @@ class TestKanonWhyJsonIndent:
         assert "KANON_WHY_JSON_INDENT" in str(exc_info.value)
         monkeypatch.delenv("KANON_WHY_JSON_INDENT", raising=False)
         importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonResolveTimeoutConstants:
+    """Tests for _KANON_RESOLVE_TIMEOUT_ENV and _KANON_RESOLVE_TIMEOUT_DEFAULT (E5-F1-S1-T1)."""
+
+    def test_resolve_timeout_env_name_exists(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_ENV constant exists and is importable."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_ENV
+
+        assert _KANON_RESOLVE_TIMEOUT_ENV is not None
+
+    def test_resolve_timeout_env_name_value(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_ENV equals 'KANON_RESOLVE_TIMEOUT'."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_ENV
+
+        assert _KANON_RESOLVE_TIMEOUT_ENV == "KANON_RESOLVE_TIMEOUT"
+
+    def test_resolve_timeout_env_name_is_string(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_ENV is a str."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_ENV
+
+        assert isinstance(_KANON_RESOLVE_TIMEOUT_ENV, str)
+
+    def test_resolve_timeout_default_exists(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_DEFAULT constant exists and is importable."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_DEFAULT
+
+        assert _KANON_RESOLVE_TIMEOUT_DEFAULT is not None
+
+    def test_resolve_timeout_default_value(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_DEFAULT equals 30."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_DEFAULT
+
+        assert _KANON_RESOLVE_TIMEOUT_DEFAULT == 30
+
+    def test_resolve_timeout_default_is_positive_int(self) -> None:
+        """_KANON_RESOLVE_TIMEOUT_DEFAULT is a positive integer."""
+        from kanon_cli.constants import _KANON_RESOLVE_TIMEOUT_DEFAULT
+
+        assert isinstance(_KANON_RESOLVE_TIMEOUT_DEFAULT, int)
+        assert _KANON_RESOLVE_TIMEOUT_DEFAULT > 0

@@ -81,7 +81,12 @@ class TestDoctorSubparser:
         assert args.refresh_completion_cache is False
 
     def test_doctor_sets_run_doctor_as_func(self) -> None:
-        """The 'doctor' subcommand sets args.func to run_doctor."""
+        """The 'doctor' subcommand sets args.func to run_doctor.
+
+        run_doctor is the registered CLI entrypoint for 'kanon doctor'. It
+        handles --refresh-completion-cache first, then delegates to
+        doctor_command for all other (health-check) invocations.
+        """
         from kanon_cli.commands.doctor import register, run_doctor
 
         parser = argparse.ArgumentParser()
@@ -244,7 +249,7 @@ class TestRunDoctorHealthChecks:
     def test_health_check_exits_nonzero_when_kanon_missing(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """run_doctor exits non-zero when no .kanon file is found.
+        """run_doctor returns non-zero when no .kanon file is found.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -256,10 +261,9 @@ class TestRunDoctorHealthChecks:
         missing_kanon = tmp_path / ".kanon"
         args = _make_refresh_args(kanon_file=str(missing_kanon))
 
-        with pytest.raises(SystemExit) as exc_info:
-            run_doctor(args)
+        result = run_doctor(args)
 
-        assert exc_info.value.code != 0
+        assert result != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
 
@@ -286,7 +290,12 @@ class TestRunDoctorHealthChecks:
         )
 
     def test_health_check_prints_workspace_ok(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """run_doctor (no flags) prints a 'workspace OK' message to stdout.
+        """run_doctor (no flags, no lockfile) prints an INFO notice to stderr.
+
+        When .kanon is present but no .kanon.lock exists, run_doctor routes
+        through doctor_command which emits an INFO notice to stderr indicating
+        that no lockfile is present. The 'workspace OK' message no longer
+        applies once the new consistency subchecks are wired in.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -295,20 +304,33 @@ class TestRunDoctorHealthChecks:
         from kanon_cli.commands.doctor import run_doctor
 
         kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
+        kanon_file.write_text(
+            "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
+            "KANON_SOURCE_src_REVISION=main\n"
+            "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            "KANON_MARKETPLACE_INSTALL=false\n",
+            encoding="utf-8",
+        )
+        kanon_file.chmod(0o644)
 
         args = _make_refresh_args(kanon_file=str(kanon_file))
-        run_doctor(args)
+        result = run_doctor(args)
 
+        assert result == 0
         captured = capsys.readouterr()
-        assert "OK" in captured.out, (
-            f"run_doctor (no flags) must print a workspace OK message. stdout: {captured.out!r}"
+        # When no lockfile is present, doctor_command emits an INFO notice to stderr.
+        assert "No lockfile present" in captured.err, (
+            f"run_doctor (no flags, no lockfile) must emit an INFO notice to stderr. stderr: {captured.err!r}"
         )
 
     def test_health_check_reports_kanon_data_exists(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """run_doctor reports .kanon-data/ path when directory already exists.
+        """run_doctor (no flags, no lockfile) prints INFO stderr notice about no lockfile.
+
+        When .kanon is present (and .kanon-data/ exists) but no .kanon.lock,
+        run_doctor delegates to doctor_command which emits an INFO stderr notice.
+        The test confirms the notice is present and the return code is 0.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -317,15 +339,24 @@ class TestRunDoctorHealthChecks:
         from kanon_cli.commands.doctor import run_doctor
 
         kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
+        kanon_file.write_text(
+            "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
+            "KANON_SOURCE_src_REVISION=main\n"
+            "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            "KANON_MARKETPLACE_INSTALL=false\n",
+            encoding="utf-8",
+        )
+        kanon_file.chmod(0o644)
         (tmp_path / ".kanon-data").mkdir()
 
         args = _make_refresh_args(kanon_file=str(kanon_file))
-        run_doctor(args)
+        result = run_doctor(args)
 
+        assert result == 0
         captured = capsys.readouterr()
-        assert ".kanon-data/" in captured.out, (
-            f"run_doctor must mention .kanon-data/ in stdout when it exists. stdout: {captured.out!r}"
+        # When no lockfile is present, doctor_command emits an INFO stderr notice.
+        assert "No lockfile present" in captured.err, (
+            f"run_doctor must emit INFO notice when no lockfile exists. stderr: {captured.err!r}"
         )
 
     def test_kanon_file_resolved_from_env_var(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

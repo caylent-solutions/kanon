@@ -1,0 +1,180 @@
+# kanon doctor
+
+Run workspace health checks against the current project directory.
+
+## Synopsis
+
+```
+kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache]
+```
+
+## Description
+
+`kanon doctor` inspects a kanon workspace and reports any inconsistencies
+between the `.kanon` configuration file and the `.kanon.lock` lockfile. It
+is read-only when invoked without `--refresh-completion-cache`: it reads
+files and queries remote repositories but does not modify any local state.
+With `--refresh-completion-cache`, it writes completion-cache files under
+`.kanon-data/` (protected by the workspace lock).
+
+Exit code is 0 when all checks pass (or when only info-level findings are
+emitted). Exit code is 1 when any error-level finding is detected.
+
+## Options
+
+`--kanon-file <path>`
+: Path to the `.kanon` configuration file. Defaults to `./.kanon`. The
+  `KANON_KANON_FILE` environment variable is checked when this flag is not
+  supplied; the CLI flag takes precedence when both are set.
+
+`--lock-file <path>`
+: Path to the `.kanon.lock` lockfile. Defaults to `<kanon-file>.lock`
+  (e.g. `./.kanon.lock`). The `KANON_LOCK_FILE` environment variable is
+  checked when this flag is not supplied.
+
+`--strict-drift`
+: Promote branch-drift findings from info-level to error-level. Without
+  this flag, branch-drift is reported as an informational notice and the
+  command exits 0. With this flag, any detected drift causes exit code 1.
+  See subcheck 4 (Branch drift) below.
+
+`--refresh-completion-cache`
+: Refresh the shell completion cache files stored under `.kanon-data/`.
+  Acquires the workspace exclusive lock before writing so concurrent
+  refreshes are serialised. This flag is independent of the health checks.
+
+## Subchecks
+
+`kanon doctor` runs the following consistency checks in order. Later tasks
+(E5-F1-S1-T2 through T5) add subchecks 6-11.
+
+### Subcheck 1: .kanon / .kanon.lock consistency
+
+Verifies that the `.kanon` file exists at the expected path and that a
+`.kanon.lock` lockfile is present.
+
+**Error when .kanon is absent (exit 1):**
+```
+ERROR: no kanon workspace in <cwd>: '.kanon' not found
+  Remediation: Run 'kanon add ...' to create a .kanon file, or 'cd' to a
+  directory that contains one.
+```
+
+**Info notice when .kanon.lock is absent (exit 0):**
+```
+INFO: No lockfile present; run `kanon install` to generate one.
+  Remediation: kanon install
+```
+
+When `.kanon.lock` is absent, subchecks 2-5 and 11 are skipped; the command
+exits 0 after emitting the info notice.
+
+### Subcheck 2: Hand-edit detection (kanon_hash)
+
+Recomputes the `kanon_hash` digest over the current `.kanon` file and
+compares it with the `kanon_hash` field stored in the lockfile. A mismatch
+indicates the `.kanon` file was edited directly after the last
+`kanon install` run.
+
+**Error (exit 1):**
+```
+ERROR: kanon_hash mismatch: .kanon was hand-edited since the last 'kanon install'.
+  Remediation: Run 'kanon install --refresh-lock' to rebuild the lockfile.
+```
+
+### Subcheck 3: Orphaned lock entries
+
+For every source recorded in the lockfile, checks that the matching
+`KANON_SOURCE_<name>_{URL,REVISION,PATH}` triple still exists in `.kanon`.
+A source present in the lockfile but absent from `.kanon` is an orphan
+(e.g. the source was removed from `.kanon` without re-running
+`kanon install`).
+
+**Error per orphan (exit 1):**
+```
+ERROR: orphan lock entry: source 'X' is in .kanon.lock but absent from .kanon
+  Remediation: Run 'kanon install' to prune (or 'kanon install --strict-lock'
+  to keep the lockfile authoritative).
+```
+
+### Subcheck 4: Branch drift
+
+For every lockfile entry whose `revision_spec` resolves to a branch name
+(not a SHA and not a `refs/...` ref), queries
+`git ls-remote refs/heads/<branch>` against the source URL and compares
+the current branch tip SHA with the locked SHA.
+
+Without `--strict-drift`, drift is reported as an info notice (exit 0):
+```
+INFO: branch drift: source 'X' is locked to <old-sha> but 'main' is now at <new-sha>
+  Remediation: Run 'kanon install --refresh-lock' to update the lockfile.
+```
+
+With `--strict-drift`, drift is reported as an error (exit 1):
+```
+ERROR: branch drift: source 'X' is locked to <old-sha> but 'main' is now at <new-sha>
+  Remediation: Run 'kanon install --refresh-lock' to update the lockfile.
+```
+
+### Subcheck 5: Dangling SHA
+
+For every lockfile entry whose `revision_spec` is a SHA (40 or 64 lowercase
+hex characters), queries `git ls-remote <url>` and verifies the locked SHA
+appears in the first column of the remote's ref list. A SHA that is not
+found in any ref indicates the commit was force-pushed or pruned.
+
+Branch-pinned sources are skipped by this check (they are handled by
+subcheck 4 instead).
+
+**Error (exit 1):**
+```
+ERROR: dangling SHA: <sha> is no longer reachable from <url>; the remote
+may have force-pushed or pruned the commit.
+  Remediation: Run 'kanon install --refresh-lock' to rebuild.
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` configuration file |
+| `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` lockfile |
+| `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
+| `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
+| `KANON_GIT_RETRY_DELAY` | `1` | Seconds to wait between retry attempts |
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | All checks passed (or only info-level findings) |
+| `1` | One or more error-level findings detected |
+
+## Examples
+
+Run all health checks against the default `.kanon` file:
+```
+kanon doctor
+```
+
+Promote branch-drift findings to errors:
+```
+kanon doctor --strict-drift
+```
+
+Use a custom kanon file location:
+```
+kanon doctor --kanon-file /path/to/my/.kanon
+```
+
+Run checks with an explicit lock file path:
+```
+kanon doctor --kanon-file /path/to/.kanon --lock-file /path/to/.kanon.lock
+```
+
+## See Also
+
+- `kanon install` -- Install all sources defined in `.kanon`
+- `kanon install --refresh-lock` -- Rebuild the lockfile from the current `.kanon`
+- `docs/lockfile.md` -- Lockfile schema reference
+- `docs/configuration.md` -- Full configuration reference

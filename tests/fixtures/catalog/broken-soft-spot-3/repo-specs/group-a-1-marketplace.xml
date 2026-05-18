@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Fixture: entry name 'collision-name-alpha' duplicates group-a-2-marketplace.xml.
+     This triggers soft-spot rule 3 entry-name-uniqueness: U001 ERROR. -->
+<package>
+  <catalog-metadata>
+    <name>collision-name-alpha</name>
+    <display-name>Group A Tool (first instance)</display-name>
+    <description>First of two catalog entries sharing the name collision-name-alpha.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture,uniqueness</keywords>
+  </catalog-metadata>
+</package>

@@ -175,6 +175,63 @@ An entry name can trigger both S001 and S002 simultaneously. For example, `Foo.B
 The recommended fix is to use a name like `foo_bar` which is already normalised and
 uses only the allowed character set.
 
+## Entry-name uniqueness
+
+`kanon catalog audit --check entry-name-uniqueness` enforces spec Section 3.5
+soft-spot rule 3. Every `<catalog-metadata><name>` value must be unique across
+all `*-marketplace.xml` files in the manifest repo.
+
+### The uniqueness rule
+
+When two or more files share the same `<name>` value, `kanon install` cannot
+tell which entry to use. The check emits one ERROR finding (U001) listing every
+file that declares the colliding name.
+
+```xml
+<!-- ERROR: two files both declare name 'my-tool' -->
+
+<!-- file: repo-specs/group-a/my-tool-marketplace.xml -->
+<catalog-metadata>
+  <name>my-tool</name>
+  ...
+</catalog-metadata>
+
+<!-- file: repo-specs/group-b/my-tool-marketplace.xml -->
+<catalog-metadata>
+  <name>my-tool</name>
+  ...
+</catalog-metadata>
+```
+
+Fix: give each entry a distinct name (e.g. `my-tool-alpha` and `my-tool-beta`),
+or remove the duplicate entry entirely.
+
+### Case sensitivity
+
+Entry-name uniqueness comparison is **case-sensitive**: `MyTool` and `mytool`
+are treated as two distinct names by this check and do NOT collide here.
+
+However, both names normalise to the same source name (`mytool`) via
+`derive_source_name`. At install time, shell variable names derived from both
+entries would be identical (`KANON_SOURCE_MYTOOL_URL`, etc.), producing a real
+conflict.
+
+The `source-name-derivation` check (S001) warns about this normalisation drift.
+Authors who want case-insensitive uniqueness should rely on `--check
+source-name-derivation` to surface these drift warnings in addition to
+`--check entry-name-uniqueness`.
+
+### Relationship to `source-name-derivation`
+
+The two checks cover complementary scenarios:
+
+| Scenario | Detected by |
+|----------|-------------|
+| `my-tool` declared in two files (exact match) | `entry-name-uniqueness` (U001 ERROR) |
+| `My-Tool` and `my-tool` each in one file (case drift) | `source-name-derivation` (S001 WARN) |
+
+Run both checks together (`--check all`) for complete coverage.
+
 ## Running the audit locally
 
 To check your manifest repo before pushing:
@@ -206,6 +263,7 @@ Exit code 1 means at least one ERROR finding was produced.
 | `M006` | ERROR | Duplicate child element within `<catalog-metadata>`. |
 | `S001` | WARN | Entry name differs from its normalised form (source-name derivation drift). |
 | `S002` | WARN | Entry name contains characters outside `[a-zA-Z0-9_-]`. |
+| `U001` | ERROR | Entry name declared in more than one file (entry-name uniqueness collision). |
 
 ## Related documentation
 

@@ -41,7 +41,7 @@ The five soft-spot checks audited by `kanon catalog audit`:
 |------------|-------------|
 | `metadata` | Verifies required fields (`name`, `display-name`, `description`, `version`) are present and non-empty in every catalog entry's XML metadata. |
 | `source-name-derivation` | Verifies that each entry name in `<catalog-metadata><name>` is in its normalised form (lowercase, hyphens replaced with underscores) and uses only characters from `[a-zA-Z0-9_-]` (spec Section 3.5 soft-spot rule 2). |
-| `entry-name-uniqueness` | Verifies that no two entries share the same derived source name within the catalog (soft-spot rule 3). |
+| `entry-name-uniqueness` | Verifies that no two entries share the same `<catalog-metadata><name>` value across the entire catalog (soft-spot rule 3). Comparison is case-sensitive. |
 | `remote-url` | Verifies that every entry's `source_url` uses a permitted scheme (HTTPS by default; see `docs/configuration.md` for `KANON_ALLOW_INSECURE_REMOTES`). |
 | `tag-format` | Verifies that all tags referenced by catalog entries are PEP 440-compliant version strings (soft-spot rule 5). |
 
@@ -171,6 +171,49 @@ active.
 ```
 WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name. Consider renaming the entry to match the derived form to avoid surprises in shell variable names and .kanon files. -- Rename <name>Foo-Bar</name> to <name>foo_bar</name> in the <catalog-metadata> block.
 WARN: [S002] /path/repo-specs/tool-marketplace.xml: entry name 'foo.bar' contains characters outside the recommended set [a-zA-Z0-9_-]. Characters outside this set may not survive shell quoting cleanly and can cause unexpected behaviour in shell variable names. -- Rename <name>foo.bar</name> to use only [a-zA-Z0-9_-] characters in the <catalog-metadata> block.
+```
+
+## Entry-name-uniqueness check (`--check entry-name-uniqueness`)
+
+The `entry-name-uniqueness` check inspects every `*-marketplace.xml` file under
+`repo-specs/` for spec Section 3.5 soft-spot rule 3 compliance.
+
+It builds a mapping from `<catalog-metadata><name>` to the list of XML files that
+declare that name. When two or more files share the same name, one ERROR finding
+(U001) is emitted listing every offending file path.
+
+### Collision semantics
+
+- An entry name that appears in exactly one file produces no finding.
+- An entry name that appears in N > 1 files produces **one** ERROR finding (not N),
+  listing all N paths.
+- Files that have no parseable `<name>` element are silently skipped -- their
+  errors are reported by `--check metadata` (M001) and do not contribute to
+  uniqueness collisions.
+
+### Case sensitivity
+
+Comparison is **case-sensitive**. `Foo` and `foo` are treated as distinct names
+and do NOT collide under this check. If two names differ only in case (e.g.
+`MyTool` and `mytool`), they normalise to the same source name at install time;
+the `source-name-derivation` check (S001) will warn about normalisation drift
+on the mixed-case variant.
+
+### Exit code behaviour
+
+`kanon catalog audit --check entry-name-uniqueness` exits **1** when any name
+collision exists; exits **0** when all names are unique (or no XML files exist).
+
+### Finding codes
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `U001` | ERROR | Entry name declared in more than one file. |
+
+### Example output
+
+```
+ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/repo-specs/tool-a-marketplace.xml, /path/repo-specs/tool-b-marketplace.xml. Entry names must be unique across every repo-specs/**/*-marketplace.xml file. -- Rename <name>my-tool</name> to a unique value in all but one of the listed files, or remove the duplicate catalog entries.
 ```
 
 ## Metadata check (`--check metadata`)

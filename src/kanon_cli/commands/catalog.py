@@ -367,6 +367,55 @@ def _iter_marketplace_xml(target_path: pathlib.Path) -> Iterator[pathlib.Path]:
     yield from sorted(repo_specs.rglob("*-marketplace.xml"))
 
 
+def _iter_entry_names(
+    target_path: pathlib.Path,
+) -> Iterator[tuple[pathlib.Path, str]]:
+    """Yield ``(xml_file, entry_name)`` pairs for every parseable marketplace XML.
+
+    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
+    :func:`_iter_marketplace_xml`.  For each file the function:
+
+    1. Parses the XML, silently skipping files that raise
+       :exc:`XMLParseError` (malformed-XML errors are the ``metadata``
+       check's responsibility).
+    2. Locates the single ``<catalog-metadata>`` block; skips files with
+       zero or more than one such block (structural errors are the
+       ``metadata`` check's responsibility).
+    3. Reads ``<catalog-metadata><name>``; skips files where the element
+       is absent or contains only whitespace (missing-name errors are the
+       ``metadata`` check's responsibility).
+    4. Yields ``(xml_file, stripped_entry_name)`` for every file that
+       passes all three guards.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Yields:
+        Tuples of ``(xml_file, entry_name)`` where ``entry_name`` is the
+        stripped text content of the ``<name>`` element.
+    """
+    for xml_file in _iter_marketplace_xml(target_path):
+        try:
+            tree = ET.parse(xml_file)
+        except XMLParseError:
+            # Malformed XML is the metadata check's responsibility (M003).
+            continue
+
+        root = cast("Element", tree.getroot())
+        blocks = root.findall("catalog-metadata")
+        if len(blocks) != 1:
+            # Missing or multiple blocks are the metadata check's responsibility.
+            continue
+
+        block = blocks[0]
+        name_el = block.find("name")
+        if name_el is None or not name_el.text or not name_el.text.strip():
+            # Missing or empty name is the metadata check's responsibility (M001).
+            continue
+
+        yield xml_file, name_el.text.strip()
+
+
 # ---------------------------------------------------------------------------
 # Metadata check (T2 -- soft-spot rule 1)
 # ---------------------------------------------------------------------------
@@ -434,26 +483,7 @@ def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFindin
     """
     findings: list[AuditFinding] = []
 
-    for xml_file in _iter_marketplace_xml(target_path):
-        try:
-            tree = ET.parse(xml_file)
-        except XMLParseError:
-            # Malformed XML is the metadata check's responsibility (M003).
-            continue
-
-        root = cast("Element", tree.getroot())
-        blocks = root.findall("catalog-metadata")
-        if len(blocks) != 1:
-            # Missing or multiple blocks are the metadata check's responsibility.
-            continue
-
-        block = blocks[0]
-        name_el = block.find("name")
-        if name_el is None or not name_el.text or not name_el.text.strip():
-            # Missing or empty name is the metadata check's responsibility (M001).
-            continue
-
-        entry_name = name_el.text.strip()
+    for xml_file, entry_name in _iter_entry_names(target_path):
         # Suppress derive_source_name's stderr side-effect (it prints a raw WARNING
         # when chars are outside [a-zA-Z0-9_-]). The structured S002 finding below
         # already surfaces that information; the raw print would duplicate it.
@@ -501,6 +531,73 @@ def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFindin
 
 
 AUDIT_CHECK_REGISTRY["source-name-derivation"] = _check_source_name_derivation
+
+
+# ---------------------------------------------------------------------------
+# Entry-name-uniqueness check (T4 -- soft-spot rule 3)
+# ---------------------------------------------------------------------------
+
+
+def _check_entry_name_uniqueness(target_path: pathlib.Path) -> list[AuditFinding]:
+    """Check that every ``<catalog-metadata><name>`` is unique across all XML files.
+
+    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
+    :func:`_iter_entry_names` and builds a mapping from entry name to the
+    list of XML paths that declare that name.
+
+    Emits one ERROR finding (U001) per entry name that appears in two or more
+    files.  The single finding lists all offending file paths so the author
+    can see the full collision at a glance.
+
+    Edge-case handling:
+
+    - An entry name that appears only once produces no finding.
+    - An entry name that appears in N > 1 files produces ONE finding (not N),
+      listing all N paths.
+    - XML files that fail to parse or that have no parseable ``<name>`` element
+      are silently skipped -- their errors are the ``metadata`` check's
+      responsibility (T2).  The uniqueness check never contributes duplicate
+      errors for structural XML problems.
+    - Comparison is case-sensitive: ``Foo`` and ``foo`` are distinct names and
+      do not collide here.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Returns:
+        List of :class:`AuditFinding` objects (possibly empty).
+    """
+    name_to_paths: dict[str, list[pathlib.Path]] = {}
+
+    for xml_file, entry_name in _iter_entry_names(target_path):
+        name_to_paths.setdefault(entry_name, []).append(xml_file)
+
+    findings: list[AuditFinding] = []
+    for entry_name, paths in sorted(name_to_paths.items()):
+        if len(paths) < 2:
+            continue
+        sorted_paths = sorted(str(p) for p in paths)
+        paths_display = ", ".join(sorted_paths)
+        findings.append(
+            AuditFinding(
+                kind="error",
+                code="U001",
+                message=(
+                    f"Entry name {entry_name!r} is declared in {len(paths)} files: "
+                    f"{paths_display}. "
+                    "Entry names must be unique across every repo-specs/**/*-marketplace.xml file."
+                ),
+                remediation=(
+                    f"Rename <name>{entry_name}</name> to a unique value in all but one of the "
+                    "listed files, or remove the duplicate catalog entries."
+                ),
+            )
+        )
+
+    return findings
+
+
+AUDIT_CHECK_REGISTRY["entry-name-uniqueness"] = _check_entry_name_uniqueness
 
 
 # ---------------------------------------------------------------------------

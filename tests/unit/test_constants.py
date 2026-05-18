@@ -1967,3 +1967,51 @@ class TestKanonCatalogAuditTagFormatSummaryTemplate:
 
         rendered = KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE.format(remaining=5)
         assert "tag-format" in rendered
+
+
+class TestKanonCatalogAuditLegacyDirWarningTemplate:
+    """Tests for KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE (E5-F2-S1-T7 AC-FUNC-006)."""
+
+    def test_is_str(self) -> None:
+        """KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE is a str."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        assert isinstance(KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE, str)
+
+    def test_is_non_empty(self) -> None:
+        """KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE is non-empty."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        assert len(KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE) > 0
+
+    def test_contains_version_placeholder(self) -> None:
+        """Template contains the {version} placeholder."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        assert "{version}" in KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+    def test_formatted_contains_version_string(self) -> None:
+        """Formatted template with version='1.2.3' contains '1.2.3' in the output."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="1.2.3")
+        assert "1.2.3" in rendered
+
+    def test_formatted_spec_verbatim_output(self) -> None:
+        """Formatted template matches spec Section 4.8 wording exactly."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="0.99.0")
+        expected = (
+            "Legacy catalog/ directory detected; this directory is unused by "
+            "kanon >= 0.99.0 and should be deleted; "
+            "see docs/migration-bootstrap-to-add.md"
+        )
+        assert rendered == expected
+
+    def test_mentions_migration_doc(self) -> None:
+        """Rendered template references the migration documentation path."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="2.0.0")
+        assert "docs/migration-bootstrap-to-add.md" in rendered

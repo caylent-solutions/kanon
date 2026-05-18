@@ -42,6 +42,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, cast
 
+from kanon_cli import __version__ as _kanon_version
+
 if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
@@ -56,6 +58,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_FORMAT_DEFAULT,
     KANON_CATALOG_AUDIT_FORMAT_ENV,
     KANON_CATALOG_AUDIT_FORMAT_JSON,
+    KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE,
     KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE,
     KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
@@ -804,6 +807,59 @@ AUDIT_CHECK_REGISTRY["tag-format"] = _check_tag_format_with_subprocess
 
 
 # ---------------------------------------------------------------------------
+# Legacy catalog/<name>/ directory detection (unconditional -- not selectable)
+# ---------------------------------------------------------------------------
+
+
+def _check_legacy_catalog_dir(
+    target_path: pathlib.Path,
+    version: str,
+) -> list[AuditFinding]:
+    """Detect a legacy catalog/<name>/ directory tree inside the audit target.
+
+    Runs unconditionally on every ``kanon catalog audit`` invocation regardless
+    of the ``--check`` value; the check is NOT one of the selectable check names.
+
+    Detection rule:
+    - If ``catalog/`` exists AND contains at least one immediate subdirectory =>
+      emit one WARN finding (code L001) using the message template from
+      ``KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE``.
+    - If ``catalog/`` exists but contains no subdirectories (files only) =>
+      no finding (empty residual is harmless).
+    - If ``catalog/`` does not exist => no finding.
+
+    The warning is not a hard error during the deprecation window; it will be
+    promoted to an error in a future release (spec Section 15).
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+        version: The running kanon CLI version string, interpolated into the
+            warning message so users see which release removed the directory.
+
+    Returns:
+        A list containing zero or one ``AuditFinding`` with kind ``"warn"``
+        and code ``"L001"``.
+    """
+    catalog_dir = target_path / "catalog"
+    if not catalog_dir.is_dir():
+        return []
+
+    child_dirs = [p for p in catalog_dir.iterdir() if p.is_dir()]
+    if not child_dirs:
+        return []
+
+    message = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version=version)
+    return [
+        AuditFinding(
+            kind="warn",
+            code="L001",
+            message=message,
+            remediation="",
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
 # audit_command entrypoint
 # ---------------------------------------------------------------------------
 
@@ -837,6 +893,10 @@ def audit_command(args: argparse.Namespace) -> int:
         check_fn = AUDIT_CHECK_REGISTRY.get(check_name)
         if check_fn is not None:
             findings.extend(check_fn(target_path))
+
+    # Unconditional legacy-catalog-dir check -- runs regardless of --check value
+    # and is not registered in AUDIT_CHECK_REGISTRY (not selectable via --check).
+    findings.extend(_check_legacy_catalog_dir(target_path, _kanon_version))
 
     formatted = _format_findings(findings, args.format)
     if formatted:

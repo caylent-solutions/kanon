@@ -460,6 +460,17 @@ KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE = (
     "Run 'kanon catalog audit --check tag-format' for the full list."
 )
 
+# Warning message template for the legacy catalog/<name>/ directory detection.
+# Emitted unconditionally by audit_command when a catalog/ subdirectory is found
+# containing at least one immediate child directory in the audit target.
+# Call with .format(version=<kanon-version>) to produce the final message.
+# Spec source: spec Section 4.8.
+KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
+    "Legacy catalog/ directory detected; this directory is unused by "
+    "kanon >= {version} and should be deleted; "
+    "see docs/migration-bootstrap-to-add.md"
+)
+
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this

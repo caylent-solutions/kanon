@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Fixture: legacy-catalog-dir -- valid manifest repo with a legacy catalog/ subtree.
+     The repo-specs/ directory makes this a valid audit target.
+     The catalog/sample-entry/ directory triggers the unconditional legacy-dir WARN. -->
+<manifest>
+  <catalog-metadata>
+    <name>sample-entry</name>
+    <display-name>Sample Entry</display-name>
+    <description>A sample catalog entry used by the legacy-catalog-dir audit fixture.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture</keywords>
+  </catalog-metadata>
+</manifest>

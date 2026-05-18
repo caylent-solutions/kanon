@@ -35,6 +35,8 @@ The audit target may be a local directory or a remote git repository URL.
 
 ## Valid checks
 
+### Selectable checks (`--check`)
+
 The five soft-spot checks audited by `kanon catalog audit`:
 
 | Check name | Description |
@@ -47,6 +49,32 @@ The five soft-spot checks audited by `kanon catalog audit`:
 
 Use `--check all` (or omit `--check`) to run all five checks.
 Use a comma-separated list to run a subset, e.g. `--check metadata,tag-format`.
+
+### Unconditional check (always runs)
+
+One additional check runs on **every** `kanon catalog audit` invocation
+regardless of the `--check` value. It cannot be selected or deselected:
+
+| Check | Description |
+|-------|-------------|
+| Legacy `catalog/` directory | Detects the presence of a `catalog/<name>/` directory tree in the audit target (spec Section 4.8). This tree was created by the removed `kanon bootstrap` command and is unused by kanon >= 1.0.0. |
+
+**Finding code:** `L001` (WARN).
+
+**Finding message:**
+```
+WARN: [L001] Legacy catalog/ directory detected; this directory is unused by
+kanon >= <version> and should be deleted; see docs/migration-bootstrap-to-add.md
+```
+
+where `<version>` is the running kanon CLI version.
+
+**Exit code:** The legacy-directory WARN does not cause a non-zero exit code on
+its own (exit 0). The `--strict` flag will promote it to an error in a future
+release (spec Section 15).
+
+See [docs/migration-bootstrap-to-add.md](../migration-bootstrap-to-add.md) for
+migration instructions.
 
 ## Output formats
 

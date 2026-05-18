@@ -119,6 +119,62 @@ Repeating a tag (even with different text) produces an ERROR:
 </catalog-metadata>
 ```
 
+## Source-name derivation and entry-name conventions
+
+`kanon catalog audit --check source-name-derivation` enforces spec Section 3.5
+soft-spot rule 2. Two independent findings can be raised per entry name.
+
+### Normalisation rule
+
+`derive_source_name(entry_name)` transforms a `<name>` value into a
+`KANON_SOURCE_<name>_*` shell variable token by:
+
+1. Lowercasing the entire string.
+2. Replacing every `-` (hyphen) with `_` (underscore).
+
+No other transformation is applied. The function is deterministic and idempotent.
+
+When the normalised form differs from the original entry name, `kanon catalog audit`
+emits a **WARN** finding (S001) suggesting you rename the entry to the derived form.
+
+Examples:
+
+| Entry name | Derived form | Action |
+|------------|--------------|--------|
+| `Foo-Bar` | `foo_bar` | Rename to `foo_bar` |
+| `foo-bar` | `foo_bar` | Rename to `foo_bar` |
+| `MyTool` | `mytool` | Rename to `mytool` |
+| `foo_bar` | `foo_bar` | No action needed |
+
+### Allowed entry-name character set
+
+Entry names SHOULD use only characters from `[a-zA-Z0-9_-]`. Characters outside
+this set produce a **WARN** finding (S002) because they:
+
+- May not survive shell quoting cleanly.
+- Can cause unexpected behaviour in shell variable names derived from the entry name.
+- Signal accidental whitespace, dots, or non-ASCII characters.
+
+Common problematic characters and how to fix them:
+
+| Character | Example | Fix |
+|-----------|---------|-----|
+| `.` (dot) | `foo.bar` | Use `foo_bar` |
+| ` ` (space) | `my tool` | Use `my_tool` |
+| Non-ASCII | `f\u00f3\u00f3` | Use ASCII equivalents, e.g. `foo` |
+
+Note that hyphens (`-`) are within the allowed charset but cause normalisation drift
+(S001), so using underscores directly (`_`) is preferred.
+
+### Both findings are independent
+
+An entry name can trigger both S001 and S002 simultaneously. For example, `Foo.Bar`:
+- S001: `Foo.Bar` normalises to `foo.bar` (different from `Foo.Bar`) -- drift.
+- S002: `Foo.Bar` contains `.` -- out-of-charset.
+
+The recommended fix is to use a name like `foo_bar` which is already normalised and
+uses only the allowed character set.
+
 ## Running the audit locally
 
 To check your manifest repo before pushing:
@@ -148,6 +204,8 @@ Exit code 1 means at least one ERROR finding was produced.
 | `M004` | ERROR | Zero `<catalog-metadata>` blocks found. |
 | `M005` | ERROR | More than one `<catalog-metadata>` block found. |
 | `M006` | ERROR | Duplicate child element within `<catalog-metadata>`. |
+| `S001` | WARN | Entry name differs from its normalised form (source-name derivation drift). |
+| `S002` | WARN | Entry name contains characters outside `[a-zA-Z0-9_-]`. |
 
 ## Related documentation
 

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Fixture: entry name 'foo-bar' triggers soft-spot rule 2 normalisation drift.
+     derive_source_name('foo-bar') = 'foo_bar'; 'foo-bar' != 'foo_bar' => S001 WARN.
+     The name is within the allowed charset [a-zA-Z0-9_-] so no S002 warning fires. -->
+<package>
+  <catalog-metadata>
+    <name>foo-bar</name>
+    <display-name>Foo Bar Tool</display-name>
+    <description>A tool with a hyphenated entry name.</description>
+    <version>2.0.0</version>
+    <type>library</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture</keywords>
+  </catalog-metadata>
+</package>

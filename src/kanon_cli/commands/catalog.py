@@ -29,16 +29,23 @@ Spec reference: spec/kanon-list-add-lock-features-spec.md Section 4.8.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING, cast
 
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element
+
+import defusedxml.ElementTree as ET
 from kanon_cli.constants import (
     KANON_CACHE_DIR_ENV,
     KANON_CACHE_DIR_MODE,
@@ -48,9 +55,14 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_FORMAT_ENV,
     KANON_CATALOG_AUDIT_FORMAT_JSON,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
+    KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE,
 )
-from kanon_cli.core.metadata import audit_catalog_metadata
+from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name
 from kanon_cli.core.url import canonicalize_repo_url
+
+# Alias for the XML parse error type from defusedxml to avoid importing from the
+# standard xml.etree.ElementTree (which triggers bandit B405).
+XMLParseError = ET.ParseError
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +348,26 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Shared XML walker (used by metadata and source-name-derivation checks)
+# ---------------------------------------------------------------------------
+
+
+def _iter_marketplace_xml(target_path: pathlib.Path) -> Iterator[pathlib.Path]:
+    """Yield every ``*-marketplace.xml`` file under ``<target_path>/repo-specs/``.
+
+    Files are yielded in sorted order for deterministic output.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Yields:
+        Absolute paths to ``*-marketplace.xml`` files.
+    """
+    repo_specs = target_path / "repo-specs"
+    yield from sorted(repo_specs.rglob("*-marketplace.xml"))
+
+
+# ---------------------------------------------------------------------------
 # Metadata check (T2 -- soft-spot rule 1)
 # ---------------------------------------------------------------------------
 
@@ -343,7 +375,8 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
 def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
     """Check every ``*-marketplace.xml`` under ``repo-specs/`` for metadata issues.
 
-    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` and calls
+    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
+    :func:`_iter_marketplace_xml` and calls
     :func:`kanon_cli.core.metadata.audit_catalog_metadata` on each file.
 
     Converts each :class:`MetadataAuditIssue` returned into an
@@ -356,10 +389,9 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
     Returns:
         List of :class:`AuditFinding` objects (possibly empty).
     """
-    repo_specs = target_path / "repo-specs"
     findings: list[AuditFinding] = []
 
-    for xml_file in sorted(repo_specs.rglob("*-marketplace.xml")):
+    for xml_file in _iter_marketplace_xml(target_path):
         for issue in audit_catalog_metadata(xml_file):
             findings.append(
                 AuditFinding(
@@ -374,6 +406,101 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
 
 
 AUDIT_CHECK_REGISTRY["metadata"] = _check_metadata
+
+
+# ---------------------------------------------------------------------------
+# Source-name-derivation check (T3 -- soft-spot rule 2)
+# ---------------------------------------------------------------------------
+
+
+def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFinding]:
+    """Check every ``*-marketplace.xml`` under ``repo-specs/`` for soft-spot rule 2 issues.
+
+    For each file:
+    - Reads ``<catalog-metadata><name>`` (the entry name).
+    - Computes the normalised source name via ``derive_source_name(entry_name)``.
+    - Emits a WARN finding (S001) when the normalised form differs from the
+      original entry name (normalisation drift).
+    - Emits a WARN finding (S002) when the entry name contains characters
+      outside ``[a-zA-Z0-9_-]`` (out-of-charset).
+
+    Both findings are independent and can both fire for the same entry.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Returns:
+        List of :class:`AuditFinding` objects (possibly empty).
+    """
+    findings: list[AuditFinding] = []
+
+    for xml_file in _iter_marketplace_xml(target_path):
+        try:
+            tree = ET.parse(xml_file)
+        except XMLParseError:
+            # Malformed XML is the metadata check's responsibility (M003).
+            continue
+
+        root = cast("Element", tree.getroot())
+        blocks = root.findall("catalog-metadata")
+        if len(blocks) != 1:
+            # Missing or multiple blocks are the metadata check's responsibility.
+            continue
+
+        block = blocks[0]
+        name_el = block.find("name")
+        if name_el is None or not name_el.text or not name_el.text.strip():
+            # Missing or empty name is the metadata check's responsibility (M001).
+            continue
+
+        entry_name = name_el.text.strip()
+        # Suppress derive_source_name's stderr side-effect (it prints a raw WARNING
+        # when chars are outside [a-zA-Z0-9_-]). The structured S002 finding below
+        # already surfaces that information; the raw print would duplicate it.
+        with contextlib.redirect_stderr(io.StringIO()):
+            derived = derive_source_name(entry_name)
+
+        # Check 1: normalisation drift (S001).
+        if derived != entry_name:
+            findings.append(
+                AuditFinding(
+                    kind="warn",
+                    code="S001",
+                    message=(
+                        f"{xml_file}: entry name {entry_name!r} normalises to "
+                        f"{derived!r} via derive_source_name. "
+                        "Consider renaming the entry to match the derived form "
+                        "to avoid surprises in shell variable names and .kanon files."
+                    ),
+                    remediation=(
+                        f"Rename <name>{entry_name}</name> to <name>{derived}</name> in the <catalog-metadata> block."
+                    ),
+                )
+            )
+
+        # Check 2: out-of-charset (S002).
+        if not KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE.fullmatch(entry_name):
+            findings.append(
+                AuditFinding(
+                    kind="warn",
+                    code="S002",
+                    message=(
+                        f"{xml_file}: entry name {entry_name!r} contains characters "
+                        "outside the recommended set [a-zA-Z0-9_-]. "
+                        "Characters outside this set may not survive shell quoting "
+                        "cleanly and can cause unexpected behaviour in shell variable names."
+                    ),
+                    remediation=(
+                        f"Rename <name>{entry_name}</name> to use only [a-zA-Z0-9_-] "
+                        "characters in the <catalog-metadata> block."
+                    ),
+                )
+            )
+
+    return findings
+
+
+AUDIT_CHECK_REGISTRY["source-name-derivation"] = _check_source_name_derivation
 
 
 # ---------------------------------------------------------------------------

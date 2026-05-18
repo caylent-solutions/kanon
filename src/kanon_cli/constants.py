@@ -240,6 +240,15 @@ _NO_COLOR_ACTIVE: bool = False
 # Characters outside this set in an entry name trigger a shell-quoting warning.
 RECOMMENDED_CHAR_RE = re.compile(r"^[a-zA-Z0-9_-]*$")
 
+# Compiled regex for the allowed catalog entry-name character set.
+# Alias of RECOMMENDED_CHAR_RE -- both enforce the same character set
+# [a-zA-Z0-9_-]. Used by _check_source_name_derivation in catalog.py to flag
+# entry names that contain characters outside this set. These characters are
+# legal but unusual; the warning helps authors spot accidental whitespace, dots,
+# or non-ASCII before they propagate into shell variable names.
+# Defined here (not inline in catalog.py) so the rule is testable data.
+KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE = RECOMMENDED_CHAR_RE
+
 # -- kanon list --tree threshold guardrail --
 # Maximum number of catalog entries allowed before the threshold guardrail
 # requires the operator to supply a filter (positional substring, --regex,

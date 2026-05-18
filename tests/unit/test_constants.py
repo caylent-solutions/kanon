@@ -1778,3 +1778,72 @@ class TestKanonCatalogMetadataFieldLists:
         required = set(KANON_CATALOG_METADATA_REQUIRED_FIELDS)
         recommended = set(KANON_CATALOG_METADATA_RECOMMENDED_FIELDS)
         assert required.isdisjoint(recommended)
+
+
+# ---------------------------------------------------------------------------
+# KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE (E5-F2-S1-T3 AC-FUNC-006)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestKanonCatalogEntryNameAllowedCharsRe:
+    """KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE is a compiled regex in constants.py.
+
+    AC-FUNC-006: The constant lives in constants.py (not inline in catalog.py)
+    and correctly classifies entry names as within-charset or out-of-charset.
+    """
+
+    def test_constant_exists_in_constants_module(self) -> None:
+        """KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE is importable from constants."""
+        from kanon_cli.constants import KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE
+
+        assert KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE is not None
+
+    def test_constant_is_compiled_regex(self) -> None:
+        """KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE is a compiled re.Pattern."""
+        import re
+
+        from kanon_cli.constants import KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE
+
+        assert isinstance(KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE, re.Pattern)
+
+    @pytest.mark.parametrize(
+        "entry_name",
+        [
+            "foo_bar",
+            "my-tool",
+            "FOO",
+            "foo123",
+            "a",
+            "ABC-def_123",
+            "",
+        ],
+    )
+    def test_allowed_chars_matches_valid_names(self, entry_name: str) -> None:
+        """Entry names using only [a-zA-Z0-9_-] must fullmatch the pattern."""
+        from kanon_cli.constants import KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE
+
+        assert KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE.fullmatch(entry_name) is not None, (
+            f"Expected {entry_name!r} to match KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE"
+        )
+
+    @pytest.mark.parametrize(
+        "entry_name",
+        [
+            "foo.bar",
+            "foo bar",
+            "foo\tbar",
+            "foo@bar",
+            "foo/bar",
+            "f\u00f3\u00f3",
+            "foo!",
+            "foo#bar",
+        ],
+    )
+    def test_disallowed_chars_do_not_match(self, entry_name: str) -> None:
+        """Entry names with out-of-charset chars must NOT fullmatch the pattern."""
+        from kanon_cli.constants import KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE
+
+        assert KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE.fullmatch(entry_name) is None, (
+            f"Expected {entry_name!r} NOT to match KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE"
+        )

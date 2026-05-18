@@ -40,7 +40,7 @@ The five soft-spot checks audited by `kanon catalog audit`:
 | Check name | Description |
 |------------|-------------|
 | `metadata` | Verifies required fields (`name`, `display-name`, `description`, `version`) are present and non-empty in every catalog entry's XML metadata. |
-| `source-name-derivation` | Verifies that the source name derived from the entry URL matches the declared name (soft-spot rule 2). |
+| `source-name-derivation` | Verifies that each entry name in `<catalog-metadata><name>` is in its normalised form (lowercase, hyphens replaced with underscores) and uses only characters from `[a-zA-Z0-9_-]` (spec Section 3.5 soft-spot rule 2). |
 | `entry-name-uniqueness` | Verifies that no two entries share the same derived source name within the catalog (soft-spot rule 3). |
 | `remote-url` | Verifies that every entry's `source_url` uses a permitted scheme (HTTPS by default; see `docs/configuration.md` for `KANON_ALLOW_INSECURE_REMOTES`). |
 | `tag-format` | Verifies that all tags referenced by catalog entries are PEP 440-compliant version strings (soft-spot rule 5). |
@@ -104,6 +104,75 @@ spec Section 3.6 (trust model / credential isolation).
 `KANON_CACHE_DIR` must be set to use a remote audit target. If unset, `kanon
 catalog audit` exits with an error when a remote source is supplied.
 
+## Source-name-derivation check (`--check source-name-derivation`)
+
+The `source-name-derivation` check inspects every `*-marketplace.xml` file under
+`repo-specs/` for spec Section 3.5 soft-spot rule 2 compliance.
+
+For each file it reads `<catalog-metadata><name>` (the entry name) and applies two
+independent checks:
+
+### Normalisation drift (S001)
+
+`derive_source_name(entry_name)` normalises an entry name by lowercasing it and
+replacing every `-` with `_`. When the normalised form differs from the original
+entry name, a **WARN** finding is produced naming both the original and the derived
+form so the catalog author can decide whether to rename the entry.
+
+Examples of entry names that trigger drift warnings:
+
+| Entry name | Derived form | Reason |
+|------------|--------------|--------|
+| `Foo-Bar` | `foo_bar` | uppercase + hyphen |
+| `foo-bar` | `foo_bar` | hyphen |
+| `Foo` | `foo` | uppercase |
+
+Entry names already in normalised form (e.g. `foo_bar`) produce zero drift findings.
+
+### Out-of-charset (S002)
+
+Entry names containing characters outside `[a-zA-Z0-9_-]` produce a **WARN** finding.
+These characters are legal in XML but unusual; the warning helps authors spot
+accidental whitespace, dots, or non-ASCII before they propagate into shell variable
+names and `.kanon` files.
+
+Examples of entry names that trigger charset warnings:
+
+| Entry name | Bad character |
+|------------|---------------|
+| `foo.bar` | dot |
+| `foo bar` | space |
+| `f\u00f3\u00f3` | non-ASCII |
+
+### Combining both checks
+
+Both findings are independent. An entry name can produce both a drift warning and a
+charset warning (e.g. `Foo.Bar` -- uppercase drift AND dot out-of-charset).
+
+Entry name `foo.bar` produces only the S002 charset warning: `derive_source_name('foo.bar')`
+returns `'foo.bar'` (no drift), but `.` is out-of-charset.
+
+### Exit code behaviour
+
+`kanon catalog audit --check source-name-derivation` exits **0** even when warnings
+are present. All findings from this check are WARN-level; no ERROR findings are
+produced. The `--strict` flag will promote WARNs to ERRORs and is not yet
+active.
+
+### Finding codes
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `S001` | WARN | Entry name differs from its normalised form (`derive_source_name` drift). |
+| `S002` | WARN | Entry name contains characters outside `[a-zA-Z0-9_-]`. |
+
+### Example output
+
+```
+WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name. Consider renaming the entry to match the derived form to avoid surprises in shell variable names and .kanon files. -- Rename <name>Foo-Bar</name> to <name>foo_bar</name> in the <catalog-metadata> block.
+WARN: [S002] /path/repo-specs/tool-marketplace.xml: entry name 'foo.bar' contains characters outside the recommended set [a-zA-Z0-9_-]. Characters outside this set may not survive shell quoting cleanly and can cause unexpected behaviour in shell variable names. -- Rename <name>foo.bar</name> to use only [a-zA-Z0-9_-] characters in the <catalog-metadata> block.
+```
+
 ## Metadata check (`--check metadata`)
 
 The `metadata` check inspects every `*-marketplace.xml` file under `repo-specs/` for
@@ -146,7 +215,7 @@ The following fields SHOULD be present. A missing field produces one **WARN** fi
 `kanon catalog audit --check metadata` exits **1** when any ERROR-level finding is
 present (missing required field, duplicate child, multiple blocks, or malformed XML).
 It exits **0** when only WARN-level findings are present (missing recommended fields).
-The `--strict` flag (T8) will promote WARNs to ERRORs and is not yet active.
+The `--strict` flag will promote WARNs to ERRORs and is not yet active.
 
 ### Example output
 

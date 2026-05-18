@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Fixture: entry name 'Foo' triggers soft-spot rule 2 normalisation drift.
+     derive_source_name('Foo') = 'foo'; 'Foo' != 'foo' => S001 WARN. -->
+<package>
+  <catalog-metadata>
+    <name>Foo</name>
+    <display-name>Foo Tool</display-name>
+    <description>A tool with an uppercase entry name.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture</keywords>
+  </catalog-metadata>
+</package>

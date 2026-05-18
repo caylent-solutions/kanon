@@ -2,129 +2,176 @@
 
 kanon is designed around a strict trust model that keeps it safe to run in
 regulated, multi-tenant CI/CD environments. This document describes the
-security invariants enforced by the tooling and the automated tests that
-verify them.
+trust model from spec Section 3.6, the threat surface operators accept when
+they configure a manifest repo, and the interactions kanon explicitly never
+performs.
 
 For the full specification see `spec/kanon-list-add-lock-features-spec.md`,
-Section 3.6 (trust model) and Section 10 (CI enforcement).
+Section 3.6 (trust model) and Section 8 (the `docs/security-model.md` NEW
+bullet).
 
-## Provider-agnosticism
+## Trust model
 
-kanon is provider-agnostic (spec Section 3.6, invariant 1). This means:
+`kanon` clones and reads manifest repos, resolves transitive XML manifests,
+and (via `kanon install`) `git clone`s every `<project>` reference. Every
+step executes git operations against URLs the catalog author controls.
+**Manifest-repo content is trusted code from the operator's perspective**,
+equivalent in trust level to a pip index URL or an npm registry.
 
-- kanon NEVER calls provider HTTP APIs (`api.github.com`, `gitlab.com/api`,
-  `bitbucket.org/!api`, `dev.azure.com/_apis`).
-- kanon NEVER shells out to provider CLIs (`gh`, `glab`, `bb`, `tea`,
-  `aws codecommit`, `az repos`).
-- Every git interaction is via the `git` binary only.
-- kanon NEVER prompts for credentials, caches them, or reads them from
-  anywhere except by delegating to the operator's git client.
+This spec does NOT introduce signing, attestation, or a central allow-list.
+The trust model is:
 
-## Provider-agnosticism CI test
+- **The operator chooses the catalog source.** Whoever can write to the
+  manifest repo can change what `kanon install` fetches.
 
-The provider-agnosticism invariant is enforced in CI by a tree-wide grep test:
+- **Provider-agnostic.** Any git URL is acceptable: any vendor-hosted git
+  service, self-hosted GitOps, local `file://` paths for testing. `kanon`
+  never inspects the host, never special-cases known providers, never
+  reaches for a provider CLI. Operators on git providers without a public
+  CLI (or behind a corporate firewall using a self-hosted git server) are
+  first-class users.
 
-- **Test file:** `tests/functional/test_provider_agnostic.py`
-- **Allowlist file:** `tests/integration/provider_allowlist.txt`
-- **Spec references:** Section 3.6 (trust model), Section 10 line 1023
-  (CI grep test requirement), Section 12 acceptance item 20.
+- **No credential handling.** kanon NEVER prompts for credentials, NEVER
+  caches them, NEVER interacts with auth providers. Every `git ls-remote`
+  and `git clone` inherits the operator's local git client configuration:
+  `~/.gitconfig`, credential helpers (e.g., `osxkeychain`,
+  `git-credential-oauth`, `git-credential-manager`), SSH agent and
+  `~/.ssh/config`, `url.insteadOf` rewrites. Auth setup is the operator's
+  responsibility; see [`docs/git-auth-setup.md`](git-auth-setup.md) for
+  supported configurations on common platforms.
 
-### How the test works
+- **HTTPS by default for `<remote>` URLs in manifests.** `kanon catalog
+  audit` and existing `kanon validate marketplace` checks refuse non-HTTPS
+  `<remote>` URLs unless `KANON_ALLOW_INSECURE_REMOTES=1` is explicitly
+  set. SSH URLs (`git@host:org/repo.git` or `ssh://git@host/org/repo`) are
+  HTTPS-equivalent for trust purposes and allowed. `file://` URLs are
+  allowed only when `KANON_ALLOW_INSECURE_REMOTES=1` (intended for tests
+  and local fixtures only). The operator's choice between HTTPS and SSH
+  transports is handled by their git client's `url.insteadOf` rewrites;
+  kanon does not see the difference.
 
-1. The test enumerates the tracked file set via `git ls-files` (local
-   plumbing command -- no provider calls).
-2. Files under `docs/`, `tests/fixtures/`, and `.git/` are always excluded
-   (AC-FUNC-005 spec-mandated blanket exemptions, built into the test constant
-   `_ALWAYS_ALLOWLISTED_PREFIXES`).
-3. Additional path-specific exemptions are read from
-   `tests/integration/provider_allowlist.txt` (see format below). Infrastructure
-   paths such as `.devcontainer/`, `.github/`, `src/kanon_cli/repo/`, and
-   `uv.lock` are declared here rather than in the built-in constant.
-4. Each non-exempted tracked file is scanned line by line for:
-   - Forbidden CLI tokens: `\bgh\b`, `\bglab\b`, `\bbb\b`, `\btea\b`,
-     `aws codecommit`, `az repos`
-   - Forbidden hostnames: `api.github.com`, `gitlab.com/api`,
-     `bitbucket.org/!api`, `dev.azure.com/_apis`
-5. On any match the test fails with the repo-relative file path, the
-   1-based line number, the matched token, and a remediation hint.
+- **The catalog source is surfaced.** `kanon doctor` prints the effective
+  catalog source so the operator can verify before running side-effecting
+  commands. This catches accidental leakage of `KANON_CATALOG_SOURCE` from
+  a shell profile into an unrelated workspace. See
+  [`docs/doctor.md`](cli/doctor.md) for the full `kanon doctor` reference.
 
-### Allowlist format
+- **Cache files are user-private.** `${KANON_CACHE_DIR}` and every file
+  under it are created with mode `0700` (directories) and `0600` (files)
+  to prevent another local user from poisoning completion candidates.
 
-`tests/integration/provider_allowlist.txt` lists files and directories that
-are legitimately exempt from the scan (e.g., the vendored repo tool, CI
-workflow files, lock files). Each non-comment, non-blank line must have the
-shape:
+- **Completion candidates are shell-escaped.** Cached names that contain
+  shell metacharacters or embedded newlines are filtered out to prevent
+  them from breaking the shell completion protocol or injecting characters
+  into the shell line.
 
-```
-<repo-relative-path>:<justification>
-```
+See [`docs/configuration.md`](configuration.md) for the full set of
+environment variables that control kanon's behaviour, including
+`KANON_ALLOW_INSECURE_REMOTES`, `KANON_CACHE_DIR`, and
+`KANON_CATALOG_SOURCE`.
 
-where `<justification>` is non-empty free text explaining why a human
-reviewer accepted the exemption. Lines starting with `#` are comments. Blank
-lines are ignored. A malformed line causes the test to fail with a
-`ValueError` naming the line number.
+## What manifest repos can do to you
 
-Paths ending with `/` are treated as directory prefix exemptions -- every
-tracked file whose path starts with that prefix is excluded from scanning.
-This allows exempting an entire directory tree (e.g., `.github/`) with a
-single entry rather than one entry per file.
+When you configure a catalog source, you are trusting that repository to the
+same degree you trust a package registry. Operators should understand the
+following threat surface:
 
-Adding an entry to the allowlist requires a code review. Production source
-files under `src/kanon_cli/` (excluding the vendored `src/kanon_cli/repo/`
-subtree) MUST NOT appear in the allowlist; violations of the
-provider-agnosticism invariant in production code must be fixed, not
-exempted.
+- **Arbitrary `git clone` URLs.** A manifest repo can reference any
+  `<remote>` URL. `kanon install` will attempt to clone every URL named in
+  the resolved manifest. A compromised or malicious manifest repo can direct
+  your workstation or CI runner to clone from an attacker-controlled host.
 
-See `docs/contributing.md` for guidance on adding multi-provider parity test
-fixtures and the workflow for updating the allowlist.
+- **Arbitrary tag-name pinning.** A manifest repo controls the exact tag
+  each `<project>` resolves to. A catalog author can change what a tag
+  reference points to on their git host. Lockfiles pin the SHA at lock
+  time; always verify the lockfile after `kanon add` or `kanon lock
+  --refresh`.
 
-## Auth delegation
+- **Arbitrary `<include>` chain extension.** Manifest files can include
+  other manifest files via `<include>`. A manifest repo can extend its
+  own include graph at any time, pulling in additional manifests from the
+  same or other repositories.
 
-kanon detects authentication errors in `git` stderr output (via
-`GIT_AUTH_ERROR_PATTERNS` in `src/kanon_cli/constants.py`) for retry-policy
-purposes only. It does not prompt for credentials or cache them. All
-credential resolution is delegated to the operator's git credential helper.
+- **`<remote>` URL rewriting.** A `<remote>` element in a manifest file
+  can map a logical name to any fetch URL. This mapping can be changed by
+  the catalog author in subsequent commits.
 
-## HTTPS-by-default policy
+Mitigations: pin catalog sources to a specific git SHA via
+`KANON_CATALOG_SOURCE=<url>@<sha>`, review lockfile diffs before applying
+them, and restrict write access to your manifest repo. See
+[`docs/configuration.md`](configuration.md) for catalog-source pinning.
 
-kanon enforces an HTTPS-by-default trust model for remote URLs used in manifest
-resolution (spec Section 3.6). Only the following URL schemes are accepted by
-default:
+## What kanon does NOT do
 
-- `https://` -- HTTPS (always accepted).
-- `git@host:org/repo.git` -- SSH SCP shorthand (treated as HTTPS-equivalent).
-- `ssh://git@host/org/repo` -- Explicit SSH protocol (treated as HTTPS-equivalent).
+kanon is deliberately scoped to git-binary operations only. The following
+interactions are permanently out of scope:
 
-### SSH-equivalence
+- **No credential handling.** kanon does not prompt for credentials, store
+  them, read them from environment variables such as `GITHUB_TOKEN` or
+  `GITLAB_TOKEN`, or pass them to any subprocess. All authentication is
+  delegated to the operator's git client (credential helpers, SSH agent).
 
-SSH URLs (`git@...` shorthand and `ssh://...`) are treated as equivalent to HTTPS
-for trust purposes. Both delegate credential resolution to the operator's git
-credential helper (SSH key agent or credential store) without kanon prompting for
-or caching credentials.
+- **No provider HTTP API calls.** kanon never contacts provider-specific
+  REST or GraphQL APIs. Examples of calls kanon does not make:
+  `api.github.com`, `gitlab.com/api/v4`, `bitbucket.org/!api`,
+  `dev.azure.com/_apis`, `api.codecommit.*`, or any vendor-hosted
+  registry endpoint.
 
-### Non-HTTPS URL rejection
+- **No provider-CLI shell-outs.** kanon never invokes provider-specific
+  command-line tools. Examples: `gh` (GitHub CLI), `glab` (GitLab CLI),
+  `bb` (Bitbucket CLI), `tea` (Gitea CLI), `aws codecommit`,
+  `az repos`. Every git interaction goes through the `git` binary only.
 
-Plain HTTP (`http://`), `file://`, and all other URL schemes are rejected by the
-`remote-url` catalog audit check (R002 ERROR) unless `KANON_ALLOW_INSECURE_REMOTES=1`
-is set in the environment.
+- **No interactive prompts.** kanon is non-interactive in all code paths.
+  It never reads from a TTY, never pauses waiting for user input, and
+  never displays a confirmation dialog. Commands that encounter an
+  unrecoverable error exit immediately with a non-zero status and a
+  message on stderr.
 
-The opt-out variable is intended for local test fixtures and offline development
-only. Production CI pipelines MUST NOT set `KANON_ALLOW_INSECURE_REMOTES=1`.
+- **No implicit trust based on host.** kanon does not treat any git host
+  as canonical, trusted, or special. A URL hosted on a well-known domain
+  receives no additional trust relative to a self-hosted server.
 
-### Query-string and fragment prohibition
+## Auth-error retry-skip policy
 
-Fetch URLs containing a query string (`?`) or fragment (`#`) are always rejected
-(R003 ERROR) regardless of the scheme and regardless of `KANON_ALLOW_INSECURE_REMOTES`.
-URL canonicalization is undefined for such values (spec Section 4.8, E1-F2-S1-T1).
+kanon detects authentication errors in `git` stderr output for
+**retry-policy purposes only**. The patterns are defined in
+`GIT_AUTH_ERROR_PATTERNS` in `src/kanon_cli/constants.py` (examples:
+`Authentication failed`, `Permission denied`).
 
-### Catalog audit enforcement
+When a `git ls-remote` call exits non-zero and its stderr matches one of
+these patterns, kanon skips the remaining retry attempts immediately. This
+avoids locking out accounts that have rate-limited or account-lock policies
+on repeated failed authentication attempts.
 
-The HTTPS-by-default policy is enforced statically by `kanon catalog audit --check
-remote-url`. See `docs/cli/catalog-audit.md` for the full `remote-url` check
-reference including finding codes R001, R002, and R003.
+This detection is **not** credential handling. kanon reads the stderr string
+only to decide whether to retry; it does not extract, log, store, or act on
+any credential material in the output.
 
-## Subprocess safety
+Retry behaviour is governed by `KANON_GIT_RETRY_COUNT` (number of attempts)
+and `KANON_GIT_RETRY_DELAY` (seconds between attempts). See
+[`docs/configuration.md`](configuration.md) for the full reference.
 
-kanon does not use `eval()`, `exec()`, or dynamic code execution with
-external input. All subprocess calls use list-form arguments (never
-shell=True with user-supplied strings) and explicit `cwd` settings.
+## Out of scope
+
+The following security features are explicitly out of scope for this
+specification and tracked as future work (spec Section 3.6):
+
+- Signed catalogs (e.g., in-toto attestations attached to manifest repo
+  tags).
+- Transparency logs for catalog mutations.
+- Central registry of approved manifest repos.
+- Allow-list of approved manifest repos enforced by kanon itself.
+
+## See also
+
+- [`docs/git-auth-setup.md`](git-auth-setup.md) -- configuring credential
+  helpers, SSH agents, and `url.insteadOf` rewrites so kanon can reach
+  your manifest repos without interactive prompts.
+- [`docs/configuration.md`](configuration.md) -- full reference for
+  environment variables including `KANON_CATALOG_SOURCE`,
+  `KANON_ALLOW_INSECURE_REMOTES`, `KANON_GIT_RETRY_COUNT`,
+  `KANON_GIT_RETRY_DELAY`, and `KANON_CACHE_DIR`.
+- [`docs/doctor.md`](cli/doctor.md) -- `kanon doctor` command reference,
+  including how the effective catalog source is surfaced and what the
+  remote-reachability sanity check does.

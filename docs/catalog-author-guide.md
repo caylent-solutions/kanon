@@ -232,6 +232,74 @@ The two checks cover complementary scenarios:
 
 Run both checks together (`--check all`) for complete coverage.
 
+## Remote-URL discoverability (soft-spot rule 4)
+
+`kanon catalog audit --check remote-url` enforces spec Section 3.5 soft-spot rule 4.
+Every `<project remote="X">` in a marketplace XML must have a corresponding
+`<remote name="X" fetch="...">` definition discoverable via the include chain.
+
+### How remote resolution works
+
+The check performs a depth-first walk of every `<include>` chain reachable from
+the marketplace XML and collects all `<remote name="..." fetch="...">` definitions.
+For each `<project remote="X">`:
+
+1. If no `<remote name="X">` is found anywhere in the reachable chain =>
+   **R001 ERROR** (unresolvable remote).
+2. If the resolved fetch URL contains a `?` or `#` => **R003 ERROR** (query string
+   or fragment in URL; canonicalization undefined).
+3. If the resolved fetch URL uses a non-HTTPS/SSH scheme and
+   `KANON_ALLOW_INSECURE_REMOTES` is not `1` => **R002 ERROR** (insecure URL).
+
+### Allowed URL schemes
+
+| Scheme | Status | Notes |
+|--------|--------|-------|
+| `https://` | Accepted | Always trusted. |
+| `git@host:org/repo.git` | Accepted | SSH SCP shorthand; treated as HTTPS-equivalent. |
+| `ssh://git@host/path` | Accepted | Explicit SSH; treated as HTTPS-equivalent. |
+| `http://` | Rejected by default | Allowed with `KANON_ALLOW_INSECURE_REMOTES=1`. |
+| `file://` | Rejected by default | Allowed with `KANON_ALLOW_INSECURE_REMOTES=1`. |
+| `https://...?query` | Always rejected | R003: query strings are not allowed. |
+| `https://...#frag` | Always rejected | R003: fragments are not allowed. |
+
+### Example: remote defined in a helper include
+
+A common pattern is to declare shared `<remote>` definitions in a helper XML that
+multiple marketplace files include:
+
+```xml
+<!-- repo-specs/helpers/remotes.xml -->
+<?xml version="1.0"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/my-org" />
+</manifest>
+```
+
+```xml
+<!-- repo-specs/my-tool-marketplace.xml -->
+<?xml version="1.0"?>
+<manifest>
+  <catalog-metadata>
+    <name>my-tool</name>
+    ...
+  </catalog-metadata>
+  <include name="repo-specs/helpers/remotes.xml" />
+  <project name="my-tool" remote="origin" path="src/my-tool" />
+</manifest>
+```
+
+The check resolves `remote="origin"` to `https://github.com/my-org` via the
+include, accepts the HTTPS URL, and produces zero findings.
+
+### Finding codes
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `R001` | ERROR | `<project remote="X">` has no matching `<remote name="X">` in the include chain. |
+| `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without opt-out. |
+| `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
+
 ## Running the audit locally
 
 To check your manifest repo before pushing:
@@ -264,6 +332,9 @@ Exit code 1 means at least one ERROR finding was produced.
 | `S001` | WARN | Entry name differs from its normalised form (source-name derivation drift). |
 | `S002` | WARN | Entry name contains characters outside `[a-zA-Z0-9_-]`. |
 | `U001` | ERROR | Entry name declared in more than one file (entry-name uniqueness collision). |
+| `R001` | ERROR | `<project remote="X">` has no matching `<remote name="X">` in the include chain. |
+| `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without `KANON_ALLOW_INSECURE_REMOTES=1`. |
+| `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
 
 ## Related documentation
 

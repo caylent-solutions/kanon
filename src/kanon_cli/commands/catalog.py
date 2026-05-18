@@ -57,6 +57,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_VALID_CHECKS,
     KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE,
 )
+from kanon_cli.core.manifest import _iter_marketplace_xml_paths, collect_remote_url_findings
 from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name
 from kanon_cli.core.url import canonicalize_repo_url
 
@@ -352,28 +353,13 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _iter_marketplace_xml(target_path: pathlib.Path) -> Iterator[pathlib.Path]:
-    """Yield every ``*-marketplace.xml`` file under ``<target_path>/repo-specs/``.
-
-    Files are yielded in sorted order for deterministic output.
-
-    Args:
-        target_path: Root of the manifest repo (must contain ``repo-specs/``).
-
-    Yields:
-        Absolute paths to ``*-marketplace.xml`` files.
-    """
-    repo_specs = target_path / "repo-specs"
-    yield from sorted(repo_specs.rglob("*-marketplace.xml"))
-
-
 def _iter_entry_names(
     target_path: pathlib.Path,
 ) -> Iterator[tuple[pathlib.Path, str]]:
     """Yield ``(xml_file, entry_name)`` pairs for every parseable marketplace XML.
 
     Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
-    :func:`_iter_marketplace_xml`.  For each file the function:
+    :func:`kanon_cli.core.manifest._iter_marketplace_xml_paths`.  For each file the function:
 
     1. Parses the XML, silently skipping files that raise
        :exc:`XMLParseError` (malformed-XML errors are the ``metadata``
@@ -394,7 +380,7 @@ def _iter_entry_names(
         Tuples of ``(xml_file, entry_name)`` where ``entry_name`` is the
         stripped text content of the ``<name>`` element.
     """
-    for xml_file in _iter_marketplace_xml(target_path):
+    for xml_file in _iter_marketplace_xml_paths(target_path):
         try:
             tree = ET.parse(xml_file)
         except XMLParseError:
@@ -425,7 +411,7 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
     """Check every ``*-marketplace.xml`` under ``repo-specs/`` for metadata issues.
 
     Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
-    :func:`_iter_marketplace_xml` and calls
+    :func:`kanon_cli.core.manifest._iter_marketplace_xml_paths` and calls
     :func:`kanon_cli.core.metadata.audit_catalog_metadata` on each file.
 
     Converts each :class:`MetadataAuditIssue` returned into an
@@ -440,7 +426,7 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
     """
     findings: list[AuditFinding] = []
 
-    for xml_file in _iter_marketplace_xml(target_path):
+    for xml_file in _iter_marketplace_xml_paths(target_path):
         for issue in audit_catalog_metadata(xml_file):
             findings.append(
                 AuditFinding(
@@ -598,6 +584,74 @@ def _check_entry_name_uniqueness(target_path: pathlib.Path) -> list[AuditFinding
 
 
 AUDIT_CHECK_REGISTRY["entry-name-uniqueness"] = _check_entry_name_uniqueness
+
+
+# ---------------------------------------------------------------------------
+# Remote-URL check (T5 -- soft-spot rule 4)
+# ---------------------------------------------------------------------------
+
+
+def _check_remote_url(
+    target_path: pathlib.Path,
+    env: dict[str, str] | None = None,
+) -> list[AuditFinding]:
+    """Check every ``*-marketplace.xml`` under ``repo-specs/`` for remote-URL issues.
+
+    Walks every ``<include>`` chain reachable from each marketplace XML
+    (depth-first, cycle-safe) and resolves every ``<project remote="X">``
+    to a concrete fetch URL via the corresponding ``<remote name="X">``
+    definition.  Produces one of three error codes:
+
+    - R001: ``<remote name="X">`` cannot be resolved anywhere in the
+      reachable include chain.
+    - R002: The resolved fetch URL uses a non-HTTPS/non-SSH scheme and
+      ``KANON_ALLOW_INSECURE_REMOTES`` is not ``"1"`` in ``env``.
+    - R003: The resolved fetch URL contains a query string (``?``) or
+      fragment (``#``); URL canonicalization is undefined for such values.
+
+    The ``env`` parameter is used instead of ``os.environ`` so unit tests
+    can inject ``KANON_ALLOW_INSECURE_REMOTES`` without mutating the
+    process environment.  When ``env`` is ``None``, ``os.environ`` is used
+    as the effective environment.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+        env: Environment dict to read ``KANON_ALLOW_INSECURE_REMOTES`` from.
+            Defaults to a copy of ``os.environ`` when ``None``.
+
+    Returns:
+        List of :class:`AuditFinding` objects (possibly empty).
+    """
+    effective_env: dict[str, str] = dict(os.environ) if env is None else env
+    raw_findings = collect_remote_url_findings(target_path, env=effective_env)
+    return [
+        AuditFinding(
+            kind=rf.kind,
+            code=rf.code,
+            message=rf.message,
+            remediation=rf.remediation,
+        )
+        for rf in raw_findings
+    ]
+
+
+def _check_remote_url_with_os_env(target_path: pathlib.Path) -> list[AuditFinding]:
+    """Registry-compatible wrapper: calls _check_remote_url with os.environ.
+
+    This wrapper satisfies the ``Callable[[pathlib.Path], list[AuditFinding]]``
+    signature required by ``AUDIT_CHECK_REGISTRY``.  The underlying
+    ``_check_remote_url`` function accepts an ``env`` parameter for testability.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Returns:
+        List of :class:`AuditFinding` objects produced by ``_check_remote_url``.
+    """
+    return _check_remote_url(target_path, env=None)
+
+
+AUDIT_CHECK_REGISTRY["remote-url"] = _check_remote_url_with_os_env
 
 
 # ---------------------------------------------------------------------------

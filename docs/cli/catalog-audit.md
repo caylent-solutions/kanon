@@ -42,7 +42,7 @@ The five soft-spot checks audited by `kanon catalog audit`:
 | `metadata` | Verifies required fields (`name`, `display-name`, `description`, `version`) are present and non-empty in every catalog entry's XML metadata. |
 | `source-name-derivation` | Verifies that each entry name in `<catalog-metadata><name>` is in its normalised form (lowercase, hyphens replaced with underscores) and uses only characters from `[a-zA-Z0-9_-]` (spec Section 3.5 soft-spot rule 2). |
 | `entry-name-uniqueness` | Verifies that no two entries share the same `<catalog-metadata><name>` value across the entire catalog (soft-spot rule 3). Comparison is case-sensitive. |
-| `remote-url` | Verifies that every entry's `source_url` uses a permitted scheme (HTTPS by default; see `docs/configuration.md` for `KANON_ALLOW_INSECURE_REMOTES`). |
+| `remote-url` | Verifies that every `<project remote="X">` in each marketplace XML and its include chain can be resolved to a `<remote name="X" fetch="...">` definition using an HTTPS or SSH URL (spec Section 3.5 soft-spot rule 4; Section 3.6 HTTPS-by-default policy). |
 | `tag-format` | Verifies that all tags referenced by catalog entries are PEP 440-compliant version strings (soft-spot rule 5). |
 
 Use `--check all` (or omit `--check`) to run all five checks.
@@ -216,6 +216,79 @@ collision exists; exits **0** when all names are unique (or no XML files exist).
 ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/repo-specs/tool-a-marketplace.xml, /path/repo-specs/tool-b-marketplace.xml. Entry names must be unique across every repo-specs/**/*-marketplace.xml file. -- Rename <name>my-tool</name> to a unique value in all but one of the listed files, or remove the duplicate catalog entries.
 ```
 
+## Remote-URL check (`--check remote-url`)
+
+The `remote-url` check inspects every `*-marketplace.xml` file under `repo-specs/`
+for spec Section 3.5 soft-spot rule 4 compliance. For each file it:
+
+1. Walks the `<include>` chain depth-first and collects all
+   `<remote name="..." fetch="...">` definitions reachable from the file.
+2. For each `<project remote="X">` in the marketplace XML, resolves `X` to
+   its fetch URL by looking up the collected definitions.
+
+### Finding codes
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `R001` | ERROR | `<project remote="X">` references a remote name that is not defined anywhere in the reachable include chain. |
+| `R002` | ERROR | The resolved fetch URL uses a non-HTTPS/non-SSH scheme (e.g. `file://`, `http://`) and `KANON_ALLOW_INSECURE_REMOTES` is not set to `1`. |
+| `R003` | ERROR | The resolved fetch URL contains a query string (`?`) or fragment (`#`); URL canonicalization is undefined for such values. |
+
+### Unresolvable remote (R001)
+
+When a `<project>` element references `remote="X"` but no `<remote name="X">` is
+found anywhere in the marketplace XML or its transitive includes, a single R001
+ERROR is emitted naming the `<project>` element, the XML file path, and the
+unresolved remote name. The remediation points to `kanon validate marketplace`.
+
+### HTTPS-by-default policy (R002)
+
+By default, only `https://` and SSH URLs (`git@host:org/repo.git` or
+`ssh://git@host/path`) are accepted as fetch URLs. Plain HTTP (`http://`),
+`file://`, and any other schemes produce an R002 ERROR.
+
+To allow insecure URLs (intended for local test fixtures only), set:
+
+```bash
+export KANON_ALLOW_INSECURE_REMOTES=1
+```
+
+When `KANON_ALLOW_INSECURE_REMOTES=1` is set, R002 findings are suppressed.
+R001 and R003 findings are **never** suppressed by this variable.
+
+### Query-string and fragment detection (R003)
+
+A fetch URL containing a `?` (query string) or `#` (fragment) produces an R003
+ERROR regardless of the scheme. URL canonicalization is undefined for such URLs
+(spec Section 4.8, E1-F2-S1-T1). The remediation asks the author to remove the
+query string or fragment from the `<remote>` element's `fetch` attribute.
+
+### Include-chain resolution
+
+The remote-url check uses a depth-first include walker to collect `<remote>`
+definitions from the marketplace file and all files reachable via `<include>`
+chains. This means:
+
+- A `<remote>` defined in an included helper XML is visible to all marketplace
+  files that include it (directly or transitively).
+- Diamond includes (the same file reachable via two different paths) are visited
+  only once. The first-visited definition wins when the same remote name appears
+  in multiple files.
+- Cycles in the include chain produce no findings (the walker is cycle-safe).
+
+### Exit code behaviour
+
+`kanon catalog audit --check remote-url` exits **1** when any R001, R002, or R003
+finding is produced; exits **0** when no findings are produced.
+
+### Example output
+
+```
+ERROR: [R001] /path/repo-specs/tool-marketplace.xml: <project name='my-project'> references remote='missing' but no <remote name='missing'> is defined anywhere in the reachable include chain. -- Add a <remote name="missing" fetch="<url>"/> element to the manifest or a file reachable via its <include> chain, or run 'kanon validate marketplace' to identify structural issues.
+ERROR: [R002] /path/repo-specs/tool-marketplace.xml: <remote name='local'> has fetch URL 'file:///tmp/test-repos' which uses a non-HTTPS remote URL. Only HTTPS and SSH remote URLs are trusted by default (spec Section 3.6 HTTPS-by-default policy). -- Change the fetch URL to use https:// or ssh:// (or git@ shorthand), or set KANON_ALLOW_INSECURE_REMOTES=1 to allow insecure remotes (intended for tests and local fixtures only).
+ERROR: [R003] /path/repo-specs/tool-marketplace.xml: <remote name='cdn'> has fetch URL 'https://example.com/mirrors?token=abc' which contains a query string or fragment. URL canonicalization is undefined for such URLs. -- Remove the query string or fragment from the fetch URL in <remote name='cdn' fetch="..."/>.
+```
+
 ## Metadata check (`--check metadata`)
 
 The `metadata` check inspects every `*-marketplace.xml` file under `repo-specs/` for
@@ -378,6 +451,7 @@ kanon catalog audit https://github.com/org/repo.git@v1.0.0 \
 | `KANON_CATALOG_AUDIT_FORMAT` | `text` | Default output format. CLI `--format` takes precedence. |
 | `KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS` | `3600` | Cache TTL in seconds for remote clones. Must be a positive integer. |
 | `KANON_CACHE_DIR` | (unset) | Root cache directory. Required for remote audit targets. |
+| `KANON_ALLOW_INSECURE_REMOTES` | (unset) | When set to `1`, suppresses R002 findings for non-HTTPS/SSH remote URLs. Any value other than `1` is treated as unset. Intended for local test fixtures only; do not set in production CI pipelines. R001 and R003 findings are never suppressed by this variable. |
 
 ## Related commands
 

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- Fixture: remote fetch URL contains a query string (?token=abc).
+     This triggers soft-spot rule 4 remote-url: R003 ERROR (URL with query string
+     or fragment - canonicalization undefined per spec Section 4.8). -->
+<manifest>
+  <catalog-metadata>
+    <name>query-string-tool</name>
+    <display-name>Query String Tool</display-name>
+    <description>A tool whose remote URL contains a query string.</description>
+    <version>1.0.0</version>
+  </catalog-metadata>
+  <remote name="cdn" fetch="https://example.com/mirrors?token=abc" />
+  <project name="my-project" remote="cdn" path="src/my-project" />
+</manifest>

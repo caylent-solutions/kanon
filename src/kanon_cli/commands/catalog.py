@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
 import defusedxml.ElementTree as ET
+from packaging.version import InvalidVersion, Version
+
 from kanon_cli.constants import (
     KANON_CACHE_DIR_ENV,
     KANON_CACHE_DIR_MODE,
@@ -54,6 +56,8 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_FORMAT_DEFAULT,
     KANON_CATALOG_AUDIT_FORMAT_ENV,
     KANON_CATALOG_AUDIT_FORMAT_JSON,
+    KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE,
+    KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
     KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE,
 )
@@ -652,6 +656,151 @@ def _check_remote_url_with_os_env(target_path: pathlib.Path) -> list[AuditFindin
 
 
 AUDIT_CHECK_REGISTRY["remote-url"] = _check_remote_url_with_os_env
+
+
+# ---------------------------------------------------------------------------
+# Tag-format check (T6 -- soft-spot rule 5; PEP 440 tag-name compliance)
+# ---------------------------------------------------------------------------
+
+
+def _check_tag_format(
+    target_path: pathlib.Path,
+    ls_remote_callable: "Callable[[pathlib.Path], str]",
+) -> list[AuditFinding]:
+    """Check that every tag in the manifest repo's last path component is a valid PEP 440 version.
+
+    Calls ``ls_remote_callable(target_path)`` to obtain the raw stdout of
+    ``git ls-remote --tags <target_path>`` (one ``<sha>\\trefs/tags/<name>`` line
+    per tag).  For each tag, takes the last ``/``-delimited component and
+    attempts to parse it as a ``packaging.version.Version``.
+
+    Tags whose last path component fails PEP 440 parsing emit one WARN finding
+    each (code ``T001``).  Findings are capped at
+    ``KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT``; when more non-PEP-440 tags exist,
+    a single additional WARN finding summarises the remaining count.
+
+    Warning-only (never error) per spec Section 0.4.  Manifest repos with
+    legitimate non-version tags (ops markers, release-prep tags) still work;
+    the warning surfaces unaddressability so authors decide whether to rename
+    tags to PEP 440 form.
+
+    Monorepo-style tags (``subpackage/1.0.0``) are handled correctly: only the
+    last ``/``-delimited component is tested, so ``1.0.0`` is PEP 440 and
+    produces no finding.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+        ls_remote_callable: A callable accepting ``target_path`` and returning
+            the raw stdout of ``git ls-remote --tags <target_path>``.  Injected
+            to allow unit tests to avoid real network calls.
+
+    Returns:
+        List of :class:`AuditFinding` objects (all kind ``warn``; possibly empty).
+    """
+    raw_output = ls_remote_callable(target_path)
+
+    non_pep440_tags: list[str] = []
+
+    for line in raw_output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Lines have the form: <sha>\trefs/tags/<tag-name>
+        if "\t" not in line:
+            continue
+        _, ref = line.split("\t", 1)
+        ref = ref.strip()
+        if not ref.startswith("refs/tags/"):
+            continue
+        tag_name = ref[len("refs/tags/") :]
+        if not tag_name:
+            continue
+        # Examine only the last /- delimited component.
+        last_component = tag_name.rsplit("/", 1)[-1]
+        try:
+            parsed = Version(last_component)
+            # The tag component must equal its normalized PEP 440 form.
+            # Tags like "v1.0.0" parse but normalize to "1.0.0", which
+            # differs from the original; such tags are considered
+            # non-canonical and are flagged as unaddressable.
+            if str(parsed) != last_component:
+                non_pep440_tags.append(tag_name)
+        except InvalidVersion:
+            non_pep440_tags.append(tag_name)
+
+    findings: list[AuditFinding] = []
+
+    for tag_name in non_pep440_tags[:KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT]:
+        findings.append(
+            AuditFinding(
+                kind="warn",
+                code="T001",
+                message=(
+                    f"Tag {tag_name!r} is unaddressable: the last path component "
+                    f"{tag_name.rsplit('/', 1)[-1]!r} is not a valid PEP 440 version. "
+                    "kanon's resolver ignores tags whose last component does not parse "
+                    "as a PEP 440 version."
+                ),
+                remediation=(
+                    "Rename the tag so its last path component is a valid PEP 440 version "
+                    "(e.g. '1.0.0', '1.0.0a1'). "
+                    "See https://peps.python.org/pep-0440/ for PEP 440 version syntax."
+                ),
+            )
+        )
+
+    remaining = len(non_pep440_tags) - KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT
+    if remaining > 0:
+        findings.append(
+            AuditFinding(
+                kind="warn",
+                code="T001",
+                message=KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE.format(remaining=remaining),
+                remediation=(
+                    "Run 'kanon catalog audit --check tag-format' against the full repo "
+                    "to see all non-PEP-440 tag findings."
+                ),
+            )
+        )
+
+    return findings
+
+
+def _check_tag_format_with_subprocess(target_path: pathlib.Path) -> list[AuditFinding]:
+    """Registry-compatible wrapper: calls _check_tag_format with a real git ls-remote subprocess.
+
+    Runs ``git ls-remote --tags <target_path>`` as a subprocess and feeds its
+    stdout to :func:`_check_tag_format`.  Fails loudly on subprocess error.
+
+    Args:
+        target_path: Root of the manifest repo (must contain ``repo-specs/``).
+
+    Returns:
+        List of :class:`AuditFinding` objects produced by ``_check_tag_format``.
+
+    Raises:
+        SystemExit: If ``git ls-remote --tags`` exits non-zero.
+    """
+
+    def _run_ls_remote(path: pathlib.Path) -> str:
+        result = subprocess.run(
+            ["git", "ls-remote", "--tags", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            print(
+                f"ERROR: 'git ls-remote --tags {path}' failed (exit {result.returncode}):\n{result.stderr}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return result.stdout
+
+    return _check_tag_format(target_path, _run_ls_remote)
+
+
+AUDIT_CHECK_REGISTRY["tag-format"] = _check_tag_format_with_subprocess
 
 
 # ---------------------------------------------------------------------------

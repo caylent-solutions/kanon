@@ -218,3 +218,31 @@ is preserved: `No tags found under prefix '<prefix>' for the given revision`.
 The formatting logic is encapsulated in the private helper
 `_format_zero_pep440_tags_error(prefix, skipped)` in `kanon_cli.version`, which
 accepts the display prefix string and the full list of skipped tag refs.
+
+---
+
+## Proactive Inventory: `kanon catalog audit --check tag-format`
+
+The loud error above fires at install/resolve time -- after an operator has already
+hit a resolver failure. To discover non-PEP-440 tags **before** operators encounter
+failures, catalog authors should run:
+
+```bash
+kanon catalog audit --check tag-format /path/to/manifest-repo
+```
+
+This check reads every git tag from the manifest repo (via `git ls-remote --tags`)
+and emits one WARN finding (code `T001`) for each tag whose last path component is
+not a canonical PEP 440 version string. It exits 0 even when warnings are present.
+
+The recommended workflow for catalog authors:
+
+1. **Before tagging a new release**, run `kanon catalog audit --check tag-format .`
+   on the manifest repo to confirm all existing tags are PEP 440 canonical.
+2. **When tagging**, use canonical PEP 440 form (`1.0.0`, `2.10.1`) rather than
+   v-prefixed forms (`v1.0.0`) or free-form names (`release-2024`).
+3. **For monorepo-style tags**, the last path component must be canonical:
+   `mylib/1.0.0` (correct) vs. `mylib/v1.0.0` (produces T001 WARN).
+
+See `docs/cli/catalog-audit.md` and `docs/catalog-author-guide.md` for details
+on the `tag-format` check, finding codes, and remediation steps.

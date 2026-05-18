@@ -430,6 +430,36 @@ KANON_CATALOG_METADATA_RECOMMENDED_FIELDS: tuple[str, ...] = (
     "keywords",
 )
 
+# -- kanon catalog audit tag-format check (soft-spot rule 5) --
+# Maximum number of non-PEP-440 tag WARN findings emitted per check run.
+# When the actual count of non-PEP-440 tags exceeds this limit, only the
+# first KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT findings are emitted per-tag;
+# a single additional summary WARN names the remaining count.
+# Overridable via the KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT environment variable.
+_raw_tag_report_limit = os.environ.get("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT")
+if _raw_tag_report_limit is not None:
+    try:
+        KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT: int = int(_raw_tag_report_limit)
+    except ValueError:
+        raise SystemExit(
+            f"ERROR: KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT must be a positive integer; got {_raw_tag_report_limit!r}"
+        )
+    if KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT <= 0:
+        raise SystemExit(
+            f"ERROR: KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT must be a positive integer; "
+            f"got {KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT}"
+        )
+else:
+    KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT = 50
+
+# Summary-text template for the tag-format check when the number of non-PEP-440
+# tags exceeds KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT.
+# Call with .format(remaining=<count>) to produce the final summary message.
+KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE = (
+    "{remaining} additional non-PEP-440 tag(s) not listed above. "
+    "Run 'kanon catalog audit --check tag-format' for the full list."
+)
+
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this

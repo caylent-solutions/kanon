@@ -1847,3 +1847,123 @@ class TestKanonCatalogEntryNameAllowedCharsRe:
         assert KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE.fullmatch(entry_name) is None, (
             f"Expected {entry_name!r} NOT to match KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE"
         )
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditTagReportLimit:
+    """Tests for KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT (E5-F2-S1-T6 AC-FUNC-009)."""
+
+    def test_is_int(self) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT is an int."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT
+
+        assert isinstance(KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT, int)
+
+    def test_default_value_is_50(self) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT default value is 50."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT == 50
+        finally:
+            if saved is not None:
+                os.environ["KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT"] = saved
+            importlib.reload(constants)
+
+    def test_is_positive(self) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT is a positive integer."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT
+
+        assert KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT > 0
+
+    def test_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT env var overrides the default value."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", "25")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT == 25
+        finally:
+            monkeypatch.delenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT set to a non-integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", "not-an-int")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_zero_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT set to zero raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_negative_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT set to a negative value raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", "-5")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditTagFormatSummaryTemplate:
+    """Tests for KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE (E5-F2-S1-T6 AC-FUNC-009)."""
+
+    def test_is_str(self) -> None:
+        """KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE is a str."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+        assert isinstance(KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE, str)
+
+    def test_is_non_empty(self) -> None:
+        """KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE is non-empty."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+        assert len(KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE) > 0
+
+    def test_contains_remaining_placeholder(self) -> None:
+        """Template contains the {remaining} placeholder."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+        assert "{remaining}" in KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+    def test_formatted_contains_remaining_count(self) -> None:
+        """Formatted template with remaining=10 contains '10' in the output."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE.format(remaining=10)
+        assert "10" in rendered
+
+    def test_formatted_mentions_tag_format_audit(self) -> None:
+        """Formatted template mentions kanon catalog audit --check tag-format."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE.format(remaining=5)
+        assert "tag-format" in rendered

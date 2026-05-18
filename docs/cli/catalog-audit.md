@@ -43,7 +43,7 @@ The five soft-spot checks audited by `kanon catalog audit`:
 | `source-name-derivation` | Verifies that each entry name in `<catalog-metadata><name>` is in its normalised form (lowercase, hyphens replaced with underscores) and uses only characters from `[a-zA-Z0-9_-]` (spec Section 3.5 soft-spot rule 2). |
 | `entry-name-uniqueness` | Verifies that no two entries share the same `<catalog-metadata><name>` value across the entire catalog (soft-spot rule 3). Comparison is case-sensitive. |
 | `remote-url` | Verifies that every `<project remote="X">` in each marketplace XML and its include chain can be resolved to a `<remote name="X" fetch="...">` definition using an HTTPS or SSH URL (spec Section 3.5 soft-spot rule 4; Section 3.6 HTTPS-by-default policy). |
-| `tag-format` | Verifies that all tags referenced by catalog entries are PEP 440-compliant version strings (soft-spot rule 5). |
+| `tag-format` | Verifies that every git tag in the manifest repo has a canonical PEP 440 version as its last path component (soft-spot rule 5). |
 
 Use `--check all` (or omit `--check`) to run all five checks.
 Use a comma-separated list to run a subset, e.g. `--check metadata,tag-format`.
@@ -288,6 +288,116 @@ ERROR: [R001] /path/repo-specs/tool-marketplace.xml: <project name='my-project'>
 ERROR: [R002] /path/repo-specs/tool-marketplace.xml: <remote name='local'> has fetch URL 'file:///tmp/test-repos' which uses a non-HTTPS remote URL. Only HTTPS and SSH remote URLs are trusted by default (spec Section 3.6 HTTPS-by-default policy). -- Change the fetch URL to use https:// or ssh:// (or git@ shorthand), or set KANON_ALLOW_INSECURE_REMOTES=1 to allow insecure remotes (intended for tests and local fixtures only).
 ERROR: [R003] /path/repo-specs/tool-marketplace.xml: <remote name='cdn'> has fetch URL 'https://example.com/mirrors?token=abc' which contains a query string or fragment. URL canonicalization is undefined for such URLs. -- Remove the query string or fragment from the fetch URL in <remote name='cdn' fetch="..."/>.
 ```
+
+## Tag-format check (`--check tag-format`)
+
+The `tag-format` check audits every git tag in the manifest repo to verify that
+its last path component is a canonical PEP 440 version string (spec Section 3.5
+soft-spot rule 5; Section 0.4; Section 4.0).
+
+kanon's resolver (`version.py`) resolves version constraints against tag names by
+parsing the last `/`-delimited path component via `packaging.version.Version`.
+Tags whose last component either fails to parse OR whose normalized form differs
+from the original are flagged as **unaddressable**: they are invisible to kanon's
+constraint resolver and cannot be referenced by operators.
+
+### Monorepo-style tags
+
+Monorepo-prefixed tags such as `subpackage/1.0.0` are fully supported. Only the
+last `/`-delimited component (`1.0.0`) is tested. A monorepo tag passes if its
+last component is a valid canonical PEP 440 version.
+
+Examples:
+
+| Tag name | Last component | PEP 440 canonical? | Finding |
+|----------|---------------|-------------------|---------|
+| `1.0.0` | `1.0.0` | yes | none |
+| `2026.4.1` | `2026.4.1` | yes | none |
+| `subpackage/1.0.0` | `1.0.0` | yes | none |
+| `subpackage/2.0.0` | `2.0.0` | yes | none |
+| `v1.0.0` | `v1.0.0` | no (normalizes to `1.0.0`) | WARN T001 |
+| `release-2024` | `release-2024` | no | WARN T001 |
+| `subpackage/v1.0.0` | `v1.0.0` | no | WARN T001 |
+
+### What "canonical PEP 440" means
+
+A tag name component is canonical when it both parses as a `packaging.version.Version`
+AND its string representation equals the normalized form. For example:
+
+- `1.0.0` -- parses, normalized form is `1.0.0` (equal) -- canonical.
+- `v1.0.0` -- parses (packaging normalizes it to `1.0.0`), but `str(Version("v1.0.0")) == "1.0.0"` differs from `v1.0.0` -- NOT canonical.
+- `release-2024` -- does not parse as PEP 440 -- NOT canonical.
+
+This distinction matters because git tag names are exact strings. An operator
+writing `~=1.0.0` as a version constraint will never match the tag `v1.0.0`
+directly via the git tag path.
+
+### Cap behaviour
+
+When the number of non-canonical tags exceeds `KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT`
+(default: 50, overridable via the `KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT`
+environment variable), only the first 50 per-tag WARN findings are emitted.
+One additional WARN finding summarises the remaining count and directs the
+author to run `kanon catalog audit --check tag-format` for the full list.
+
+### Exit code behaviour
+
+`kanon catalog audit --check tag-format` exits **0** even when WARN findings are
+present. All findings from this check are WARN-level; no ERROR findings are
+produced. The `--strict` flag will promote WARNs to ERRORs and is not yet
+active.
+
+Manifest repos with legitimate non-version tags (ops markers, release-prep tags)
+still work; the warning surfaces unaddressability so authors can decide whether
+to rename tags to canonical PEP 440 form.
+
+### Finding codes
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `T001` | WARN | Tag's last path component is not a canonical PEP 440 version string; the tag is unaddressable by kanon's resolver. |
+
+### Inventory workflow
+
+Run this check to discover non-canonical tags in a manifest repo before
+operators encounter resolver failures:
+
+```bash
+# Inventory non-PEP-440 tags in a local manifest repo
+kanon catalog audit --check tag-format /path/to/manifest-repo
+
+# Inventory a remote manifest repo
+export KANON_CACHE_DIR=~/.kanon-cache
+kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
+```
+
+### Example output
+
+```
+WARN: [T001] Tag 'v1.0.0' is unaddressable: the last path component 'v1.0.0' is not a valid PEP 440 version. kanon's resolver ignores tags whose last component does not parse as a PEP 440 version. -- Rename the tag so its last path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1'). See https://peps.python.org/pep-0440/ for PEP 440 version syntax.
+WARN: [T001] Tag 'release-2024' is unaddressable: the last path component 'release-2024' is not a valid PEP 440 version. kanon's resolver ignores tags whose last component does not parse as a PEP 440 version. -- Rename the tag so its last path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1'). See https://peps.python.org/pep-0440/ for PEP 440 version syntax.
+```
+
+JSON equivalent:
+
+```json
+{
+  "findings": [
+    {
+      "kind": "warn",
+      "code": "T001",
+      "message": "Tag 'v1.0.0' is unaddressable: the last path component 'v1.0.0' is not a valid PEP 440 version. kanon's resolver ignores tags whose last component does not parse as a PEP 440 version.",
+      "remediation": "Rename the tag so its last path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1'). See https://peps.python.org/pep-0440/ for PEP 440 version syntax."
+    }
+  ]
+}
+```
+
+### Environment variables for tag-format
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT` | `50` | Maximum number of per-tag WARN findings emitted per run. When more non-canonical tags exist, a single summary WARN names the remaining count. Must be a positive integer. |
 
 ## Metadata check (`--check metadata`)
 

@@ -300,6 +300,54 @@ include, accepts the HTTPS URL, and produces zero findings.
 | `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without opt-out. |
 | `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
 
+## Tag naming: PEP 440 compliance (soft-spot rule 5)
+
+kanon's version resolver reads git tags from the manifest repo and resolves
+operator version constraints (e.g. `~=1.0.0`) against them.  For a tag to be
+addressable by the resolver, its last `/`-delimited path component must be a
+**canonical PEP 440 version string**.
+
+A canonical PEP 440 version string is one where:
+
+1. `packaging.version.Version(component)` parses without raising `InvalidVersion`, AND
+2. The string representation of the parsed version equals the original component
+   (i.e. `str(Version(component)) == component`).
+
+Tags that fail either condition are silently skipped by the resolver.  Operators
+writing version constraints like `~=1.0.0` will not find such tags, which leads
+to confusing "no version found" errors.
+
+### Canonical vs. non-canonical tag examples
+
+| Tag name | Addressable? | Reason |
+|----------|-------------|--------|
+| `1.0.0` | yes | Canonical PEP 440 |
+| `2026.4.1` | yes | Calendar version, canonical PEP 440 |
+| `subpackage/1.0.0` | yes | Monorepo prefix; last component `1.0.0` is canonical |
+| `v1.0.0` | no | `packaging` normalizes `v1.0.0` to `1.0.0`; non-canonical |
+| `release-2024` | no | Does not parse as PEP 440 |
+| `subpackage/v1.0.0` | no | Last component `v1.0.0` is non-canonical |
+
+### Inventory non-PEP-440 tags with the audit check
+
+Use `kanon catalog audit --check tag-format` to inventory all non-canonical tags
+before operators encounter resolver failures.  This is the recommended discovery
+tool for non-PEP-440 tags in a manifest repo:
+
+```bash
+# Inventory non-canonical tags in a local manifest repo
+kanon catalog audit --check tag-format /path/to/manifest-repo
+
+# Inventory a remote manifest repo
+export KANON_CACHE_DIR=~/.kanon-cache
+kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
+```
+
+The check exits **0** even when warnings are present -- non-canonical tags are a
+WARN finding (code `T001`), not an error.  Manifest repos with legitimate
+non-version tags (ops markers, release-prep tags) continue to work; the warning
+helps authors decide whether to rename tags to canonical PEP 440 form.
+
 ## Running the audit locally
 
 To check your manifest repo before pushing:
@@ -314,6 +362,9 @@ kanon catalog audit --check metadata --format json .
 # Audit a remote repo
 export KANON_CACHE_DIR=~/.kanon-cache
 kanon catalog audit --check metadata https://github.com/org/manifest-repo.git@main
+
+# Inventory non-PEP-440 tags (recommended before releasing new catalog versions)
+kanon catalog audit --check tag-format .
 ```
 
 Exit code 0 means no ERROR findings (WARN findings may still appear on stdout).
@@ -335,6 +386,7 @@ Exit code 1 means at least one ERROR finding was produced.
 | `R001` | ERROR | `<project remote="X">` has no matching `<remote name="X">` in the include chain. |
 | `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without `KANON_ALLOW_INSECURE_REMOTES=1`. |
 | `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
+| `T001` | WARN | Tag's last path component is not a canonical PEP 440 version string; the tag is unaddressable by kanon's resolver. |
 
 ## Related documentation
 

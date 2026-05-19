@@ -31,6 +31,7 @@ Examples:
 | `kanon-outdated.txt` | `kanon outdated --help` |
 | `kanon-why.txt` | `kanon why --help` |
 | `kanon-install.txt` | `kanon install --help` |
+| `kanon-doctor.txt` | `kanon doctor --help` |
 
 ## Regeneration Procedure
 

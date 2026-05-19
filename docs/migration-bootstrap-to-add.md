@@ -195,6 +195,54 @@ kanon list
 
 See `kanon add --help` and `kanon list --help` for full usage.
 
+## What `kanon bootstrap --help` shows
+
+Running `kanon bootstrap --help` produces the following output (exit code 0;
+help is informational). The verbatim text below is snapshot-tested in
+`tests/fixtures/help/bootstrap-help.txt`.
+
+```
+DEPRECATED: 'kanon bootstrap' is replaced by 'kanon add' and 'kanon list'. See docs/migration-bootstrap-to-add.md.
+
+usage: kanon bootstrap [-h] [--output-dir OUTPUT_DIR]
+                       [--catalog-source <git-url>@<ref>]
+                       package
+
+DEPRECATED command. Use the replacements below.
+
+Use 'kanon add <package>' instead of 'kanon bootstrap <package>'.
+Use 'kanon list' instead of 'kanon bootstrap list'.
+
+See docs/migration-bootstrap-to-add.md for the migration guide.
+
+positional arguments:
+  package               Catalog entry package name (e.g. kanon) or 'list' to
+                        show available packages
+
+options:
+  -h, --help            show this help message and exit
+  --output-dir OUTPUT_DIR
+                        [DEPRECATED] Target directory for bootstrapped files
+                        (default: current directory)
+  --catalog-source <git-url>@<ref>
+                        Remote catalog source as '<git_url>@<ref>' where ref
+                        is a branch, tag, or 'latest'. Overrides
+                        KANON_CATALOG_SOURCE env var. Default: bundled
+                        catalog.
+
+Flag translation table (spec Section 4.9):
+
+| Bootstrap flag      | kanon add equivalent      | kanon list equivalent                          | Notes              |
+|---------------------|---------------------------|------------------------------------------------|--------------------|
+| <package> positional| <name> positional         | (n/a -- bootstrap list triggers kanon list)    | identical semantics|
+| --catalog-source <v>| --catalog-source <v>      | --catalog-source <v>                           | identical          |
+| --output-dir <v>    | (no equivalent)           | (no equivalent)                                | See notes below    |
+
+Exit codes:
+  0  help output
+  3  deprecated invocation; any non-help call
+```
+
 ## Related commands
 
 - `kanon catalog audit` -- audit a manifest repo for soft-spot violations

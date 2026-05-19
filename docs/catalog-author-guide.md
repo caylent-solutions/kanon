@@ -1,15 +1,178 @@
 # Catalog author guide
 
-This guide describes how to write and maintain `*-marketplace.xml` files so that
-`kanon catalog audit` reports no findings against your manifest repo.
+This guide covers `kanon catalog audit` end-to-end and the workflow for
+authors who maintain a manifest repository (a catalog).
 
-## Marketplace XML structure
+## Audience
 
-Every installable package in a manifest repo is described by one
-`*-marketplace.xml` file under the `repo-specs/` directory.  The filename must
-end in `-marketplace.xml` (e.g. `my-tool-marketplace.xml`).
+This document is for **catalog authors** -- people who own and maintain a
+manifest repository that exposes installable kanon dependencies to other
+teams.
 
-Each file must contain exactly one `<catalog-metadata>` block:
+Consumer-facing usage (how to discover and add entries from a catalog) is
+documented in [docs/catalogs-explained.md](catalogs-explained.md) and
+[docs/list-and-add.md](list-and-add.md).
+
+If you are starting a new manifest repository from scratch, read
+[docs/creating-manifest-repos.md](creating-manifest-repos.md) first,
+then return here to learn how `kanon catalog audit` fits into your
+workflow.
+
+## kanon catalog audit
+
+`kanon catalog audit` inspects a manifest repo for the five catalog
+soft-spot violations and reports findings on stdout.
+
+### Synopsis
+
+```text
+kanon catalog audit [<path-or-url>] [--check <names>] [--strict]
+                    [--format {text,json}]
+```
+
+`<path-or-url>` accepts:
+
+- A **local directory** path whose root contains `repo-specs/`
+  (e.g. `.` or `/home/user/my-manifest-repo`).
+- A **remote catalog source** in `<git_url>@<ref>` form
+  (e.g. `https://example.com/org/manifest-repo.git@main`).
+  Requires `KANON_CACHE_DIR` to be set.
+
+When `<path-or-url>` is omitted the command defaults to `.`.
+
+### Flags
+
+**`--check <names>`**
+Comma-separated list of check names to run, or `all` (default).
+Cannot mix `all` with individual names.
+See [--check semantics](#--check-semantics).
+
+**`--strict`**
+Promotes WARN-level findings to errors for exit-code purposes.
+Exits non-zero when any WARN finding is present.
+Prints a summary to stderr naming the warning count.
+Findings are never mutated; `WARN:` prefixes still appear in output.
+
+**`--format {text,json}`**
+Output format. Default: `text`.
+Also controlled by `KANON_CATALOG_AUDIT_FORMAT`.
+
+### --check semantics
+
+The five selectable check names are:
+
+| Check name | Rule |
+| ---------- | ---- |
+| `metadata` | Rule 1 -- metadata completeness |
+| `source-name-derivation` | Rule 2 -- entry-name normalisation |
+| `entry-name-uniqueness` | Rule 3 -- name uniqueness |
+| `remote-url` | Rule 4 -- remote resolvability |
+| `tag-format` | Rule 5 -- PEP 440 compliance |
+
+Use `--check all` (or omit `--check`) to run all five checks.
+
+Use a comma-separated list to run a subset:
+
+```bash
+# Run only rules 1 and 5
+kanon catalog audit --check metadata,tag-format
+```
+
+`all` cannot be combined with individual names. The following invocation
+is rejected:
+
+```bash
+# ERROR: 'all' cannot be combined with other --check values.
+kanon catalog audit --check all,metadata
+```
+
+### Exit codes
+
+| Exit code | Meaning |
+| --------- | ------- |
+| `0` | No ERROR findings (WARN findings ignored unless `--strict`). |
+| `1` | One or more ERROR findings, or a fatal error occurred. |
+| `2` | Argument-parsing error (bad `--check` value, etc.). |
+
+### Remote audit
+
+To audit a remote manifest repo, set `KANON_CACHE_DIR` and supply the
+source in `<git_url>@<ref>` form:
+
+```bash
+export KANON_CACHE_DIR=~/.kanon-cache
+kanon catalog audit https://example.com/org/manifest-repo.git@main
+```
+
+The repository is cloned into a cache subdirectory keyed by a SHA-256
+of the canonicalized URL and ref. Cached clones are reused for the
+duration of `KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS` (default: 3600 s).
+
+## The five soft-spot rules
+
+Soft-spot rules are quality checks that `kanon catalog audit` enforces.
+Each rule targets a different category of catalog author mistake. The
+sections below name each rule, describe what the check looks for, show
+the emitted finding message, and give the catalog-author fix.
+
+### Rule 1 -- catalog-metadata completeness
+
+**What it looks for:**
+The check reads every `*-marketplace.xml` file under `repo-specs/` and
+inspects the `<catalog-metadata>` block for:
+
+1. Missing or whitespace-only **required** fields -- produces one ERROR
+   (M001) per missing field.
+2. Missing **recommended** fields -- produces one WARN (M002) per absent
+   field.
+3. Duplicate child elements inside `<catalog-metadata>` (e.g. two
+   `<name>` elements) -- produces an ERROR (M006).
+4. More than one `<catalog-metadata>` block in a single file -- produces
+   an ERROR (M005).
+
+Required fields (absence = ERROR):
+
+| Field | Description |
+| ----- | ----------- |
+| `name` | Machine-readable package identifier. |
+| `display-name` | Human-readable label shown in `kanon list` output. |
+| `description` | Short prose description of the package. |
+| `version` | Author-claimed version string (informational). |
+
+Recommended fields (absence = WARN):
+
+| Field | Description |
+| ----- | ----------- |
+| `type` | Package type string (e.g. `plugin`, `library`). |
+| `owner-name` | Primary owner display name. |
+| `owner-email` | Primary owner contact address. |
+| `keywords` | Comma-separated keyword list for discoverability. |
+
+**Emitted message:**
+
+```text
+ERROR: [M001] /path/tool-marketplace.xml: required <catalog-metadata>
+field <description> is missing or contains only whitespace. Add a
+non-empty <description> element to the <catalog-metadata> block.
+
+WARN: [M002] /path/tool-marketplace.xml: recommended <catalog-metadata>
+field <owner-email> is absent. Consider adding <owner-email> to improve
+catalog discoverability.
+
+ERROR: [M006] /path/tool-marketplace.xml: duplicate <name> element
+inside <catalog-metadata>; each child tag must appear at most once.
+Remove the extra <name> element.
+
+ERROR: [M005] /path/tool-marketplace.xml: 2 <catalog-metadata> blocks
+found; exactly one is required. Remove the extra <catalog-metadata>
+elements.
+```
+
+**How to fix it:**
+
+Add the missing required fields to the `<catalog-metadata>` block and
+ensure each `*-marketplace.xml` file contains exactly one such block
+with no repeated child elements:
 
 ```xml
 <?xml version="1.0"?>
@@ -17,410 +180,262 @@ Each file must contain exactly one `<catalog-metadata>` block:
   <catalog-metadata>
     <name>my-tool</name>
     <display-name>My Tool</display-name>
-    <description>A short prose description of what this package does.</description>
+    <description>Deploys Kubernetes manifests using Helm.</description>
     <version>1.2.3</version>
     <type>plugin</type>
     <owner-name>Alice Example</owner-name>
     <owner-email>alice@example.com</owner-email>
     <keywords>infra,deploy,kubernetes</keywords>
   </catalog-metadata>
-  <!-- ... other package elements ... -->
 </package>
 ```
 
-## Required fields
+Run `kanon catalog audit --check metadata .` to confirm zero findings.
 
-The following fields are **required**.  A missing or whitespace-only value causes
-`kanon catalog audit --check metadata` to emit one ERROR finding per field and
-exit with code 1.
+### Rule 2 -- source-name derivation
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `name` | Machine-readable package identifier.  Used as the source name in `.kanon` files and shell variable names.  Use lowercase letters, digits, and hyphens only. | `my-tool` |
-| `display-name` | Human-readable label shown in `kanon list` output. | `My Tool` |
-| `description` | Short (one or two sentence) prose description of what the package does and who should use it. | `Deploys Kubernetes manifests using Helm.` |
-| `version` | Author-claimed version string.  Informational only; kanon does not validate it against semver or PEP-440.  Use a consistent scheme such as `MAJOR.MINOR.PATCH`. | `1.2.3` |
+**What it looks for:**
+Every `<catalog-metadata><name>` value (the entry name) is normalised
+to a shell-variable token by `derive_source_name`:
 
-### Whitespace-only values are treated as missing
+1. Lowercase the entire string.
+2. Replace every `-` (hyphen) with `_` (underscore).
 
-An element present in the XML but containing only whitespace is treated
-identically to an absent element:
+No other transformation is applied.
 
-```xml
-<!-- This is treated as missing -- produces an ERROR finding -->
-<name>   </name>
+Two independent findings can be raised per entry name:
 
-<!-- Correct -->
-<name>my-tool</name>
+- **S001 (WARN):** the normalised form differs from the original entry
+  name -- normalisation drift.
+- **S002 (WARN):** the entry name contains characters outside
+  `[a-zA-Z0-9_-]` (accidental whitespace, dots, non-ASCII, etc.).
+
+Worked example:
+
+| Entry name | Derived form | Drift? | Out-of-charset? |
+| ---------- | ------------ | ------ | --------------- |
+| `Foo-Bar` | `foo_bar` | yes (S001) | no |
+| `foo-bar` | `foo_bar` | yes (S001) | no |
+| `foo.bar` | `foo.bar` | no | yes (S002, `.`) |
+| `Foo.Bar` | `foo.bar` | yes (S001) | yes (S002, `.`) |
+| `foo_bar` | `foo_bar` | no | no |
+
+`Foo-Bar` normalises to `foo_bar` (S001 drift); `Foo.Bar` triggers both
+S001 (drift) and S002 (dot out-of-charset).
+
+**Emitted message:**
+
+```text
+WARN: [S001] /path/tool-marketplace.xml: entry name 'Foo-Bar' normalises
+to 'foo_bar' via derive_source_name. Consider renaming the entry to match
+the derived form to avoid surprises in shell variable names and .kanon
+files. -- Rename <name>Foo-Bar</name> to <name>foo_bar</name> in the
+<catalog-metadata> block.
+
+WARN: [S002] /path/tool-marketplace.xml: entry name 'foo.bar' contains
+characters outside the recommended set [a-zA-Z0-9_-]. -- Rename
+<name>foo.bar</name> to use only [a-zA-Z0-9_-] characters.
 ```
 
-## Recommended fields
+**How to fix it:**
 
-The following fields are **recommended**.  A missing field causes
-`kanon catalog audit --check metadata` to emit one WARN finding per field.
-WARN findings do not affect the exit code unless `--strict` is active.
+Rename the `<name>` value to its fully-normalised form: lowercase and
+underscores only. Using `foo_bar` instead of `Foo-Bar` satisfies both
+S001 (already normalised) and S002 (only allowed characters).
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `type` | Package type string.  Helps operators filter and understand the catalog. | `plugin`, `library`, `template` |
-| `owner-name` | Primary owner display name.  Helps operators know who to contact. | `Alice Example` |
-| `owner-email` | Primary owner contact address. | `alice@example.com` |
-| `keywords` | Comma-separated keyword list for discoverability in `kanon list` searches. | `infra,deploy,kubernetes` |
+### Rule 3 -- entry-name uniqueness
 
-## Structural rules
+**What it looks for:**
+Every `<catalog-metadata><name>` value must be unique across all
+`*-marketplace.xml` files in the manifest repo. When two or more files
+declare the same name, `kanon install` cannot resolve the ambiguity.
+The check emits one ERROR (U001) per colliding name, listing every XML
+path that declares it.
 
-`kanon catalog audit --check metadata` also enforces the following structural
-rules.  Violations produce ERROR findings.
+Comparison is **case-sensitive**: `MyTool` and `mytool` are distinct
+names under this check. However, both normalise to `mytool` via
+`derive_source_name`, which causes a real conflict at install time.
+Run `--check source-name-derivation` alongside this check to catch
+case-drift collisions.
 
-### One `<catalog-metadata>` block per file
+**Emitted message:**
 
-Each `*-marketplace.xml` file must contain exactly one `<catalog-metadata>` block.
-Having zero or more than one block produces an ERROR:
-
-```xml
-<!-- ERROR: two <catalog-metadata> blocks -->
-<package>
-  <catalog-metadata>
-    <name>tool-a</name>
-    ...
-  </catalog-metadata>
-  <catalog-metadata>
-    <name>tool-b</name>
-    ...
-  </catalog-metadata>
-</package>
-
-<!-- Correct: one block per file -->
-<package>
-  <catalog-metadata>
-    <name>tool-a</name>
-    ...
-  </catalog-metadata>
-</package>
+```text
+ERROR: [U001] Entry name 'my-tool' is declared in 2 files:
+/path/repo-specs/group-a/my-tool-marketplace.xml,
+/path/repo-specs/group-b/my-tool-marketplace.xml. Entry names must be
+unique across every repo-specs/**/*-marketplace.xml file. -- Rename
+<name>my-tool</name> to a unique value in all but one of the listed
+files, or remove the duplicate catalog entries.
 ```
 
-### No duplicate child elements
+**How to fix it:**
 
-Each child element within `<catalog-metadata>` must appear at most once.
-Repeating a tag (even with different text) produces an ERROR:
+Give each entry a distinct name (e.g. `my-tool-alpha` and
+`my-tool-beta`), or remove the duplicate entry entirely. Run
+`--check entry-name-uniqueness .` after renaming to confirm the ERROR
+is gone.
 
-```xml
-<!-- ERROR: two <name> elements -->
-<catalog-metadata>
-  <name>my-tool</name>
-  <name>my-tool-alias</name>
-  ...
-</catalog-metadata>
+### Rule 4 -- remote-URL resolvability
 
-<!-- Correct: each tag appears once -->
-<catalog-metadata>
-  <name>my-tool</name>
-  ...
-</catalog-metadata>
+**What it looks for:**
+For every `<project remote="X">` element in each marketplace XML, the
+check walks the transitive `<include>` chain and looks for a
+`<remote name="X" fetch="...">` definition. The walk is depth-first and
+cycle-safe; diamond includes are visited only once.
+
+Three findings can be raised:
+
+- **R001 (ERROR):** no `<remote name="X">` found anywhere in the
+  reachable include chain.
+- **R002 (ERROR):** the resolved fetch URL uses a non-HTTPS/non-SSH
+  scheme (e.g. `http://`, `file://`) and
+  `KANON_ALLOW_INSECURE_REMOTES` is not `1`.
+- **R003 (ERROR):** the resolved fetch URL contains a query string (`?`)
+  or fragment (`#`); URL canonicalization is undefined for such values.
+
+The check re-runs `kanon validate marketplace` against each remote
+source as part of verifying resolvability.
+
+**Emitted message:**
+
+```text
+ERROR: [R001] /path/tool-marketplace.xml: <project name='my-project'>
+references remote='missing' but no <remote name='missing'> is defined
+anywhere in the reachable include chain.
+
+ERROR: [R002] /path/tool-marketplace.xml: <remote name='local'> has
+fetch URL 'file:///tmp/test' which uses a non-HTTPS remote URL.
+
+ERROR: [R003] /path/tool-marketplace.xml: <remote name='cdn'> has fetch
+URL 'https://example.com/mirrors?token=abc' which contains a query
+string or fragment.
 ```
 
-## Source-name derivation and entry-name conventions
+**How to fix it:**
 
-`kanon catalog audit --check source-name-derivation` enforces spec Section 3.5
-soft-spot rule 2. Two independent findings can be raised per entry name.
+For R001: add a `<remote name="X" fetch="..."/>` element to the
+marketplace XML or to a helper file reachable via an `<include>` chain.
 
-### Normalisation rule
+For R002: change the fetch URL to `https://` or `ssh://` (or the
+`git@host:org/repo.git` shorthand). To allow insecure remotes in local
+test fixtures only, set `KANON_ALLOW_INSECURE_REMOTES=1`.
 
-`derive_source_name(entry_name)` transforms a `<name>` value into a
-`KANON_SOURCE_<name>_*` shell variable token by:
+For R003: remove the query string or fragment from the `fetch` attribute
+in the `<remote>` element.
 
-1. Lowercasing the entire string.
-2. Replacing every `-` (hyphen) with `_` (underscore).
+### Rule 5 -- PEP 440 tag-name compliance
 
-No other transformation is applied. The function is deterministic and idempotent.
+**What it looks for:**
+kanon's version resolver parses the last `/`-delimited path component of
+every git tag via `packaging.version.Version`. A tag is **addressable**
+(reachable by version constraints like `~=1.0.0`) only when its last
+path component is a canonical PEP 440 string -- meaning it both parses
+successfully AND `str(Version(component)) == component`.
 
-When the normalised form differs from the original entry name, `kanon catalog audit`
-emits a **WARN** finding (S001) suggesting you rename the entry to the derived form.
+Tags that fail either condition are silently skipped by the resolver.
 
 Examples:
 
-| Entry name | Derived form | Action |
-|------------|--------------|--------|
-| `Foo-Bar` | `foo_bar` | Rename to `foo_bar` |
-| `foo-bar` | `foo_bar` | Rename to `foo_bar` |
-| `MyTool` | `mytool` | Rename to `mytool` |
-| `foo_bar` | `foo_bar` | No action needed |
-
-### Allowed entry-name character set
-
-Entry names SHOULD use only characters from `[a-zA-Z0-9_-]`. Characters outside
-this set produce a **WARN** finding (S002) because they:
-
-- May not survive shell quoting cleanly.
-- Can cause unexpected behaviour in shell variable names derived from the entry name.
-- Signal accidental whitespace, dots, or non-ASCII characters.
-
-Common problematic characters and how to fix them:
-
-| Character | Example | Fix |
-|-----------|---------|-----|
-| `.` (dot) | `foo.bar` | Use `foo_bar` |
-| ` ` (space) | `my tool` | Use `my_tool` |
-| Non-ASCII | `f\u00f3\u00f3` | Use ASCII equivalents, e.g. `foo` |
-
-Note that hyphens (`-`) are within the allowed charset but cause normalisation drift
-(S001), so using underscores directly (`_`) is preferred.
-
-### Both findings are independent
-
-An entry name can trigger both S001 and S002 simultaneously. For example, `Foo.Bar`:
-- S001: `Foo.Bar` normalises to `foo.bar` (different from `Foo.Bar`) -- drift.
-- S002: `Foo.Bar` contains `.` -- out-of-charset.
-
-The recommended fix is to use a name like `foo_bar` which is already normalised and
-uses only the allowed character set.
-
-## Entry-name uniqueness
-
-`kanon catalog audit --check entry-name-uniqueness` enforces spec Section 3.5
-soft-spot rule 3. Every `<catalog-metadata><name>` value must be unique across
-all `*-marketplace.xml` files in the manifest repo.
-
-### The uniqueness rule
-
-When two or more files share the same `<name>` value, `kanon install` cannot
-tell which entry to use. The check emits one ERROR finding (U001) listing every
-file that declares the colliding name.
-
-```xml
-<!-- ERROR: two files both declare name 'my-tool' -->
-
-<!-- file: repo-specs/group-a/my-tool-marketplace.xml -->
-<catalog-metadata>
-  <name>my-tool</name>
-  ...
-</catalog-metadata>
-
-<!-- file: repo-specs/group-b/my-tool-marketplace.xml -->
-<catalog-metadata>
-  <name>my-tool</name>
-  ...
-</catalog-metadata>
-```
-
-Fix: give each entry a distinct name (e.g. `my-tool-alpha` and `my-tool-beta`),
-or remove the duplicate entry entirely.
-
-### Case sensitivity
-
-Entry-name uniqueness comparison is **case-sensitive**: `MyTool` and `mytool`
-are treated as two distinct names by this check and do NOT collide here.
-
-However, both names normalise to the same source name (`mytool`) via
-`derive_source_name`. At install time, shell variable names derived from both
-entries would be identical (`KANON_SOURCE_MYTOOL_URL`, etc.), producing a real
-conflict.
-
-The `source-name-derivation` check (S001) warns about this normalisation drift.
-Authors who want case-insensitive uniqueness should rely on `--check
-source-name-derivation` to surface these drift warnings in addition to
-`--check entry-name-uniqueness`.
-
-### Relationship to `source-name-derivation`
-
-The two checks cover complementary scenarios:
-
-| Scenario | Detected by |
-|----------|-------------|
-| `my-tool` declared in two files (exact match) | `entry-name-uniqueness` (U001 ERROR) |
-| `My-Tool` and `my-tool` each in one file (case drift) | `source-name-derivation` (S001 WARN) |
-
-Run both checks together (`--check all`) for complete coverage.
-
-## Remote-URL discoverability (soft-spot rule 4)
-
-`kanon catalog audit --check remote-url` enforces spec Section 3.5 soft-spot rule 4.
-Every `<project remote="X">` in a marketplace XML must have a corresponding
-`<remote name="X" fetch="...">` definition discoverable via the include chain.
-
-### How remote resolution works
-
-The check performs a depth-first walk of every `<include>` chain reachable from
-the marketplace XML and collects all `<remote name="..." fetch="...">` definitions.
-For each `<project remote="X">`:
-
-1. If no `<remote name="X">` is found anywhere in the reachable chain =>
-   **R001 ERROR** (unresolvable remote).
-2. If the resolved fetch URL contains a `?` or `#` => **R003 ERROR** (query string
-   or fragment in URL; canonicalization undefined).
-3. If the resolved fetch URL uses a non-HTTPS/SSH scheme and
-   `KANON_ALLOW_INSECURE_REMOTES` is not `1` => **R002 ERROR** (insecure URL).
-
-### Allowed URL schemes
-
-| Scheme | Status | Notes |
-|--------|--------|-------|
-| `https://` | Accepted | Always trusted. |
-| `git@host:org/repo.git` | Accepted | SSH SCP shorthand; treated as HTTPS-equivalent. |
-| `ssh://git@host/path` | Accepted | Explicit SSH; treated as HTTPS-equivalent. |
-| `http://` | Rejected by default | Allowed with `KANON_ALLOW_INSECURE_REMOTES=1`. |
-| `file://` | Rejected by default | Allowed with `KANON_ALLOW_INSECURE_REMOTES=1`. |
-| `https://...?query` | Always rejected | R003: query strings are not allowed. |
-| `https://...#frag` | Always rejected | R003: fragments are not allowed. |
-
-### Example: remote defined in a helper include
-
-A common pattern is to declare shared `<remote>` definitions in a helper XML that
-multiple marketplace files include:
-
-```xml
-<!-- repo-specs/helpers/remotes.xml -->
-<?xml version="1.0"?>
-<manifest>
-  <remote name="origin" fetch="https://github.com/my-org" />
-</manifest>
-```
-
-```xml
-<!-- repo-specs/my-tool-marketplace.xml -->
-<?xml version="1.0"?>
-<manifest>
-  <catalog-metadata>
-    <name>my-tool</name>
-    ...
-  </catalog-metadata>
-  <include name="repo-specs/helpers/remotes.xml" />
-  <project name="my-tool" remote="origin" path="src/my-tool" />
-</manifest>
-```
-
-The check resolves `remote="origin"` to `https://github.com/my-org` via the
-include, accepts the HTTPS URL, and produces zero findings.
-
-### Finding codes
-
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `R001` | ERROR | `<project remote="X">` has no matching `<remote name="X">` in the include chain. |
-| `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without opt-out. |
-| `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
-
-## Tag naming: PEP 440 compliance (soft-spot rule 5)
-
-kanon's version resolver reads git tags from the manifest repo and resolves
-operator version constraints (e.g. `~=1.0.0`) against them.  For a tag to be
-addressable by the resolver, its last `/`-delimited path component must be a
-**canonical PEP 440 version string**.
-
-A canonical PEP 440 version string is one where:
-
-1. `packaging.version.Version(component)` parses without raising `InvalidVersion`, AND
-2. The string representation of the parsed version equals the original component
-   (i.e. `str(Version(component)) == component`).
-
-Tags that fail either condition are silently skipped by the resolver.  Operators
-writing version constraints like `~=1.0.0` will not find such tags, which leads
-to confusing "no version found" errors.
-
-### Canonical vs. non-canonical tag examples
-
-| Tag name | Addressable? | Reason |
-|----------|-------------|--------|
+| Tag | Addressable? | Reason |
+| --- | ------------ | ------ |
 | `1.0.0` | yes | Canonical PEP 440 |
-| `2026.4.1` | yes | Calendar version, canonical PEP 440 |
-| `subpackage/1.0.0` | yes | Monorepo prefix; last component `1.0.0` is canonical |
-| `v1.0.0` | no | `packaging` normalizes `v1.0.0` to `1.0.0`; non-canonical |
+| `subpackage/1.0.0` | yes | Last component `1.0.0` is canonical |
+| `v1.0.0` | no | Normalises to `1.0.0`; not canonical |
 | `release-2024` | no | Does not parse as PEP 440 |
-| `subpackage/v1.0.0` | no | Last component `v1.0.0` is non-canonical |
 
-### Inventory non-PEP-440 tags with the audit check
+**This rule is warning-only (WARN, not ERROR).**
+The check exits 0 even when non-canonical tags are present. Manifest
+repos commonly contain non-version tags such as ops markers and
+release-prep tags (e.g. `release-candidate/1.1.0-rc1`); these tags are
+intentionally ignored by the resolver and continue to function for other
+git operations. Emitting a warning rather than an error means those repos
+are not blocked by the audit.
 
-Use `kanon catalog audit --check tag-format` to inventory all non-canonical tags
-before operators encounter resolver failures.  This is the recommended discovery
-tool for non-PEP-440 tags in a manifest repo:
+**Emitted message:**
 
-```bash
-# Inventory non-canonical tags in a local manifest repo
-kanon catalog audit --check tag-format /path/to/manifest-repo
-
-# Inventory a remote manifest repo
-export KANON_CACHE_DIR=~/.kanon-cache
-kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
+```text
+WARN: [T001] Tag 'v1.0.0' is unaddressable: the last path component
+'v1.0.0' is not a valid PEP 440 version. -- Rename the tag so its last
+path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1').
 ```
 
-The check exits **0** even when warnings are present -- non-canonical tags are a
-WARN finding (code `T001`), not an error.  Manifest repos with legitimate
-non-version tags (ops markers, release-prep tags) continue to work; the warning
-helps authors decide whether to rename tags to canonical PEP 440 form.
+**How to fix it:**
 
-## Running the audit locally
+Rename the tag so its last path component is a canonical PEP 440 string.
+For example, rename `v1.0.0` to `1.0.0`, or rename `subpackage/v1.0.0`
+to `subpackage/1.0.0`. Use `--check tag-format` to inventory all
+non-canonical tags before operators encounter resolver failures.
 
-To check your manifest repo before pushing:
+## Testing your manifest repo
 
-```bash
-# Audit the current directory (must contain repo-specs/)
-kanon catalog audit --check metadata .
+Run the following seven steps to verify a manifest repo end-to-end
+before publishing a release. The steps assume a scratch clone at
+`./scratch`:
 
-# Audit only the metadata check, show output as JSON
-kanon catalog audit --check metadata --format json .
+1. **Clone to a scratch directory:**
 
-# Audit a remote repo
-export KANON_CACHE_DIR=~/.kanon-cache
-kanon catalog audit --check metadata https://github.com/org/manifest-repo.git@main
+   ```bash
+   git clone https://example.com/org/manifest-repo.git ./scratch
+   ```
 
-# Inventory non-PEP-440 tags (recommended before releasing new catalog versions)
-kanon catalog audit --check tag-format .
-```
+2. **Full catalog audit (strict mode):**
 
-## Validate before pushing (fast local check)
+   ```bash
+   kanon catalog audit ./scratch --strict
+   ```
 
-`kanon validate metadata` runs the same in-repo soft-spot checks (rules 1, 2, 3)
-as `kanon catalog audit --check metadata,source-name-derivation,entry-name-uniqueness`
-but without any network access or git operations. Use it in a pre-push hook or
-a local dev loop where speed matters:
+   Exits non-zero on any ERROR or WARN finding.
 
-```bash
-# Check soft-spots 1, 2, and 3 with no network access
-kanon validate metadata --repo-root .
+3. **Validate XML structure:**
 
-# Exit early on first error (shell short-circuit)
-kanon validate metadata --repo-root . && echo "All checks passed -- safe to push"
+   ```bash
+   kanon validate xml --repo-root ./scratch
+   ```
 
-# JSON output for CI log parsing
-kanon validate metadata --repo-root . --format json | jq '.findings | length'
-```
+4. **Validate marketplace manifests:**
 
-### Recommended pre-push workflow
+   ```bash
+   kanon validate marketplace --repo-root ./scratch
+   ```
 
-1. **Fast local check:** Run `kanon validate metadata --repo-root .` before every
-   `git push`. This catches metadata errors, source-name drift, and name collisions
-   without touching the network.
-2. **Full audit:** Run `kanon catalog audit .` (or against a remote source) in CI
-   to cover soft-spots 4 and 5 (remote-URL resolvability and PEP 440 tag-name
-   compliance), which require git operations.
+5. **Validate metadata soft-spots:**
 
-Both commands share the same findings schema (`{"findings": [...]}` for JSON
-output, one finding per line for text output) and the same exit code semantics
-(exit 0 for no errors, exit 1 for any ERROR finding).
+   ```bash
+   kanon validate metadata --repo-root ./scratch
+   ```
 
-Exit code 0 means no ERROR findings (WARN findings may still appear on stdout).
-Exit code 1 means at least one ERROR finding was produced.
+6. **List catalog entries via scratch source:**
 
-## Finding codes
+   ```bash
+   export KANON_CACHE_DIR=~/.kanon-cache
+   kanon list --catalog-source ./scratch@main
+   ```
 
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `M001` | ERROR | Required field missing or whitespace-only. |
-| `M002` | WARN | Recommended field absent. |
-| `M003` | ERROR | Malformed XML -- file could not be parsed. |
-| `M004` | ERROR | Zero `<catalog-metadata>` blocks found. |
-| `M005` | ERROR | More than one `<catalog-metadata>` block found. |
-| `M006` | ERROR | Duplicate child element within `<catalog-metadata>`. |
-| `S001` | WARN | Entry name differs from its normalised form (source-name derivation drift). |
-| `S002` | WARN | Entry name contains characters outside `[a-zA-Z0-9_-]`. |
-| `U001` | ERROR | Entry name declared in more than one file (entry-name uniqueness collision). |
-| `R001` | ERROR | `<project remote="X">` has no matching `<remote name="X">` in the include chain. |
-| `R002` | ERROR | Resolved fetch URL uses a non-HTTPS/SSH scheme without `KANON_ALLOW_INSECURE_REMOTES=1`. |
-| `R003` | ERROR | Resolved fetch URL contains a query string or fragment. |
-| `T001` | WARN | Tag's last path component is not a canonical PEP 440 version string; the tag is unaddressable by kanon's resolver. |
+7. **Add a catalog entry and install:**
 
-## Related documentation
+   ```bash
+   kanon add <entry-name> \
+     --catalog-source https://example.com/org/manifest-repo.git@main
+   kanon install
+   ```
 
-- `docs/cli/catalog-audit.md` -- full CLI reference for `kanon catalog audit`
-- `docs/creating-packages.md` -- end-to-end guide to creating a new package
-- `docs/creating-manifest-repos.md` -- guide to setting up a manifest repo
+   Verify `kanon install` exits zero and the expected packages are
+   placed under `.packages/`.
+
+## See also
+
+- [docs/creating-manifest-repos.md](creating-manifest-repos.md) --
+  full guide to setting up a manifest repository from scratch,
+  including repo structure, versioning, and the `catalog/` directory.
+- [docs/list-and-add.md](list-and-add.md) --
+  consumer-side reference for `kanon list`, `kanon add`, and
+  `kanon remove`.
+- [docs/catalogs-explained.md](catalogs-explained.md) --
+  conceptual overview of how kanon catalogs work, aimed at first-time
+  consumers.
+- [docs/cli/catalog-audit.md](cli/catalog-audit.md) --
+  full CLI reference for `kanon catalog audit`, including all finding
+  codes, output formats, and environment variables.
+- Spec Section 3.5 -- soft-spot rules 1-5 (normative source).
+- Spec Section 4.8 -- `kanon catalog audit` command specification.

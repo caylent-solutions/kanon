@@ -25,6 +25,7 @@ from kanon_cli.commands.add import register as register_add
 from kanon_cli.commands.bootstrap import register as register_bootstrap
 from kanon_cli.commands.catalog import register as register_catalog
 from kanon_cli.commands.clean import register as register_clean
+from kanon_cli.commands.completion import register as register_completion
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
 from kanon_cli.commands.list import register as register_list
@@ -97,9 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
     register_add(subparsers)
     register_bootstrap(subparsers)
     register_catalog(subparsers)
-    register_install(subparsers)
     register_clean(subparsers)
+    register_completion(subparsers)
     register_doctor(subparsers)
+    register_install(subparsers)
     register_list(subparsers)
     register_outdated(subparsers)
     register_remove(subparsers)
@@ -137,6 +139,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.command is None:
         parser.print_help()
         sys.exit(2)
+
+    # Inject the root parser so subcommands that need to introspect the full
+    # argument tree (e.g., the completion subcommand) can access it without
+    # a circular import.
+    args.parser = parser
 
     exit_code = args.func(args)
     if exit_code:

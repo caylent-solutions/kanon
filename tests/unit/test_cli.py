@@ -248,6 +248,7 @@ class TestGlobalFlagsSubcommandPropagation:
         minimal: dict[str, list[str]] = {
             "add": ["entry-a", "--catalog-source", "https://example.com/repo.git@main"],
             "catalog": ["audit"],
+            "completion": ["bash"],
             "install": [_FAKE_KANON_PATH],
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
@@ -996,3 +997,92 @@ class TestCatalogSubcommandRegistration:
         with pytest.raises(SystemExit) as exc_info:
             main(["catalog", "audit", "--help"])
         assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests for the 'completion' subcommand registration in build_parser()
+# and the args.parser injection in main() (E7-F1-S1-T1 production changes
+# in cli.py). Per docs/source-test-atomicity.md, every new production source
+# change has a matching test in the same work unit's Changes Manifest.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompletionSubcommandRegistration:
+    """build_parser() registers the 'completion' subcommand (E7-F1-S1-T1)."""
+
+    def test_completion_subcommand_is_registered(self) -> None:
+        """build_parser() includes 'completion' as a registered subcommand."""
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                assert "completion" in action.choices, (
+                    "'completion' subcommand must be registered in the top-level parser"
+                )
+                return
+        pytest.fail("No subparsers action found in parser")
+
+    def test_completion_subcommand_parses_bash(self) -> None:
+        """'completion bash' stores shell='bash' in parsed namespace."""
+        parser = build_parser()
+        args = parser.parse_args(["completion", "bash"])
+        assert args.command == "completion"
+        assert args.shell == "bash"
+
+    def test_completion_subcommand_parses_zsh(self) -> None:
+        """'completion zsh' stores shell='zsh' in parsed namespace."""
+        parser = build_parser()
+        args = parser.parse_args(["completion", "zsh"])
+        assert args.command == "completion"
+        assert args.shell == "zsh"
+
+    def test_completion_subcommand_rejects_fish(self) -> None:
+        """'completion fish' exits non-zero -- 'fish' is not in the valid choices."""
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["completion", "fish"])
+        assert exc_info.value.code != 0
+
+    def test_completion_subcommand_sets_func_to_handle(self) -> None:
+        """'completion' subcommand sets args.func to handle."""
+        from kanon_cli.commands.completion import handle
+
+        parser = build_parser()
+        args = parser.parse_args(["completion", "bash"])
+        assert args.func is handle
+
+    def test_completion_help_exits_0(self) -> None:
+        """kanon completion --help exits 0 without error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["completion", "--help"])
+        assert exc_info.value.code == 0
+
+
+@pytest.mark.unit
+class TestParserInjectionInMain:
+    """main() injects the root parser into args.parser before dispatch (E7-F1-S1-T1)."""
+
+    def test_main_injects_args_parser(self) -> None:
+        """main() sets args.parser to the root ArgumentParser before calling args.func."""
+        received: dict[str, object] = {}
+
+        def _capture_func(args: argparse.Namespace) -> None:
+            received["parser"] = getattr(args, "parser", None)
+
+        with patch("kanon_cli.cli.build_parser") as mock_build:
+            mock_parser = MagicMock()
+            mock_args = argparse.Namespace(
+                command="completion",
+                shell="bash",
+                quiet=False,
+                verbose=False,
+                no_color=False,
+                func=_capture_func,
+            )
+            mock_parser.parse_args.return_value = mock_args
+            mock_build.return_value = mock_parser
+            main([])
+
+        assert received.get("parser") is mock_parser, (
+            "main() must inject the root parser as args.parser before dispatching"
+        )

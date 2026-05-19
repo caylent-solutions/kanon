@@ -184,6 +184,22 @@ Use `--output-dir DIR` to bootstrap into a different directory.
 
 Kanon works standalone via `kanon install` and `kanon clean`. You can wrap these commands in any build tool or task runner by creating targets that delegate to the CLI.
 
+### Tab Completion
+
+Kanon ships with built-in shell completion for bash and zsh via the `kanon completion <shell>` subcommand. The generated script enables tab-completion of subcommand names and flags in your shell session.
+
+**Quick setup:**
+
+```bash
+# bash -- add to ~/.bashrc or source once in your current session
+eval "$(kanon completion bash)"
+
+# zsh -- add to ~/.zshrc
+eval "$(kanon completion zsh)"
+```
+
+For persistent installation and advanced options (fish, system-wide install, oh-my-zsh), see `docs/shell-completion.md`.
+
 ---
 
 ## CLI Reference

@@ -53,6 +53,50 @@ automatically to every sub-command.
 
 ## Commands
 
+### `kanon completion <shell>`
+
+Emit a shell completion script for kanon to stdout.
+
+```
+kanon completion <shell>
+```
+
+**Positional argument:**
+
+| Argument | Description |
+|----------|-------------|
+| `<shell>` | Target shell. Choices: `{bash, zsh}`. Any other value exits non-zero with an error naming the valid choices. |
+
+**Behaviour:**
+
+1. **Shell required** -- `<shell>` must be supplied. Omitting it causes argparse
+   to exit non-zero with a "the following arguments are required" message.
+2. **Valid choices only** -- only `bash` and `zsh` are accepted. Supplying any
+   other value (e.g. `fish`) causes argparse to exit non-zero and print the
+   valid choices to stderr.
+3. **stdout only** -- the generated script is written verbatim to stdout.
+   stderr is empty on success.
+4. **Exit code** -- `0` on success; non-zero on any failure (invalid shell,
+   argparse error).
+
+**Examples:**
+
+```bash
+# Install bash completion (system-wide)
+kanon completion bash > /etc/bash_completion.d/kanon
+
+# Install bash completion (user-local)
+kanon completion bash > ~/.local/share/bash-completion/completions/kanon
+
+# Install zsh completion
+kanon completion zsh > "${fpath[1]}/_kanon"
+```
+
+See `docs/shell-completion.md` for full installation instructions across shells
+and operating systems.
+
+---
+
 ### `kanon outdated`
 
 Compare installed sources against the catalog and report which are behind.

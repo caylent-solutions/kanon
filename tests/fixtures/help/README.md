@@ -27,6 +27,7 @@ Examples:
 | `kanon-toplevel.txt` | `kanon --help` |
 | `kanon-list.txt` | `kanon list --help` |
 | `kanon-add.txt` | `kanon add --help` |
+| `kanon-remove.txt` | `kanon remove --help` |
 
 ## Regeneration Procedure
 

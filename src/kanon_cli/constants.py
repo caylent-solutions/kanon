@@ -7,6 +7,11 @@ scattered across source files.
 import os
 import re
 
+# -- Exit codes --
+# Reserved exit code for deprecated-invocation paths (e.g. kanon bootstrap).
+# 0 = success, 1 = runtime/usage error, 2 = argparse usage error, 3 = deprecated invocation.
+EXIT_CODE_DEPRECATED = 3
+
 # -- Marketplace validation --
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
 MARKETPLACE_FILE_GLOB = "*-marketplace.xml"

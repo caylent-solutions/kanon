@@ -2,10 +2,12 @@ usage: kanon bootstrap [-h] [--output-dir OUTPUT_DIR]
                        [--catalog-source <git-url>@<ref>]
                        package
 
-Copy catalog entry package files (including a pre-configured
-.kanon) into the target directory.
+[DEPRECATED] 'kanon bootstrap' is deprecated.
 
-Use 'kanon bootstrap list' to see available packages.
+Use 'kanon add <package>' instead of 'kanon bootstrap <package>'.
+Use 'kanon list' instead of 'kanon bootstrap list'.
+
+See docs/migration-bootstrap-to-add.md for the migration guide.
 
 positional arguments:
   package               Catalog entry package name (e.g. kanon) or 'list' to
@@ -14,8 +16,8 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --output-dir OUTPUT_DIR
-                        Target directory for bootstrapped files (default:
-                        current directory)
+                        [DEPRECATED] Target directory for bootstrapped files
+                        (default: current directory)
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
                         is a branch, tag, or 'latest'. Overrides
@@ -23,6 +25,6 @@ options:
                         catalog.
 
 Examples:
-  kanon bootstrap list
-  kanon bootstrap kanon
-  kanon bootstrap kanon --output-dir my-project
+  kanon add kanon
+  kanon list
+  kanon add kanon --kanon-file my-project/.kanon

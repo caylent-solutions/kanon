@@ -1,6 +1,7 @@
 import pytest
 
 from kanon_cli.constants import (
+    EXIT_CODE_DEPRECATED,
     KANON_LIST_LIMIT,
     KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
@@ -2068,3 +2069,30 @@ class TestKanonCatalogAuditStrictSummaryTemplate:
 
         rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=999)
         assert "999" in rendered
+
+
+@pytest.mark.unit
+class TestExitCodeDeprecated:
+    """Verify EXIT_CODE_DEPRECATED is defined with the correct value (AC-FUNC-006)."""
+
+    def test_exit_code_deprecated_is_3(self) -> None:
+        assert EXIT_CODE_DEPRECATED == 3
+
+    def test_exit_code_deprecated_is_int(self) -> None:
+        assert isinstance(EXIT_CODE_DEPRECATED, int)
+
+    def test_exit_code_deprecated_is_module_level_constant(self) -> None:
+        import kanon_cli.constants as constants
+
+        assert hasattr(constants, "EXIT_CODE_DEPRECATED"), (
+            "EXIT_CODE_DEPRECATED must be a module-level constant in kanon_cli.constants"
+        )
+
+    def test_exit_code_deprecated_distinct_from_success(self) -> None:
+        assert EXIT_CODE_DEPRECATED != 0
+
+    def test_exit_code_deprecated_distinct_from_runtime_error(self) -> None:
+        assert EXIT_CODE_DEPRECATED != 1
+
+    def test_exit_code_deprecated_distinct_from_argparse_error(self) -> None:
+        assert EXIT_CODE_DEPRECATED != 2

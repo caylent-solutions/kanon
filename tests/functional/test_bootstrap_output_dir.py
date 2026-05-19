@@ -1,10 +1,12 @@
-"""Functional tests for kanon bootstrap --output-dir variations.
+"""Functional tests for kanon bootstrap --output-dir deprecation shim behavior.
+
+The 'kanon bootstrap' command is now a deprecation shim. Passing --output-dir
+does not cause any filesystem mutation; the shim exits 3 without performing work.
 
 Covers:
-- AC-TEST-001: --output-dir <absolute path> creates target files under that path
-- AC-TEST-002: --output-dir with missing parent exits 1 with clear message
-- AC-FUNC-001: --output-dir accepts both absolute and relative paths and resolves them consistently
-- AC-CHANNEL-001: stdout vs stderr discipline verified (no cross-channel leakage)
+- AC-FUNC-005: No filesystem mutation when the shim runs (output-dir remains empty)
+- AC-FUNC-001: Shim exits 3 regardless of --output-dir value
+- AC-CHANNEL-001: stdout vs stderr channel discipline verified
 """
 
 import pathlib
@@ -15,190 +17,137 @@ from tests.functional.conftest import _run_kanon
 
 
 @pytest.mark.functional
-class TestBootstrapOutputDirAbsolute:
-    """AC-TEST-001: kanon bootstrap --output-dir <absolute path> creates files under that path.
+class TestBootstrapOutputDirShim:
+    """Verify --output-dir does not cause filesystem mutation (shim never delegates)."""
 
-    Verifies that when --output-dir is given an absolute path, the bootstrapped
-    files are created under that absolute path rather than in the current working
-    directory.
-    """
-
-    def test_absolute_output_dir_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must exit with code 0."""
-        target = tmp_path / "myproject"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target))
-        assert result.returncode == 0, (
-            f"Expected exit code 0 with absolute --output-dir, got {result.returncode}.\nstderr: {result.stderr!r}"
+    def test_absolute_output_dir_exits_3(self, tmp_path: pathlib.Path) -> None:
+        """kanon bootstrap kanon --output-dir <abs> must exit 3 (shim, no delegation)."""
+        output_dir = tmp_path / "bootstrap-out"
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert result.returncode == 3, (
+            f"Expected exit code 3 (shim), got {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
-    def test_absolute_output_dir_creates_kanonenv(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must create .kanon under that directory."""
-        target = tmp_path / "myproject"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target))
-        assert result.returncode == 0
-        assert (target / ".kanon").is_file(), f".kanon not found in {target} after bootstrap with absolute --output-dir"
+    def test_absolute_output_dir_not_created(self, tmp_path: pathlib.Path) -> None:
+        """The --output-dir must NOT be created (shim does not delegate)."""
+        output_dir = tmp_path / "bootstrap-out"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert not output_dir.exists(), f"Expected --output-dir '{output_dir}' to NOT be created, but it exists."
 
-    def test_absolute_output_dir_creates_readme(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must create kanon-readme.md under that directory."""
-        target = tmp_path / "myproject"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target))
-        assert result.returncode == 0
-        assert (target / "kanon-readme.md").is_file(), (
-            f"kanon-readme.md not found in {target} after bootstrap with absolute --output-dir"
-        )
+    def test_absolute_output_dir_no_kanonenv_created(self, tmp_path: pathlib.Path) -> None:
+        """No .kanon file must be created (shim does not delegate)."""
+        output_dir = tmp_path / "bootstrap-out"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert not (output_dir / ".kanon").exists(), "Expected no .kanon file to be created by the shim."
 
-    def test_absolute_output_dir_creates_exactly_expected_files(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must create exactly .kanon and kanon-readme.md."""
-        target = tmp_path / "myproject"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target))
-        assert result.returncode == 0
-        created_files = sorted(f.name for f in target.iterdir())
-        assert created_files == [".kanon", "kanon-readme.md"], (
-            f"Expected ['.kanon', 'kanon-readme.md'] in {target}, got {created_files!r}"
-        )
+    def test_absolute_output_dir_no_readme_created(self, tmp_path: pathlib.Path) -> None:
+        """No readme file must be created (shim does not delegate)."""
+        output_dir = tmp_path / "bootstrap-out"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert not (output_dir / "kanon-readme.md").exists(), "Expected no kanon-readme.md to be created by the shim."
 
-    def test_absolute_output_dir_files_not_in_cwd(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must not create files in the current directory."""
-        cwd = tmp_path / "cwd"
-        cwd.mkdir()
-        target = tmp_path / "target"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target), cwd=cwd)
-        assert result.returncode == 0
-        cwd_contents = list(cwd.iterdir())
-        assert cwd_contents == [], f"Expected no files written to cwd {cwd}, found: {cwd_contents!r}"
+    def test_absolute_output_dir_tmp_path_empty(self, tmp_path: pathlib.Path) -> None:
+        """The tmp_path must remain empty after shim invocation (no filesystem mutation)."""
+        output_dir = tmp_path / "bootstrap-out"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert list(tmp_path.iterdir()) == [], f"Expected tmp_path to be empty, got: {list(tmp_path.iterdir())}"
 
-    def test_absolute_output_dir_success_has_empty_stderr(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <absolute> must not write to stderr on success (AC-CHANNEL-001)."""
-        target = tmp_path / "myproject"
-        target.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(target))
-        assert result.returncode == 0
-        assert result.stderr == "", (
-            f"Expected empty stderr on success with absolute --output-dir, got: {result.stderr!r}"
-        )
+    def test_absolute_output_dir_success_has_warn_on_stderr(self, tmp_path: pathlib.Path) -> None:
+        """Stderr must contain the WARN message (not an empty success output)."""
+        output_dir = tmp_path / "bootstrap-out"
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert result.returncode == 3
+        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"
+
+    def test_absolute_output_dir_files_not_in_cwd(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No files must appear in cwd after shim invocation."""
+        monkeypatch.chdir(tmp_path)
+        output_dir = tmp_path / "sub" / "bootstrap-out"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        created = [p.name for p in tmp_path.iterdir()]
+        assert created == [], f"Expected cwd to be empty, got: {created}"
 
 
 @pytest.mark.functional
 class TestBootstrapOutputDirMissingParent:
-    """AC-TEST-002: kanon bootstrap --output-dir with missing parent must exit 1 with clear message.
-
-    Verifies the fail-fast behavior when the parent directory of the given
-    --output-dir does not exist. The command must exit 1 with a diagnostic
-    message on stderr, and must not create any files.
-    """
+    """Verify missing-parent --output-dir still exits 3 (shim never inspects the path)."""
 
     def test_missing_parent_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir with missing parent must exit with a non-zero code."""
+        """kanon bootstrap with --output-dir whose parent does not exist must exit non-zero."""
         missing_parent = tmp_path / "nonexistent" / "sub"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode != 0, (
-            f"Expected non-zero exit for missing parent, got {result.returncode}.\nstderr: {result.stderr!r}"
-        )
+        assert result.returncode != 0, f"Expected non-zero exit for missing parent, got 0.\nstderr: {result.stderr!r}"
 
-    def test_missing_parent_exits_1(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir with missing parent must exit with code exactly 1."""
+    def test_missing_parent_exits_3(self, tmp_path: pathlib.Path) -> None:
+        """kanon bootstrap with missing-parent --output-dir must exit 3 (shim)."""
         missing_parent = tmp_path / "nonexistent" / "sub"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode == 1, (
-            f"Expected exit code 1 for missing parent, got {result.returncode}.\nstderr: {result.stderr!r}"
-        )
+        assert result.returncode == 3, f"Expected exit code 3, got {result.returncode}.\nstderr: {result.stderr!r}"
 
     def test_missing_parent_error_on_stderr(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir with missing parent must write an error message to stderr."""
+        """stderr must contain a message (the WARN) when missing-parent path is given."""
         missing_parent = tmp_path / "nonexistent" / "sub"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode == 1
-        assert result.stderr != "", "Expected error message on stderr for missing parent directory"
+        assert result.returncode == 3
+        assert result.stderr != "", "Expected WARN message on stderr"
+        assert "Traceback" not in result.stderr, f"Expected no Python traceback, got: {result.stderr!r}"
 
-    def test_missing_parent_stderr_references_parent_directory(self, tmp_path: pathlib.Path) -> None:
-        """The stderr error message must mention 'parent' to help the user diagnose the problem."""
+    def test_missing_parent_stderr_references_deprecation(self, tmp_path: pathlib.Path) -> None:
+        """stderr message must reference the deprecation (WARN or migration docs)."""
         missing_parent = tmp_path / "nonexistent" / "sub"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode == 1
-        assert "parent" in result.stderr.lower(), f"Expected 'parent' in stderr error message, got: {result.stderr!r}"
+        assert result.returncode == 3
+        assert "WARN:" in result.stderr or "deprecated" in result.stderr, (
+            f"Expected deprecation language in stderr, got: {result.stderr!r}"
+        )
 
     def test_missing_parent_nothing_on_stdout(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir with missing parent must not write to stdout (AC-CHANNEL-001)."""
+        """kanon bootstrap with missing-parent --output-dir must not write to stdout."""
         missing_parent = tmp_path / "nonexistent" / "sub"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode == 1
-        assert result.stdout == "", f"Expected empty stdout for missing parent error, got: {result.stdout!r}"
+        assert result.returncode == 3
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
 
     def test_missing_parent_no_directory_created(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir with missing parent must not create the target directory."""
+        """No directory must be created for missing-parent paths (shim never delegates)."""
         missing_parent = tmp_path / "nonexistent" / "sub"
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
-        assert result.returncode == 1
-        assert not missing_parent.exists(), f"Expected {missing_parent} to not be created after missing-parent error"
+        _run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
+        assert not missing_parent.exists(), "Expected no directory to be created by the shim"
 
 
 @pytest.mark.functional
 class TestBootstrapOutputDirRelative:
-    """AC-FUNC-001: kanon bootstrap --output-dir accepts relative paths and resolves them against CWD.
+    """Verify --output-dir with relative paths does not create files (shim never delegates)."""
 
-    Verifies that a relative path given to --output-dir is resolved relative to
-    the subprocess working directory, not relative to any other anchor.
-    """
+    def test_relative_output_dir_exits_3(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """kanon bootstrap with a relative --output-dir must exit 3 (shim)."""
+        monkeypatch.chdir(tmp_path)
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", "relative-output")
+        assert result.returncode == 3, f"Expected exit code 3, got {result.returncode}.\nstderr: {result.stderr!r}"
 
-    def test_relative_output_dir_exits_zero(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <relative> must exit with code 0."""
-        cwd = tmp_path / "workspace"
-        cwd.mkdir()
-        target_subdir = cwd / "myproject"
-        target_subdir.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", "myproject", cwd=cwd)
-        assert result.returncode == 0, (
-            f"Expected exit code 0 with relative --output-dir, got {result.returncode}.\nstderr: {result.stderr!r}"
-        )
+    def test_relative_output_dir_not_created_in_cwd(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The relative --output-dir must NOT be created in cwd (shim does not delegate)."""
+        monkeypatch.chdir(tmp_path)
+        _run_kanon("bootstrap", "kanon", "--output-dir", "relative-output")
+        assert not (tmp_path / "relative-output").exists(), "Expected no directory created by the shim"
 
-    def test_relative_output_dir_creates_kanonenv_in_correct_location(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <relative> must create .kanon under the resolved path."""
-        cwd = tmp_path / "workspace"
-        cwd.mkdir()
-        target_subdir = cwd / "myproject"
-        target_subdir.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", "myproject", cwd=cwd)
-        assert result.returncode == 0
-        assert (target_subdir / ".kanon").is_file(), (
-            f".kanon not found in {target_subdir} after bootstrap with relative --output-dir"
-        )
+    def test_relative_output_dir_does_not_create_files_in_cwd(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No files must appear in cwd after shim invocation with relative output-dir."""
+        monkeypatch.chdir(tmp_path)
+        _run_kanon("bootstrap", "kanon", "--output-dir", "relative-output")
+        assert list(tmp_path.iterdir()) == [], f"Expected empty cwd, got: {list(tmp_path.iterdir())}"
 
-    def test_relative_output_dir_creates_readme_in_correct_location(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <relative> must create kanon-readme.md under the resolved path."""
-        cwd = tmp_path / "workspace"
-        cwd.mkdir()
-        target_subdir = cwd / "myproject"
-        target_subdir.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", "myproject", cwd=cwd)
-        assert result.returncode == 0
-        assert (target_subdir / "kanon-readme.md").is_file(), (
-            f"kanon-readme.md not found in {target_subdir} after bootstrap with relative --output-dir"
-        )
-
-    def test_relative_output_dir_does_not_create_files_in_cwd(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <relative> must only write files to the resolved subdirectory."""
-        cwd = tmp_path / "workspace"
-        cwd.mkdir()
-        target_subdir = cwd / "myproject"
-        target_subdir.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", "myproject", cwd=cwd)
-        assert result.returncode == 0
-        cwd_files = [f.name for f in cwd.iterdir() if f != target_subdir]
-        assert cwd_files == [], f"Expected no files written directly to cwd {cwd}, found: {cwd_files!r}"
-
-    def test_relative_output_dir_success_has_empty_stderr(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap --output-dir <relative> must not write to stderr on success (AC-CHANNEL-001)."""
-        cwd = tmp_path / "workspace"
-        cwd.mkdir()
-        target_subdir = cwd / "myproject"
-        target_subdir.mkdir()
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", "myproject", cwd=cwd)
-        assert result.returncode == 0
-        assert result.stderr == "", (
-            f"Expected empty stderr on success with relative --output-dir, got: {result.stderr!r}"
-        )
+    def test_relative_output_dir_success_has_warn_on_stderr(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stderr must contain the WARN message for relative --output-dir invocations."""
+        monkeypatch.chdir(tmp_path)
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", "relative-output")
+        assert result.returncode == 3
+        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"

@@ -1,14 +1,17 @@
-"""TC-bootstrap scenarios from `docs/integration-testing.md` §27.
+"""TC-bootstrap scenarios: deprecation shim verification.
 
-Each scenario exercises top-level `kanon bootstrap` surface area not
-previously covered by the BS-* scenario category.
+These scenarios verify that 'kanon bootstrap' is now a deprecation shim that:
+- Exits 3 (EXIT_CODE_DEPRECATED) for any non-help invocation.
+- Prints the verbatim WARN text to stderr.
+- Performs no filesystem mutation.
+- Does not resolve the catalog.
 
-Scenarios automated:
-- TC-bootstrap-01: --output-dir=<path> bootstrap
-- TC-bootstrap-02: --catalog-source flag form
-- TC-bootstrap-03: KANON_CATALOG_SOURCE env form
-- TC-bootstrap-04: flag overrides env
-- TC-bootstrap-05: bootstrap into nonexistent parent path errors
+Scenarios:
+- TC-bootstrap-01: --output-dir=<path> does not create the directory (shim)
+- TC-bootstrap-02: --catalog-source flag is accepted but catalog never resolved (shim)
+- TC-bootstrap-03: KANON_CATALOG_SOURCE env is accepted but catalog never resolved (shim)
+- TC-bootstrap-04: flag and env combination both ignored (shim)
+- TC-bootstrap-05: bootstrap into nonexistent parent path exits 3 (shim, not fs error)
 """
 
 from __future__ import annotations
@@ -19,139 +22,99 @@ import pathlib
 import pytest
 
 from tests.scenarios.conftest import (
-    init_git_work_dir,
-    run_git,
     run_kanon,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
-def _build_catalog_repo(parent: pathlib.Path, entry_name: str) -> pathlib.Path:
-    """Build a local bare catalog repo with a catalog/<entry_name>/ directory.
-
-    Tags 1.0.0..3.0.0 are applied as successive commits so that ``latest``
-    and PEP 440 constraint expressions resolve to a real tag.  Returns the
-    bare repo path.
-    """
-    work = parent / "catalog-work"
-    bare = parent / "catalog.git"
-    init_git_work_dir(work)
-
-    tags = ("1.0.0", "2.0.0", "3.0.0")
-    for tag in tags:
-        pkg_dir = work / "catalog" / entry_name
-        pkg_dir.mkdir(parents=True, exist_ok=True)
-        readme = pkg_dir / f"{entry_name}-readme.md"
-        readme.write_text(f"# {entry_name} {tag}\n")
-        run_git(["add", "."], work)
-        run_git(["commit", "-m", f"release {tag}"], work)
-        run_git(["tag", tag], work)
-
-    run_git(["clone", "--bare", str(work), str(bare)], work.parent)
-    return bare.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
 class TestTCBootstrap:
     # ------------------------------------------------------------------
-    # TC-bootstrap-01: --output-dir=<path>
+    # TC-bootstrap-01: --output-dir=<path> shim (no filesystem mutation)
     # ------------------------------------------------------------------
 
     def test_tc_bootstrap_01_output_dir(self, tmp_path: pathlib.Path) -> None:
-        """TC-bootstrap-01: kanon bootstrap kanon --output-dir creates .kanon at named path."""
+        """TC-bootstrap-01: kanon bootstrap kanon --output-dir exits 3 and creates no files."""
         output_dir = tmp_path / "tc-bs-01"
 
         result = run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
 
-        assert result.returncode == 0, (
-            f"bootstrap exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.returncode == 3, (
+            f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert (output_dir / ".kanon").exists(), f".kanon not found at {output_dir}"
+        assert not output_dir.exists(), (
+            f"Expected --output-dir '{output_dir}' to NOT be created (shim must not delegate)"
+        )
+        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"
 
     # ------------------------------------------------------------------
-    # TC-bootstrap-02: --catalog-source flag form
+    # TC-bootstrap-02: --catalog-source flag accepted, never resolved (shim)
     # ------------------------------------------------------------------
 
     def test_tc_bootstrap_02_catalog_source_flag(self, tmp_path: pathlib.Path) -> None:
-        """TC-bootstrap-02: bootstrap list --catalog-source flag uses the supplied catalog."""
-        catalog_bare = _build_catalog_repo(tmp_path / "fixtures", "test-entry")
-        catalog_source = f"{catalog_bare.as_uri()}@latest"
-
-        result = run_kanon("bootstrap", "list", "--catalog-source", catalog_source)
-
-        assert result.returncode == 0, (
-            f"bootstrap list exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        """TC-bootstrap-02: bootstrap list --catalog-source exits 3 (shim, no clone)."""
+        result = run_kanon(
+            "bootstrap",
+            "list",
+            "--catalog-source",
+            "https://example.com/sentinel.git@main",
         )
-        assert "test-entry" in result.stdout, f"Expected 'test-entry' in stdout: {result.stdout!r}"
+
+        assert result.returncode == 3, (
+            f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        )
+        assert "Cloning" not in result.stderr, f"Unexpected clone attempt in stderr: {result.stderr!r}"
+        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"
 
     # ------------------------------------------------------------------
-    # TC-bootstrap-03: KANON_CATALOG_SOURCE env form
+    # TC-bootstrap-03: KANON_CATALOG_SOURCE env accepted, never resolved (shim)
     # ------------------------------------------------------------------
 
     def test_tc_bootstrap_03_catalog_source_env(self, tmp_path: pathlib.Path) -> None:
-        """TC-bootstrap-03: bootstrap list reads KANON_CATALOG_SOURCE from the environment."""
-        catalog_bare = _build_catalog_repo(tmp_path / "fixtures", "test-entry")
-        catalog_source = f"{catalog_bare.as_uri()}@latest"
-
+        """TC-bootstrap-03: bootstrap list with KANON_CATALOG_SOURCE env exits 3 (shim)."""
         env = dict(os.environ)
-        env["KANON_CATALOG_SOURCE"] = catalog_source
+        env["KANON_CATALOG_SOURCE"] = "https://example.com/sentinel-env.git@main"
 
         result = run_kanon("bootstrap", "list", env=env)
 
-        assert result.returncode == 0, (
-            f"bootstrap list exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.returncode == 3, (
+            f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "test-entry" in result.stdout, f"Expected 'test-entry' in stdout: {result.stdout!r}"
+        assert "Cloning" not in result.stderr, f"Unexpected clone attempt in stderr: {result.stderr!r}"
 
     # ------------------------------------------------------------------
-    # TC-bootstrap-04: flag overrides env
+    # TC-bootstrap-04: flag and env both ignored (shim)
     # ------------------------------------------------------------------
 
     def test_tc_bootstrap_04_flag_overrides_env(self, tmp_path: pathlib.Path) -> None:
-        """TC-bootstrap-04: --catalog-source flag takes precedence over KANON_CATALOG_SOURCE env."""
-        catalog_bare = _build_catalog_repo(tmp_path / "fixtures", "test-entry")
-        catalog_source = f"{catalog_bare.as_uri()}@latest"
-
+        """TC-bootstrap-04: --catalog-source flag and KANON_CATALOG_SOURCE env both ignored (shim)."""
         env = dict(os.environ)
-        # Set env to a non-existent path; flag supplies the real catalog.
-        env["KANON_CATALOG_SOURCE"] = "file:///nonexistent-catalog.git@1.0.0"
+        env["KANON_CATALOG_SOURCE"] = "https://example.com/env-sentinel.git@1.0.0"
 
         result = run_kanon(
             "bootstrap",
             "list",
             "--catalog-source",
-            catalog_source,
+            "https://example.com/flag-sentinel.git@main",
             env=env,
         )
 
-        assert result.returncode == 0, (
-            f"bootstrap list exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.returncode == 3, (
+            f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "test-entry" in result.stdout, (
-            f"Expected 'test-entry' in stdout (flag must win over env): {result.stdout!r}"
-        )
+        assert result.stdout == "", f"Expected empty stdout (shim must not list packages), got: {result.stdout!r}"
 
     # ------------------------------------------------------------------
-    # TC-bootstrap-05: bootstrap into nonexistent parent path errors
+    # TC-bootstrap-05: missing parent exits 3 (shim, not a filesystem error)
     # ------------------------------------------------------------------
 
     def test_tc_bootstrap_05_nonexistent_parent_errors(self, tmp_path: pathlib.Path) -> None:
-        """TC-bootstrap-05: bootstrap with --output-dir whose parent does not exist exits non-zero."""
+        """TC-bootstrap-05: bootstrap with --output-dir whose parent does not exist exits 3."""
         missing_parent = tmp_path / "no" / "such" / "parent" / "dir"
 
         result = run_kanon("bootstrap", "kanon", "--output-dir", str(missing_parent))
 
-        assert result.returncode != 0, (
-            f"Expected non-zero exit for missing parent, got 0\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.returncode == 3, (
+            f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        combined = result.stdout + result.stderr
-        assert combined.strip(), "Expected a non-empty diagnostic message in stdout or stderr"
+        assert result.stderr.strip(), "Expected a non-empty WARN message in stderr"
+        assert "WARN:" in result.stderr, f"Expected 'WARN:' in stderr, got: {result.stderr!r}"

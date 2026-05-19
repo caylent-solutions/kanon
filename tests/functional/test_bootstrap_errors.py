@@ -1,14 +1,14 @@
-"""Functional tests for kanon bootstrap error paths.
+"""Functional tests for kanon bootstrap deprecation shim error paths.
 
 Covers:
 - AC-TEST-001: Missing positional package argument exits 2 with argparse error
-- AC-TEST-002: Unknown package name exits 1 with "package not found" or "Unknown" error
-- AC-TEST-003: Bad --output-dir parent (uncreateable path) exits 1 with clean diagnostic
-- AC-FUNC-001: Error paths produce non-zero exit codes and stderr messages, never silently succeed
-- AC-CHANNEL-001: stdout vs stderr discipline verified (no cross-channel leakage)
-"""
+- AC-FUNC-001: The shim exits 3 for any non-help invocation
+- AC-CHANNEL-001: stdout vs stderr channel discipline verified (no cross-channel leakage)
 
-import pathlib
+Note: 'unknown package' and 'bad --output-dir' errors are now unreachable because
+the shim exits 3 before performing any work. The tests that verified those error
+paths have been removed as the underlying behavior no longer exists.
+"""
 
 import pytest
 
@@ -53,117 +53,50 @@ class TestBootstrapMissingPackage:
 
 
 @pytest.mark.functional
-class TestBootstrapUnknownPackage:
-    """AC-TEST-002: kanon bootstrap with an unrecognized package name must exit 1.
+class TestBootstrapShimAnyPackageExits3:
+    """AC-FUNC-001: any non-help, non-empty invocation exits 3 with a WARN to stderr.
 
-    The bootstrap command exits 1 (application error) and writes a message
-    containing either 'Unknown' or 'not found' to stderr. stdout must be empty.
+    The shim replaces all delegating behavior. Exit code 3 signals deprecated
+    invocation. No filesystem mutation or catalog resolution occurs.
     """
 
-    @pytest.mark.parametrize("package_name", ["does-not-exist", "no-such-pkg", "totally-unknown-xyz"])
-    def test_various_unknown_packages_all_exit_1(self, package_name: str) -> None:
-        """kanon bootstrap <unknown> must exit 1 for any unrecognized package name."""
+    @pytest.mark.parametrize("package_name", ["kanon", "does-not-exist", "no-such-pkg"])
+    def test_any_package_name_exits_3(self, package_name: str) -> None:
+        """kanon bootstrap <package> must exit 3 regardless of whether the package exists."""
         result = _run_kanon("bootstrap", package_name)
-        assert result.returncode == 1, (
-            f"Expected exit code 1 for unknown package '{package_name}', got {result.returncode}.\n"
-            f"stderr: {result.stderr!r}"
+        assert result.returncode == 3, (
+            f"Expected exit code 3 for 'kanon bootstrap {package_name}', "
+            f"got {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
-    def test_unknown_package_error_on_stderr(self) -> None:
-        """kanon bootstrap <unknown> must write an error message to stderr."""
-        result = _run_kanon("bootstrap", "no-such-package-abc")
-        assert result.returncode == 1
-        assert result.stderr != "", "Expected error message on stderr for unknown package"
+    def test_any_package_name_warn_on_stderr(self) -> None:
+        """kanon bootstrap <package> must write a WARN to stderr."""
+        result = _run_kanon("bootstrap", "kanon")
+        assert result.returncode == 3
+        assert "WARN:" in result.stderr, f"Expected 'WARN:' in stderr, got: {result.stderr!r}"
 
-    def test_unknown_package_error_message_contains_package_name(self) -> None:
-        """The stderr error message must include the unknown package name for diagnostics."""
-        result = _run_kanon("bootstrap", "no-such-package-abc")
-        assert result.returncode == 1
-        assert "no-such-package-abc" in result.stderr, (
-            f"Expected package name 'no-such-package-abc' in stderr, got: {result.stderr!r}"
+    def test_any_package_name_nothing_on_stdout(self) -> None:
+        """kanon bootstrap <package> must not write anything to stdout (AC-CHANNEL-001)."""
+        result = _run_kanon("bootstrap", "kanon")
+        assert result.returncode == 3
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
+
+    def test_list_subcommand_exits_3(self) -> None:
+        """kanon bootstrap list must exit 3 (shim path)."""
+        result = _run_kanon("bootstrap", "list")
+        assert result.returncode == 3, (
+            f"Expected exit code 3 for 'kanon bootstrap list', got {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
-    def test_unknown_package_error_message_contains_unknown_or_not_found(self) -> None:
-        """The stderr error must contain 'Unknown' or 'not found' to explain the failure."""
-        result = _run_kanon("bootstrap", "no-such-package-abc")
-        assert result.returncode == 1
-        lowered = result.stderr.lower()
-        assert "unknown" in lowered or "not found" in lowered, (
-            f"Expected 'Unknown' or 'not found' in error message, got: {result.stderr!r}"
+    def test_warn_contains_see_docs_link(self) -> None:
+        """The WARN message must include the migration docs link."""
+        result = _run_kanon("bootstrap", "kanon")
+        assert result.returncode == 3
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr, (
+            f"Expected migration docs link in stderr, got: {result.stderr!r}"
         )
 
-    def test_unknown_package_nothing_on_stdout(self) -> None:
-        """kanon bootstrap <unknown> must not write anything to stdout (AC-CHANNEL-001)."""
-        result = _run_kanon("bootstrap", "no-such-package-abc")
-        assert result.returncode == 1
-        assert result.stdout == "", f"Expected empty stdout for unknown package error, got: {result.stdout!r}"
-
-    def test_unknown_package_no_traceback_on_stderr(self) -> None:
-        """kanon bootstrap <unknown> must not expose a raw Python traceback on stderr."""
-        result = _run_kanon("bootstrap", "no-such-package-abc")
-        assert result.returncode == 1
-        assert "Traceback" not in result.stderr, (
-            f"Expected no raw traceback on stderr for unknown package, got: {result.stderr!r}"
-        )
-
-
-@pytest.mark.functional
-class TestBootstrapBadOutputDir:
-    """AC-TEST-003: kanon bootstrap with an uncreateable --output-dir parent must exit 1.
-
-    When --output-dir points to a path whose parent directory cannot be created
-    (e.g. a subdirectory of a read-only directory), the command must catch this
-    and exit 1 with a clean diagnostic rather than printing a raw Python traceback.
-    """
-
-    def _make_readonly_parent(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        """Create a read-only directory and return a child path that cannot be created.
-
-        Creates a directory under tmp_path, makes it read-only (mode 0o555),
-        then returns a path to a subdirectory inside it that cannot be created
-        because the parent is not writable.
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-
-        Returns:
-            A path whose parent exists but is read-only, making mkdir fail.
-        """
-        readonly_parent = tmp_path / "readonly-dir"
-        readonly_parent.mkdir()
-        readonly_parent.chmod(0o555)
-        return readonly_parent / "blocked-subdir"
-
-    def test_bad_output_dir_parent_exits_1(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap with uncreateable --output-dir must exit with code 1.
-
-        The read-only parent prevents mkdir from succeeding. The command must
-        catch this and exit 1 rather than printing a raw Python traceback and
-        exiting with an unexpected code.
-        """
-        blocked_path = self._make_readonly_parent(tmp_path)
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(blocked_path))
-        assert result.returncode == 1, (
-            f"Expected exit code 1 for uncreateable output directory, got {result.returncode}.\n"
-            f"stderr: {result.stderr!r}"
-        )
-
-    def test_bad_output_dir_error_on_stderr(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap with bad --output-dir must write a clean diagnostic to stderr."""
-        blocked_path = self._make_readonly_parent(tmp_path)
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(blocked_path))
-        assert result.returncode == 1
-        assert result.stderr != "", "Expected error message on stderr for uncreateable output directory"
-        assert "Traceback" not in result.stderr, (
-            f"Expected clean error message, not a raw Python traceback.\nstderr: {result.stderr!r}"
-        )
-        assert "Cannot create output directory" in result.stderr or "output" in result.stderr.lower(), (
-            f"Expected output directory error message in stderr, got: {result.stderr!r}"
-        )
-
-    def test_bad_output_dir_nothing_on_stdout(self, tmp_path: pathlib.Path) -> None:
-        """kanon bootstrap with bad --output-dir must not write anything to stdout (AC-CHANNEL-001)."""
-        blocked_path = self._make_readonly_parent(tmp_path)
-        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(blocked_path))
-        assert result.returncode == 1
-        assert result.stdout == "", f"Expected empty stdout for bad output directory error, got: {result.stdout!r}"
+    def test_warn_no_traceback(self) -> None:
+        """The shim must not emit a Python traceback."""
+        result = _run_kanon("bootstrap", "kanon")
+        assert "Traceback" not in result.stderr, f"Unexpected traceback in stderr: {result.stderr!r}"

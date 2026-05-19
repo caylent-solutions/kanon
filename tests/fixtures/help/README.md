@@ -28,6 +28,7 @@ Examples:
 | `kanon-list.txt` | `kanon list --help` |
 | `kanon-add.txt` | `kanon add --help` |
 | `kanon-remove.txt` | `kanon remove --help` |
+| `kanon-outdated.txt` | `kanon outdated --help` |
 
 ## Regeneration Procedure
 

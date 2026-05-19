@@ -1,0 +1,50 @@
+usage: kanon outdated [-h] [--catalog-source <git-url>@<ref>]
+                      [--kanon-file <path>] [--lock-file <path>]
+                      [--fail-on-upgrade] [--format <format>]
+
+Compare each KANON_SOURCE_<name>_* block in the .kanon file against
+the catalog and emit a table of:
+
+  name | current | latest-matching-spec | latest-available | upgrade-type
+
+The 'current' column is taken from the lockfile when present, or
+live-resolved against the catalog when absent.
+
+Exit code is always 0 unless --fail-on-upgrade is set, in which
+case the command exits 1 when any source has an available upgrade.
+
+Catalog source precedence: --catalog-source flag, then
+KANON_CATALOG_SOURCE env var. Both being absent is a hard error.
+
+options:
+  -h, --help            show this help message and exit
+  --catalog-source <git-url>@<ref>
+                        Remote catalog source as '<git_url>@<ref>' where ref
+                        is a branch, tag, or 'latest'. Overrides
+                        KANON_CATALOG_SOURCE env var. Required when
+                        KANON_CATALOG_SOURCE is not set.
+  --kanon-file <path>   Path to the .kanon file. Defaults to './.kanon'.
+                        Overridden by the KANON_KANON_FILE environment
+                        variable; the CLI flag takes precedence when both are
+                        set.
+  --lock-file <path>    Path to the .kanon.lock file. When present, provides
+                        the current resolved SHA. When absent, the command
+                        live-resolves against the catalog. Defaults to <kanon-
+                        file>.lock. Overridden by the KANON_LOCK_FILE
+                        environment variable; the CLI flag takes precedence
+                        when both are set.
+  --fail-on-upgrade     Exit 1 when ANY source has an available upgrade
+                        (upgrade-type != 'none'). Default is to always exit 0
+                        (parity with pip list --outdated, npm outdated, cargo
+                        outdated). Use this flag in CI pipelines to gate on
+                        lockfile freshness: the build fails when any source is
+                        upgradable, prompting the operator to refresh the
+                        lockfile. Spec reference: spec/kanon-list-add-lock-
+                        features-spec.md Section 0.2 and Section 4.4 'Exit
+                        code'.
+  --format <format>     Output format: 'table' (default) or 'json'. The 'json'
+                        format emits a top-level array of objects, one per
+                        source, with keys: name, current, latest-matching-
+                        spec, latest-available, upgrade-type. Overridden by
+                        the KANON_OUTDATED_FORMAT environment variable; the
+                        CLI flag takes precedence when both are set.

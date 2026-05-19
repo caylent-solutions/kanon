@@ -17,7 +17,8 @@ import argparse
 import os
 import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 from types import FrameType
 
 from kanon_cli import __version__
@@ -35,6 +36,84 @@ from kanon_cli.commands.why import register as register_why
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
+
+# ---------------------------------------------------------------------------
+# Top-level help text (spec Section 14)
+# ---------------------------------------------------------------------------
+
+_TOP_LEVEL_HELP: str = """\
+kanon -- declarative dependency manager for git-hosted assets
+
+Usage: kanon <command> [options]
+
+Discovery & management:
+  list             Discover catalog entries
+  add              Add catalog entries to .kanon
+  remove           Remove sources from .kanon
+  outdated         Report installable upgrades
+  why              Explain why a transitive dep is in the tree
+
+Lifecycle:
+  install          Install/sync everything in .kanon
+  clean            Remove installed artifacts (use --orphans to also prune unreferenced)
+  validate         Validate XML manifests (subcommands: xml, marketplace, metadata)
+  doctor           Diagnose .kanon / .kanon.lock health
+
+Manifest repo (catalog author):
+  catalog audit    Audit a manifest repo against the standards contract
+  repo             Catalog-author repo subcommands (see kanon repo --help)
+
+Shell integration:
+  completion       Generate shell completion script
+
+Deprecated:
+  bootstrap        DEPRECATED -- use 'kanon add' / 'kanon list'. See docs/migration-bootstrap-to-add.md.
+
+Global options (always available):
+  --version                      Print kanon version and exit.
+  --help                         Show this and exit.
+  --quiet / --verbose            Logging verbosity (mutually exclusive).
+  --no-color                     Disable ANSI color (also respects NO_COLOR env var).
+
+Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
+  --catalog-source <url>@<ref>   Override KANON_CATALOG_SOURCE. No default; one of
+                                 --catalog-source or KANON_CATALOG_SOURCE is required
+                                 for list/add/outdated/why/catalog audit. For install
+                                 and doctor, .kanon.lock [catalog].source is used as
+                                 fallback when present and consistent.
+"""
+
+
+class _TopLevelHelpAction(argparse.Action):
+    """Argparse action that prints ``_TOP_LEVEL_HELP`` to stdout and exits 0.
+
+    Registered on the top-level parser in place of the default ``-h``/``--help``
+    action (``add_help=False``) so that ``kanon --help`` produces the verbatim
+    spec Section 14 format rather than argparse's auto-generated layout.
+
+    Single Responsibility: this class only prints the constant and exits.
+    It has no knowledge of the parser structure and introduces no side-effects
+    beyond the I/O to stdout and the ``SystemExit(0)`` raise.
+    """
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ) -> None:
+        """Print the top-level help text and exit with code 0.
+
+        Args:
+            parser: The ArgumentParser instance (unused; help text is the
+                constant, not derived from parser state).
+            namespace: The argparse namespace being populated (unused).
+            values: The option values parsed (always empty for nargs=0).
+            option_string: The option string used to invoke this action.
+        """
+        sys.stdout.write(_TOP_LEVEL_HELP)
+        raise SystemExit(0)
 
 
 def _make_signal_handler(signum: int) -> "Callable[[int, FrameType | None], None]":
@@ -80,6 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
             "  kanon repo sync --jobs=4"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
+    )
+    parser.add_argument(
+        "--help",
+        nargs=0,
+        action=_TopLevelHelpAction,
+        default=argparse.SUPPRESS,
+        help="Show this and exit.",
     )
     parser.add_argument(
         "--version",

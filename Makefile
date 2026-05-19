@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan
+.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -80,3 +80,7 @@ install-hooks: ## Install git hooks for pre-commit and pre-push
 	@git config core.hooksPath git-hooks
 	@chmod +x git-hooks/pre-commit git-hooks/pre-push
 	@echo "Git hooks installed successfully!"
+
+update-completion-snapshots: ## Regenerate bash + zsh completion fixture files
+	uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh
+	uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh

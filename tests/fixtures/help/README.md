@@ -25,6 +25,7 @@ Examples:
 | File | Command |
 |------|---------|
 | `kanon-toplevel.txt` | `kanon --help` |
+| `kanon-list.txt` | `kanon list --help` |
 
 ## Regeneration Procedure
 

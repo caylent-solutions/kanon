@@ -2,37 +2,42 @@
 
 ## Global options
 
-The following flags are accepted by every `kanon` command as global options placed
-before the subcommand name (e.g., `kanon --quiet install`):
+The following flags are accepted by every `kanon` command as global
+options placed before the subcommand name
+(e.g., `kanon --quiet install`):
 
-| Flag | Description |
-|------|-------------|
-| `--quiet` | Suppress all output except errors. Sets the root logger to WARNING level. |
-| `--verbose` | Enable debug-level output. Sets the root logger to DEBUG level. |
-| `--no-color` | Disable ANSI color output unconditionally. |
+| Flag          | Description                                  |
+|---------------|----------------------------------------------|
+| `--quiet`     | Suppress all output except errors. Sets the  |
+|               | root logger to WARNING level.                |
+| `--verbose`   | Enable debug-level output. Sets the root     |
+|               | logger to DEBUG level.                       |
+| `--no-color`  | Disable ANSI color output unconditionally.   |
 
 ### Mutual exclusion: --quiet and --verbose
 
-`--quiet` and `--verbose` are mutually exclusive. Passing both flags at the same
-time causes argparse to exit immediately with a non-zero code and an error message
-on stderr. There is no fallback or silent suppression -- this is a hard error per
-spec Section 7.
+`--quiet` and `--verbose` are mutually exclusive. Passing both flags
+at the same time causes argparse to exit immediately with a non-zero
+code and an error message on stderr. There is no fallback or silent
+suppression -- this is a hard error per spec Section 7.
 
 ```bash
 # ERROR: argument --verbose: not allowed with argument --quiet
 kanon --quiet --verbose install .kanon
 ```
 
-### Color output: --no-color and the NO_COLOR environment variable
+### Color output: --no-color and the NO\_COLOR environment variable
 
-Color output is controlled by the following precedence chain (highest wins):
+Color output is controlled by the following precedence chain
+(highest wins):
 
-1. `--no-color` flag -- always disables color when passed, regardless of the
-   `NO_COLOR` environment variable or TTY state.
-2. `NO_COLOR` environment variable -- when set to any non-empty value, disables
-   color output following the https://no-color.org convention.
-3. TTY auto-detection -- color is enabled by default when stdout is a TTY and
-   neither of the above conditions applies.
+1. `--no-color` flag -- always disables color when passed, regardless
+   of the `NO_COLOR` environment variable or TTY state.
+2. `NO_COLOR` environment variable -- when set to any non-empty value,
+   disables color output following the <https://no-color.org>
+   convention.
+3. TTY auto-detection -- color is enabled by default when stdout is a
+   TTY and neither of the above conditions applies.
 
 ```bash
 # Disable color via flag (highest precedence)
@@ -45,7 +50,8 @@ NO_COLOR=1 kanon install .kanon
 NO_COLOR= kanon --no-color install .kanon
 ```
 
-The `.kanon` file is a shell-compatible KEY=VALUE configuration file that drives the Kanon lifecycle.
+The `.kanon` file is a shell-compatible KEY=VALUE configuration file
+that drives the Kanon lifecycle.
 
 ## Format
 
@@ -69,41 +75,156 @@ Values can reference environment variables using `${VAR}` syntax:
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 ```
 
-If the referenced variable is not set in the environment, parsing fails with a descriptive error.
+If the referenced variable is not set in the environment, parsing
+fails with a descriptive error.
 
-## Environment Variable Overrides
+## Environment Variable Reference
 
-Every `.kanon` variable can be overridden by an environment variable of the same name. This enables CI/CD pipelines to customize behavior without modifying the file.
+The sections below group every environment variable by function.
+Each entry shows the variable name, its default, and a description.
+Cross-references:
 
-Additionally, the following environment variables control internal timeouts and path overrides:
+- Shell completion cache layout:
+  [docs/shell-completion.md](shell-completion.md)
+- Lockfile precedence and format:
+  [docs/lockfile.md](lockfile.md)
+- Git authentication setup:
+  [docs/git-auth-setup.md](git-auth-setup.md)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_GIT_LS_REMOTE_TIMEOUT` | `30` | Timeout in seconds for `git ls-remote` calls used by SHA reachability checks and ref resolution in the install engine. |
-| `KANON_LOCK_FILE` | _(derived)_ | Override the lock file path. When set to a non-empty value, kanon reads and writes the lock file at this path instead of the default derived from `--kanon-file` (i.e. `<kanon-file-path>.lock`). The `--lock-file` CLI flag takes precedence when both are set. An empty-string value is treated as unset. See `docs/lockfile.md` for the full precedence chain. |
-| `KANON_ALLOW_INSECURE_REMOTES` | _(unset)_ | When set to exactly `1`, disables the insecure-remote-URL security check in `kanon install`. All remote URL schemes (HTTP, `file://`, `git://`, etc.) are accepted without error. Any value other than `1` is treated as unset. See the security note below. |
+---
 
-### KANON_ALLOW_INSECURE_REMOTES -- security rationale
+### Catalog source
 
-kanon enforces a trust model (spec Section 3.6) that requires all `<remote>` fetch URLs in
-resolved manifests to use HTTPS or SSH. Plain HTTP, `file://`, `git://`, and other unencrypted
-schemes are rejected by default because they expose dependency resolution to network-level
+**No default catalog source.** Post-bootstrap-deprecation, the
+bundled fallback catalog has been removed. One of `--catalog-source`
+or `KANON_CATALOG_SOURCE` is required for catalog-requiring commands.
+There is no rc-file mechanism; configuration is explicit via CLI flag
+or environment variable only.
+
+**`KANON_CATALOG_SOURCE`** (default: unset) -- Catalog repository in
+`<url>@<ref>` form. Specifies the catalog repository used by
+catalog-requiring commands. Overridden by `--catalog-source` CLI flag.
+
+```bash
+export KANON_CATALOG_SOURCE=\
+  https://github.com/example-org/kanon-catalog.git@main
+kanon list
+```
+
+**Precedence (highest to lowest):**
+
+1. `--catalog-source` CLI flag
+2. `KANON_CATALOG_SOURCE` environment variable
+3. `lockfile.[catalog].source` -- fallback for `kanon install` and
+   `kanon doctor` when in the `LOCKFILE_CONSISTENT` state and both
+   the CLI flag and env var are unset
+
+When none of the three sources is set and the lockfile fallback is
+not applicable, kanon raises `MissingCatalogSourceError` with
+remediation text. See
+[docs/catalogs-explained.md](catalogs-explained.md) for details.
+
+When the CLI flag or env var is set and differs from the lockfile's
+recorded `[catalog].source`, `kanon install` raises
+`CatalogSourceMismatchError`. The lockfile is authoritative; run
+`kanon install --refresh-lock` to intentionally change catalogs.
+
+See [docs/architecture.md](architecture.md) for the full precedence
+and mismatch-detection logic.
+
+**Shell-profile leakage warning.** If `KANON_CATALOG_SOURCE` is set
+in a shell profile (e.g., `~/.bashrc`, `~/.zshrc`, `~/.profile`),
+it leaks into every shell session including unrelated workspaces.
+A catalog source set for project A silently applies to project B
+if both are opened in the same shell. To avoid cross-workspace
+contamination, set `KANON_CATALOG_SOURCE` in workspace-specific
+tooling (e.g., a `.envrc` loaded by direnv) rather than in shell
+profiles. Alternatively, always pass `--catalog-source` explicitly
+on the command line.
+
+---
+
+### Resolver behavior
+
+These variables control how the resolver fetches, resolves, and
+validates dependency information.
+
+**`KANON_RESOLVE_TIMEOUT`** (default: `30`) -- Timeout in seconds for
+each `git ls-remote` call in `kanon install`, `kanon outdated`,
+`kanon why`, and `kanon doctor`. Bounded per call; not a global wall
+clock. Defined in `src/kanon_cli/constants.py`.
+
+**`KANON_KANON_FILE`** (default: `./.kanon`) -- Default target
+`.kanon` file for `kanon add` / `kanon remove` writes and default
+`--kanon-file` argument for all commands. Overridden by
+`--kanon-file` CLI flag.
+
+**`KANON_LIST_FORMAT`** (default: `names`) -- Default output format
+for `kanon list`. Supported values: `names`, `json`. Overridden by
+`--format` CLI flag.
+
+**`KANON_LIST_LIMIT`** (default: `50`) -- Default cap on the number
+of entries returned by `kanon list --all-versions`. Overridden by
+`--limit N` / `--no-limit` CLI flags.
+
+**`KANON_TREE_NO_FILTER_THRESHOLD`** (default: `20`) -- Entry count
+above which `kanon list --tree` requires a filter argument. Without a
+filter, `kanon list --tree` exits with an error suggesting `--regex`,
+`<substring>`, or `--max-depth 0`. Override with
+`--no-filter-required`.
+
+**`KANON_OUTDATED_FORMAT`** (default: `table`) -- Default output
+format for `kanon outdated`. Currently only `table` is supported.
+Overridden by `--format` CLI flag.
+
+**`KANON_WHY_FORMAT`** (default: `text`) -- Default output format for
+`kanon why`. Supported values: `text` (human-readable arrow-separated
+chains) and `json` (machine-readable JSON array). Overridden by
+`--format` CLI flag.
+
+**`KANON_WHY_JSON_INDENT`** (default: `2`) -- Number of spaces per
+indentation level in JSON output from `kanon why --format json`. Must
+be a non-negative integer parseable by Python `int()`.
+
+**`KANON_WHY_SUGGEST_MAX_DISTANCE`** (default: `3`) -- Maximum
+Levenshtein edit distance for closest-match suggestions when
+`kanon why` cannot find the requested argument. Must be a
+non-negative integer.
+
+**`KANON_WHY_SUGGEST_TOP_N`** (default: `3`) -- Maximum number of
+closest-match suggestions displayed on not-found. Results are sorted
+ascending by edit distance, ties broken lexicographically. Must be a
+non-negative integer.
+
+**`KANON_ALLOW_INSECURE_REMOTES`** (default: unset) -- When set to
+exactly `1`, disables the insecure-remote URL security check in
+`kanon install`. All remote URL schemes (HTTP, `file://`, `git://`,
+etc.) are accepted without error. Any value other than `1` is treated
+as unset. See the security rationale below.
+
+#### KANON\_ALLOW\_INSECURE\_REMOTES -- security rationale
+
+kanon enforces a trust model (spec Section 3.6) that requires all
+`<remote>` fetch URLs in resolved manifests to use HTTPS or SSH. Plain
+HTTP, `file://`, `git://`, and other unencrypted schemes are rejected
+by default because they expose dependency resolution to network-level
 interception and tampering.
 
 **Allowed unconditionally:**
+
 - `https://...` -- encrypted, authenticated.
-- `git@host:org/repo.git` -- SCP-style SSH shorthand; encrypted, key-authenticated.
-- `ssh://...` -- explicit SSH protocol; encrypted, key-authenticated.
+- `git@host:org/repo.git` -- SCP-style SSH; encrypted, key-authed.
+- `ssh://...` -- explicit SSH; encrypted, key-authenticated.
 
 **Rejected by default (allowed only with `KANON_ALLOW_INSECURE_REMOTES=1`):**
-- `http://...` -- unencrypted; traffic can be intercepted and modified in transit.
-- `file://...` -- local filesystem path; no network-level guarantees, and a path that
-  is valid in one environment may resolve to something different in another.
-- Any other scheme (`git://`, `ftp://`, custom schemes, or empty URL).
 
-**Override:** Set `KANON_ALLOW_INSECURE_REMOTES=1` to disable the check. The override is
-intentionally narrow: only the exact string `1` enables it. Values such as `true`, `yes`,
-`on`, or `0` do NOT enable the override and leave the policy enforced.
+- `http://...` -- unencrypted; interceptable in transit.
+- `file://...` -- local path; no network-level guarantees.
+- Any other scheme (`git://`, `ftp://`, custom schemes, empty URL).
+
+**Override:** Set `KANON_ALLOW_INSECURE_REMOTES=1` to disable the
+check. Only the exact string `1` enables it. Values such as `true`,
+`yes`, `on`, or `0` do NOT enable the override.
 
 ```bash
 # Default: HTTP remote rejected
@@ -113,14 +234,240 @@ kanon install .kanon  # exits 1 if any <remote> uses http://
 KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
 ```
 
-The check also runs on the lockfile-consistent replay path: even if a lockfile was
-recorded with an HTTP URL, `kanon install` rejects it. This defends against a malicious
-or tampered lockfile injecting an insecure remote for a subsequent install. See
-`docs/lockfile.md` for details on how replay enforcement works.
+The check also runs on the lockfile-consistent replay path: even if a
+lockfile was recorded with an HTTP URL, `kanon install` rejects it.
+See [docs/lockfile.md](lockfile.md) for details on replay enforcement.
+
+---
+
+### File paths
+
+These variables control where kanon reads and writes its key files.
+
+**`KANON_LOCK_FILE`** (default: derived) -- Override the lock file
+path. When set to a non-empty value, kanon reads and writes the lock
+file at this path instead of the default derived from `--kanon-file`
+(i.e. `<kanon-file-path>.lock`). The `--lock-file` CLI flag takes
+precedence when both are set. An empty-string value is treated as
+unset. See [docs/lockfile.md](lockfile.md) for the full precedence
+chain.
+
+**Lock file resolution order (highest wins):**
+
+1. `--lock-file` CLI flag
+2. `KANON_LOCK_FILE` environment variable
+3. Default derived from `--kanon-file`: `./.kanon` becomes
+   `./.kanon.lock`; `./alt.kanon` becomes `./alt.kanon.lock`.
+
+**`KANON_CACHE_DIR`** (default: `~/.cache/kanon`) -- Root directory
+for the shell-completion cache. When set, overrides both
+`XDG_CACHE_HOME/kanon` and the `~/.cache/kanon` fallback. The
+directory and all files inside it are created with mode `0700` /
+`0600` (owner-private). See
+[Shell Completion -- Cache layout](shell-completion.md#cache-layout).
+
+**`KANON_CACHE_DIR` resolution order (highest wins):**
+
+1. `KANON_CACHE_DIR` environment variable.
+2. `${XDG_CACHE_HOME}/kanon` -- XDG Base Directory fallback.
+3. `~/.cache/kanon` -- default when neither env var is set.
+
+```bash
+# Store cache in a non-default location
+export KANON_CACHE_DIR=/tmp/my-kanon-cache
+
+# Use the XDG default
+unset KANON_CACHE_DIR
+export XDG_CACHE_HOME=~/.cache
+```
+
+---
+
+### Lockfile
+
+These variables control lockfile-related behaviour. See
+[docs/lockfile.md](lockfile.md) for the full lockfile reference
+including format, semantics, schema migration, and conflict
+resolution.
+
+**`KANON_GIT_LS_REMOTE_TIMEOUT`** (default: `30`) -- Timeout in
+seconds for `git ls-remote` calls used by SHA reachability checks and
+ref resolution in the install engine. Defined in
+`src/kanon_cli/core/install.py`.
+
+The `KANON_RESOLVE_TIMEOUT` variable (documented under
+[Resolver behavior](#resolver-behavior)) also governs `git ls-remote`
+calls during lockfile resolution.
+
+---
+
+### Concurrency
+
+`kanon install`, `kanon add`, `kanon remove`, and
+`kanon doctor --refresh-completion-cache` use an exclusive file lock
+(`fcntl.flock(LOCK_EX)`) on `.kanon-data/.kanon-install.lock` to
+serialize concurrent invocations within the same workspace. The
+kernel releases the lock on process exit (graceful or crash); a
+leftover `.kanon-install.lock` file on disk is harmless.
+
+The following variables control how `kanon doctor --prune-cache`
+handles stale lock files and cache entries.
+
+**`KANON_CACHE_PRUNE_AGE_DAYS`** (default: `30`) -- Files under
+`${KANON_CACHE_DIR}` whose last-access time is older than this many
+days are removed by `kanon doctor --prune-cache`. Reports what was
+pruned. Must be a positive integer. Values of 0 or below are rejected
+with a clear error at startup.
+
+**`KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH`** (default: `4`) --
+Maximum directory depth below the current working directory that
+`kanon doctor --prune-cache` searches for stale
+`.kanon-data/.kanon-install.lock` files. Bounds filesystem traversal
+to prevent wandering the entire filesystem in a misconfigured
+workspace. Must be a positive integer.
+
+**`KANON_DOCTOR_STALE_LOCK_AGE_HOURS`** (default: `1`) -- Minimum
+age in hours for a `.kanon-data/.kanon-install.lock` file to be
+considered stale by `kanon doctor --prune-cache`. Stale locks are
+reported as advisory findings only -- doctor never deletes them.
+`fcntl.flock` self-cleans on process exit, so a leftover file is
+harmless. Must be a positive integer.
+
+```bash
+# Use the default 30-day threshold
+kanon doctor --prune-cache
+
+# Prune files not accessed in the last 7 days
+KANON_CACHE_PRUNE_AGE_DAYS=7 kanon doctor --prune-cache
+
+# Restrict stale-lock scan to 2 levels deep
+KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH=2 kanon doctor --prune-cache
+
+# Treat locks older than 4 hours as stale
+KANON_DOCTOR_STALE_LOCK_AGE_HOURS=4 kanon doctor --prune-cache
+```
+
+---
+
+### Completion cache
+
+These variables control the shell-completion cache. See
+[docs/shell-completion.md](shell-completion.md) for the full cache
+layout and lifecycle description.
+
+**`KANON_COMPLETION_ENABLED`** (default: `1`) -- When set to `0`,
+all shell completion helpers return an empty candidate list
+immediately without invoking the `kanon` subprocess. Set to `0` to
+disable dynamic completion lookups globally (for example in
+restricted environments or when completion latency is a concern). Any
+value other than `0` is treated as enabled.
+
+```bash
+# Disable all kanon completion lookups
+export KANON_COMPLETION_ENABLED=0
+
+# Re-enable (default behaviour)
+export KANON_COMPLETION_ENABLED=1
+```
+
+**`KANON_COMPLETION_TIMEOUT`** (default: `2`) -- Timeout in seconds
+applied to each `kanon __complete_*` subprocess call made by the
+shell completion preamble helpers. When `timeout`(1) is available on
+`$PATH`, it wraps the subprocess call with this value. When
+`timeout`(1) is not available, kanon's own internal subprocess
+timeout (also bounded by this variable) applies. Must be a positive
+integer.
+
+```bash
+# Use a 5-second timeout for completion lookups
+export KANON_COMPLETION_TIMEOUT=5
+
+# Use the default 2-second timeout
+unset KANON_COMPLETION_TIMEOUT
+```
+
+**`KANON_COMPLETION_REFRESH_BG`** (default: `1`) -- When set to `1`,
+a background subprocess is spawned after a stale-but-present cache
+read to refresh the cache asynchronously. Set to `0` to disable
+background refresh (completions then become stale until the TTL
+expires and the next Tab press triggers a synchronous fetch).
+
+```bash
+# Disable background refresh
+export KANON_COMPLETION_REFRESH_BG=0
+```
+
+**`KANON_COMPLETION_CACHE_TTL`** (default: `300`) -- Cache
+time-to-live in seconds. A cached completion result whose
+`fetched_at.txt` is within this age is returned immediately without a
+remote fetch. When the age exceeds the TTL, a background refresh is
+spawned (if `KANON_COMPLETION_REFRESH_BG=1`).
+
+```bash
+# Extend TTL to 10 minutes
+export KANON_COMPLETION_CACHE_TTL=600
+```
+
+**`KANON_ACCESSED_AT_COALESCE_SEC`** (default: `60`) -- Coalescing
+window in seconds for `accessed_at.txt` updates. A read that occurs
+within this many seconds of the last `accessed_at` write does not
+rewrite the file. This bounds I/O during rapid tab-pressing without
+losing access-time tracking for cache pruning.
+
+```bash
+# Coalesce accessed_at writes within a 5-minute window
+export KANON_ACCESSED_AT_COALESCE_SEC=300
+```
+
+**`KANON_COMPLETION_LOG`** (default: `${KANON_CACHE_DIR}/completion-errors.log`)
+-- Path to the append-only completion-errors log. When unset, errors
+are written to `completion-errors.log` directly under `KANON_CACHE_DIR`.
+The file is created with mode `0600` and its parent directory with
+mode `0700`.
+
+```bash
+# Redirect completion errors to a custom path
+export KANON_COMPLETION_LOG=/var/log/kanon-completion-errors.log
+```
+
+**`KANON_COMPLETION_ERRORS_REPORT_LIMIT`** (default: `5`) -- Maximum
+number of completion error lines surfaced by `kanon doctor` (subcheck
+7). Must be a positive integer.
+
+---
+
+### Retry policy
+
+kanon retries `git ls-remote` calls on transient errors. Auth-failure
+patterns skip retries immediately; see
+[docs/git-auth-setup.md](git-auth-setup.md) for authentication
+configuration. The auth-error patterns (`GIT_AUTH_ERROR_PATTERNS`) are
+internal constants, not environment variables.
+
+**`KANON_GIT_RETRY_COUNT`** (default: `3`) -- Number of
+`git ls-remote` retry attempts on transient errors. Auth-error
+patterns (e.g., "Authentication", "Permission denied") skip retries
+regardless of this value. Must be a non-negative integer. Defined in
+`src/kanon_cli/constants.py`.
+
+**`KANON_GIT_RETRY_DELAY`** (default: `1`) -- Seconds to wait
+between `git ls-remote` retry attempts. Must be a non-negative
+integer. Defined in `src/kanon_cli/constants.py`.
+
+```bash
+# Increase retry attempts for unreliable networks
+KANON_GIT_RETRY_COUNT=5 kanon install .kanon
+
+# Increase wait between retries
+KANON_GIT_RETRY_DELAY=3 kanon install .kanon
+```
+
+---
 
 ## Multi-Source Groups
 
-Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable patterns and processed in alphabetical order by name:
+Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable
+patterns and processed in alphabetical order by name:
 
 ```properties
 KANON_SOURCE_build_URL=https://github.com/org/build-repo.git
@@ -132,378 +479,36 @@ KANON_SOURCE_marketplaces_REVISION=main
 KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces.xml
 ```
 
-Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed variables.
+Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed
+variables.
 
-## KANON_CATALOG_SOURCE Environment Variable
+---
 
-There is no default catalog source; one of `--catalog-source` or
-`KANON_CATALOG_SOURCE` is required (except for `kanon install` and
-`kanon doctor`, which may use the lockfile's `[catalog].source` field as a
-fallback). When neither is provided and the lockfile fallback is not
-applicable, kanon raises `MissingCatalogSourceError`. See
-`docs/catalogs-explained.md` for what a manifest repo is and how to
-find one.
-
-The `KANON_CATALOG_SOURCE` environment variable specifies the catalog repository
-used by catalog-requiring commands. It follows the `<url>@<ref>` form:
-
-```bash
-export KANON_CATALOG_SOURCE=https://github.com/example-org/kanon-catalog.git@main
-kanon list
-```
-
-**Precedence (highest to lowest):**
-
-1. `--catalog-source` CLI flag
-2. `KANON_CATALOG_SOURCE` environment variable
-3. `lockfile.[catalog].source` (fallback -- applies only for `kanon install` and
-   `kanon doctor` in the `LOCKFILE_CONSISTENT` state and only when both the CLI
-   flag and env var are unset)
-
-When none of the three sources is set and the lockfile fallback is not applicable,
-kanon raises `MissingCatalogSourceError` with remediation text. See
-`docs/catalogs-explained.md` for details on how to configure a catalog.
-
-When the CLI flag or env var is set and differs from the lockfile's recorded
-`[catalog].source`, `kanon install` raises `CatalogSourceMismatchError`. The lockfile
-is authoritative; run `kanon install --refresh-lock` to intentionally change catalogs.
-
-See `docs/architecture.md` for the full precedence and mismatch-detection logic.
-
-## KANON_MARKETPLACE_INSTALL Toggle
+## KANON\_MARKETPLACE\_INSTALL Toggle
 
 When `KANON_MARKETPLACE_INSTALL=true`:
 
-- `kanon install` creates and cleans `CLAUDE_MARKETPLACES_DIR`, then runs the install script post-sync
-- `kanon clean` runs the uninstall script and removes `CLAUDE_MARKETPLACES_DIR`
+- `kanon install` creates and cleans `CLAUDE_MARKETPLACES_DIR`, then
+  runs the install script post-sync
+- `kanon clean` runs the uninstall script and removes
+  `CLAUDE_MARKETPLACES_DIR`
 
 When `false` (default), marketplace lifecycle is skipped entirely.
 
-## KANON_OUTDATED_FORMAT
-
-Controls the output format of the `kanon outdated` command.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_OUTDATED_FORMAT` | `table` | Output format for `kanon outdated`. Currently only `table` is supported. Additional formats will be added in a future release. |
-
-**Precedence:** `--format` CLI flag wins over `KANON_OUTDATED_FORMAT` env var; the env var wins over
-the built-in default (`table`).
-
-```bash
-# Use the default table format
-kanon outdated --catalog-source file:///catalog@HEAD
-
-# Override via environment variable (only table supported in this release)
-KANON_OUTDATED_FORMAT=table kanon outdated --catalog-source file:///catalog@HEAD
-
-# Override via CLI flag (takes precedence over env var)
-kanon outdated --format table --catalog-source file:///catalog@HEAD
-```
-
-The constant `KANON_OUTDATED_FORMAT` (env var name) and `KANON_OUTDATED_FORMAT_DEFAULT` (default
-value `"table"`) are both defined in `src/kanon_cli/constants.py`.
-
-## KANON_WHY_FORMAT
-
-Controls the output format of the `kanon why` command.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_WHY_FORMAT` | `text` | Output format for `kanon why`. Supported values: `text` (human-readable arrow-separated chains) and `json` (machine-readable JSON array). |
-
-**Precedence:** `--format` CLI flag wins over `KANON_WHY_FORMAT` env var; the env var wins over
-the built-in default (`text`).
-
-```bash
-# Use the default text format
-kanon why https://github.com/org/myproject
-
-# Select JSON format via environment variable
-KANON_WHY_FORMAT=json kanon why https://github.com/org/myproject
-
-# Override via CLI flag (takes precedence over env var)
-kanon why https://github.com/org/myproject --format json
-```
-
-The constant `KANON_WHY_FORMAT` (env var name) and `KANON_WHY_FORMAT_DEFAULT` (default
-value `"text"`) are both defined in `src/kanon_cli/constants.py`.
-
-## KANON_WHY_JSON_INDENT
-
-Controls the JSON indentation level used by `json.dumps` when `kanon why --format json` is
-selected.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_WHY_JSON_INDENT` | `2` | Number of spaces per indentation level in JSON output from `kanon why --format json`. |
-
-This variable is optional. When unset, the default value of `2` is used. The value must be a
-non-negative integer (>= 0) parseable by Python `int()`. Setting the value to `0` produces
-newline-only formatting without indentation, which is valid JSON but difficult to read; a value
-of `1` or greater is recommended for human-readable output.
-
-```bash
-# Use the default indentation of 2 spaces
-kanon why https://github.com/org/myproject --format json
-
-# Use 4-space indentation
-KANON_WHY_JSON_INDENT=4 kanon why https://github.com/org/myproject --format json
-```
-
-The constant `KANON_WHY_JSON_INDENT` (default `2`) is defined in `src/kanon_cli/constants.py`.
-
-## KANON_WHY_SUGGEST_MAX_DISTANCE
-
-Controls the maximum Levenshtein edit distance for closest-match suggestions when `kanon why`
-cannot find the requested argument in the resolved dependency tree.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_WHY_SUGGEST_MAX_DISTANCE` | `3` | Maximum edit distance (insertions, deletions, substitutions) for a candidate to appear in the suggestion list on not-found. |
-
-Only candidates whose Levenshtein distance to the argument is less than or equal to this value
-are eligible. The candidate universe is the union of all source names, XML manifest paths, and
-canonical project URLs in the resolved tree.
-
-This variable is optional. When unset, the default value of `3` is used. The value must be a
-non-negative integer parseable by Python `int()`; a non-integer value causes an error at startup.
-
-```bash
-# Use the default threshold of 3
-kanon why fooo
-
-# Narrow the suggestion window to distance 1 only
-KANON_WHY_SUGGEST_MAX_DISTANCE=1 kanon why fooo
-
-# Disable suggestions entirely (threshold 0 means only exact matches are eligible)
-KANON_WHY_SUGGEST_MAX_DISTANCE=0 kanon why fooo
-```
-
-The constant `KANON_WHY_SUGGEST_MAX_DISTANCE` (default `3`) is defined in
-`src/kanon_cli/constants.py`.
-
-## KANON_WHY_SUGGEST_TOP_N
-
-Controls the maximum number of closest-match suggestions shown when `kanon why` cannot find
-the requested argument in the resolved dependency tree.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_WHY_SUGGEST_TOP_N` | `3` | Maximum number of candidates to display in the suggestion list on not-found. Results are sorted ascending by edit distance, with ties broken lexicographically. |
-
-This variable is optional. When unset, the default value of `3` is used. The value must be a
-non-negative integer parseable by Python `int()`; a non-integer value causes an error at startup.
-
-```bash
-# Use the default cap of 3 suggestions
-kanon why fooo
-
-# Show only the single closest match
-KANON_WHY_SUGGEST_TOP_N=1 kanon why fooo
-
-# Show up to 5 suggestions
-KANON_WHY_SUGGEST_TOP_N=5 kanon why fooo
-```
-
-The constant `KANON_WHY_SUGGEST_TOP_N` (default `3`) is defined in
-`src/kanon_cli/constants.py`.
-
-## Doctor Cache Management
-
-The `kanon doctor` command supports two optional cache-management flags:
-`--refresh-completion-cache` (subcheck 8) and `--prune-cache` (subcheck 10).
-The following environment variables control their behaviour.
-
-### KANON_CACHE_PRUNE_AGE_DAYS
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files under `${KANON_CACHE_DIR}` whose last-access time is older than this many days are removed by `kanon doctor --prune-cache`. Must be a positive integer. |
-
-This variable is optional. When unset, the default value of `30` is used. Values of 0 or below
-are rejected with a clear error at startup.
-
-```bash
-# Use the default 30-day threshold
-kanon doctor --prune-cache
-
-# Prune files not accessed in the last 7 days
-KANON_CACHE_PRUNE_AGE_DAYS=7 kanon doctor --prune-cache
-```
-
-The constant `KANON_CACHE_PRUNE_AGE_DAYS` (default `30`) is defined in `src/kanon_cli/constants.py`.
-
-### KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth below the current working directory that `kanon doctor --prune-cache` searches for stale `.kanon-data/.kanon-install.lock` files. Bounds filesystem traversal to prevent wandering the entire filesystem in a misconfigured workspace. Must be a positive integer. |
-
-This variable is optional. When unset, the default value of `4` is used. Values of 0 or below
-are rejected with a clear error at startup.
-
-```bash
-# Use the default depth of 4
-kanon doctor --prune-cache
-
-# Restrict scan to 2 levels deep
-KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH=2 kanon doctor --prune-cache
-```
-
-The constant `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` (default `4`) is defined in `src/kanon_cli/constants.py`.
-
-### KANON_DOCTOR_STALE_LOCK_AGE_HOURS
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` | `1` | Minimum age in hours for a `.kanon-data/.kanon-install.lock` file to be considered stale by `kanon doctor --prune-cache`. Stale locks are reported as advisory findings only -- doctor never deletes them. Must be a positive integer. |
-
-`fcntl.flock` self-cleans on process exit, so a leftover lock file is harmless. The advisory
-finding is informational: it tells the operator that a lock file is older than expected and
-may correspond to a crashed install. No action is required unless the operator suspects a
-genuine issue.
-
-```bash
-# Use the default 1-hour threshold
-kanon doctor --prune-cache
-
-# Treat locks older than 4 hours as stale
-KANON_DOCTOR_STALE_LOCK_AGE_HOURS=4 kanon doctor --prune-cache
-```
-
-The constant `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` (default `1`) is defined in `src/kanon_cli/constants.py`.
-
-## Shell Completion Cache
-
-The following environment variables control where kanon stores its shell-completion
-cache and how it manages the cache lifecycle.  See
-[Shell Completion -- Cache layout](shell-completion.md#cache-layout) for the full
-directory structure.
-
-### KANON_CACHE_DIR
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_CACHE_DIR` | `~/.cache/kanon` | Root directory for the shell-completion cache.  When set, overrides both `XDG_CACHE_HOME/kanon` and the `~/.cache/kanon` fallback.  The directory and all files inside it are created with mode `0700` / `0600` (owner-private). |
-
-Resolution order (highest wins):
-
-1. `KANON_CACHE_DIR` environment variable.
-2. `${XDG_CACHE_HOME}/kanon` -- XDG Base Directory fallback.
-3. `~/.cache/kanon` -- hard-coded default when neither env var is set.
-
-```bash
-# Store cache in a non-default location
-export KANON_CACHE_DIR=/tmp/my-kanon-cache
-
-# Use the XDG default
-unset KANON_CACHE_DIR
-export XDG_CACHE_HOME=~/.cache
-```
-
-### KANON_COMPLETION_CACHE_TTL
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_CACHE_TTL` | `300` | Cache time-to-live in seconds.  A cached completion result whose `fetched_at.txt` is within this age is returned immediately without a remote fetch.  When the age exceeds the TTL, a background refresh is spawned (if `KANON_COMPLETION_REFRESH_BG=1`). |
-
-```bash
-# Extend TTL to 10 minutes
-export KANON_COMPLETION_CACHE_TTL=600
-```
-
-### KANON_COMPLETION_TIMEOUT
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_TIMEOUT` | `2` | Timeout in seconds for each `kanon __complete_*` subprocess call.  When `timeout`(1) is available on `$PATH`, the preamble helpers wrap the subprocess call with this value.  When it is not available, kanon's own internal subprocess timeout (also bounded by this variable) applies. |
-
-```bash
-# Allow up to 5 seconds for completion lookups
-export KANON_COMPLETION_TIMEOUT=5
-```
-
-### KANON_COMPLETION_REFRESH_BG
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_REFRESH_BG` | `1` | When set to `1`, a background subprocess is spawned after a stale-but-present cache read to refresh the cache asynchronously.  Set to `0` to disable background refresh (completions then become stale until the TTL expires and the next Tab press triggers a synchronous fetch). |
-
-```bash
-# Disable background refresh
-export KANON_COMPLETION_REFRESH_BG=0
-```
-
-### KANON_ACCESSED_AT_COALESCE_SEC
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_ACCESSED_AT_COALESCE_SEC` | `60` | Coalescing window in seconds for `accessed_at.txt` updates.  A read that occurs within this many seconds of the last `accessed_at` write does not rewrite the file.  This bounds I/O during rapid Tab-pressing without losing access-time tracking for cache pruning. |
-
-```bash
-# Coalesce accessed_at writes within a 5-minute window
-export KANON_ACCESSED_AT_COALESCE_SEC=300
-```
-
-### KANON_COMPLETION_LOG
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_LOG` | `${KANON_CACHE_DIR}/completion-errors.log` | Path to the append-only completion-errors log.  When unset, errors are written to `completion-errors.log` directly under `KANON_CACHE_DIR`.  The file is created with mode `0600` and its parent directory with mode `0700`. |
-
-```bash
-# Redirect completion errors to a custom path
-export KANON_COMPLETION_LOG=/var/log/kanon-completion-errors.log
-```
-
-## Shell Completion
-
-The following environment variables control the behaviour of the kanon shell completion
-preamble helpers. See [Shell Completion](shell-completion.md) for a full overview.
-
-### KANON_COMPLETION_ENABLED
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_ENABLED` | `1` | When set to `0`, all shell completion helpers return an empty candidate list immediately without invoking the `kanon` subprocess. Set to `0` to disable dynamic completion lookups globally (for example in restricted environments or when completion latency is a concern). Any value other than `0` is treated as enabled. |
-
-```bash
-# Disable all kanon completion lookups
-export KANON_COMPLETION_ENABLED=0
-
-# Re-enable (default behaviour)
-export KANON_COMPLETION_ENABLED=1
-```
-
-### KANON_COMPLETION_TIMEOUT
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_COMPLETION_TIMEOUT` | `2` | Timeout in seconds applied to each `kanon __complete_*` subprocess call made by the shell completion preamble helpers. When `timeout`(1) is available on `$PATH`, it wraps the subprocess call with this value. When `timeout`(1) is not available, kanon's own internal subprocess timeout (also bounded by this variable) applies. Must be a positive integer. |
-
-```bash
-# Use a 5-second timeout for completion lookups
-export KANON_COMPLETION_TIMEOUT=5
-
-# Use the default 2-second timeout
-unset KANON_COMPLETION_TIMEOUT
-```
+---
 
 ## kanon repo Subcommand
 
-The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct
-invocation of any `repo` subcommand (such as `init`, `sync`, `version`, `help`) without requiring
-a separate `repo` installation.
+The `kanon repo` subcommand exposes kanon's repo subsystem for direct
+manifest operations, allowing direct invocation of any `repo`
+subcommand (such as `init`, `sync`, `version`, `help`) without
+requiring a separate `repo` installation.
 
-### KANON_REPO_DIR
+### KANON\_REPO\_DIR
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KANON_REPO_DIR` | `.repo` | Path to the `.repo` working directory used by `kanon repo` |
-
-This variable controls where `kanon repo` looks for (or creates) the `.repo` directory. It
-corresponds to the `--repo-dir` flag on the `kanon repo` subcommand.
+**`KANON_REPO_DIR`** (default: `.repo`) -- Path to the `.repo`
+working directory used by `kanon repo`. Corresponds to the
+`--repo-dir` flag on the `kanon repo` subcommand.
 
 ### Usage
 

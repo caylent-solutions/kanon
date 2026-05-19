@@ -1,187 +1,257 @@
 # Creating a Manifest Repository
 
-How to create a top-level manifest repository that orchestrates Kanon packages.
+How to create and maintain a manifest repository that serves as a catalog
+of packages for kanon consumers.
 
-## What is a Manifest Repository?
+## What a manifest repo is
 
-A manifest repository is a Git repository that contains XML manifest files defining which packages to sync, from which repositories, at which versions. It acts as the central registry for an organization's automation packages.
+A **manifest repo** is a git repository whose `repo-specs/` directory
+holds XML manifest files whose names match `*-marketplace.xml`. The git
+URL (with an optional `@<ref>`) of this repository is exactly what a
+consumer passes to `--catalog-source` or sets in `KANON_CATALOG_SOURCE`.
 
-The Kanon CLI reads `.kanon` configurations that point to manifest files in these repositories. When `kanon install` runs, kanon clones and syncs packages according to the manifest definitions.
+The manifest repo IS the catalog. There is no separate catalog directory;
+every catalog entry lives in a single `*-marketplace.xml` file under
+`repo-specs/`. Each XML file is identified by its `<catalog-metadata>`
+block. The `<catalog-metadata><name>` child is the **entry name** -- the
+identifier consumers pass to `kanon add <name>`.
 
-## Repository Structure
+Key terminology (canonical form from spec Section 1.1):
+
+- **manifest repo** -- the git repository itself; synonymous with
+  "catalog repo".
+- **catalog source** -- a `<git-url>@<ref>` string pointing at a
+  manifest repo at a specific revision.
+- **catalog entry** -- one `*-marketplace.xml` file inside the manifest
+  repo; identified by `<catalog-metadata><name>`.
+- **entry name** -- the value of `<catalog-metadata><name>`; must be
+  unique across the manifest repo.
+- **source name** -- the `<source-name>` token in
+  `KANON_SOURCE_<source-name>_*` triples in a `.kanon` file; derived
+  from the entry name by normalization (always lowercase, always replace
+  `-` with `_`).
+
+## Repository layout
 
 ```text
 my-manifest-repo/
-├── repo-specs/
-│   ├── git-connection/
-│   │   └── remote.xml              # Shared remote definitions
-│   └── common/
-│       └── <archetype>/
-│           └── development/
-│               └── <language>/
-│                   └── <toolchain>/
-│                       ├── build-meta.xml          # Entry-point manifest
-│                       ├── packages.xml            # Package declarations
-│                       └── <name>-marketplace.xml   # Optional: marketplace packages
-├── catalog/                         # Optional: catalog entry packages for kanon bootstrap
-│   └── kanon/
-│       ├── .kanon                   # Pre-configured for this catalog entry
-│       └── kanon-readme.md
-├── examples/                        # Optional: example bootstrapped projects
-└── README.md
++-- repo-specs/
+|   +-- git-connection/
+|   |   +-- remote.xml              # Shared remote definitions
+|   +-- common/
+|       +-- my-archetype/
+|           +-- build-meta.xml      # Entry-point manifest
+|           +-- packages.xml        # Package declarations
+|           +-- my-archetype-marketplace.xml  # Catalog entry XML
++-- README.md
 ```
 
-## Remote Definitions (remote.xml)
+Every `*-marketplace.xml` under `repo-specs/` is a catalog entry. There
+is no `catalog/` directory in a current manifest repo. If you are
+migrating a repo that still has one, see
+[Migrating away from catalog/\<name\>/](#migrating-away-from-catalogname)
+below.
 
-The `remote.xml` file defines Git remotes that manifests reference. It uses `${VARIABLE}` placeholders resolved by `repo envsubst` at sync time:
+## Catalog entry contract
+
+Each `*-marketplace.xml` file MUST contain exactly one `<catalog-metadata>`
+block. The following fields are enforced by `kanon validate metadata` and
+`kanon catalog audit`:
+
+**REQUIRED fields** (missing any of these is an error):
+
+- `name` -- unique entry name across the manifest repo.
+- `display-name` -- human-readable display label.
+- `description` -- plain-text description of the entry.
+- `version` -- author-claimed version string (informational only; not
+  used for resolution -- actual versioning uses git refs/tags on the
+  manifest repo).
+
+**RECOMMENDED fields** (missing any of these is a warning):
+
+- `type` -- entry type classification.
+- `owner-name` -- maintainer's name.
+- `owner-email` -- maintainer's contact address.
+- `keywords` -- space-separated search terms.
+
+Example `<catalog-metadata>` block:
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-  <remote name="origin"
-          fetch="${GITBASE}" />
-
-  <default revision="main"
-           remote="origin"
-           sync-j="4" />
-</manifest>
+<catalog-metadata>
+  <name>my-python-lib</name>
+  <display-name>My Python Library</display-name>
+  <description>
+    A reusable Python library for internal tooling.
+  </description>
+  <version>1.2.0</version>
+  <type>library</type>
+  <owner-name>Platform Team</owner-name>
+  <owner-email>platform@example.com</owner-email>
+  <keywords>python library utilities</keywords>
+</catalog-metadata>
 ```
 
-The `GITBASE` variable comes from `.kanon` and defines the base URL for all package repositories.
+**Additional rules enforced by `kanon catalog audit`:**
 
-## Package Manifests (packages.xml)
+1. **Source-name normalization** -- the source name written into
+   `.kanon` by `kanon add` is derived from the entry name by:
+   lowercasing the input AND replacing every `-` with `_`. This
+   normalization is deterministic and one-way. Example:
+   `My-Python-Lib` normalizes to `my_python_lib`.
+2. **Entry-name uniqueness** -- `<catalog-metadata><name>` MUST be
+   unique across every `*-marketplace.xml` in the manifest repo.
+   Collisions are a hard error.
+3. **`<remote>` resolvability** -- every `<remote>` element referenced
+   in the entry's XML chain MUST be reachable via the `<include>` graph
+   rooted at that XML file.
+4. **PEP 440 tag-name compliance** -- tag names whose last path
+   component is not a valid PEP 440 version are flagged with a warning
+   (not an error). See [Tag publishing](#tag-publishing).
 
-Package manifests declare which repositories to clone and where to place them:
+## Tag publishing
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-  <include name="repo-specs/git-connection/remote.xml" />
+Kanon's resolver identifies versions from git tags on the manifest repo.
+Tags MUST be PEP 440 compliant in their last path component to be
+addressable by kanon consumers. For monorepo layouts a path prefix is
+allowed; kanon strips everything up to and including the final `/` before
+parsing the version.
 
-  <project name="my-build-conventions"
-           path=".packages/my-build-conventions"
-           remote="origin"
-           revision="refs/tags/1.0.0">
-  </project>
+**Valid tag names:**
 
-  <project name="my-linting-rules"
-           path=".packages/my-linting-rules"
-           remote="origin"
-           revision="refs/tags/2.1.0">
-  </project>
-</manifest>
-```
+| Tag | Note |
+| --- | ---- |
+| `1.0.0` | simple release |
+| `2.1.3rc2` | release candidate |
+| `subpackage/1.0.0` | monorepo path prefix |
+| `dev/python/lib/2.1.3` | deeper monorepo prefix |
 
-Key attributes:
+**Counter-examples (produce a warning from `kanon catalog audit`):**
 
-- `name` — repository name (appended to the remote's `fetch` URL)
-- `path` — local directory where the repo is cloned (always under `.packages/`)
-- `remote` — name of the remote defined in `remote.xml`
-- `revision` — Git ref to checkout (tag, branch, or PEP 440 constraint)
+| Tag | Why it is warned about |
+| --- | ---------------------- |
+| `v1.0.0` | leading `v` is not PEP 440 |
+| `release-2024` | not a version number |
+| `prod-deploy-2026-04-01` | date-based, not PEP 440 |
 
-> **XML escaping for PEP 440 operators:** When `revision` carries PEP 440
-> range or comparison operators (`<`, `<=`, `>`, `>=`, ranges that mix
-> them), the `<` and `>` characters MUST be XML-escaped as `&lt;` / `&gt;`
-> so the parser sees the original constraint string. For example,
-> `revision="refs/tags/&lt;=1.1.0"` (not `revision="refs/tags/<=1.1.0"`).
-> Equality (`==`), exclusion (`!=`), compatible release (`~=`), `*`, and
-> `latest` need no escaping.
+Tags that do not pass PEP 440 parsing are silently skipped by the
+resolver. Consumers who need to pin to a non-PEP-440 ref must use an
+explicit branch name or full `refs/tags/<name>` notation. The warning
+from `kanon catalog audit` is not a build error; it exists to alert
+catalog authors before consumers hit silent resolution failures.
 
-> **Platform path separator note (Bug 17):** Manifest `path`, `src`, and `dest`
-> attribute values use forward slashes (`/`) as path separators regardless of
-> the host operating system. Some internal path operations in the sync engine
-> use `os.sep` or `pathlib`, which may produce backslashes on Windows. If you
-> encounter path-related issues on Windows, use `pathlib.Path` or
-> `os.path.join()` in any custom tooling that processes manifest paths rather
-> than hard-coding `/` separators.
-
-## Entry-Point Manifests (meta.xml / build-meta.xml)
-
-An entry-point manifest ties everything together with `<include>` tags:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-  <include name="repo-specs/common/my-archetype/packages.xml" />
-  <include name="repo-specs/common/my-archetype/my-archetype-marketplace.xml" />
-</manifest>
-```
-
-This is the file referenced by `KANON_SOURCE_<name>_PATH` in `.kanon`.
-
-## Cascading Manifest Hierarchy (Optional)
-
-Manifests support cascading inheritance through `<include>` chains. This is optional but useful for organizations with many project archetypes that share common packages.
-
-Each level in the hierarchy includes its parent:
-
-```text
-meta.xml (entry point)
-  └── packages.xml (leaf — e.g., microservice)
-        └── packages.xml (framework — e.g., spring-boot)
-              └── packages.xml (language — e.g., java)
-                    └── packages.xml (common — shared across all)
-```
-
-A leaf manifest includes its parent, which includes its parent, forming a chain. Packages defined at any level are available to all descendants.
-
-This hierarchy is not required — a flat structure with a single `packages.xml` works for simple setups.
-
-## Providing a Remote Catalog
-
-A manifest repository can also serve as a remote catalog for `kanon bootstrap`. Place catalog entry packages in a `catalog/` directory at the repository root:
-
-```text
-catalog/
-└── kanon/
-    ├── .kanon
-    └── kanon-readme.md
-```
-
-Each catalog entry package directory includes a pre-configured `.kanon` with source URLs and paths pointing to manifests in the repository, plus a `kanon-readme.md` with getting-started instructions. The `kanon` entry provides `.kanon` and the readme only.
-
-When users bootstrap with your catalog, they get a fully configured `.kanon` and can run `kanon install` immediately without editing placeholders.
-
-Users can then bootstrap projects using your catalog:
+To publish a release:
 
 ```bash
-kanon bootstrap kanon --catalog-source 'https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
+git tag 1.0.0
+git push origin 1.0.0
 ```
 
-Or via environment variable:
+## Migrating away from catalog/\<name\>/
 
-```bash
-export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
-kanon bootstrap kanon
-```
+Older manifest repos contained a `catalog/` directory tree where each
+subdirectory held a pre-baked `.kanon` template and an optional
+`kanon-readme.md` (or `README.md`) for `kanon bootstrap`. This layout
+is no longer used. `kanon list`, `kanon add`, and `kanon catalog audit`
+read ONLY the `*-marketplace.xml` files in `repo-specs/`; the `catalog/`
+directory is ignored.
 
-## Versioning
+To migrate a manifest repo that still has a `catalog/` directory:
 
-Manifest repositories should use [semantic versioning](https://semver.org/) for git tags:
+1. **Copy author documentation into `<description>`.** For each entry,
+   open `catalog/<name>/README.md` or `catalog/<name>/kanon-readme.md`
+   (whichever exists) and paste the relevant content verbatim into the
+   corresponding `*-marketplace.xml`'s `<catalog-metadata><description>`
+   element. Truncation is a human-review decision; the XML parser accepts
+   multi-line text content in `<description>`.
 
-- **MAJOR** -- breaking changes (renamed manifests, removed packages, changed directory structure)
-- **MINOR** -- new features (new catalog entries, new packages, new manifest archetypes)
-- **PATCH** -- bug fixes (corrected manifest paths, fixed XML attributes)
+2. **Verify required metadata fields.** Run:
 
-Consumers should pin `KANON_CATALOG_SOURCE` to a major version range to allow automatic pickup of minor and patch releases while preventing unexpected breaking changes:
+   ```bash
+   kanon catalog audit . --check metadata
+   ```
 
-```bash
-# Recommended: pin to current major version
-export KANON_CATALOG_SOURCE='https://github.com/org/my-manifest-repo.git@>=2.0.0,<3.0.0'
-```
+   Fix every error reported before proceeding. Warnings about
+   recommended fields are advisory.
 
-The `@<ref>` portion accepts a branch, tag, `latest` (highest semver tag), or any PEP 440 constraint.
+3. **Delete the legacy `catalog/` directory tree.**
 
-## Connecting to .kanon
+   ```bash
+   git rm -r catalog/
+   git commit -m "Remove legacy catalog/ directory (use repo-specs/**/*-marketplace.xml)"
+   ```
 
-The `.kanon` file in a consumer project points to your manifest repository:
+4. **Verify `kanon list` returns every expected entry.**
 
-```properties
-KANON_SOURCE_build_URL=https://github.com/org/my-manifest-repo.git
-KANON_SOURCE_build_REVISION=v1.0.0
-KANON_SOURCE_build_PATH=repo-specs/common/my-archetype/build-meta.xml
-```
+   ```bash
+   kanon list --catalog-source https://example.com/org/manifest-repo.git@main
+   ```
 
-Multiple sources can reference different manifest repositories, enabling teams to compose packages from multiple organizations.
+   The output should list every entry name you expect. If an entry is
+   missing, check that its XML file has a valid `<catalog-metadata><name>`
+   and passes `kanon validate metadata`.
 
-See the [multi-source guide](multi-source-guide.md) for details on multi-source configurations.
+## Testing your manifest repo
+
+Run the following eight steps in order before publishing a new release
+of your manifest repo:
+
+1. Run the full catalog audit in strict mode:
+
+   ```bash
+   kanon catalog audit . --strict
+   ```
+
+2. Validate all XML is well-formed:
+
+   ```bash
+   kanon validate xml
+   ```
+
+3. Validate all marketplace XML files:
+
+   ```bash
+   kanon validate marketplace
+   ```
+
+4. Validate all catalog metadata:
+
+   ```bash
+   kanon validate metadata
+   ```
+
+5. Clone the repo to a scratch directory:
+
+   ```bash
+   git clone https://example.com/org/manifest-repo.git ./scratch
+   ```
+
+6. List all entries using the scratch clone:
+
+   ```bash
+   kanon list --catalog-source ./scratch@main
+   ```
+
+7. Add one entry end-to-end using the scratch clone:
+
+   ```bash
+   kanon add <one-entry> --catalog-source ./scratch@main
+   ```
+
+8. Run install to confirm the resolved `.kanon` is valid:
+
+   ```bash
+   kanon install
+   ```
+
+All eight steps must exit zero before the release tag is pushed.
+
+## See also
+
+- [docs/catalog-author-guide.md](catalog-author-guide.md) -- detailed
+  guide for authors writing `*-marketplace.xml` catalog entries.
+- [docs/catalogs-explained.md](catalogs-explained.md) -- what a manifest
+  repo is and how to find one as a consumer.
+- [docs/list-and-add.md](list-and-add.md) -- reference for `kanon list`
+  and `kanon add` from the consumer perspective.
+- [docs/lockfile.md](lockfile.md) -- the `.kanon.lock` file format and
+  how resolved catalog sources are recorded.

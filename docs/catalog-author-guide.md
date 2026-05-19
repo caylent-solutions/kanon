@@ -367,6 +367,37 @@ kanon catalog audit --check metadata https://github.com/org/manifest-repo.git@ma
 kanon catalog audit --check tag-format .
 ```
 
+## Validate before pushing (fast local check)
+
+`kanon validate metadata` runs the same in-repo soft-spot checks (rules 1, 2, 3)
+as `kanon catalog audit --check metadata,source-name-derivation,entry-name-uniqueness`
+but without any network access or git operations. Use it in a pre-push hook or
+a local dev loop where speed matters:
+
+```bash
+# Check soft-spots 1, 2, and 3 with no network access
+kanon validate metadata --repo-root .
+
+# Exit early on first error (shell short-circuit)
+kanon validate metadata --repo-root . && echo "All checks passed -- safe to push"
+
+# JSON output for CI log parsing
+kanon validate metadata --repo-root . --format json | jq '.findings | length'
+```
+
+### Recommended pre-push workflow
+
+1. **Fast local check:** Run `kanon validate metadata --repo-root .` before every
+   `git push`. This catches metadata errors, source-name drift, and name collisions
+   without touching the network.
+2. **Full audit:** Run `kanon catalog audit .` (or against a remote source) in CI
+   to cover soft-spots 4 and 5 (remote-URL resolvability and PEP 440 tag-name
+   compliance), which require git operations.
+
+Both commands share the same findings schema (`{"findings": [...]}` for JSON
+output, one finding per line for text output) and the same exit code semantics
+(exit 0 for no errors, exit 1 for any ERROR finding).
+
 Exit code 0 means no ERROR findings (WARN findings may still appear on stdout).
 Exit code 1 means at least one ERROR finding was produced.
 

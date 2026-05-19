@@ -1,0 +1,211 @@
+# kanon validate
+
+Validate manifest XML files and catalog metadata without network access.
+
+## Synopsis
+
+```
+kanon [--no-color] validate <target>
+```
+
+### Targets
+
+```
+kanon validate xml        [--repo-root <path>]
+kanon validate marketplace [--repo-root <path>]
+kanon validate metadata   [--repo-root <path>] [--format {text,json}]
+```
+
+## Description
+
+`kanon validate` groups local validation commands that operate entirely without
+network access. Each sub-subcommand targets a different aspect of the manifest
+repository.
+
+## Sub-subcommands
+
+### `kanon validate xml`
+
+Validate all `*.xml` manifest files under `repo-specs/` for well-formedness,
+required attributes, and include chain integrity.
+
+**Checks:**
+
+- XML is well-formed (parseable by defusedxml).
+- `<project>` elements have required `name`, `path`, `remote`, and `revision`
+  attributes.
+- `<remote>` elements have required `name` and `fetch` attributes.
+- `<include name="...">` attributes point to files that exist on disk.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All XML files are valid. |
+| `1` | One or more validation errors found. |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--repo-root <path>` | Repository root directory. Default: auto-detect via `git rev-parse --show-toplevel`. |
+
+**Example:**
+
+```bash
+kanon validate xml
+kanon validate xml --repo-root /path/to/repo
+```
+
+---
+
+### `kanon validate marketplace`
+
+Validate all `*-marketplace.xml` files under `repo-specs/` for marketplace
+manifest correctness.
+
+**Checks:**
+
+- `<linkfile dest="...">` attributes use the `${CLAUDE_MARKETPLACES_DIR}/` prefix
+  and are not absolute paths.
+- Include chains are intact (all `<include name="...">` files exist).
+- Project path values (`<project path="...">`) are unique across all marketplace
+  files.
+- Revision attributes (`<project revision="...">`) use the allowed formats:
+  `refs/tags/...`, PEP 440 version constraints (`~=`, `>=`, `<=`, `!=`, `==`),
+  wildcard (`*`), or a plain branch name.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All marketplace XML files are valid. |
+| `1` | One or more validation errors found, or no `*-marketplace.xml` files found. |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--repo-root <path>` | Repository root directory. Default: auto-detect via `git rev-parse --show-toplevel`. |
+
+**Example:**
+
+```bash
+kanon validate marketplace
+kanon validate marketplace --repo-root /path/to/repo
+```
+
+---
+
+### `kanon validate metadata`
+
+Check every `*-marketplace.xml` under `repo-specs/` for in-repo catalog
+soft-spot violations (spec Section 3.5 rules 1, 2, 3) without network access.
+
+No git operations are performed. No `git ls-remote` calls. No cloning.
+
+**Checks:**
+
+- **Soft-spot 1 (metadata):** Required fields (`name`, `display-name`,
+  `description`, `version`) are present and non-empty. No duplicate child
+  elements within a `<catalog-metadata>` block. Exactly one `<catalog-metadata>`
+  block per file. Missing recommended fields (`type`, `owner-name`, `owner-email`,
+  `keywords`) produce WARN findings.
+- **Soft-spot 2 (source-name derivation):** Entry name in `<catalog-metadata><name>`
+  normalises cleanly via `derive_source_name` (WARN S001 when it differs) and uses
+  only `[a-zA-Z0-9_-]` characters (WARN S002 for out-of-charset).
+- **Soft-spot 3 (entry-name uniqueness):** No two `*-marketplace.xml` files share
+  the same `<catalog-metadata><name>` value (ERROR U001 on collision).
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | No ERROR-level findings. WARN-level findings do not affect the exit code. |
+| `1` | One or more ERROR-level findings produced, or a fatal error (missing `--repo-root` directory). |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--repo-root <path>` | Repository root directory. Default: auto-detect via `git rev-parse --show-toplevel`. |
+| `--format {text,json}` | Output format. Default: `text`. |
+
+**Output formats:**
+
+`text` (default): one finding per line with `ERROR:`, `WARN:`, or `INFO:` prefix:
+
+```
+ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace.
+WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name.
+ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/a.xml, /path/b.xml.
+```
+
+`json`: a single JSON object `{"findings": [...]}` written to stdout:
+
+```json
+{
+  "findings": [
+    {
+      "kind": "error",
+      "code": "M001",
+      "message": "...",
+      "remediation": ""
+    }
+  ]
+}
+```
+
+An empty audit produces `{"findings": []}`.
+
+**What this command does NOT check:**
+
+- Soft-spot 4 (`<remote>` resolvability via `git ls-remote`).
+- Soft-spot 5 (PEP 440 tag-name compliance via `git ls-remote --tags`).
+
+Use `kanon catalog audit` for those checks.
+
+**Example:**
+
+```bash
+# Check the current directory (must contain repo-specs/)
+kanon validate metadata
+
+# Check an explicit path
+kanon validate metadata --repo-root /path/to/manifest-repo
+
+# Output findings as JSON
+kanon validate metadata --format json
+
+# Validate before pushing changes to a manifest repo
+kanon validate metadata --repo-root . && echo "No errors -- safe to push"
+```
+
+---
+
+## Relationship to `kanon catalog audit`
+
+`kanon validate` and `kanon catalog audit` share the same underlying check
+functions and produce findings in the same format. The key difference is scope:
+
+| Feature | `kanon validate metadata` | `kanon catalog audit` |
+|---------|--------------------------|----------------------|
+| Soft-spot 1 (metadata) | Yes | Yes |
+| Soft-spot 2 (source-name derivation) | Yes | Yes |
+| Soft-spot 3 (entry-name uniqueness) | Yes | Yes |
+| Soft-spot 4 (remote-URL resolvability) | No | Yes |
+| Soft-spot 5 (PEP 440 tag-name compliance) | No | Yes |
+| Remote git sources (`<git_url>@<ref>`) | No | Yes |
+| Network access | None | Yes (for remote sources) |
+| `--strict` mode | No | Yes (parsed; not yet active) |
+| `--check <subset>` | No (runs all three in-repo checks) | Yes |
+
+Use `kanon validate metadata` in fast local pre-push hooks where network
+access is undesirable. Use `kanon catalog audit` for comprehensive audits
+against remote or cached manifest repos.
+
+## Related commands
+
+- `kanon catalog audit` -- full soft-spot audit including remote checks
+- `kanon doctor` -- workspace health checks
+- `kanon list` -- browse catalog entries

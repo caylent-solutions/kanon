@@ -140,7 +140,15 @@ values:
 
 - **Coalescing:** `accessed_at.txt` is updated at most once per
   `KANON_ACCESSED_AT_COALESCE_SEC` (default 60 s) to bound I/O under
-  rapid Tab-pressing.
+  rapid Tab-pressing. The coalescing rule is: `accessed_at.txt` is
+  rewritten only when `now - prior_value >= KANON_ACCESSED_AT_COALESCE_SEC`.
+  If the file is missing or contains non-integer content it is treated
+  as a first-touch and written unconditionally. If `prior_value > now`
+  (clock skew), the file is rewritten to `now` to force-forward the
+  timestamp. The `maybe_update_accessed_at(path, now, coalesce_window_seconds)`
+  function in `kanon_cli.completions.cache` implements this rule and
+  returns True when the file was written, False when the write was
+  suppressed.
 - **Pruning:** `kanon doctor --prune-cache` removes entries whose
   `accessed_at.txt` is older than `KANON_CACHE_PRUNE_AGE_DAYS`
   (default 30 d).

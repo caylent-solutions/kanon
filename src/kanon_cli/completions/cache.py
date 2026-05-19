@@ -31,6 +31,7 @@ Public API::
     write_entries(file_path, entries) -> None
     read_epoch(file_path) -> int | None
     write_epoch(file_path, epoch) -> None
+    maybe_update_accessed_at(accessed_at_path, now, coalesce_window_seconds) -> bool
     log_completion_error(completer_name, exc) -> None
     Freshness -- enum: FRESH | STALE | MISSING
     classify(fetched_at_path, ttl_seconds, now) -> Freshness
@@ -294,6 +295,66 @@ def read_entries_with_freshness(
 
     entries = read_entries(cache_entry_dir / "index.txt")
     return entries, freshness
+
+
+def maybe_update_accessed_at(
+    accessed_at_path: Path,
+    now: int,
+    coalesce_window_seconds: int,
+) -> bool:
+    """Update ``accessed_at_path`` with the current epoch, subject to coalescing.
+
+    Implements the coalescing rule from spec Section 11.4: the file is only
+    rewritten when ``now - prior_value >= coalesce_window_seconds``.  This
+    bounds I/O under rapid Tab-pressing (every completer invocation would
+    otherwise rewrite the file on every keystroke).
+
+    Rules:
+
+    - File missing or unreadable (non-integer content) -> write ``now``,
+      return True (first-touch).
+    - ``now - prior_value < coalesce_window_seconds`` -> do NOT write,
+      return False.
+    - ``now - prior_value >= coalesce_window_seconds`` -> write ``now``,
+      return True.
+    - ``prior_value > now`` (clock skew) -> rewrite to ``now`` (force-
+      forward to current time), return True.
+
+    Args:
+        accessed_at_path: Path to the ``accessed_at.txt`` file.
+        now: Current epoch seconds (injected for testability; callers
+            pass ``int(time.time())`` in production).
+        coalesce_window_seconds: Minimum number of seconds between writes
+            (sourced from ``KANON_ACCESSED_AT_COALESCE_SEC`` by callers).
+
+    Returns:
+        True when the file was written; False when the write was suppressed
+        by the coalescing rule.
+    """
+    try:
+        prior_value = read_epoch(accessed_at_path)
+    except ValueError:
+        # Non-integer / corrupt content: treat as missing (spec Section 11.4).
+        write_epoch(accessed_at_path, now)
+        return True
+
+    if prior_value is None:
+        # File is absent -- first-touch write.
+        write_epoch(accessed_at_path, now)
+        return True
+
+    # Clock-skew: prior timestamp is in the future -- force-forward to now.
+    if prior_value > now:
+        write_epoch(accessed_at_path, now)
+        return True
+
+    # Within coalesce window: suppress the write.
+    if now - prior_value < coalesce_window_seconds:
+        return False
+
+    # At or past the window boundary: write and report.
+    write_epoch(accessed_at_path, now)
+    return True
 
 
 def log_completion_error(completer_name: str, exc: Exception) -> None:

@@ -46,6 +46,7 @@ _FIXTURES_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "fixtures" 
 _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-toplevel", (), "kanon-toplevel.txt"),
     ("kanon-list", ("list",), "kanon-list.txt"),
+    ("kanon-add", ("add",), "kanon-add.txt"),
 ]
 
 

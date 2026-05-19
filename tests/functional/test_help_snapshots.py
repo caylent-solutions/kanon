@@ -54,6 +54,7 @@ _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-doctor", ("doctor",), "kanon-doctor.txt"),
     ("kanon-catalog", ("catalog",), "kanon-catalog.txt"),
     ("kanon-catalog-audit", ("catalog", "audit"), "kanon-catalog-audit.txt"),
+    ("kanon-completion", ("completion",), "kanon-completion.txt"),
 ]
 
 

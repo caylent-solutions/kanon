@@ -1,0 +1,18 @@
+usage: kanon completion [-h] <shell>
+
+Emit the shell completion script for kanon to stdout.
+
+Pipe the output to the appropriate location for your shell:
+
+  kanon completion bash > /etc/bash_completion.d/kanon
+  kanon completion zsh  > "${fpath[1]}/_kanon"
+
+Then restart your shell or re-source the completion file.
+
+See docs/shell-completion.md for full installation instructions.
+
+positional arguments:
+  <shell>     Target shell. Choices: {bash, zsh}.
+
+options:
+  -h, --help  show this help message and exit

@@ -35,6 +35,7 @@ Examples:
 | `kanon-doctor.txt` | `kanon doctor --help` |
 | `kanon-catalog.txt` | `kanon catalog --help` (subcommand-group head; lists `audit` as the available catalog operation) |
 | `kanon-catalog-audit.txt` | `kanon catalog audit --help` (nested subparser child; covers `--check`, `--format`, Catalog source group; hyphenated filename mirrors the `catalog audit` argv path) |
+| `kanon-completion.txt` | `kanon completion --help` (shell completion script emitter; covers `<shell>` positional argument) |
 
 ## Regeneration Procedure
 

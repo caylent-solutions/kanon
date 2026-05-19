@@ -29,6 +29,7 @@ Examples:
 | `kanon-add.txt` | `kanon add --help` |
 | `kanon-remove.txt` | `kanon remove --help` |
 | `kanon-outdated.txt` | `kanon outdated --help` |
+| `kanon-why.txt` | `kanon why --help` |
 
 ## Regeneration Procedure
 

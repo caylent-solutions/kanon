@@ -49,6 +49,7 @@ _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-add", ("add",), "kanon-add.txt"),
     ("kanon-remove", ("remove",), "kanon-remove.txt"),
     ("kanon-outdated", ("outdated",), "kanon-outdated.txt"),
+    ("kanon-why", ("why",), "kanon-why.txt"),
 ]
 
 

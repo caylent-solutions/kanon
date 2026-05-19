@@ -8,17 +8,18 @@ so you can regenerate quickly.
 
 ## Naming Convention
 
-| Pattern | Command |
-|---------|---------|
-| `kanon-toplevel.txt` | `kanon --help` (top-level entry point) |
-| `kanon-<command>.txt` | `kanon <command> --help` |
-| `kanon-<group>-<subcommand>.txt` | `kanon <group> <subcommand> --help` |
+| Pattern | Command | Notes |
+|---------|---------|-------|
+| `kanon-toplevel.txt` | `kanon --help` (top-level entry point) | |
+| `kanon-<command>.txt` | `kanon <command> --help` | |
+| `kanon-<group>-<subcommand>.txt` | `kanon <group> <subcommand> --help` | Hyphenated filename mirrors the argv path for nested subparsers (e.g. `catalog audit` -> `kanon-catalog-audit.txt`). |
 
 Examples:
 
 - `kanon-toplevel.txt` -- top-level `kanon --help`
 - `kanon-list.txt` -- `kanon list --help`
-- `kanon-catalog-audit.txt` -- `kanon catalog audit --help`
+- `kanon-catalog.txt` -- `kanon catalog --help` (subcommand-group head)
+- `kanon-catalog-audit.txt` -- `kanon catalog audit --help` (nested subparser child; hyphenated filename mirrors the `catalog audit` argv path)
 
 ## Current Fixtures
 
@@ -32,6 +33,8 @@ Examples:
 | `kanon-why.txt` | `kanon why --help` |
 | `kanon-install.txt` | `kanon install --help` |
 | `kanon-doctor.txt` | `kanon doctor --help` |
+| `kanon-catalog.txt` | `kanon catalog --help` (subcommand-group head; lists `audit` as the available catalog operation) |
+| `kanon-catalog-audit.txt` | `kanon catalog audit --help` (nested subparser child; covers `--check`, `--format`, Catalog source group; hyphenated filename mirrors the `catalog audit` argv path) |
 
 ## Regeneration Procedure
 

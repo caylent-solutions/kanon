@@ -1,0 +1,34 @@
+usage: kanon catalog audit [-h] [--check <subset>] [--format {text,json}]
+                           [--strict]
+                           [<dir-or-source>]
+
+Audit a manifest repo for catalog soft-spot violations.
+
+TARGET is either a local directory path (must contain repo-specs/) or a remote <git_url>@<ref> source. Defaults to '.' (current directory).
+
+Valid --check values: all, entry-name-uniqueness, metadata, remote-url, source-name-derivation, tag-format.
+
+Output format 'text' (default): one finding per line with ERROR:, WARN:, or INFO: prefix.
+Output format 'json': a single JSON object {"findings": [...]} written to stdout.
+
+Cache layout: ${KANON_CACHE_DIR}/catalog-audit/<sha256>/ -- remote sources are cloned once and reused within KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS.
+
+positional arguments:
+  <dir-or-source>       Path to a local manifest repo directory (must contain
+                        repo-specs/) or a remote '<git_url>@<ref>' catalog
+                        source. Defaults to '.' (cwd).
+
+options:
+  -h, --help            show this help message and exit
+  --check <subset>      Comma-separated list of checks to run, or 'all'
+                        (default). Valid values: all, entry-name-uniqueness,
+                        metadata, remote-url, source-name-derivation, tag-
+                        format. Cannot mix 'all' with individual check names.
+  --format {text,json}  Output format. 'text' prints one finding per line with
+                        ERROR:/WARN:/INFO: prefix. 'json' prints a single JSON
+                        object {"findings": [...]}. Default: text. Env:
+                        KANON_CATALOG_AUDIT_FORMAT.
+  --strict              Promotes warnings to errors when enabled; exits non-
+                        zero when any WARN-level finding is present. Prints a
+                        one-line summary to stderr naming the warning count
+                        when warnings exist.

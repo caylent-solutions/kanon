@@ -2015,3 +2015,56 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
 
         rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="2.0.0")
         assert "docs/migration-bootstrap-to-add.md" in rendered
+
+
+@pytest.mark.unit
+class TestKanonCatalogAuditStrictSummaryTemplate:
+    """Tests for KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE (E5-F2-S1-T8 AC-FUNC-007)."""
+
+    def test_strict_summary_template_is_str(self) -> None:
+        """KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE is a non-empty string."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        assert isinstance(KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE, str)
+        assert len(KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE) > 0
+
+    def test_strict_summary_template_contains_count_placeholder(self) -> None:
+        """Template contains the {count} placeholder."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        assert "{count}" in KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+    def test_strict_summary_template_format_with_count(self) -> None:
+        """Template formats correctly when {count} is substituted."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=3)
+        assert "3" in rendered
+
+    def test_strict_summary_template_rendered_contains_strict_mode(self) -> None:
+        """Rendered template contains 'strict mode' so operators understand the context."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=1)
+        assert "strict mode" in rendered
+
+    def test_strict_summary_template_rendered_contains_warning(self) -> None:
+        """Rendered template contains 'warning' to name the promoted finding severity."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=2)
+        assert "warning" in rendered
+
+    def test_strict_summary_template_count_zero(self) -> None:
+        """Template formats without error when count is 0 (edge case)."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=0)
+        assert "0" in rendered
+
+    def test_strict_summary_template_count_large(self) -> None:
+        """Template formats without error when count is large."""
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE
+
+        rendered = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=999)
+        assert "999" in rendered

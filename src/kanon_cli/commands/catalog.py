@@ -59,6 +59,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_FORMAT_ENV,
     KANON_CATALOG_AUDIT_FORMAT_JSON,
     KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE,
+    KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE,
     KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE,
     KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
@@ -870,10 +871,15 @@ def audit_command(args: argparse.Namespace) -> int:
     Resolves the audit target, dispatches the selected checks, prints findings
     in the requested format, and returns an exit code.
 
-    Returns exit code 1 when any error-level finding is produced.
-    Returns exit code 0 when only warn-level or no findings are present.
-    The --strict flag (not yet active) will promote warnings to errors in a
-    future release.
+    Default mode:
+        Returns exit code 1 when any error-level finding is produced.
+        Returns exit code 0 when only warn-level or no findings are present.
+
+    --strict mode:
+        Returns exit code 1 when any error-level OR warn-level finding is produced.
+        Prints a one-line summary to stderr naming the warning count when warnings
+        exist: "strict mode: <count> warning(s) treated as errors".
+        Findings are NOT mutated; the display still shows WARN: prefixes.
 
     Args:
         args: Parsed argument namespace. Expected attributes:
@@ -881,7 +887,8 @@ def audit_command(args: argparse.Namespace) -> int:
             check_subset (frozenset[str]): Normalized frozenset of check names.
             format (str): Output format ("text" or "json").
             no_color (bool): Whether to suppress ANSI color.
-            strict (bool): Parsed but not yet acted upon.
+            strict (bool): When True, promotes warnings to errors for exit-code
+                computation and prints a strict-mode summary to stderr.
 
     Returns:
         Integer exit code.
@@ -902,8 +909,18 @@ def audit_command(args: argparse.Namespace) -> int:
     if formatted:
         print(formatted)
 
-    has_error = any(f.kind == "error" for f in findings)
-    return 1 if has_error else 0
+    errors = [f for f in findings if f.kind == "error"]
+    warns = [f for f in findings if f.kind == "warn"]
+
+    if args.strict and warns:
+        print(
+            KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=len(warns)),
+            file=sys.stderr,
+        )
+
+    if args.strict:
+        return 1 if (errors or warns) else 0
+    return 1 if errors else 0
 
 
 # ---------------------------------------------------------------------------
@@ -1024,7 +1041,8 @@ def _register_audit(
         default=False,
         help=(
             "Promotes warnings to errors when enabled; exits non-zero when any "
-            "WARN-level finding is present (currently parsed but not yet active)."
+            "WARN-level finding is present. Prints a one-line summary to stderr "
+            "naming the warning count when warnings exist."
         ),
     )
 

@@ -30,7 +30,7 @@ The audit target may be a local directory or a remote git repository URL.
 |--------|-------------|
 | `--check <subset>` | Comma-separated list of checks to run, or `all` (default). Cannot mix `all` with individual check names. See [Valid checks](#valid-checks). |
 | `--format {text,json}` | Output format. Default: `text`. Env: `KANON_CATALOG_AUDIT_FORMAT`. |
-| `--strict` | Promotes warnings to errors when enabled; exits non-zero when any WARN-level finding is present. Currently parsed but not yet active. |
+| `--strict` | Promotes warnings to errors for exit-code computation. Exits non-zero when any WARN-level finding is present. Prints a one-line summary to stderr naming the warning count. See [--strict flag](#--strict-flag). |
 | `--no-color` | Suppress ANSI color codes in output. Inherited global flag from the top-level `kanon` parser. |
 
 ## Valid checks
@@ -70,8 +70,8 @@ kanon >= <version> and should be deleted; see docs/migration-bootstrap-to-add.md
 where `<version>` is the running kanon CLI version.
 
 **Exit code:** The legacy-directory WARN does not cause a non-zero exit code on
-its own (exit 0). The `--strict` flag will promote it to an error in a future
-release (spec Section 15).
+its own in default mode (exit 0). Under `--strict`, the WARN is treated as an
+error and the exit code becomes 1 (spec Section 15).
 
 See [docs/migration-bootstrap-to-add.md](../migration-bootstrap-to-add.md) for
 migration instructions.
@@ -105,6 +105,48 @@ A single JSON object `{"findings": [...]}` written to stdout:
 ```
 
 An empty audit produces `{"findings": []}`.
+
+## --strict flag
+
+The `--strict` flag promotes WARN-level findings to errors for the purposes of
+exit-code computation. Findings are **not mutated**: the display always prints
+`WARN:` prefixes for warnings, regardless of `--strict`. Only the exit code
+changes.
+
+### Exit-code rule
+
+| Mode | Exit 0 | Exit 1 |
+|------|--------|--------|
+| Default (no `--strict`) | No ERROR findings | Any ERROR finding |
+| `--strict` | No ERROR or WARN findings | Any ERROR or WARN finding |
+
+### Strict-mode summary
+
+When `--strict` is active AND at least one WARN finding exists, a one-line
+summary is printed to **stderr** after all findings:
+
+```
+strict mode: <count> warning(s) treated as errors
+```
+
+where `<count>` is the number of WARN-level findings. This line is always
+printed to stderr so it does not interfere with `--format json` stdout output.
+
+The summary does NOT appear when:
+- `--strict` is not passed.
+- `--strict` is passed but zero WARN findings were produced.
+
+### Example
+
+```bash
+# Run source-name-derivation against a fixture with only warnings:
+kanon catalog audit --check source-name-derivation /path/to/manifest-repo
+# -> exits 0 (warnings only; default mode)
+
+kanon catalog audit --check source-name-derivation --strict /path/to/manifest-repo
+# -> exits 1 (warnings promoted to errors)
+# -> stderr: "strict mode: 3 warning(s) treated as errors"
+```
 
 ## Cache layout
 
@@ -184,8 +226,8 @@ returns `'foo.bar'` (no drift), but `.` is out-of-charset.
 
 `kanon catalog audit --check source-name-derivation` exits **0** even when warnings
 are present. All findings from this check are WARN-level; no ERROR findings are
-produced. The `--strict` flag will promote WARNs to ERRORs and is not yet
-active.
+produced. Under `--strict`, WARN findings are treated as errors and the exit
+code becomes 1.
 
 ### Finding codes
 
@@ -372,8 +414,8 @@ author to run `kanon catalog audit --check tag-format` for the full list.
 
 `kanon catalog audit --check tag-format` exits **0** even when WARN findings are
 present. All findings from this check are WARN-level; no ERROR findings are
-produced. The `--strict` flag will promote WARNs to ERRORs and is not yet
-active.
+produced. Under `--strict`, WARN findings are treated as errors and the exit
+code becomes 1.
 
 Manifest repos with legitimate non-version tags (ops markers, release-prep tags)
 still work; the warning surfaces unaddressability so authors can decide whether
@@ -469,7 +511,7 @@ The following fields SHOULD be present. A missing field produces one **WARN** fi
 `kanon catalog audit --check metadata` exits **1** when any ERROR-level finding is
 present (missing required field, duplicate child, multiple blocks, or malformed XML).
 It exits **0** when only WARN-level findings are present (missing recommended fields).
-The `--strict` flag will promote WARNs to ERRORs and is not yet active.
+Under `--strict`, WARN findings are treated as errors and the exit code becomes 1.
 
 ### Example output
 

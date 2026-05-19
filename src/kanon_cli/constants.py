@@ -460,6 +460,12 @@ KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE = (
     "Run 'kanon catalog audit --check tag-format' for the full list."
 )
 
+# Strict-mode summary template for kanon catalog audit --strict.
+# Emitted to stderr when --strict is active and at least one WARN finding exists.
+# Call with .format(count=<warning-count>) to produce the final summary line.
+# Spec source: spec Section 4.8 (--strict flag).
+KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE = "strict mode: {count} warning(s) treated as errors"
+
 # Warning message template for the legacy catalog/<name>/ directory detection.
 # Emitted unconditionally by audit_command when a catalog/ subdirectory is found
 # containing at least one immediate child directory in the audit target.

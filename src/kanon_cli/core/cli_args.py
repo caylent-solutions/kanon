@@ -53,7 +53,7 @@ def add_catalog_source_arg(parser: argparse.ArgumentParser) -> None:
         help=(
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
             "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
-            "Default: bundled catalog."
+            "Required when KANON_CATALOG_SOURCE is not set."
         ),
     )
 

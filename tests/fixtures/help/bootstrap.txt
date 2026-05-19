@@ -21,8 +21,8 @@ options:
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
                         is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Default: bundled
-                        catalog.
+                        KANON_CATALOG_SOURCE env var. Required when
+                        KANON_CATALOG_SOURCE is not set.
 
 Examples:
   kanon add kanon

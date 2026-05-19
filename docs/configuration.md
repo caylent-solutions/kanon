@@ -136,26 +136,33 @@ Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed variables.
 
 ## KANON_CATALOG_SOURCE Environment Variable
 
+There is no default catalog source; one of `--catalog-source` or
+`KANON_CATALOG_SOURCE` is required (except for `kanon install` and
+`kanon doctor`, which may use the lockfile's `[catalog].source` field as a
+fallback). When neither is provided and the lockfile fallback is not
+applicable, kanon raises `MissingCatalogSourceError`. See
+`docs/catalogs-explained.md` for what a manifest repo is and how to
+find one.
+
 The `KANON_CATALOG_SOURCE` environment variable specifies the catalog repository
-used by `kanon install` to resolve version specs. It follows the `<url>@<ref>` form:
+used by catalog-requiring commands. It follows the `<url>@<ref>` form:
 
 ```bash
 export KANON_CATALOG_SOURCE=https://github.com/example-org/kanon-catalog.git@main
-kanon install .kanon
+kanon list
 ```
 
 **Precedence (highest to lowest):**
 
-1. `--catalog-source` CLI flag (**pending**: not yet registered on `kanon install`;
-   see task E1-F4-S1-T1. Currently only `KANON_CATALOG_SOURCE` and lockfile fallback
-   are active.)
+1. `--catalog-source` CLI flag
 2. `KANON_CATALOG_SOURCE` environment variable
-3. `lockfile.[catalog].source` (fallback -- applies only in the `LOCKFILE_CONSISTENT`
-   state and only when both the CLI flag and env var are unset)
+3. `lockfile.[catalog].source` (fallback -- applies only for `kanon install` and
+   `kanon doctor` in the `LOCKFILE_CONSISTENT` state and only when both the CLI
+   flag and env var are unset)
 
 When none of the three sources is set and the lockfile fallback is not applicable,
-`kanon install` raises `MissingCatalogSourceError` with remediation text. See the
-catalog source configuration section above for details on how to configure a catalog.
+kanon raises `MissingCatalogSourceError` with remediation text. See
+`docs/catalogs-explained.md` for details on how to configure a catalog.
 
 When the CLI flag or env var is set and differs from the lockfile's recorded
 `[catalog].source`, `kanon install` raises `CatalogSourceMismatchError`. The lockfile

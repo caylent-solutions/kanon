@@ -6,38 +6,32 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.catalog import (
+    MissingCatalogSourceError,
     _clone_remote_catalog,
-    _get_bundled_catalog_dir,
     _parse_catalog_source,
     resolve_catalog_dir,
 )
 
 
 @pytest.mark.unit
-class TestGetBundledCatalogDir:
-    """Verify bundled catalog directory resolution.
+class TestMissingCatalogSourceError:
+    """Verify MissingCatalogSourceError exception class (AC-FUNC-001)."""
 
-    The bundled catalog at src/kanon_cli/catalog/ was removed in E6-F2-S1-T1.
-    _get_bundled_catalog_dir() still returns the path (T2 removes the dead code),
-    but the directory no longer exists on disk.
-    """
+    def test_is_subclass_of_value_error(self) -> None:
+        assert issubclass(MissingCatalogSourceError, ValueError)
 
-    def test_bundled_catalog_path_points_to_removed_dir(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        # The path resolves to a directory that was deleted (E6-F2-S1-T1).
-        # T2 will remove this dead code path entirely.
-        assert not catalog.exists(), (
-            f"Bundled catalog at {catalog} must not exist after E6-F2-S1-T1 removal. "
-            "If this fails, the catalog directory was re-added accidentally."
-        )
+    def test_can_be_raised_and_caught_as_value_error(self) -> None:
+        with pytest.raises(ValueError):
+            raise MissingCatalogSourceError()
 
-    def test_bundled_catalog_path_is_under_package_dir(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        import kanon_cli
+    def test_can_be_raised_and_caught_as_missing_catalog_source_error(self) -> None:
+        with pytest.raises(MissingCatalogSourceError):
+            raise MissingCatalogSourceError()
 
-        package_dir = pathlib.Path(kanon_cli.__file__).parent
-        # Path is still derived relative to the package, just points at deleted dir.
-        assert catalog == package_dir / "catalog"
+    def test_carries_no_required_fields(self) -> None:
+        # Must be instantiable with no arguments (caller supplies message context)
+        err = MissingCatalogSourceError()
+        assert isinstance(err, MissingCatalogSourceError)
 
 
 @pytest.mark.unit
@@ -71,15 +65,21 @@ class TestParseCatalogSource:
         with pytest.raises(ValueError, match="Empty URL"):
             _parse_catalog_source("@main")
 
+    def test_ambiguous_ssh_url_without_ref_raises(self) -> None:
+        """SSH-style URL with no trailing @<ref> is rejected (lines 105-111 guard)."""
+        with pytest.raises(ValueError, match="Invalid catalog source format"):
+            _parse_catalog_source("git@host:org/repo.git")
+
 
 @pytest.mark.unit
 class TestResolveCatalogDir:
     """Verify catalog directory resolution priority."""
 
-    def test_returns_bundled_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_missing_catalog_source_error_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AC-FUNC-002: no flag, no env var raises MissingCatalogSourceError."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        result = resolve_catalog_dir(None)
-        assert result == _get_bundled_catalog_dir()
+        with pytest.raises(MissingCatalogSourceError):
+            resolve_catalog_dir(None)
 
     def test_flag_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")

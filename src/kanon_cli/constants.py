@@ -281,6 +281,14 @@ COMPLETION_MAX_ENTRY_LEN = 128
 # per spec Section 11.3 "Output sanitization".
 COMPLETION_UNSAFE_CHARS: frozenset[str] = frozenset(" \t\n\r;|&$`")
 
+# Shell metacharacters forbidden in completion candidates (spec Section 11.3,
+# Section 3.6 trust model).  Any entry containing one of these characters is
+# dropped by sanitize_entries() and logged to completion-errors.log.
+# Closed set: pipe, ampersand, semicolon, less-than, greater-than, open-paren,
+# close-paren, open-brace, close-brace, dollar, backtick, backslash,
+# double-quote, single-quote.
+SHELL_METACHARS: frozenset[str] = frozenset("|&;<>(){}$`\\\"'")
+
 # -- Source-name derivation (soft-spot rule 2) --
 # Pattern matching the full recommended character set for catalog entry names.
 # Characters outside this set in an entry name trigger a shell-quoting warning.

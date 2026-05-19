@@ -49,6 +49,7 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from kanon_cli.completions.sanitize import SanitizationError, sanitize_entries
 from kanon_cli.constants import (
     KANON_CACHE_DIR_DEFAULT,
     KANON_CACHE_DIR_ENV,
@@ -61,15 +62,6 @@ from kanon_cli.constants import (
 
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
-
-# ---------------------------------------------------------------------------
-# Stub sanitizer -- replaced by E7-F3-S1-T4 with the real implementation.
-# ---------------------------------------------------------------------------
-
-
-def sanitize(s: str) -> str:
-    """Stub sanitizer.  E7-F3-S1-T4 replaces this with the real implementation."""
-    return s
 
 
 # ---------------------------------------------------------------------------
@@ -165,16 +157,31 @@ def read_entries(file_path: Path) -> list[str]:
     return [line.rstrip() for line in lines if line.strip()]
 
 
-def write_entries(file_path: Path, entries: Iterable[str]) -> None:
+def write_entries(
+    file_path: Path,
+    entries: Iterable[str],
+    completer_name: str = "",
+) -> None:
     """Write *entries* to *file_path*, one per line, with 0600 file mode.
 
     Creates parent directories (mode 0700) as needed.  Each entry is
-    passed through ``sanitize()`` before writing (stub until E7-F3-S1-T4).
+    passed through ``sanitize_entries()`` before writing; entries that
+    contain newlines, NULs, shell metacharacters, or other control
+    characters are silently dropped from the file and each dropped entry
+    is logged once via ``log_completion_error``.
     The file is written atomically by writing the full content at once.
+
+    Args:
+        file_path: Destination path for the entries file.
+        entries: Iterable of candidate strings to persist.
+        completer_name: Name of the calling completer (forwarded to
+            ``log_completion_error`` for each dropped entry).
     """
     _mkdir_secure(file_path.parent)
-    sanitized = [sanitize(e) for e in entries]
-    content = "".join(f"{e}\n" for e in sanitized)
+    result = sanitize_entries(entries, completer_name=completer_name)
+    for _entry, reason in result.dropped:
+        log_completion_error(completer_name, SanitizationError(reason))
+    content = "".join(f"{e}\n" for e in result.kept)
     file_path.write_text(content)
     _chmod_secure(file_path, _FILE_MODE)
 

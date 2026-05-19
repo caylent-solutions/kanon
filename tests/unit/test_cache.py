@@ -1,11 +1,10 @@
-"""Unit tests for maybe_update_accessed_at() in kanon_cli.completions.cache.
+"""Unit tests for kanon_cli.completions.cache.
 
-TDD-paired test file for the production change introduced by E7-F3-S1-T3
-(source-test atomicity per docs/source-test-atomicity.md).
-
-Covers the public API surface of maybe_update_accessed_at: return value
-semantics and file-write semantics for all five branches of the
-coalescing rule.
+TDD-paired test file covering:
+- maybe_update_accessed_at (introduced by E7-F3-S1-T3).
+- write_entries sanitization integration (introduced by E7-F3-S1-T4):
+  write_entries now calls sanitize_entries internally and logs dropped
+  entries via log_completion_error.
 
 All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
@@ -19,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from kanon_cli.completions.cache import maybe_update_accessed_at
+from kanon_cli.completions.cache import maybe_update_accessed_at, write_entries
 
 
 @pytest.mark.unit
@@ -142,3 +141,112 @@ def test_written_file_has_secure_mode(
     maybe_update_accessed_at(path, now=1000, coalesce_window_seconds=60)
     mode = os.stat(path).st_mode & 0o777
     assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
+
+
+# ---------------------------------------------------------------------------
+# write_entries -- sanitization integration (E7-F3-S1-T4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_write_entries_clean_entries_written(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clean entries are written verbatim to the file, one per line."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(out, ["foo", "bar-baz", "1.0.0"], completer_name="__complete_test")
+    assert out.read_text() == "foo\nbar-baz\n1.0.0\n"
+
+
+@pytest.mark.unit
+def test_write_entries_dirty_entries_excluded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entries with forbidden characters are excluded from the written file."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(
+        out,
+        ["good", "bad\nentry", "also-good"],
+        completer_name="__complete_test",
+    )
+    content = out.read_text()
+    assert content == "good\nalso-good\n"
+    assert "bad" not in content
+
+
+@pytest.mark.unit
+def test_write_entries_logs_dropped_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each dropped entry produces exactly one log line in completion-errors.log."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(
+        out,
+        ["good", "bad\nentry", "also\x00bad"],
+        completer_name="__complete_test",
+    )
+
+    log_path = tmp_path / "completion-errors.log"
+    assert log_path.exists(), "completion-errors.log was not created"
+    lines = [ln for ln in log_path.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 2, f"Expected 2 log lines, got {len(lines)}: {lines}"
+
+
+@pytest.mark.unit
+def test_write_entries_log_line_contains_newline_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Log line for a dropped newline entry contains 'newline' in the message."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(out, ["bad\nentry"], completer_name="__complete_test")
+
+    log_path = tmp_path / "completion-errors.log"
+    content = log_path.read_text()
+    assert "newline" in content
+
+
+@pytest.mark.unit
+def test_write_entries_file_mode_is_0600(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Written entries file has mode 0600."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(out, ["foo"], completer_name="__complete_test")
+    mode = os.stat(out).st_mode & 0o777
+    assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
+
+
+@pytest.mark.unit
+def test_write_entries_empty_input_writes_empty_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty entries list writes an empty file."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+    out = tmp_path / "index.txt"
+    write_entries(out, [], completer_name="__complete_test")
+    assert out.read_text() == ""

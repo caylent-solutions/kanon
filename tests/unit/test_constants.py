@@ -2154,3 +2154,37 @@ class TestCompletionCacheConstants:
 
         assert isinstance(KANON_COMPLETION_LOG_ENV, str)
         assert KANON_COMPLETION_LOG_ENV == "KANON_COMPLETION_LOG"
+
+
+@pytest.mark.unit
+class TestShellMetachars:
+    """Tests for SHELL_METACHARS constant (AC-FUNC-008, E7-F3-S1-T4)."""
+
+    def test_shell_metachars_is_frozenset(self) -> None:
+        """SHELL_METACHARS must be a frozenset (immutable, hashable)."""
+        from kanon_cli.constants import SHELL_METACHARS
+
+        assert isinstance(SHELL_METACHARS, frozenset)
+
+    def test_shell_metachars_is_nonempty(self) -> None:
+        """SHELL_METACHARS must contain at least the spec-mandated characters."""
+        from kanon_cli.constants import SHELL_METACHARS
+
+        assert len(SHELL_METACHARS) > 0
+
+    @pytest.mark.parametrize(
+        "char",
+        ["|", "&", ";", "<", ">", "(", ")", "{", "}", "$", "`", "\\", '"', "'"],
+    )
+    def test_shell_metachars_contains_required_char(self, char: str) -> None:
+        """Each spec-mandated metacharacter must be present in SHELL_METACHARS."""
+        from kanon_cli.constants import SHELL_METACHARS
+
+        assert char in SHELL_METACHARS, f"Missing required metachar: {char!r}"
+
+    def test_shell_metachars_contains_only_single_chars(self) -> None:
+        """Every element of SHELL_METACHARS is a single character."""
+        from kanon_cli.constants import SHELL_METACHARS
+
+        for char in SHELL_METACHARS:
+            assert len(char) == 1, f"Non-single-char element in SHELL_METACHARS: {char!r}"

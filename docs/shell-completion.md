@@ -153,6 +153,32 @@ values:
   `accessed_at.txt` is older than `KANON_CACHE_PRUNE_AGE_DAYS`
   (default 30 d).
 
+### Sanitization
+
+Before any entry is written to a cache file by `write_entries`, it is
+passed through the output sanitizer (`kanon_cli.completions.sanitize`).
+The sanitizer rejects any entry that contains a forbidden character.
+Rejected entries are dropped from the file AND logged to
+`completion-errors.log` (see "Error log" below).
+
+Forbidden character classes (per spec Section 11.3 and Section 3.6
+trust model):
+
+| Class | Characters / range | Rejection reason |
+|-------|--------------------|-----------------|
+| NUL | `\x00` (ASCII NUL) | `contains NUL` |
+| Newline / carriage return | `\n` (0x0a), `\r` (0x0d) | `contains newline` |
+| Shell metacharacters | `\|`, `&`, `;`, `<`, `>`, `(`, `)`, `{`, `}`, `$`, `` ` ``, `\`, `"`, `'` | `contains shell metacharacter '<c>'` |
+| Other control characters | Any character below 0x20 not listed above | `contains control char 0xNN` |
+
+The closed set of shell metacharacters is defined in
+`kanon_cli.constants.SHELL_METACHARS` (a `frozenset[str]`).
+
+Entries that survive all checks are written verbatim, one per line.
+The sanitizer makes a single O(n) pass over each entry's characters
+and stops on the first forbidden character, so filtering cost is
+linear in total input size.
+
 ### Error log
 
 Errors that occur inside `__complete_*` subcommands are written to

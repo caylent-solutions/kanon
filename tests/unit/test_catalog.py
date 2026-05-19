@@ -15,15 +15,29 @@ from kanon_cli.core.catalog import (
 
 @pytest.mark.unit
 class TestGetBundledCatalogDir:
-    """Verify bundled catalog directory resolution."""
+    """Verify bundled catalog directory resolution.
 
-    def test_bundled_catalog_exists(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        assert catalog.is_dir()
+    The bundled catalog at src/kanon_cli/catalog/ was removed in E6-F2-S1-T1.
+    _get_bundled_catalog_dir() still returns the path (T2 removes the dead code),
+    but the directory no longer exists on disk.
+    """
 
-    def test_bundled_catalog_contains_kanon(self) -> None:
+    def test_bundled_catalog_path_points_to_removed_dir(self) -> None:
         catalog = _get_bundled_catalog_dir()
-        assert (catalog / "kanon").is_dir()
+        # The path resolves to a directory that was deleted (E6-F2-S1-T1).
+        # T2 will remove this dead code path entirely.
+        assert not catalog.exists(), (
+            f"Bundled catalog at {catalog} must not exist after E6-F2-S1-T1 removal. "
+            "If this fails, the catalog directory was re-added accidentally."
+        )
+
+    def test_bundled_catalog_path_is_under_package_dir(self) -> None:
+        catalog = _get_bundled_catalog_dir()
+        import kanon_cli
+
+        package_dir = pathlib.Path(kanon_cli.__file__).parent
+        # Path is still derived relative to the package, just points at deleted dir.
+        assert catalog == package_dir / "catalog"
 
 
 @pytest.mark.unit

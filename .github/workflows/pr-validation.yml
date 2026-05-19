@@ -75,6 +75,24 @@ jobs:
         shell: bash
         run: make security-scan
 
+  verify-bundled-catalog-removed:
+    name: Verify bundled catalog removed (E6-F2-S1-T1)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify bundled catalog removed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "src/kanon_cli/catalog" ]; then
+            echo "ERROR: src/kanon_cli/catalog/ must remain removed (see backlog/E6-F2-S1-T1)" >&2
+            exit 1
+          fi
+
   build:
     name: Build wheel
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}

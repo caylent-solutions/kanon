@@ -58,38 +58,37 @@ class TestAllowedBranchesNoOrgValue:
 
 
 @pytest.mark.integration
-class TestCatalogKanonFileNoRepoUrl:
-    """AC-FUNC-003: catalog .kanon must have no REPO_URL or REPO_REV lines."""
+class TestCatalogKanonFilesAbsent:
+    """AC-FUNC-003/004 (E6-F2-S1-T1): bundled catalog files must not exist.
+
+    The catalog/kanon/.kanon and catalog/kanon/kanon-readme.md files were
+    deleted as part of removing the bundled catalog directory (E6-F2-S1-T1).
+    These tests assert the expected post-deletion state: the files are absent.
+    """
 
     _KANONENV = _SRC_ROOT / "catalog" / "kanon" / ".kanon"
+    _README = _SRC_ROOT / "catalog" / "kanon" / "kanon-readme.md"
+    _CATALOG_DIR = _SRC_ROOT / "catalog"
 
-    @pytest.mark.parametrize("keyword", ["REPO_URL", "REPO_REV"])
-    def test_kanonenv_has_no_repo_override_lines(self, keyword: str) -> None:
-        """Neither active nor commented REPO_URL / REPO_REV lines should be present."""
-        assert self._KANONENV.is_file(), f".kanon not found at {self._KANONENV}"
-
-        lines = self._KANONENV.read_text(encoding="utf-8").splitlines()
-        matching = [f"line {i + 1}: {line.strip()}" for i, line in enumerate(lines) if keyword in line]
-        assert not matching, (
-            f"Found {keyword} references in {self._KANONENV} (even commented lines are prohibited):\n"
-            + "\n".join(matching)
+    def test_catalog_kanon_dot_kanon_absent(self) -> None:
+        """catalog/kanon/.kanon must not exist after E6-F2-S1-T1 removal."""
+        assert not self._KANONENV.exists(), (
+            f"catalog/kanon/.kanon at {self._KANONENV} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
         )
 
+    def test_catalog_kanon_readme_absent(self) -> None:
+        """catalog/kanon/kanon-readme.md must not exist after E6-F2-S1-T1 removal."""
+        assert not self._README.exists(), (
+            f"catalog/kanon/kanon-readme.md at {self._README} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
+        )
 
-@pytest.mark.integration
-class TestKanonReadmeNoExternalRepoTool:
-    """AC-FUNC-004: kanon-readme.md must not reference rpm-git-repo as an external tool."""
-
-    _README = _SRC_ROOT / "catalog" / "kanon" / "kanon-readme.md"
-
-    def test_readme_has_no_rpm_git_repo_link(self) -> None:
-        """rpm-git-repo GitHub URL must not appear in kanon-readme.md."""
-        assert self._README.is_file(), f"kanon-readme.md not found at {self._README}"
-
-        text = self._README.read_text(encoding="utf-8")
-        assert "caylent-solutions/rpm-git-repo" not in text, (
-            f"Found reference to 'caylent-solutions/rpm-git-repo' in {self._README}. "
-            "The repo tool is now embedded -- replace the external link with generic text."
+    def test_catalog_directory_absent(self) -> None:
+        """src/kanon_cli/catalog/ must not exist after E6-F2-S1-T1 removal."""
+        assert not self._CATALOG_DIR.exists(), (
+            f"src/kanon_cli/catalog/ at {self._CATALOG_DIR} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
         )
 
 

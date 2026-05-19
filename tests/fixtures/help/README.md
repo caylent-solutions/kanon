@@ -30,6 +30,7 @@ Examples:
 | `kanon-remove.txt` | `kanon remove --help` |
 | `kanon-outdated.txt` | `kanon outdated --help` |
 | `kanon-why.txt` | `kanon why --help` |
+| `kanon-install.txt` | `kanon install --help` |
 
 ## Regeneration Procedure
 

@@ -1,0 +1,64 @@
+usage: kanon install [-h] [--catalog-source <git-url>@<ref>] [--refresh-lock |
+                     --refresh-lock-source NAME] [--strict-lock]
+                     [--strict-drift] [--lock-file PATH]
+                     [kanonenv_path]
+
+Execute the full Kanon install lifecycle.
+
+Parses the .kanon configuration file, then runs repo init/envsubst/sync
+for each source defined in the .kanon file. Aggregates packages into
+.packages/ via symlinks.
+
+positional arguments:
+  kanonenv_path         Path to the .kanon configuration file (default: auto-
+                        discover from current directory)
+
+options:
+  -h, --help            show this help message and exit
+  --catalog-source <git-url>@<ref>
+                        Remote catalog source as '<git_url>@<ref>' where ref
+                        is a branch, tag, or 'latest'. Overrides
+                        KANON_CATALOG_SOURCE env var. Required when
+                        KANON_CATALOG_SOURCE is not set.
+  --refresh-lock        Ignore the existing lockfile, re-resolve every
+                        transitive version from scratch, and overwrite
+                        .kanon.lock with the new state. Requires a CLI-
+                        supplied or KANON_CATALOG_SOURCE env-var catalog
+                        source; the lockfile fallback is disabled on this
+                        path.
+  --refresh-lock-source NAME
+                        Re-resolve exactly one top-level source's full chain
+                        while preserving every other source's lockfile entries
+                        verbatim. NAME may be a source name (the
+                        KANON_SOURCE_<name> key) or a catalog entry name
+                        resolved via derive_source_name. Requires a CLI-
+                        supplied or KANON_CATALOG_SOURCE env-var catalog
+                        source; the lockfile fallback is disabled on this
+                        path.
+  --strict-lock         Upgrade orphaned lock entries to a hard error. An
+                        orphaned lock entry is a source present in .kanon.lock
+                        but absent from .kanon (e.g. after 'kanon remove').
+                        Without this flag, orphaned entries are pruned and an
+                        info-line is emitted per orphan. With this flag, kanon
+                        exits with an error listing every orphaned source.
+                        Remediation: run without --strict-lock to prune, or
+                        restore the missing KANON_SOURCE_<name>_* triples in
+                        .kanon.
+  --strict-drift        Upgrade branch drift to a hard error. Branch drift
+                        occurs when the lockfile records a SHA for a branch-
+                        shaped source but the branch's current tip on the
+                        remote is a different SHA. Without this flag, the
+                        locked SHA is reused and an info-line is emitted. With
+                        this flag, kanon exits with an error listing every
+                        drifted source. Remediation: run 'kanon install
+                        --refresh-lock-source <source>' to accept the new
+                        branch tip.
+  --lock-file PATH      Path to the lock file. Defaults to <kanon-file>.lock
+                        (derived from --kanon-file). The KANON_LOCK_FILE
+                        environment variable is consulted when this flag is
+                        absent; the CLI flag takes precedence when both are
+                        set.
+
+Example:
+  kanon install           # auto-discovers .kanon
+  kanon install .kanon    # explicit path

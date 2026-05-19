@@ -16,6 +16,17 @@ import sys
 from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from kanon_cli.core.cli_args import add_catalog_source_arg
 
+# Note text for --output-dir when the add arm is selected.
+# Spec Section 4.9: --output-dir has no equivalent in 'kanon add'.
+_NOTE_OUTPUT_DIR_ADD = (
+    "Note: --output-dir has no direct equivalent in 'kanon add'; "
+    "the install workspace is the current directory or KANON_WORKSPACE_DIR if set."
+)
+
+# Note text for --output-dir when the list arm is selected.
+# Spec Section 4.9: --output-dir has no equivalent in 'kanon list'.
+_NOTE_OUTPUT_DIR_LIST = "Note: --output-dir has no equivalent in 'kanon list'."
+
 
 def register(subparsers) -> None:
     """Register the bootstrap subcommand.
@@ -49,19 +60,57 @@ def register(subparsers) -> None:
     parser.set_defaults(func=_run)
 
 
+def _translate_bootstrap_argv_tail(args: argparse.Namespace) -> str:
+    """Translate today's ``kanon bootstrap`` flags into the equivalent replacement tail.
+
+    This is a pure function: deterministic, no side effects, no I/O.
+    The returned string is the flags-only portion of the replacement command
+    (without the leading ``kanon add <name>`` or ``kanon list`` prefix).
+
+    Translation rules (spec Section 4.9 flag translation table):
+
+    - ``--catalog-source <v>`` maps to ``--catalog-source <v>`` for both arms.
+      The value is emitted verbatim (shell-quoting is the operator's responsibility).
+    - ``--output-dir <v>`` has no direct equivalent. A ``Note:`` line is
+      appended to the tail -- distinct text per arm -- instead of a flag.
+    - The ``<package>`` positional is NOT included in the tail (it is prepended
+      by the caller as part of the base command).
+
+    Args:
+        args: Parsed arguments from argparse. Must have ``package``,
+            ``catalog_source`` (str or None), and ``output_dir``
+            (pathlib.Path, default ``pathlib.Path(".")``).
+
+    Returns:
+        A string containing translated flags and any ``Note:`` lines,
+        separated by ``\\n``. Returns an empty string when no flags require
+        translation.
+    """
+    is_list_arm = args.package == "list"
+    parts: list[str] = []
+
+    if args.catalog_source is not None:
+        parts.append(f"--catalog-source {args.catalog_source}")
+
+    if args.output_dir != pathlib.Path("."):
+        note = _NOTE_OUTPUT_DIR_LIST if is_list_arm else _NOTE_OUTPUT_DIR_ADD
+        parts.append(note)
+
+    return "\n".join(parts)
+
+
 def _format_deprecated_warn(invocation: str, replacement_argv_tail: str) -> str:
     """Format the deprecation WARN message for a bootstrap invocation.
 
     Constructs the verbatim WARN text per spec Section 4.9 behaviour table.
-    The replacement_argv_tail parameter is accepted as a pre-translated argv
-    string; T2 will supply the real translated tail. T1's call sites pass
-    the concrete replacement command directly.
+    The caller provides the full replacement command (including any translated
+    flags produced by ``_translate_bootstrap_argv_tail``).
 
     Args:
         invocation: The full deprecated invocation string, e.g.
             ``'kanon bootstrap list'`` or ``'kanon bootstrap kanon'``.
         replacement_argv_tail: The recommended replacement command, e.g.
-            ``'kanon list'`` or ``'kanon add kanon'``.
+            ``'kanon list'`` or ``'kanon add kanon --catalog-source <url>'``.
 
     Returns:
         The formatted multi-line WARN string (without a trailing newline).
@@ -82,18 +131,29 @@ def _run(args: argparse.Namespace) -> None:
     mutation, or business logic is performed.
 
     Args:
-        args: Parsed arguments. Only ``args.package`` is read to select
-            the correct WARN message variant.
+        args: Parsed arguments. ``args.package`` selects the WARN variant;
+            ``args.catalog_source`` and ``args.output_dir`` feed the translator.
     """
+    translated_tail = _translate_bootstrap_argv_tail(args)
+    invocation = f"kanon bootstrap {args.package}"
+
     if args.package == "list":
-        warn_text = _format_deprecated_warn(
-            "kanon bootstrap list",
-            "kanon list",
-        )
+        base_replacement = "kanon list"
     else:
-        warn_text = _format_deprecated_warn(
-            f"kanon bootstrap {args.package}",
-            f"kanon add {args.package}",
-        )
+        base_replacement = f"kanon add {args.package}"
+
+    # Partition the translated tail into flag tokens and Note: lines.
+    # Flag tokens are appended to the replacement command; Note: lines are
+    # appended after the WARN block so the operator sees them as separate notices.
+    tail_lines = translated_tail.splitlines() if translated_tail else []
+    flag_lines = [ln for ln in tail_lines if not ln.startswith("Note:")]
+    note_lines = [ln for ln in tail_lines if ln.startswith("Note:")]
+
+    flags_str = " ".join(flag_lines)
+    replacement_cmd = f"{base_replacement} {flags_str}".rstrip()
+    warn_text = _format_deprecated_warn(invocation, replacement_cmd)
+    if note_lines:
+        warn_text = warn_text + "\n" + "\n".join(note_lines)
+
     print(warn_text, file=sys.stderr)
     raise SystemExit(EXIT_CODE_DEPRECATED)

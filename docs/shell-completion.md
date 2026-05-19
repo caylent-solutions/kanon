@@ -53,3 +53,73 @@ their dynamic arguments.
 
 > The full operator guide, including fish support and troubleshooting steps,
 > ships in a subsequent release.
+
+## Cache layout
+
+kanon maintains a local cache so that `__complete_*` subcommands can return
+results from disk instead of re-fetching from git on every Tab press.  The
+cache root is controlled by `KANON_CACHE_DIR` (see
+[Configuration](configuration.md#kanon_cache_dir) for the full precedence
+chain).
+
+```
+${KANON_CACHE_DIR}/
+  catalogs/
+    <sha256-of-catalog-url@ref>/
+      index.txt          -- one catalog entry name per line
+      tags.txt           -- one PEP 440-valid tag or branch per line
+      fetched_at.txt     -- Unix epoch seconds of last remote fetch
+      accessed_at.txt    -- Unix epoch seconds of last read (coalesced)
+      origin.txt         -- "<url>@<ref>" sidecar for __complete_cached_catalogs
+  projects/
+    <sha256-of-canonical-project-repo-url>/
+      tags.txt           -- one PEP 440-valid tag or branch per line
+      fetched_at.txt     -- Unix epoch seconds of last remote fetch
+      accessed_at.txt    -- Unix epoch seconds of last read (coalesced)
+      origin.txt         -- canonical "<repo-url>"
+  completion-errors.log  -- append-only log of completion-time errors
+```
+
+### File and directory permissions
+
+All cache directories are created with mode `0700` (owner read/write/execute,
+no access for group or others).  All cache files are written with mode `0600`
+(owner read/write only).  Permissions are enforced via `os.chmod` after every
+`mkdir` and file write, so the process umask cannot weaken them.
+
+This implements the user-private cache requirement from spec Section 3.6
+(trust model -- "Cache files are user-private").
+
+### Entry key derivation
+
+Cache subdirectory names are the SHA-256 hex digest of the lookup key:
+
+- Catalog entry: `sha256("<url>@<ref>")`
+- Project: `sha256("<canonical-repo-url>")`
+
+The digest is deterministic, so the same URL and ref always map to the
+same on-disk directory regardless of the calling process.
+
+### Cache lifecycle
+
+- **TTL:** `KANON_COMPLETION_CACHE_TTL` (default 300 s).  A cached result
+  whose `fetched_at.txt` is within the TTL is returned immediately; otherwise
+  a background refresh is spawned (controlled by `KANON_COMPLETION_REFRESH_BG`).
+- **Coalescing:** `accessed_at.txt` is updated at most once per
+  `KANON_ACCESSED_AT_COALESCE_SEC` (default 60 s) to bound I/O under rapid
+  Tab-pressing.
+- **Pruning:** `kanon doctor --prune-cache` removes entries whose
+  `accessed_at.txt` is older than `KANON_CACHE_PRUNE_AGE_DAYS` (default 30 d).
+
+### Error log
+
+Errors that occur inside `__complete_*` subcommands are written to
+`completion-errors.log` (one line per error) in the format:
+
+```
+<ISO-8601-UTC> <completer-name> <ErrorClass>: <message>
+```
+
+The log is append-only and never rotated automatically.  Run
+`kanon doctor --prune-cache` to truncate it.  The path can be overridden via
+`KANON_COMPLETION_LOG`.

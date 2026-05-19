@@ -2096,3 +2096,61 @@ class TestExitCodeDeprecated:
 
     def test_exit_code_deprecated_distinct_from_argparse_error(self) -> None:
         assert EXIT_CODE_DEPRECATED != 2
+
+
+# ---------------------------------------------------------------------------
+# E7-F3-S1-T1: completion cache constants (AC-FUNC-008)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompletionCacheConstants:
+    """TDD-paired test for the cache constants added to constants.py by E7-F3-S1-T1."""
+
+    def test_kanon_cache_dir_env_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+
+        assert isinstance(KANON_CACHE_DIR_ENV, str)
+        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
+
+    def test_kanon_cache_dir_default_is_string(self) -> None:
+        from kanon_cli.constants import KANON_CACHE_DIR_DEFAULT
+
+        assert isinstance(KANON_CACHE_DIR_DEFAULT, str)
+        assert KANON_CACHE_DIR_DEFAULT == "~/.cache/kanon"
+
+    def test_kanon_completion_cache_ttl_is_int(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_CACHE_TTL
+
+        assert isinstance(KANON_COMPLETION_CACHE_TTL, int)
+        assert KANON_COMPLETION_CACHE_TTL == 300
+
+    def test_kanon_completion_timeout_is_int(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_TIMEOUT
+
+        assert isinstance(KANON_COMPLETION_TIMEOUT, int)
+        assert KANON_COMPLETION_TIMEOUT == 2
+
+    def test_kanon_completion_refresh_bg_is_int(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_REFRESH_BG
+
+        assert isinstance(KANON_COMPLETION_REFRESH_BG, int)
+        assert KANON_COMPLETION_REFRESH_BG == 1
+
+    def test_kanon_completion_enabled_is_int(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_ENABLED
+
+        assert isinstance(KANON_COMPLETION_ENABLED, int)
+        assert KANON_COMPLETION_ENABLED == 1
+
+    def test_kanon_accessed_at_coalesce_sec_is_int(self) -> None:
+        from kanon_cli.constants import KANON_ACCESSED_AT_COALESCE_SEC
+
+        assert isinstance(KANON_ACCESSED_AT_COALESCE_SEC, int)
+        assert KANON_ACCESSED_AT_COALESCE_SEC == 60
+
+    def test_kanon_completion_log_env_is_string(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_LOG_ENV
+
+        assert isinstance(KANON_COMPLETION_LOG_ENV, str)
+        assert KANON_COMPLETION_LOG_ENV == "KANON_COMPLETION_LOG"

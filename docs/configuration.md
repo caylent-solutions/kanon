@@ -374,6 +374,89 @@ KANON_DOCTOR_STALE_LOCK_AGE_HOURS=4 kanon doctor --prune-cache
 
 The constant `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` (default `1`) is defined in `src/kanon_cli/constants.py`.
 
+## Shell Completion Cache
+
+The following environment variables control where kanon stores its shell-completion
+cache and how it manages the cache lifecycle.  See
+[Shell Completion -- Cache layout](shell-completion.md#cache-layout) for the full
+directory structure.
+
+### KANON_CACHE_DIR
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_CACHE_DIR` | `~/.cache/kanon` | Root directory for the shell-completion cache.  When set, overrides both `XDG_CACHE_HOME/kanon` and the `~/.cache/kanon` fallback.  The directory and all files inside it are created with mode `0700` / `0600` (owner-private). |
+
+Resolution order (highest wins):
+
+1. `KANON_CACHE_DIR` environment variable.
+2. `${XDG_CACHE_HOME}/kanon` -- XDG Base Directory fallback.
+3. `~/.cache/kanon` -- hard-coded default when neither env var is set.
+
+```bash
+# Store cache in a non-default location
+export KANON_CACHE_DIR=/tmp/my-kanon-cache
+
+# Use the XDG default
+unset KANON_CACHE_DIR
+export XDG_CACHE_HOME=~/.cache
+```
+
+### KANON_COMPLETION_CACHE_TTL
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_CACHE_TTL` | `300` | Cache time-to-live in seconds.  A cached completion result whose `fetched_at.txt` is within this age is returned immediately without a remote fetch.  When the age exceeds the TTL, a background refresh is spawned (if `KANON_COMPLETION_REFRESH_BG=1`). |
+
+```bash
+# Extend TTL to 10 minutes
+export KANON_COMPLETION_CACHE_TTL=600
+```
+
+### KANON_COMPLETION_TIMEOUT
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_TIMEOUT` | `2` | Timeout in seconds for each `kanon __complete_*` subprocess call.  When `timeout`(1) is available on `$PATH`, the preamble helpers wrap the subprocess call with this value.  When it is not available, kanon's own internal subprocess timeout (also bounded by this variable) applies. |
+
+```bash
+# Allow up to 5 seconds for completion lookups
+export KANON_COMPLETION_TIMEOUT=5
+```
+
+### KANON_COMPLETION_REFRESH_BG
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_REFRESH_BG` | `1` | When set to `1`, a background subprocess is spawned after a stale-but-present cache read to refresh the cache asynchronously.  Set to `0` to disable background refresh (completions then become stale until the TTL expires and the next Tab press triggers a synchronous fetch). |
+
+```bash
+# Disable background refresh
+export KANON_COMPLETION_REFRESH_BG=0
+```
+
+### KANON_ACCESSED_AT_COALESCE_SEC
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_ACCESSED_AT_COALESCE_SEC` | `60` | Coalescing window in seconds for `accessed_at.txt` updates.  A read that occurs within this many seconds of the last `accessed_at` write does not rewrite the file.  This bounds I/O during rapid Tab-pressing without losing access-time tracking for cache pruning. |
+
+```bash
+# Coalesce accessed_at writes within a 5-minute window
+export KANON_ACCESSED_AT_COALESCE_SEC=300
+```
+
+### KANON_COMPLETION_LOG
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_LOG` | `${KANON_CACHE_DIR}/completion-errors.log` | Path to the append-only completion-errors log.  When unset, errors are written to `completion-errors.log` directly under `KANON_CACHE_DIR`.  The file is created with mode `0600` and its parent directory with mode `0700`. |
+
+```bash
+# Redirect completion errors to a custom path
+export KANON_COMPLETION_LOG=/var/log/kanon-completion-errors.log
+```
+
 ## Shell Completion
 
 The following environment variables control the behaviour of the kanon shell completion

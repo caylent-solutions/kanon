@@ -111,6 +111,37 @@ else:
 # written by E7 completion callbacks. When unset, there is no cache directory.
 KANON_CACHE_DIR_ENV = "KANON_CACHE_DIR"
 
+# Default cache directory path (XDG-style; resolved at runtime via expanduser).
+# Section 11.4 / Section 11.6 default.
+KANON_CACHE_DIR_DEFAULT = "~/.cache/kanon"
+
+# TTL in seconds for shell-completion cache entries.
+# Completers skip a remote fetch when the cached fetched_at is within this age.
+# Section 11.4 lifecycle header.
+KANON_COMPLETION_CACHE_TTL = 300
+
+# Timeout in seconds applied to each kanon __complete_* subprocess call.
+# Preamble helpers pass this to timeout(1) (or rely on kanon's internal limit).
+# Section 11.6 configuration recap.
+KANON_COMPLETION_TIMEOUT = 2
+
+# When 1, the completion background-refresh subprocess is spawned after a
+# stale-but-present cache read to refresh asynchronously. Section 11.4.
+KANON_COMPLETION_REFRESH_BG = 1
+
+# When 1, dynamic completion lookups are enabled. Set to 0 to disable all
+# kanon __complete_* calls globally. Section 11.6.
+KANON_COMPLETION_ENABLED = 1
+
+# Coalescing window in seconds for accessed_at updates.
+# A read that occurs within this many seconds of the last update does not
+# rewrite accessed_at, to bound I/O under rapid Tab-pressing. Section 11.4.
+KANON_ACCESSED_AT_COALESCE_SEC = 60
+
+# Name of the environment variable that overrides the completion-errors log
+# path. When unset, the log is written to ${KANON_CACHE_DIR}/completion-errors.log.
+KANON_COMPLETION_LOG_ENV = "KANON_COMPLETION_LOG"
+
 # Filename of the completion-errors log within the cache directory.
 # Doctor subcheck 7 reads the last KANON_COMPLETION_ERRORS_REPORT_LIMIT lines
 # from this file when it exists.

@@ -1,15 +1,26 @@
 # Shell Completion
 
-kanon supports tab-completion for bash and zsh via `kanon completion <shell>`.
+kanon supports tab-completion for bash and zsh via
+`kanon completion <shell>`. The generated script provides static
+completions for all subcommands and flags, plus dynamic completions
+for catalog entry names, versions, and other live data fetched
+through a TTL-cached local mirror.
 
-## Bash version requirement
+## Install
 
-kanon's generated bash completion script requires **bash 4.0 or later**.
-The macOS stock shell (`/bin/bash`, bash 3.2) is **not supported**. Install
-a current bash via Homebrew (`brew install bash`) and source the completion
-script from that shell.
+### Bash version requirement
 
-## Quick start
+kanon's generated bash completion script requires **bash 4.0 or
+later**. The macOS stock shell (`/bin/bash`, bash 3.2) is **not
+supported**. Install a current bash via Homebrew
+(`brew install bash`) and source the completion script from that
+shell.
+
+### Auto-updating install (recommended)
+
+Source the completion output inline via `eval`. Every new shell
+session runs `kanon completion <shell>` at startup, so the completion
+script is always in sync with the installed kanon version.
 
 ```bash
 # bash -- add to ~/.bashrc or ~/.bash_profile
@@ -19,433 +30,300 @@ eval "$(kanon completion bash)"
 eval "$(kanon completion zsh)"
 ```
 
-After sourcing the script, Tab-completion is active for all kanon
-subcommands and their dynamic arguments.
+After sourcing the script, tab-completion is active for all kanon
+subcommands and their arguments. This approach requires no maintenance
+after kanon upgrades.
 
-## Install paths
+### Static file install (advanced)
 
-There are two ways to load the completion script:
-
-### Auto-updating (recommended)
-
-Source the completion output inline via `eval`. Every new shell session runs
-`kanon completion <shell>` at startup, so the completion script is always
-in sync with the installed kanon version.
+Write the completion script to disk once and source it from a fixed
+path. This avoids a subprocess call on each shell startup, but the
+file must be refreshed manually after kanon upgrades.
 
 ```bash
-# bash
-eval "$(kanon completion bash)"
-
-# zsh
-eval "$(kanon completion zsh)"
-```
-
-This approach requires no maintenance after kanon upgrades.
-
-### Static file (advanced)
-
-Write the completion script to disk once and source it from a fixed path.
-This avoids a subprocess call on each shell startup but means the file must
-be refreshed manually after kanon upgrades.
-
-```bash
-# bash
-kanon completion bash > ~/.local/share/bash-completion/completions/kanon
+# bash -- system-wide completions directory
+kanon completion bash \
+  > ~/.local/share/bash-completion/completions/kanon
 
 # zsh -- place the file on your $fpath
+mkdir -p ~/.zsh/completions
 kanon completion zsh > ~/.zsh/completions/_kanon
 ```
 
-When using the static approach, run `kanon doctor` after upgrading kanon.
-The doctor command detects drift between the installed kanon version and
-the content of the static file and emits a warning when they diverge.
+When using the static approach, run `kanon doctor` after upgrading
+kanon. The doctor command detects drift between the installed kanon
+version and the content of the static file and emits a warning when
+they diverge. See [Update lifecycle](#update-lifecycle) below.
 
 ## Update lifecycle
 
-| Method | How completion stays current |
-|--------|------------------------------|
-| Auto-updating (`eval "$(kanon completion <shell>)"`) | Always current -- regenerated on each shell startup. |
-| Static file | Must be refreshed manually after each kanon upgrade via `kanon completion <shell> > <path>`. `kanon doctor` warns when the static file is stale. |
+For the **auto-updating** method (`eval "$(kanon completion <shell>)"`
+in your rc file), the completion script is regenerated on each shell
+startup and is always current. No maintenance is required after a
+kanon upgrade.
+
+For the **static file** method, the on-disk script must be
+regenerated manually after each kanon upgrade:
+
+```bash
+kanon completion bash > ~/.local/share/bash-completion/completions/kanon
+# or
+kanon completion zsh > ~/.zsh/completions/_kanon
+```
+
+**When to regenerate:**
+
+- After running `pipx upgrade kanon-cli` or any other upgrade method.
+- After installing kanon in a new environment.
+- When `kanon doctor` emits a completion-script staleness warning.
+
+**How staleness is detected:**
+
+`kanon doctor` compares the hash of the on-disk static file against a
+fresh invocation of `kanon completion <shell>`. When they differ, the
+doctor output includes a warning under check 9 ("Completion script
+staleness"). Run `kanon completion <shell> > <path>` to refresh, or
+switch to the auto-updating `eval` approach to eliminate this
+maintenance step. See [kanon doctor](doctor.md) for the full list of
+health checks.
 
 ## Dynamic completers
 
-The completion script includes a preamble block that defines kanon-specific
-shell helper functions. Each helper shells out to a corresponding
-`kanon __complete_<name>` subcommand at Tab-press time.
+The completion script includes a preamble block that defines
+kanon-specific shell helper functions. Each helper calls a
+corresponding `kanon __complete_<name>` hidden subcommand at
+tab-press time. The subcommand writes candidates to stdout (one per
+line); the shell function hands them to the shell completion machinery.
 
-### `_kanon_complete_catalog_entries`
+All completers are failure-quiet on stdout (return an empty list on
+error) and failure-loud on stderr (append a structured error line to
+`${KANON_CACHE_DIR}/completion-errors.log`). This keeps the shell UX
+non-blocking while ensuring errors are captured for `kanon doctor` to
+surface.
 
-Retrieves available catalog entry names from the local cache. Backed by
-`kanon __complete_catalog_entries [<prefix>]`. On cache miss the helper
-returns silently so the shell falls back to filename completion.
+### `__complete_catalog_entries`
 
-### `_kanon_complete_source_names_in_kanon`
+**Shell helper:** `_kanon_complete_catalog_entries`
+
+Retrieves available catalog entry names from the local cache.
+Reads `${KANON_CACHE_DIR}/catalogs/<sha256>/index.txt`, where the
+sha256 is derived from `"<catalog-url>@<ref>"`. On cache miss, the
+command performs an inline network fetch bounded by
+`KANON_COMPLETION_TIMEOUT` before returning results.
+
+Used for completing the `<name>[@<spec>]` positional argument of
+`kanon add` and `kanon bootstrap`.
+
+### `__complete_source_names_in_kanon`
+
+**Shell helper:** `_kanon_complete_source_names_in_kanon`
 
 Retrieves source names defined in the `.kanon` file for the current
-project. Used for completing arguments to `kanon remove` and similar
-subcommands that reference named dependency sources.
+project. Reads `${KANON_KANON_FILE:-./.kanon}` and emits one
+normalized source name per line (parsed from `KANON_SOURCE_<name>_URL`
+keys).
 
-### `_kanon_complete_names_in_lockfile`
+Used for completing arguments to `kanon remove` and
+`kanon install --refresh-lock-source`. Note: normalization is
+one-way -- the original entry name is not recoverable from the source
+name. Tab-completion is suggest-only.
 
-Retrieves names recorded in the lock file. Used for completing
-lock-file-aware arguments.
+### `__complete_names_in_lockfile`
 
-### `_kanon_complete_catalog_versions`
+**Shell helper:** `_kanon_complete_names_in_lockfile`
 
-Retrieves available versions for a catalog entry. Used when completing
-`@<version>` suffixes on catalog entry arguments.
+Retrieves names recorded in the lock file. Reads `${KANON_LOCK_FILE}`
+(resolved per the lockfile search order) and emits one top-level
+source name, every transitive `<include>` path, and every
+`<project>` URL, one per line.
 
-### `_kanon_complete_project_versions`
+Used for completing the `<name-or-url>` positional argument of
+`kanon why`.
 
-Retrieves available versions for a project URL. Used when completing
-version arguments for project-URL-based entries.
+### `__complete_catalog_versions`
 
-### `_kanon_complete_cached_catalogs`
+**Shell helper:** `_kanon_complete_catalog_versions`
 
-Retrieves locally cached catalog identifiers. Used when completing
-`--catalog-source` arguments.
+Retrieves available versions for a catalog entry. Calls
+`git ls-remote --tags --heads` against the manifest repo, filters
+results to PEP 440-valid tags and branches, and returns them one per
+line (deduped). Results are cached in
+`${KANON_CACHE_DIR}/catalogs/<sha256>/tags.txt`.
 
-### `_kanon_complete_add_arg` (mid-token splitter)
+Used when completing `@<version>` suffixes on `kanon add` arguments.
 
-Handles `kanon add foo@<TAB>` style completion by splitting on the `@`
-separator. The current release calls `_kanon_complete_catalog_entries`
-unconditionally; full `@`-splitting logic is added in a subsequent task.
+### `__complete_project_versions`
 
-## Cache environment variables
+**Shell helper:** `_kanon_complete_project_versions`
 
-The following environment variables control cache and completion behaviour.
-All variables must be set in the shell before sourcing the completion script
-(or before any `kanon` invocation for the per-process settings).
+Retrieves available versions for a project URL. Calls
+`git ls-remote --tags --heads <repo-url>`, filters to PEP 440-valid
+tags and branches, and returns them one per line (deduped). Results
+are cached in `${KANON_CACHE_DIR}/projects/<sha256>/tags.txt`.
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `KANON_CACHE_DIR` | `$XDG_CACHE_HOME/kanon` or `~/.cache/kanon` | Root directory for all kanon cache files. Controls where completion index files, version lists, and error logs are written. |
-| `KANON_COMPLETION_CACHE_TTL` | `300` | Cache time-to-live in seconds. Entries whose `fetched_at.txt` is within this window are returned immediately; older entries trigger a background refresh. |
-| `KANON_COMPLETION_TIMEOUT` | `2` | Timeout in seconds for each inline subprocess call during a cache-miss fetch. |
-| `KANON_COMPLETION_REFRESH_BG` | `1` | Set to `0` to disable background refresh. When disabled, stale cache entries are returned without spawning a child refresh process. |
-| `KANON_COMPLETION_ENABLED` | `1` | Set to `0` to disable all dynamic completion lookups entirely. The completion script still provides static subcommand and flag completion; only dynamic argument lookups (catalog entries, source names, etc.) are skipped. |
-| `KANON_ACCESSED_AT_COALESCE_SEC` | `60` | Coalescing window in seconds for `accessed_at.txt` updates. Limits I/O under rapid Tab-pressing by suppressing redundant writes within this window. |
-| `KANON_COMPLETION_LOG` | `${KANON_CACHE_DIR}/completion-errors.log` | Path to the append-only error log written by `__complete_*` subcommands. Override to redirect completion-time errors to a custom path. |
+Used when completing the `<spec>` portion of `kanon add foo@<TAB>`.
 
-## Troubleshooting
+### `__complete_cached_catalogs`
 
-### Stale cache
+**Shell helper:** `_kanon_complete_cached_catalogs`
 
-If completion results are outdated after adding new entries to a catalog,
-the cache has not yet refreshed. Options:
+Retrieves locally cached catalog identifiers. Reads
+`${KANON_CACHE_DIR}/catalogs/*/origin.txt` and emits one
+`<url>@<ref>` string per catalog the operator has previously
+interacted with.
 
-1. Wait for the background refresh to complete (triggered on the next
-   Tab-press after the TTL expires).
-2. Force an immediate refresh by running `kanon doctor --refresh-completion-cache`.
-3. Prune the entire cache with `kanon doctor --prune-cache` and let it
-   rebuild on the next Tab-press.
+Used when completing `--catalog-source` arguments.
 
-### Log file location
+### Mid-token splitter: `_kanon_complete_add_arg`
 
-Errors that occur inside `__complete_*` subcommands are written to the
-completion error log. The default path is:
+Handles `kanon add foo@<TAB>` style completion by detecting the `@`
+separator. When an `@` is present, `_kanon_complete_project_versions`
+is called against the repo URL for the entry to the left of the `@`.
+Without `@`, `_kanon_complete_catalog_entries` is called.
 
-```
-${KANON_CACHE_DIR}/completion-errors.log
-```
+## Cache and environment variables
 
-Override the path via `KANON_COMPLETION_LOG`. The log is append-only and
-is never rotated automatically. Truncate or remove it manually, or run
-`kanon doctor --prune-cache` to clear it along with the rest of the cache.
+The following environment variables control cache and completion
+behaviour. All variables must be set in the shell before sourcing the
+completion script (or before any `kanon` invocation for
+per-process settings).
 
-Format of each log line:
+See [Configuration](configuration.md) for the full environment
+variable reference table.
 
-```
-<ISO-8601-UTC> <completer-name> <ErrorClass>: <message>
-```
+**`KANON_CACHE_DIR`** -- Root directory for all kanon cache files.
+Controls where completion index files, version lists, and error logs
+are written. Defaults to `${XDG_CACHE_HOME:-~/.cache}/kanon`.
+Override to place the cache on a faster or larger volume.
 
-### Disabling dynamic completion
+**`KANON_COMPLETION_CACHE_TTL`** (default `300`) -- Cache
+time-to-live in seconds. Entries whose `fetched_at.txt` is within
+this window are returned immediately. Older entries trigger a
+background refresh when `KANON_COMPLETION_REFRESH_BG=1`.
 
-Set `KANON_COMPLETION_ENABLED=0` to disable all dynamic argument lookups
-for the current shell session:
+**`KANON_COMPLETION_TIMEOUT`** (default `2`) -- Timeout in seconds
+for each inline subprocess call during a cache-miss fetch. Increase
+on slow networks; decrease if tab-presses feel sluggish.
 
-```bash
-export KANON_COMPLETION_ENABLED=0
-```
+**`KANON_COMPLETION_REFRESH_BG`** (default `1`) -- When `1`, a stale
+cache entry is returned immediately while a child process refreshes
+it in the background. Set to `0` to suppress background refreshes;
+stale data is then returned until an inline refresh occurs.
 
-Static subcommand and flag completion (subcommand names, option strings)
-remain active. Only the dynamic completers that shell out to
-`kanon __complete_*` are suppressed.
+**`KANON_COMPLETION_ENABLED`** (default `1`) -- Set to `0` to disable
+all dynamic argument lookups. Static subcommand and flag completion
+remains active; only dynamic completers (`kanon __complete_*`) are
+suppressed.
 
-### Completion timeout
+**`KANON_ACCESSED_AT_COALESCE_SEC`** (default `60`) -- Coalescing
+window in seconds for `accessed_at.txt` updates. Limits I/O under
+rapid tab-pressing by suppressing redundant writes within this window.
 
-If Tab-presses feel slow on a cache miss, reduce `KANON_COMPLETION_TIMEOUT`
-(default `2` seconds):
+**`KANON_COMPLETION_LOG`** (default
+`${KANON_CACHE_DIR}/completion-errors.log`) -- Path to the
+append-only error log written by `__complete_*` subcommands. Override
+to redirect completion-time errors to a custom path.
 
-```bash
-export KANON_COMPLETION_TIMEOUT=1
-```
-
-Or disable inline fetches entirely with `KANON_COMPLETION_ENABLED=0` and
-rely on cached results only.
-
-## Updating snapshots
-
-The CI pipeline verifies that the completion scripts have not changed
-unexpectedly using snapshot fixture files committed to the repository
-(`tests/fixtures/completion/expected-bash.sh` and `expected-zsh.sh`).
-
-After intentionally changing the completion output (e.g. adding a new
-subcommand or flag), regenerate both fixtures in one step:
-
-```bash
-make update-completion-snapshots
-```
-
-Then commit the updated fixture files alongside the code change.
-
-## Preamble Overview
-
-The generated completion script includes a preamble block that defines
-kanon-specific shell helper functions used for dynamic argument lookup.
-These helpers are sourced once when the completion script is loaded, and
-invoked each time the user presses Tab on a supported argument position.
-
-### How helpers work
-
-Each helper shells out to a corresponding `kanon __complete_<name>`
-subcommand to retrieve candidate lists at completion time. For example:
-
-- `_kanon_complete_catalog_entries` -- retrieves available catalog entry
-  names.
-- `_kanon_complete_source_names_in_kanon` -- retrieves source names defined
-  in `.kanon`.
-- `_kanon_complete_names_in_lockfile` -- retrieves names recorded in the
-  lock file.
-- `_kanon_complete_catalog_versions` -- retrieves available catalog
-  versions.
-- `_kanon_complete_project_versions` -- retrieves available versions for a
-  project URL.
-- `_kanon_complete_cached_catalogs` -- retrieves locally cached catalog
-  identifiers.
-
-### Mid-token splitter
-
-`_kanon_complete_add_arg` is the mid-token splitter helper used when
-completing `kanon add foo@<TAB>` style arguments. The body shipped with
-this release is a placeholder that calls `_kanon_complete_catalog_entries`
-unconditionally. The full `@`-splitting logic is added in a subsequent
-task.
-
-### Controlling completion behaviour
-
-Two environment variables control how preamble helpers behave at completion
-time. See [Configuration](configuration.md) for the full reference.
-
-| Variable                   | Default | Effect                                |
-| -------------------------- | ------- | ------------------------------------- |
-| `KANON_COMPLETION_ENABLED` | `1`     | Set to `0` to disable all lookups.    |
-| `KANON_COMPLETION_TIMEOUT` | `2`     | Timeout (seconds) per subprocess.     |
-
-## Cache layout
-
-kanon maintains a local cache so that `__complete_*` subcommands can return
-results from disk instead of re-fetching from git on every Tab press. The
-cache root is controlled by `KANON_CACHE_DIR` (see
-[Configuration](configuration.md#kanon_cache_dir) for the full precedence
-chain).
+### Cache layout
 
 ```text
 ${KANON_CACHE_DIR}/
   catalogs/
     <sha256-of-catalog-url@ref>/
-      index.txt          -- one catalog entry name per line
-      tags.txt           -- one PEP 440-valid tag or branch per line
-      fetched_at.txt     -- Unix epoch seconds of last remote fetch
-      accessed_at.txt    -- Unix epoch seconds of last read (coalesced)
-      origin.txt         -- "<url>@<ref>" sidecar for __complete_cached_catalogs
+      index.txt      -- one catalog entry name per line
+      tags.txt       -- one PEP 440-valid tag or branch per line
+      fetched_at.txt -- Unix epoch seconds of last remote fetch
+      accessed_at.txt -- Unix epoch seconds of last read
+      origin.txt     -- "<url>@<ref>" sidecar
   projects/
     <sha256-of-canonical-project-repo-url>/
-      tags.txt           -- one PEP 440-valid tag or branch per line
-      fetched_at.txt     -- Unix epoch seconds of last remote fetch
-      accessed_at.txt    -- Unix epoch seconds of last read (coalesced)
-      origin.txt         -- canonical "<repo-url>"
-  completion-errors.log  -- append-only log of completion-time errors
+      tags.txt       -- one PEP 440-valid tag or branch per line
+      fetched_at.txt -- Unix epoch seconds of last remote fetch
+      accessed_at.txt -- Unix epoch seconds of last read
+      origin.txt     -- canonical "<repo-url>"
+  completion-errors.log -- append-only error log
 ```
 
-### File and directory permissions
+All cache directories are created with mode `0700`; all cache files
+are written with mode `0600`. The process umask cannot weaken these
+permissions.
 
-All cache directories are created with mode `0700` (owner read/write/execute,
-no access for group or others). All cache files are written with mode `0600`
-(owner read/write only). Permissions are enforced via `os.chmod` after every
-`mkdir` and file write, so the process umask cannot weaken them.
+## Troubleshooting
 
-This implements the user-private cache requirement from spec Section 3.6
-(trust model -- "Cache files are user-private").
+### Stale cache
 
-### Entry key derivation
+If completion results are outdated after adding new entries to a
+catalog, the cache has not yet refreshed.
 
-Cache subdirectory names are the SHA-256 hex digest of the lookup key:
+1. Wait for the background refresh to complete (triggered on the next
+   tab-press after the TTL expires).
+2. Force an immediate refresh:
 
-- Catalog entry: `sha256("<url>@<ref>")`
-- Project: `sha256("<canonical-repo-url>")`
+   ```bash
+   kanon doctor --refresh-completion-cache
+   ```
 
-The digest is deterministic, so the same URL and ref always map to the
-same on-disk directory regardless of the calling process.
+3. Prune the entire cache and let it rebuild:
 
-### Cache lifecycle
+   ```bash
+   kanon doctor --prune-cache
+   ```
 
-Each cache entry directory contains a `fetched_at.txt` file holding an
-integer epoch-seconds timestamp.  The `classify()` function in
-`kanon_cli.completions.cache` evaluates that timestamp against the
-current time and the configured TTL to produce one of three `Freshness`
-values:
-
-| Freshness | Condition | Action |
-|-----------|-----------|--------|
-| `FRESH`   | `now - fetched_at <= TTL`, OR `fetched_at > now` (clock skew) | Return cached entries immediately. |
-| `STALE`   | `now - fetched_at > TTL` (file present and parseable) | Return stale entries; fork background refresh when `KANON_COMPLETION_REFRESH_BG=1`. |
-| `MISSING` | File absent, empty, non-integer content, or negative value | Perform inline fetch bounded by `KANON_COMPLETION_TIMEOUT`. |
-
-**Staleness rules (spec Section 11.4):**
-
-- `fetched_at.txt` absent on disk -- `MISSING`.
-- Content not parseable as an integer -- `MISSING`.
-- Parsed value < 0 -- `MISSING` (negative epoch is invalid).
-- `fetched_at > now` (clock skew -- future timestamp) -- `FRESH`.
-  The spec is explicit: a future timestamp must be treated as fresh so
-  that a misconfigured or drifting system clock does not force a
-  continuous refetch storm.
-- `now - fetched_at <= TTL` -- `FRESH`.
-- `now - fetched_at > TTL` -- `STALE`.
-
-**TTL:** `KANON_COMPLETION_CACHE_TTL` (default 300 s). A cached result
-  whose `fetched_at.txt` is within the TTL is returned immediately;
-  otherwise a background refresh is spawned (controlled by
-  `KANON_COMPLETION_REFRESH_BG`).
-
-**Background refresh (STALE path):**
-
-When the cache is STALE, `fork_background_refresh()` in
-`kanon_cli.completions.cache` is called with a refresh callable.
-
-- The stale entries are returned to the shell immediately (the
-  completer does not block).
-- A child process is forked via `os.fork()`:
-  1. `os.setsid()` detaches the child from the controlling terminal.
-  2. stdin and stdout are redirected to `/dev/null` so the child
-     cannot write to the operator's terminal.
-  3. stderr is redirected to `completion-errors.log` (append mode)
-     so any refresh-time errors are captured.
-  4. The refresh function is called; on success the child exits 0.
-  5. On any exception, the error is logged via `log_completion_error`
-     and the child exits non-zero.
-- The parent process returns immediately and does not call
-  `os.waitpid`; the child is fully detached.
-
-**Opt-out:** Set `KANON_COMPLETION_REFRESH_BG=0` to disable background
-refresh entirely.  In that mode, a STALE cache is still returned
-immediately but no child process is forked to update it.  A subsequent
-Tab-press will again return the stale data until the cache is refreshed
-by an inline fetch (cache-miss path) or until the operator runs
-`kanon doctor --prune-cache`.
-
-- **Coalescing:** `accessed_at.txt` is updated at most once per
-  `KANON_ACCESSED_AT_COALESCE_SEC` (default 60 s) to bound I/O under
-  rapid Tab-pressing. The coalescing rule is: `accessed_at.txt` is
-  rewritten only when `now - prior_value >= KANON_ACCESSED_AT_COALESCE_SEC`.
-  If the file is missing or contains non-integer content it is treated
-  as a first-touch and written unconditionally. If `prior_value > now`
-  (clock skew), the file is rewritten to `now` to force-forward the
-  timestamp. The `maybe_update_accessed_at(path, now, coalesce_window_seconds)`
-  function in `kanon_cli.completions.cache` implements this rule and
-  returns True when the file was written, False when the write was
-  suppressed.
-- **Pruning:** `kanon doctor --prune-cache` removes entries whose
-  `accessed_at.txt` is older than `KANON_CACHE_PRUNE_AGE_DAYS`
-  (default 30 d).
-
-### Sanitization
-
-Before any entry is written to a cache file by `write_entries`, it is
-passed through the output sanitizer (`kanon_cli.completions.sanitize`).
-The sanitizer rejects any entry that contains a forbidden character.
-Rejected entries are dropped from the file AND logged to
-`completion-errors.log` (see "Error log" below).
-
-Forbidden character classes (per spec Section 11.3 and Section 3.6
-trust model):
-
-| Class | Characters / range | Rejection reason |
-|-------|--------------------|-----------------|
-| NUL | `\x00` (ASCII NUL) | `contains NUL` |
-| Newline / carriage return | `\n` (0x0a), `\r` (0x0d) | `contains newline` |
-| Shell metacharacters | `\|`, `&`, `;`, `<`, `>`, `(`, `)`, `{`, `}`, `$`, `` ` ``, `\`, `"`, `'` | `contains shell metacharacter '<c>'` |
-| Other control characters | Any character below 0x20 not listed above | `contains control char 0xNN` |
-
-The closed set of shell metacharacters is defined in
-`kanon_cli.constants.SHELL_METACHARS` (a `frozenset[str]`).
-
-Entries that survive all checks are written verbatim, one per line.
-The sanitizer makes a single O(n) pass over each entry's characters
-and stops on the first forbidden character, so filtering cost is
-linear in total input size.
-
-### Error log
+### Log file location
 
 Errors that occur inside `__complete_*` subcommands are written to
-`completion-errors.log` (one line per error) in the format:
+the completion error log. The default path is:
+
+```text
+${KANON_CACHE_DIR}/completion-errors.log
+```
+
+Override the path via `KANON_COMPLETION_LOG`. The log is append-only
+and is never rotated automatically. Truncate or remove it manually,
+or run `kanon doctor --prune-cache` to clear it along with the rest
+of the cache.
+
+Each log line follows this format:
 
 ```text
 <ISO-8601-UTC> <completer-name> <ErrorClass>: <message>
 ```
 
-The log is append-only and never rotated automatically. Run
-`kanon doctor --prune-cache` to truncate it. The path can be overridden via
-`KANON_COMPLETION_LOG`.
+Use `kanon doctor` to surface the most recent completion errors in a
+human-readable summary.
 
-## Dynamic completers (detailed reference)
+### Disabling dynamic completion
 
-This section documents the individual `kanon __complete_*` subcommands that
-back the shell helper functions described in the Preamble Overview.
-
-### `__complete_catalog_entries`
-
-**Subcommand:** `kanon __complete_catalog_entries [<prefix>]`
-
-**Purpose:** Returns the list of catalog entry names available for
-tab-completion. Entries are read from the local cache populated by prior
-`kanon` invocations or explicit cache-warming commands.
-
-**Source:** Entry names are sourced from `repo-specs/**/*-marketplace.xml`
-files in the configured catalog repository. Each `<entry>` element name
-in those XML files is eligible as a completion candidate.
-
-**Cache file consulted:**
-`${KANON_CACHE_DIR}/catalogs/<sha256>/index.txt`
-
-where `<sha256>` is `sha256("<catalog-url>@<ref>")`. The file contains one
-entry name per line with no surrounding whitespace.
-
-**Prefix-match filtering:** When a `<prefix>` argument is supplied, only
-entry names that begin with that prefix (case-sensitive) are written to
-stdout. When no prefix is supplied all cached entry names are returned.
-
-**Stdout / stderr contract:**
-
-- On success: matching entry names, one per line, written to stdout.
-  Exit code 0.
-- On cache miss or any lookup failure: nothing written to stdout (silent
-  on stdout). The error detail is appended to `completion-errors.log`
-  and, if the shell session's stderr is a tty, a brief diagnostic line is
-  written to stderr. Exit code 0 (failure-quiet on stdout,
-  failure-loud on stderr).
-
-This contract ensures that a stale or absent cache never injects garbage
-into the completion menu -- the shell sees an empty candidate list and
-falls back to filename completion rather than displaying an error.
-
-**Disabling:** Set `KANON_COMPLETION_ENABLED=0` in the shell environment
-to skip the subprocess call entirely. The helper function returns
-immediately with no output, leaving completion to the static argument
-list generated by the completion script.
+Set `KANON_COMPLETION_ENABLED=0` to disable all dynamic argument
+lookups for the current shell session:
 
 ```bash
-# Disable dynamic catalog-entry completions for the current session
 export KANON_COMPLETION_ENABLED=0
 ```
+
+Static subcommand and flag completion (subcommand names, option
+strings) remain active. Only the dynamic completers that shell out to
+`kanon __complete_*` are suppressed.
+
+### Completion feels slow on cache miss
+
+Reduce `KANON_COMPLETION_TIMEOUT` (default `2` seconds) to make
+cache-miss fetches fail faster:
+
+```bash
+export KANON_COMPLETION_TIMEOUT=1
+```
+
+Or disable inline fetches entirely with `KANON_COMPLETION_ENABLED=0`
+and rely on cached results only.
+
+## See also
+
+- [Configuration](configuration.md) -- full environment variable
+  reference table, including all `KANON_COMPLETION_*` and
+  `KANON_CACHE_*` variables.
+- [kanon doctor](doctor.md) -- health checks including completion
+  script staleness detection (`--refresh-completion-cache`,
+  `--prune-cache`).
+- [Troubleshooting](troubleshooting.md) -- general troubleshooting
+  guide for kanon.

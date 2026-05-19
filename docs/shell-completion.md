@@ -109,10 +109,35 @@ same on-disk directory regardless of the calling process.
 
 ### Cache lifecycle
 
-- **TTL:** `KANON_COMPLETION_CACHE_TTL` (default 300 s). A cached result
+Each cache entry directory contains a `fetched_at.txt` file holding an
+integer epoch-seconds timestamp.  The `classify()` function in
+`kanon_cli.completions.cache` evaluates that timestamp against the
+current time and the configured TTL to produce one of three `Freshness`
+values:
+
+| Freshness | Condition | Action |
+|-----------|-----------|--------|
+| `FRESH`   | `now - fetched_at <= TTL`, OR `fetched_at > now` (clock skew) | Return cached entries immediately. |
+| `STALE`   | `now - fetched_at > TTL` (file present and parseable) | Return stale entries; fork background refresh when `KANON_COMPLETION_REFRESH_BG=1`. |
+| `MISSING` | File absent, empty, non-integer content, or negative value | Perform inline fetch bounded by `KANON_COMPLETION_TIMEOUT`. |
+
+**Staleness rules (spec Section 11.4):**
+
+- `fetched_at.txt` absent on disk -- `MISSING`.
+- Content not parseable as an integer -- `MISSING`.
+- Parsed value < 0 -- `MISSING` (negative epoch is invalid).
+- `fetched_at > now` (clock skew -- future timestamp) -- `FRESH`.
+  The spec is explicit: a future timestamp must be treated as fresh so
+  that a misconfigured or drifting system clock does not force a
+  continuous refetch storm.
+- `now - fetched_at <= TTL` -- `FRESH`.
+- `now - fetched_at > TTL` -- `STALE`.
+
+**TTL:** `KANON_COMPLETION_CACHE_TTL` (default 300 s). A cached result
   whose `fetched_at.txt` is within the TTL is returned immediately;
   otherwise a background refresh is spawned (controlled by
   `KANON_COMPLETION_REFRESH_BG`).
+
 - **Coalescing:** `accessed_at.txt` is updated at most once per
   `KANON_ACCESSED_AT_COALESCE_SEC` (default 60 s) to bound I/O under
   rapid Tab-pressing.

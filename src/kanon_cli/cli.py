@@ -35,6 +35,7 @@ from kanon_cli.commands.remove import register as register_remove
 from kanon_cli.commands.why import register as register_why
 from kanon_cli.commands.repo import register as register_repo
 from kanon_cli.commands.validate import register as register_validate
+from kanon_cli.completions.catalog_entries import register as register_complete_catalog_entries
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_validate(subparsers)
     register_repo(subparsers)
     register_why(subparsers)
+    register_complete_catalog_entries(subparsers)
 
     return parser
 

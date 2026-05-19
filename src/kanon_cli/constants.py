@@ -271,6 +271,16 @@ NO_COLOR_ENV = "NO_COLOR"
 # read this flag before emitting ANSI escape sequences.
 _NO_COLOR_ACTIVE: bool = False
 
+# -- Shell-completion output sanitization (spec Section 11.3) --
+# Maximum byte length for a safe catalog entry name emitted by __complete_* subcommands.
+# Names longer than this value are excluded from completion output.
+COMPLETION_MAX_ENTRY_LEN = 128
+
+# Characters that are not permitted in a catalog entry name emitted to stdout.
+# Shell-special chars, whitespace, and control characters are forbidden
+# per spec Section 11.3 "Output sanitization".
+COMPLETION_UNSAFE_CHARS: frozenset[str] = frozenset(" \t\n\r;|&$`")
+
 # -- Source-name derivation (soft-spot rule 2) --
 # Pattern matching the full recommended character set for catalog entry names.
 # Characters outside this set in an entry name trigger a shell-quoting warning.

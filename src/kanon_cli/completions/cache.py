@@ -32,12 +32,16 @@ Public API::
     read_epoch(file_path) -> int | None
     write_epoch(file_path, epoch) -> None
     log_completion_error(completer_name, exc) -> None
+    Freshness -- enum: FRESH | STALE | MISSING
+    classify(fetched_at_path, ttl_seconds, now) -> Freshness
+    read_entries_with_freshness(cache_entry_dir, ttl_seconds, now) -> tuple[list[str], Freshness]
 
 Security: spec Section 3.6 -- cache files are user-private.
 """
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import os
 from collections.abc import Iterable
@@ -192,6 +196,104 @@ def write_epoch(file_path: Path, epoch: int) -> None:
     _mkdir_secure(file_path.parent)
     file_path.write_text(f"{epoch}\n")
     _chmod_secure(file_path, _FILE_MODE)
+
+
+class Freshness(enum.Enum):
+    """Cache staleness classification (spec Section 11.4 cache lifecycle).
+
+    FRESH   -- fetched_at is within TTL; use cached data immediately.
+    STALE   -- fetched_at is outside TTL but file exists; stale data usable
+               while a background refresh runs.
+    MISSING -- fetched_at absent, unreadable, non-integer, or negative;
+               caller must perform an inline fetch.
+    """
+
+    FRESH = "fresh"
+    STALE = "stale"
+    MISSING = "missing"
+
+
+def classify(fetched_at_path: Path, ttl_seconds: int, now: int) -> Freshness:
+    """Classify a cache entry as FRESH, STALE, or MISSING.
+
+    This function is pure: it reads *fetched_at_path* but never writes
+    any file.  Calling it twice with the same arguments returns the same
+    result and leaves the file system unchanged.
+
+    Rules (spec Section 11.4 cache lifecycle + clock-skew bullet):
+
+    - ``fetched_at_path`` absent on disk -> MISSING.
+    - Content not parseable as an integer -> MISSING.
+    - Parsed value < 0 -> MISSING (negative epoch is invalid).
+    - Parsed value > now (clock skew: future timestamp) -> FRESH.
+      The spec is explicit: "fetched_at in the future -- treat as fresh."
+    - now - fetched_at <= ttl_seconds -> FRESH.
+    - now - fetched_at > ttl_seconds -> STALE.
+
+    Args:
+        fetched_at_path: Path to the ``fetched_at.txt`` file.
+        ttl_seconds: Cache TTL in seconds (from KANON_COMPLETION_CACHE_TTL).
+        now: Current epoch seconds (injected for testability; callers pass
+            ``int(time.time())`` in production).
+
+    Returns:
+        A ``Freshness`` member indicating the cache entry's status.
+    """
+    if not fetched_at_path.exists():
+        return Freshness.MISSING
+
+    raw = fetched_at_path.read_text().strip()
+    try:
+        fetched_at = int(raw)
+    except ValueError:
+        return Freshness.MISSING
+
+    if fetched_at < 0:
+        return Freshness.MISSING
+
+    # Clock-skew rule: future timestamp is treated as fresh.
+    if fetched_at > now:
+        return Freshness.FRESH
+
+    if now - fetched_at <= ttl_seconds:
+        return Freshness.FRESH
+
+    return Freshness.STALE
+
+
+def read_entries_with_freshness(
+    cache_entry_dir: Path,
+    ttl_seconds: int,
+    now: int,
+) -> tuple[list[str], Freshness]:
+    """Return (entries, freshness) for a cache entry directory.
+
+    Uses ``classify`` to determine freshness of the ``fetched_at.txt``
+    sibling file.  The entries are read from ``index.txt`` in the same
+    directory.
+
+    Contract (AC-FUNC-008):
+    - MISSING -> returns ([], Freshness.MISSING).
+    - FRESH or STALE -> returns (entries_from_index_txt, freshness).
+
+    Args:
+        cache_entry_dir: Path to the cache entry directory
+            (e.g. ``cache_dir()/catalogs/<sha>``).
+        ttl_seconds: Cache TTL in seconds.
+        now: Current epoch seconds.
+
+    Returns:
+        A tuple of (list[str], Freshness) where the list contains the
+        entries from ``index.txt`` (or is empty on MISSING).
+    """
+    fetched_at_path = cache_entry_dir / "fetched_at.txt"
+    freshness = classify(fetched_at_path, ttl_seconds=ttl_seconds, now=now)
+
+    if freshness is Freshness.MISSING:
+        return [], Freshness.MISSING
+
+    entries = read_entries(cache_entry_dir / "index.txt")
+    return entries, freshness
 
 
 def log_completion_error(completer_name: str, exc: Exception) -> None:

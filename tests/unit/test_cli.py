@@ -259,6 +259,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
             "why": ["https://github.com/org/repo"],
+            "__complete_catalog_entries": [],
         }
         return minimal[subcommand]
 
@@ -1086,3 +1087,70 @@ class TestParserInjectionInMain:
         assert received.get("parser") is mock_parser, (
             "main() must inject the root parser as args.parser before dispatching"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __complete_catalog_entries subcommand (AC-FUNC-007)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompleteCatalogEntriesRegistration:
+    """build_parser() registers hidden __complete_catalog_entries subcommand (AC-FUNC-007)."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__complete_catalog_entries is a valid subcommand (parseable)."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_entries"])
+        assert args.command == "__complete_catalog_entries"
+
+    def test_hidden_subcommand_accepts_prefix_token(self) -> None:
+        """__complete_catalog_entries accepts an optional current-token argument."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_entries", "fo"])
+        assert args.current_token == "fo"
+
+    def test_hidden_subcommand_default_token_empty(self) -> None:
+        """Without a prefix argument, current_token defaults to empty string."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_entries"])
+        assert args.current_token == ""
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__complete_catalog_entries does not appear in kanon --help output (AC-FUNC-007).
+
+        kanon --help uses the custom _TOP_LEVEL_HELP constant (printed by
+        _TopLevelHelpAction). That constant does not mention hidden subcommands.
+        This test verifies the constant and the subparser's help=SUPPRESS together
+        satisfy the hidden contract.
+        """
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        # The custom top-level help constant must not name the hidden subcommand.
+        assert "__complete_catalog_entries" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __complete_catalog_entries must not appear in _TOP_LEVEL_HELP"
+        )
+
+        # The subparser must be registered with help=SUPPRESS so it is absent from
+        # any argparse-generated description block (even if it appears in usage).
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__complete_catalog_entries")
+                assert sub is not None, "__complete_catalog_entries must be registered"
+                # The corresponding _ChoicesPseudoAction's help value should be SUPPRESS.
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__complete_catalog_entries":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__complete_catalog_entries help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__complete_catalog_entries sets args.func to _handle."""
+        from kanon_cli.completions.catalog_entries import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_entries"])
+        assert args.func is _handle

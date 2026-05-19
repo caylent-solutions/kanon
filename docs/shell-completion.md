@@ -138,6 +138,32 @@ values:
   otherwise a background refresh is spawned (controlled by
   `KANON_COMPLETION_REFRESH_BG`).
 
+**Background refresh (STALE path):**
+
+When the cache is STALE, `fork_background_refresh()` in
+`kanon_cli.completions.cache` is called with a refresh callable.
+
+- The stale entries are returned to the shell immediately (the
+  completer does not block).
+- A child process is forked via `os.fork()`:
+  1. `os.setsid()` detaches the child from the controlling terminal.
+  2. stdin and stdout are redirected to `/dev/null` so the child
+     cannot write to the operator's terminal.
+  3. stderr is redirected to `completion-errors.log` (append mode)
+     so any refresh-time errors are captured.
+  4. The refresh function is called; on success the child exits 0.
+  5. On any exception, the error is logged via `log_completion_error`
+     and the child exits non-zero.
+- The parent process returns immediately and does not call
+  `os.waitpid`; the child is fully detached.
+
+**Opt-out:** Set `KANON_COMPLETION_REFRESH_BG=0` to disable background
+refresh entirely.  In that mode, a STALE cache is still returned
+immediately but no child process is forked to update it.  A subsequent
+Tab-press will again return the stale data until the cache is refreshed
+by an inline fetch (cache-miss path) or until the operator runs
+`kanon doctor --prune-cache`.
+
 - **Coalescing:** `accessed_at.txt` is updated at most once per
   `KANON_ACCESSED_AT_COALESCE_SEC` (default 60 s) to bound I/O under
   rapid Tab-pressing. The coalescing rule is: `accessed_at.txt` is

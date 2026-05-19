@@ -2137,6 +2137,12 @@ class TestCompletionCacheConstants:
         assert isinstance(KANON_COMPLETION_REFRESH_BG, int)
         assert KANON_COMPLETION_REFRESH_BG == 1
 
+    def test_kanon_completion_refresh_bg_env_is_string(self) -> None:
+        from kanon_cli.constants import KANON_COMPLETION_REFRESH_BG_ENV
+
+        assert isinstance(KANON_COMPLETION_REFRESH_BG_ENV, str)
+        assert KANON_COMPLETION_REFRESH_BG_ENV == "KANON_COMPLETION_REFRESH_BG"
+
     def test_kanon_completion_enabled_is_int(self) -> None:
         from kanon_cli.constants import KANON_COMPLETION_ENABLED
 

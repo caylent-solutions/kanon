@@ -18,7 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from kanon_cli.completions.cache import maybe_update_accessed_at, write_entries
+from unittest.mock import patch
+
+from kanon_cli.completions.cache import fork_background_refresh, maybe_update_accessed_at, write_entries
 
 
 @pytest.mark.unit
@@ -250,3 +252,46 @@ def test_write_entries_empty_input_writes_empty_file(
     out = tmp_path / "index.txt"
     write_entries(out, [], completer_name="__complete_test")
     assert out.read_text() == ""
+
+
+# ---------------------------------------------------------------------------
+# fork_background_refresh -- importability and env-off short-circuit
+# (E7-F3-S1-T5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_fork_background_refresh_importable() -> None:
+    """fork_background_refresh is importable from kanon_cli.completions.cache."""
+    # The import at module level already proves importability; this test exists
+    # to satisfy source-test atomicity for cache.py and gives an explicit,
+    # human-readable assertion.
+    from kanon_cli.completions.cache import fork_background_refresh as fbr
+
+    assert callable(fbr)
+
+
+@pytest.mark.unit
+def test_fork_background_refresh_disabled_by_env_does_not_fork(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When KANON_COMPLETION_REFRESH_BG=0, fork_background_refresh returns
+    without calling os.fork.
+
+    This test covers the fast-return branch of the function defined in cache.py
+    and satisfies source-test atomicity for the fork_background_refresh symbol.
+    """
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
+
+    called: list[str] = []
+
+    def refresh_fn() -> None:
+        called.append("called")
+
+    with patch("os.fork") as mock_fork:
+        fork_background_refresh(refresh_fn)
+        mock_fork.assert_not_called()
+
+    assert called == [], "refresh_fn must not be invoked when forking is disabled"

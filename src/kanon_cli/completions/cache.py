@@ -36,6 +36,7 @@ Public API::
     Freshness -- enum: FRESH | STALE | MISSING
     classify(fetched_at_path, ttl_seconds, now) -> Freshness
     read_entries_with_freshness(cache_entry_dir, ttl_seconds, now) -> tuple[list[str], Freshness]
+    fork_background_refresh(refresh_fn) -> None
 
 Security: spec Section 3.6 -- cache files are user-private.
 """
@@ -45,7 +46,8 @@ from __future__ import annotations
 import enum
 import hashlib
 import os
-from collections.abc import Iterable
+import sys
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,7 +55,10 @@ from kanon_cli.completions.sanitize import SanitizationError, sanitize_entries
 from kanon_cli.constants import (
     KANON_CACHE_DIR_DEFAULT,
     KANON_CACHE_DIR_ENV,
+    KANON_COMPLETION_ERRORS_LOG_FILENAME,
     KANON_COMPLETION_LOG_ENV,
+    KANON_COMPLETION_REFRESH_BG,
+    KANON_COMPLETION_REFRESH_BG_ENV,
 )
 
 # ---------------------------------------------------------------------------
@@ -362,6 +367,103 @@ def maybe_update_accessed_at(
     # At or past the window boundary: write and report.
     write_epoch(accessed_at_path, now)
     return True
+
+
+_FORK_COMPLETER_NAME = "fork_background_refresh"
+
+
+def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
+    """Fork a detached child process to run *refresh_fn* in the background.
+
+    Implements spec Section 11.4 cache lifecycle bullet 2: when a cache entry
+    is STALE, the caller returns the stale data immediately and calls this
+    function to schedule an asynchronous refresh.
+
+    Behavior:
+
+    - If ``${KANON_COMPLETION_REFRESH_BG}`` is ``0``, this function returns
+      immediately without forking.
+    - If ``${KANON_COMPLETION_REFRESH_BG}`` is set to a value that cannot be
+      parsed as an integer, a diagnostic message is written to stderr naming
+      the invalid value and the expected format, and the function returns
+      immediately without forking.
+    - Otherwise, ``os.fork()`` is called once.  The parent returns immediately
+      (no ``os.waitpid``; the child is fully detached).
+    - In the child process:
+      1. ``os.setsid()`` detaches from the controlling terminal.
+      2. stdin (fd 0) and stdout (fd 1) are redirected to ``/dev/null`` so
+         the refresh process cannot write to the operator's terminal.
+      3. stderr (fd 2) is redirected to append to ``completion-errors.log``
+         so refresh-time errors are captured without touching the terminal.
+      4. ``refresh_fn()`` is called.
+      5. On success the child exits 0 via ``os._exit``.
+      6. On any exception, the error is logged via ``log_completion_error``
+         and the child exits 1 via ``os._exit``.
+
+    The child process MUST NOT write to the parent's stdout (the completer
+    is writing completion candidates there).
+
+    Args:
+        refresh_fn: Zero-argument callable that performs the cache refresh.
+            Called only in the child process.
+    """
+    raw_env = os.environ.get(KANON_COMPLETION_REFRESH_BG_ENV)
+    if raw_env is not None:
+        try:
+            enabled = int(raw_env)
+        except ValueError:
+            print(
+                f"kanon: warning: {KANON_COMPLETION_REFRESH_BG_ENV}={raw_env!r} is not a valid"
+                " integer (expected 0 or 1); background refresh disabled."
+                " Set to 0 to suppress this warning.",
+                file=sys.stderr,
+            )
+            return
+    else:
+        enabled = KANON_COMPLETION_REFRESH_BG
+
+    if enabled == 0:
+        return
+
+    pid = os.fork()
+    if pid != 0:
+        # Parent: return immediately; do NOT call os.waitpid.
+        return
+
+    # Child process: detach, redirect I/O, run refresh_fn, exit.
+    # os._exit is always called (success or failure) so the child never
+    # falls through to the parent's code path.
+    try:
+        os.setsid()
+
+        # Redirect stdin and stdout to /dev/null.
+        devnull_fd = os.open(os.devnull, os.O_RDWR)
+        os.dup2(devnull_fd, 0)  # stdin
+        os.dup2(devnull_fd, 1)  # stdout
+
+        # Redirect stderr to completion-errors.log (append mode).
+        log_env = os.environ.get(KANON_COMPLETION_LOG_ENV)
+        if log_env:
+            log_path = log_env
+        else:
+            log_path = str(cache_dir() / KANON_COMPLETION_ERRORS_LOG_FILENAME)
+
+        # Ensure the log directory exists before opening.
+        _mkdir_secure(Path(log_path).parent)
+
+        log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, _FILE_MODE)
+        os.dup2(log_fd, 2)  # stderr
+
+        # Close the extra file descriptors (devnull_fd and log_fd) now that
+        # they have been duplicated onto 0, 1, and 2.
+        os.close(devnull_fd)
+        os.close(log_fd)
+
+        refresh_fn()
+        os._exit(0)
+    except Exception as exc:
+        log_completion_error(_FORK_COMPLETER_NAME, exc)
+        os._exit(1)
 
 
 def log_completion_error(completer_name: str, exc: Exception) -> None:

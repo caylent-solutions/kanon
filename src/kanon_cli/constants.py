@@ -129,6 +129,12 @@ KANON_COMPLETION_TIMEOUT = 2
 # stale-but-present cache read to refresh asynchronously. Section 11.4.
 KANON_COMPLETION_REFRESH_BG = 1
 
+# Environment variable name that controls the background-refresh behavior.
+# Set to "0" to disable background refresh (the stale cache is still returned
+# but no forked child updates it). Any non-integer or zero value disables the
+# feature. Section 11.6.
+KANON_COMPLETION_REFRESH_BG_ENV = "KANON_COMPLETION_REFRESH_BG"
+
 # When 1, dynamic completion lookups are enabled. Set to 0 to disable all
 # kanon __complete_* calls globally. Section 11.6.
 KANON_COMPLETION_ENABLED = 1

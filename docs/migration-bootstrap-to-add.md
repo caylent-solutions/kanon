@@ -1,264 +1,217 @@
 # Migration: `kanon bootstrap` to `kanon add` / `kanon list`
 
-## Why `kanon bootstrap` is deprecated
+This guide is the central reference for operators moving from the
+deprecated `kanon bootstrap` command to `kanon add` and `kanon list`.
+Every WARN line emitted by the bootstrap shim links here.
 
-`kanon bootstrap` was the original command for setting up a catalog entry inside a
-project. It copied files from the upstream catalog into a `catalog/<name>/` directory
-tree committed alongside the project source, and wrote a `.kanon` manifest file.
+---
+
+## Why this changed
+
+`kanon bootstrap` was the original setup command. It read template
+files from a `catalog/<name>/` directory inside the manifest repo (or
+from a bundled `src/kanon_cli/catalog/` inside the kanon wheel itself)
+and copied them into `--output-dir`.
 
 This model had two problems:
 
 1. **Bundled catalog fallback.** The kanon wheel shipped a bundled
-   `src/kanon_cli/catalog/` directory so that `kanon bootstrap` could run without a
-   `--catalog-source`. This created an implicit, opaque default that was easy to
-   misconfigure and hard to audit.
+   `src/kanon_cli/catalog/` directory so that `kanon bootstrap` could
+   run without a `--catalog-source`. This created an implicit, opaque
+   default that was easy to misconfigure and hard to audit.
 
-2. **Template directory coupling.** Projects accumulated a `catalog/<name>/` directory
-   that served as a runtime data source. kanon >= 1.0.0 reads all source configuration
-   from the root `.kanon` file; the `catalog/` directory is unused and should not exist.
+2. **Template directory coupling.** Projects accumulated a
+   `catalog/<name>/` directory committed alongside the project source.
+   kanon >= 1.0.0 reads all configuration from the root `.kanon` file;
+   the `catalog/` directory is unused and must not exist.
 
-The replacement workflow -- `kanon add` / `kanon list` -- is explicit about the catalog
-source (required via `--catalog-source` or `KANON_CATALOG_SOURCE`), writes only to the
-`.kanon` manifest file, and leaves no per-entry directory tree behind.
+**Forced migration at the CI / script boundary.** Any `kanon bootstrap`
+invocation (other than `--help`) now exits with status 3
+(`EXIT_CODE_DEPRECATED`) and prints a WARN to stderr naming the exact
+replacement command WITHOUT performing any work. Scripts that call
+`kanon bootstrap` will fail immediately, forcing operators to update
+their pipelines rather than silently running stale tooling.
 
-**Forced migration at the CI / script boundary.** Any `kanon bootstrap` invocation
-(other than `--help`) now prints a WARN to stderr naming the exact replacement command
-and exits with status 3 (`EXIT_CODE_DEPRECATED`) WITHOUT performing any work. Scripts
-that call `kanon bootstrap` will fail immediately, which forces operators to update their
-pipelines rather than silently running stale tooling.
+See [docs/exit-codes.md](exit-codes.md) for the full exit-code table.
 
-## Flag translation table
+---
 
-The following table maps `kanon bootstrap` flags to their `kanon add` / `kanon list`
-equivalents (spec Section 4.9):
+## Command translations
 
-| Bootstrap flag | `kanon add` equivalent | `kanon list` equivalent | Notes |
-|---|---|---|---|
-| `<package>` positional | `<name>` positional | (n/a -- `bootstrap list` triggers `kanon list`) | identical semantics |
-| `--catalog-source <v>` | `--catalog-source <v>` | `--catalog-source <v>` | identical |
-| `--output-dir <v>` | (no equivalent) | (no equivalent) | See notes below |
+| Deprecated command | Replacement command |
+| ------------------ | ------------------- |
+| `kanon bootstrap <name>` | `kanon add <name>` |
+| `kanon bootstrap list` | `kanon list` |
 
-**`--output-dir` notes.**
+See [docs/list-and-add.md](list-and-add.md) for the full reference
+for `kanon add` and `kanon list`.
 
-- For `kanon add`: `--output-dir has no direct equivalent in 'kanon add'; the install
-  workspace is the current directory or KANON_WORKSPACE_DIR if set.`
-- For `kanon list`: `--output-dir has no equivalent in 'kanon list'.`
+---
 
-**`kanon bootstrap list` flag set.** Only `--catalog-source` is meaningful for the
-list sub-command. Any other flag (today, only `--output-dir` exists) triggers a
-`Note:` notice appended to the WARN body.
+## Flag translations
 
-## Worked translation examples
+The following table maps every `kanon bootstrap` flag to its
+`kanon add` / `kanon list` equivalent (spec Section 4.9):
 
-The deprecation shim prints a verbatim WARN to stderr with the translated replacement
-command. These examples show what the WARN body looks like in each case.
+| Bootstrap flag | `kanon add` equivalent | `kanon list` equivalent |
+| -------------- | ---------------------- | ----------------------- |
+| `<package>` positional | `<name>` positional | n/a |
+| `--catalog-source <v>` | `--catalog-source <v>` | `--catalog-source <v>` |
+| `--output-dir <v>` | no equivalent | no equivalent |
 
-### 1. Package with no flags
+**`<package>` positional.** Identical semantics: the catalog entry
+name. When the positional is `list`, the bootstrap shim routes to the
+`kanon list` replacement.
 
-```
-kanon bootstrap kanon
-```
+**`--catalog-source`.** Identical in all three commands. The canonical
+flag definition now lives in `core/cli_args.py`; every command imports
+it from there.
 
-WARN emitted to stderr:
+**`--output-dir`.** There is no direct equivalent in `kanon add`. The
+install workspace is the current directory, or `KANON_WORKSPACE_DIR`
+if set. `--output-dir` has no equivalent in `kanon list` either.
+When `--output-dir` appears in a deprecated `kanon bootstrap`
+invocation, the WARN body includes a `Note:` line explaining this.
 
-```
+See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCE`
+and `KANON_WORKSPACE_DIR`.
+
+---
+
+## The exit-3 contract
+
+`kanon bootstrap` exits **3** (`EXIT_CODE_DEPRECATED`) on every
+non-`--help` invocation. The shim:
+
+- Prints a WARN to stderr naming the exact replacement command.
+- Exits with status 3.
+- Performs **no work** -- it does not read the manifest repo, does not
+  parse catalog metadata, and does not touch the filesystem.
+- Does **not delegate** to the replacement command. The operator must
+  copy-paste and run the suggested command explicitly.
+
+`kanon bootstrap --help` is the only invocation that exits 0. Help
+output is prepended with a `DEPRECATED:` notice for discoverability.
+
+Example WARN (package, no flags):
+
+```text
 WARN: 'kanon bootstrap kanon' is deprecated. Run instead:
     kanon add kanon
 See docs/migration-bootstrap-to-add.md.
 ```
 
-Run instead: `kanon add kanon`
+Example WARN (package, with `--catalog-source`):
 
-### 2. Package with `--catalog-source`
-
-```
-kanon bootstrap kanon --catalog-source https://example.com/x.git@main
-```
-
-WARN emitted to stderr:
-
-```
+```text
 WARN: 'kanon bootstrap kanon' is deprecated. Run instead:
-    kanon add kanon --catalog-source https://example.com/x.git@main
+    kanon add kanon \
+      --catalog-source \
+      https://example.com/org/manifest-repo.git@main
 See docs/migration-bootstrap-to-add.md.
 ```
 
-Run instead: `kanon add kanon --catalog-source https://example.com/x.git@main`
+Example WARN (`bootstrap list`, with `--catalog-source`):
 
-### 3. Package with `--output-dir` (no equivalent)
-
+```text
+WARN: 'kanon bootstrap list' is deprecated. Run instead:
+    kanon list \
+      --catalog-source \
+      https://example.com/org/manifest-repo.git@main
+See docs/migration-bootstrap-to-add.md.
 ```
-kanon bootstrap kanon --output-dir ./scratch
-```
 
-WARN emitted to stderr:
+Example WARN (package, `--output-dir` has no equivalent):
 
-```
+```text
 WARN: 'kanon bootstrap kanon' is deprecated. Run instead:
     kanon add kanon
 See docs/migration-bootstrap-to-add.md.
-Note: --output-dir has no direct equivalent in 'kanon add'; the install workspace is the current directory or KANON_WORKSPACE_DIR if set.
+Note: --output-dir has no direct equivalent in 'kanon add'; \
+the install workspace is the current directory or \
+KANON_WORKSPACE_DIR if set.
 ```
 
-Run instead: `kanon add kanon` (choose your working directory before running).
+See [docs/exit-codes.md](exit-codes.md) for the canonical exit-code
+reference.
 
-### 4. List with `--catalog-source`
+---
 
-```
-kanon bootstrap list --catalog-source https://example.com/x.git@main
-```
+## How manifest repos changed
 
-WARN emitted to stderr:
+**Before (legacy model):**
 
-```
-WARN: 'kanon bootstrap list' is deprecated. Run instead:
-    kanon list --catalog-source https://example.com/x.git@main
-See docs/migration-bootstrap-to-add.md.
-```
+- A manifest repo contained a `catalog/<name>/` directory for each
+  catalog entry. This directory held pre-baked `.kanon` snippets and
+  per-entry READMEs consumed by `kanon bootstrap`.
+- `kanon bootstrap <name>` read from `catalog/<name>/` and copied
+  files into the project's working directory.
 
-Run instead: `kanon list --catalog-source https://example.com/x.git@main`
+**After (current model):**
 
-### 5. List with `--output-dir` (no equivalent)
+- Every catalog-entry definition lives in a single
+  `*-marketplace.xml` file under `repo-specs/`, identified by its
+  `<catalog-metadata>` block.
+- There is no `catalog/<name>/` directory. Catalog authors removed
+  the legacy directory as part of this deprecation.
+- Consumers see the same entries via `kanon list`. No migration step
+  is required for consumers beyond updating their `kanon bootstrap`
+  invocations.
 
-```
-kanon bootstrap list --output-dir ./scratch
-```
+`kanon catalog audit` detects the presence of a legacy
+`catalog/<name>/` directory and emits a WARN-level finding.
 
-WARN emitted to stderr:
+See [docs/catalogs-explained.md](catalogs-explained.md) for a full
+explanation of the manifest-repo model.
 
-```
-WARN: 'kanon bootstrap list' is deprecated. Run instead:
-    kanon list
-See docs/migration-bootstrap-to-add.md.
-Note: --output-dir has no equivalent in 'kanon list'.
-```
+---
 
-Run instead: `kanon list`
+## How the kanon wheel changed
 
-## What changed
+The bundled `src/kanon_cli/catalog/` directory has been **removed**
+from the kanon wheel.
 
-| Old workflow (`kanon bootstrap`) | New workflow |
-|----------------------------------|--------------|
-| `kanon bootstrap` created a `.kanon` file and a `catalog/<name>/` tree. | Edit `.kanon` directly, then run `kanon add` to append entries. |
-| Source data lived under `catalog/<name>/.kanon`. | Source data lives in `.kanon` at the project root. |
-| The `catalog/` directory was committed to the project repo. | No `catalog/` directory is needed. |
-| A bundled `src/kanon_cli/catalog/` in the wheel provided a default source. | No bundled catalog exists. `--catalog-source` or `KANON_CATALOG_SOURCE` is required. |
+**Consequences for operators:**
 
-## Migration steps
+- The third-tier "bundled fallback" in `resolve_catalog_dir()` no
+  longer exists. There is no implicit default catalog source.
+- Operators MUST supply a catalog source via `--catalog-source` or
+  the `KANON_CATALOG_SOURCE` environment variable for every `kanon
+  list`, `kanon add`, `kanon outdated`, `kanon why`, and
+  `kanon catalog audit` invocation.
+- Missing both `--catalog-source` and `KANON_CATALOG_SOURCE` is a
+  hard error with a clear, actionable message. There is no fallback.
+- For `kanon install` and `kanon doctor`, the lockfile's
+  `[catalog].source` field is used as a fallback when present and
+  consistent (re-resolution paths still require CLI/env).
 
-### 1. Verify the `.kanon` file is complete
+See [docs/configuration.md](configuration.md) for the full
+`KANON_CATALOG_SOURCE` reference.
 
-The current `.kanon` file should contain all the `KANON_SOURCE_*` lines that
-were previously spread across individual `catalog/<name>/.kanon` files.
+---
 
-If your project was migrated automatically, all source definitions are already
-in the root `.kanon` file. You can verify by running:
+## Migration timeline
 
-```bash
-kanon list
-```
+| Event | Version |
+| ----- | ------- |
+| `kanon bootstrap` becomes a deprecation shim (exit 3, WARN) | 1.0.0 |
+| Bundled `src/kanon_cli/catalog/` removed from wheel | 1.0.0 |
+| Legacy `catalog/<name>/` audit warning added | 1.0.0 |
+| Hard removal of `kanon bootstrap` shim | TBD |
 
-This command reads from the catalog source (not from `catalog/`) and shows
-available entries.
+The hard-removal release is a separate future decision. During the
+deprecation window (kanon 1.x), all `kanon bootstrap` invocations
+other than `--help` exit 3 immediately.
 
-### 2. Remove the legacy `catalog/` directory
+---
 
-Once you have confirmed the `.kanon` file is complete, remove the old tree:
+## See also
 
-```bash
-rm -rf catalog/
-git rm -r catalog/
-git commit -m "chore: remove legacy kanon bootstrap catalog/ directory"
-```
-
-### 3. Confirm the warning is gone
-
-Run the audit again to confirm no legacy-directory finding appears:
-
-```bash
-kanon catalog audit .
-```
-
-The `WARN: [L001]` finding should no longer appear.
-
-## Adding new catalog entries
-
-Use `kanon add` instead of the old bootstrap flow:
-
-```bash
-# Add a catalog entry by name (requires a catalog source)
-kanon add <entry-name>
-
-# List available entries in the catalog
-kanon list
-```
-
-See `kanon add --help` and `kanon list --help` for full usage.
-
-## What `kanon bootstrap --help` shows
-
-Running `kanon bootstrap --help` produces the following output (exit code 0;
-help is informational). The verbatim text below is snapshot-tested in
-`tests/fixtures/help/bootstrap-help.txt`.
-
-```
-DEPRECATED: 'kanon bootstrap' is replaced by 'kanon add' and 'kanon list'. See docs/migration-bootstrap-to-add.md.
-
-usage: kanon bootstrap [-h] [--output-dir OUTPUT_DIR]
-                       [--catalog-source <git-url>@<ref>]
-                       package
-
-DEPRECATED command. Use the replacements below.
-
-Use 'kanon add <package>' instead of 'kanon bootstrap <package>'.
-Use 'kanon list' instead of 'kanon bootstrap list'.
-
-See docs/migration-bootstrap-to-add.md for the migration guide.
-
-positional arguments:
-  package               Catalog entry package name (e.g. kanon) or 'list' to
-                        show available packages
-
-options:
-  -h, --help            show this help message and exit
-  --output-dir OUTPUT_DIR
-                        [DEPRECATED] Target directory for bootstrapped files
-                        (default: current directory)
-  --catalog-source <git-url>@<ref>
-                        Remote catalog source as '<git_url>@<ref>' where ref
-                        is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Default: bundled
-                        catalog.
-
-Flag translation table (spec Section 4.9):
-
-| Bootstrap flag      | kanon add equivalent      | kanon list equivalent                          | Notes              |
-|---------------------|---------------------------|------------------------------------------------|--------------------|
-| <package> positional| <name> positional         | (n/a -- bootstrap list triggers kanon list)    | identical semantics|
-| --catalog-source <v>| --catalog-source <v>      | --catalog-source <v>                           | identical          |
-| --output-dir <v>    | (no equivalent)           | (no equivalent)                                | See notes below    |
-
-Exit codes:
-  0  help output
-  3  deprecated invocation; any non-help call
-```
-
-## Related commands
-
-- `kanon catalog audit` -- audit a manifest repo for soft-spot violations
-  (includes the unconditional legacy-directory check)
-- `kanon add` -- add a catalog entry to the `.kanon` file
-- `kanon list` -- list available catalog entries
-
-## Background
-
-The `catalog/<name>/` directory was created by `kanon bootstrap` to mirror
-the upstream catalog layout inside each project. kanon >= 1.0.0 reads all
-source configuration from the root `.kanon` file and no longer references
-the `catalog/` directory. The directory is safe to delete once your `.kanon`
-file is complete.
-
-During the deprecation window (kanon 1.x), the presence of a non-empty
-`catalog/` directory produces a WARN-level finding and does not block
-operation. A future release (per spec Section 15) will promote this warning
-to an error.
+- [docs/list-and-add.md](list-and-add.md) -- replacement commands
+  `kanon add` and `kanon list`
+- [docs/catalogs-explained.md](catalogs-explained.md) -- what a
+  manifest repo is and how catalog entries are structured
+- [docs/exit-codes.md](exit-codes.md) -- canonical exit-code table,
+  including exit 3 (`EXIT_CODE_DEPRECATED`)
+- [docs/configuration.md](configuration.md) -- `KANON_CATALOG_SOURCE`
+  and other environment variables

@@ -374,6 +374,39 @@ KANON_DOCTOR_STALE_LOCK_AGE_HOURS=4 kanon doctor --prune-cache
 
 The constant `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` (default `1`) is defined in `src/kanon_cli/constants.py`.
 
+## Shell Completion
+
+The following environment variables control the behaviour of the kanon shell completion
+preamble helpers. See [Shell Completion](shell-completion.md) for a full overview.
+
+### KANON_COMPLETION_ENABLED
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_ENABLED` | `1` | When set to `0`, all shell completion helpers return an empty candidate list immediately without invoking the `kanon` subprocess. Set to `0` to disable dynamic completion lookups globally (for example in restricted environments or when completion latency is a concern). Any value other than `0` is treated as enabled. |
+
+```bash
+# Disable all kanon completion lookups
+export KANON_COMPLETION_ENABLED=0
+
+# Re-enable (default behaviour)
+export KANON_COMPLETION_ENABLED=1
+```
+
+### KANON_COMPLETION_TIMEOUT
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KANON_COMPLETION_TIMEOUT` | `2` | Timeout in seconds applied to each `kanon __complete_*` subprocess call made by the shell completion preamble helpers. When `timeout`(1) is available on `$PATH`, it wraps the subprocess call with this value. When `timeout`(1) is not available, kanon's own internal subprocess timeout (also bounded by this variable) applies. Must be a positive integer. |
+
+```bash
+# Use a 5-second timeout for completion lookups
+export KANON_COMPLETION_TIMEOUT=5
+
+# Use the default 2-second timeout
+unset KANON_COMPLETION_TIMEOUT
+```
+
 ## kanon repo Subcommand
 
 The `kanon repo` subcommand exposes kanon's repo subsystem for direct manifest operations, allowing direct

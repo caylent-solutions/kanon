@@ -39,6 +39,7 @@ from kanon_cli.completions.catalog_entries import register as register_complete_
 from kanon_cli.completions.catalog_versions import register as register_complete_catalog_versions
 from kanon_cli.completions.lockfile_names import register as register_complete_lockfile_names
 from kanon_cli.completions.project_versions import register as register_complete_project_versions
+from kanon_cli.completions.cached_catalogs import register as register_complete_cached_catalogs
 from kanon_cli.completions.source_names import register as register_complete_source_names
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 
@@ -205,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_complete_lockfile_names(subparsers)
     register_complete_project_versions(subparsers)
     register_complete_source_names(subparsers)
+    register_complete_cached_catalogs(subparsers)
 
     return parser
 

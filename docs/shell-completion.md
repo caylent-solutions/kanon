@@ -190,12 +190,24 @@ Used when completing the `<spec>` portion of `kanon add foo@<TAB>`.
 
 **Shell helper:** `_kanon_complete_cached_catalogs`
 
-Retrieves locally cached catalog identifiers. Reads
-`${KANON_CACHE_DIR}/catalogs/*/origin.txt` and emits one
-`<url>@<ref>` string per catalog the operator has previously
-interacted with.
+Retrieves locally cached catalog identifiers. Enumerates
+`${KANON_CACHE_DIR}/catalogs/*/` directories and reads the
+`origin.txt` sidecar from each sha-named entry. Emits one
+`<url>@<ref>` string per line, sorted lexicographically, filtered
+by the current completion prefix.
 
-Used when completing `--catalog-source` arguments.
+The completer never recurses into subdirectories of
+`catalogs/<sha>/`; it reads `origin.txt` from each sha directory
+only.
+
+- **Empty or missing `catalogs/`** -- returns empty stdout without
+  writing a log entry (first-run or empty cache is not an error).
+- **Malformed `origin.txt`** (empty file or no `@` separator) --
+  the entry is skipped and a structured log entry naming the
+  offending sha directory is appended to `completion-errors.log`.
+
+Used when completing the `--catalog-source <url>@<ref>` flag for
+`kanon list`, `kanon add`, `kanon outdated`, and related commands.
 
 ### Mid-token splitter: `_kanon_complete_add_arg`
 

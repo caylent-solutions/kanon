@@ -264,6 +264,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "__complete_names_in_lockfile": [],
             "__complete_project_versions": ["https://example.com/proj.git", ""],
             "__complete_source_names_in_kanon": [],
+            "__complete_cached_catalogs": [],
         }
         return minimal[subcommand]
 
@@ -1406,4 +1407,61 @@ class TestCompleteProjectVersionsRegistration:
 
         parser = build_parser()
         args = parser.parse_args(["__complete_project_versions", "https://example.com/proj.git", ""])
+        assert args.func is _handle
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __complete_cached_catalogs subcommand (AC-FUNC-006)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompleteCachedCatalogsRegistration:
+    """build_parser() registers hidden __complete_cached_catalogs subcommand."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__complete_cached_catalogs is a valid subcommand (parseable)."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_cached_catalogs"])
+        assert args.command == "__complete_cached_catalogs"
+
+    def test_hidden_subcommand_accepts_prefix_token(self) -> None:
+        """__complete_cached_catalogs accepts an optional current-token argument."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_cached_catalogs", "https"])
+        assert args.current_token == "https"
+
+    def test_hidden_subcommand_default_token_empty(self) -> None:
+        """Without a prefix argument, current_token defaults to empty string."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_cached_catalogs"])
+        assert args.current_token == ""
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__complete_cached_catalogs does not appear in kanon --help output (AC-FUNC-006)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "__complete_cached_catalogs" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __complete_cached_catalogs must not appear in _TOP_LEVEL_HELP"
+        )
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__complete_cached_catalogs")
+                assert sub is not None, "__complete_cached_catalogs must be registered"
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__complete_cached_catalogs":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__complete_cached_catalogs help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__complete_cached_catalogs sets args.func to _handle."""
+        from kanon_cli.completions.cached_catalogs import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__complete_cached_catalogs"])
         assert args.func is _handle

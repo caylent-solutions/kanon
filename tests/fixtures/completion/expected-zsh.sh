@@ -5,11 +5,13 @@
 
 _shtab_kanon_commands() {
   local _commands=(
+    "__complete_cached_catalogs:Internal hidden subcommand for shell completion of cached catalog identifiers."
     "__complete_catalog_entries:Internal hidden subcommand for shell completion of catalog entry names."
     "__complete_catalog_versions:Internal hidden subcommand for shell completion of catalog version tags and branches."
     "__complete_names_in_lockfile:Internal hidden subcommand for shell completion of lockfile names."
     "__complete_project_versions:Internal hidden subcommand for shell completion of project version tags and branches."
     "__complete_source_names_in_kanon:Internal hidden subcommand for shell completion of .kanon source names."
+    "__resolve_entry_to_repo_url:Internal hidden subcommand for the mid-token splitter. Given a catalog entry name, returns the catalog source URL to stdout so the shell helper can route to _kanon_complete_project_versions."
     "add:Resolve catalog entries from a manifest repo and append the"
     "bootstrap:DEPRECATED command. Use the replacements below."
     "catalog:Subcommands for inspecting and auditing manifest repos."
@@ -44,7 +46,7 @@ _shtab_kanon_validate_commands() {
 }
 
 _shtab_kanon_options=(
-  "--help[Show this and exit.]:help:"
+  {-h,--help}"[Show this and exit.]:help:"
   "(- : *)--version[show program\'s version number and exit]"
   "--quiet[Suppress all output except errors. Mutually exclusive with --verbose.]"
   "--verbose[Enable debug-level output. Mutually exclusive with --quiet.]"
@@ -53,6 +55,14 @@ _shtab_kanon_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_defaults_added=0
+
+_shtab_kanon___complete_cached_catalogs_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  ":Completion prefix to filter results.:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon___complete_cached_catalogs_defaults_added=0
 
 _shtab_kanon___complete_catalog_entries_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -94,6 +104,14 @@ _shtab_kanon___complete_source_names_in_kanon_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon___complete_source_names_in_kanon_defaults_added=0
+
+_shtab_kanon___resolve_entry_to_repo_url_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  ":Catalog entry name to resolve to a repo URL.:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon___resolve_entry_to_repo_url_defaults_added=0
 
 _shtab_kanon_add_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -307,11 +325,13 @@ _shtab_kanon() {
       (( CURRENT += 1 ))
       curcontext="${curcontext%:*:*}:_shtab_kanon-$line[1]:"
       case $line[1] in
+        __complete_cached_catalogs) _arguments -C -s $_shtab_kanon___complete_cached_catalogs_options ;;
         __complete_catalog_entries) _arguments -C -s $_shtab_kanon___complete_catalog_entries_options ;;
         __complete_catalog_versions) _arguments -C -s $_shtab_kanon___complete_catalog_versions_options ;;
         __complete_names_in_lockfile) _arguments -C -s $_shtab_kanon___complete_names_in_lockfile_options ;;
         __complete_project_versions) _arguments -C -s $_shtab_kanon___complete_project_versions_options ;;
         __complete_source_names_in_kanon) _arguments -C -s $_shtab_kanon___complete_source_names_in_kanon_options ;;
+        __resolve_entry_to_repo_url) _arguments -C -s $_shtab_kanon___resolve_entry_to_repo_url_options ;;
         add) _arguments -C -s $_shtab_kanon_add_options ;;
         bootstrap) _arguments -C -s $_shtab_kanon_bootstrap_options ;;
         catalog) _shtab_kanon_catalog ;;
@@ -440,11 +460,35 @@ _kanon_complete_cached_catalogs() {
     _kanon_run_complete __complete_cached_catalogs "$cur"
 }
 
-# _kanon_complete_add_arg -- mid-token splitter helper (placeholder body).
-# E7-F2-S1-T7 replaces this body with the full @-splitting logic.
+# _kanon_complete_add_arg -- mid-token splitter helper.
+#
+# Implements spec Section 11.5: detects the @ separator and routes to the
+# appropriate completer. Splits on the LAST @ (spec Section 4.0).
+#
+# When KANON_COMPLETION_ENABLED=0, returns immediately without shelling out
+# to kanon __resolve_entry_to_repo_url.
 _kanon_complete_add_arg() {
     local cur="${1:-}"
-    _kanon_complete_catalog_entries "$cur"
+    # Honour KANON_COMPLETION_ENABLED (default 1 = enabled).
+    if [[ "${KANON_COMPLETION_ENABLED:-1}" == "0" ]]; then
+        return 0
+    fi
+    if [[ "$cur" == *@* ]]; then
+        # Split on the LAST @ per spec Section 4.0.
+        local _name="${cur%@*}"
+        local _spec="${cur##*@}"
+        local _repo_url
+        local _timeout="${KANON_COMPLETION_TIMEOUT:-2}"
+        if command -v timeout > /dev/null 2>&1; then
+            _repo_url=$(timeout "$_timeout" kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        else
+            _repo_url=$(kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        fi
+        [[ -z "$_repo_url" ]] && return 0
+        _kanon_complete_project_versions "$_repo_url" "$_spec"
+    else
+        _kanon_complete_catalog_entries "$cur"
+    fi
 }
 
 # End Custom Preamble

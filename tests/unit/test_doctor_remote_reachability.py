@@ -20,6 +20,7 @@ AC-TEST-001, AC-FUNC-001 through AC-FUNC-007.
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -304,8 +305,8 @@ class TestSingleUnreachableUrl:
 
         findings = _check_remote_reachability(lockfile, _fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
-        # Canonical form strips .git suffix
-        assert "example.com" in findings[0].message
+        # Canonical form strips .git suffix; anchored regex prevents partial-hostname false matches
+        assert re.search(r"\bexample\.com/", findings[0].message)
 
     def test_single_unreachable_finding_contains_exit_code(self, tmp_path: pathlib.Path) -> None:
         """Warning finding text includes the exit code from git ls-remote."""

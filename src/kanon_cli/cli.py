@@ -169,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     parser.add_argument(
+        "-h",
         "--help",
         nargs=0,
         action=_TopLevelHelpAction,

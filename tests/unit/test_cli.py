@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.cli import _make_signal_handler, build_parser, main
+from kanon_cli.cli import _TopLevelHelpAction, _make_signal_handler, build_parser, main
 
 # Placeholder path used for subcommands that require a positional kanon-env argument.
 # The parser performs no filesystem check, so any non-empty string is valid for
@@ -140,6 +140,117 @@ class TestMainDispatch:
         assert signal.SIGINT in captured_handler, (
             "main() must call signal.signal(SIGINT, ...) to install a SIGINT handler"
         )
+
+
+@pytest.mark.unit
+class TestTopLevelHelpAlias:
+    """Verify -h is registered as an alias for --help on the top-level parser (AC-FUNC-003, AC-FUNC-004)."""
+
+    def test_short_h_exits_zero_via_main(self) -> None:
+        """main(['-h']) raises SystemExit(0), confirming -h is accepted (AC-TEST-001)."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["-h"])
+        assert exc_info.value.code == 0
+
+    def test_short_h_and_double_dash_help_both_exit_zero(self) -> None:
+        """Both '-h' and '--help' exit 0 via main() (AC-FUNC-001)."""
+        for flag in ("-h", "--help"):
+            with pytest.raises(SystemExit) as exc_info:
+                main([flag])
+            assert exc_info.value.code == 0, f"main([{flag!r}]) exited {exc_info.value.code}, expected 0"
+
+    def test_parser_add_help_false_preserved(self) -> None:
+        """build_parser() still passes add_help=False on the parser (AC-FUNC-003)."""
+        parser = build_parser()
+        # With add_help=False, argparse does not register its own -h/--help action.
+        # The parser._defaults does not include 'help'. Instead, our custom action
+        # is the only one registered. Verify by confirming the action for --help is
+        # _TopLevelHelpAction (not argparse._HelpAction).
+        help_action = next(
+            (a for a in parser._actions if "--help" in a.option_strings),
+            None,
+        )
+        assert help_action is not None, "No --help action registered on top-level parser"
+        assert isinstance(help_action, _TopLevelHelpAction), (
+            f"--help action is {type(help_action)!r}, expected _TopLevelHelpAction"
+        )
+
+    def test_h_alias_registered_on_same_action_as_double_dash_help(self) -> None:
+        """'-h' and '--help' resolve to the same _TopLevelHelpAction action (AC-FUNC-004)."""
+        parser = build_parser()
+        help_action = next(
+            (a for a in parser._actions if "--help" in a.option_strings),
+            None,
+        )
+        assert help_action is not None, "No --help action registered on top-level parser"
+        assert "-h" in help_action.option_strings, (
+            f"'-h' not in help action option_strings: {help_action.option_strings!r}"
+        )
+
+    def test_top_level_help_action_receives_option_string_short_h(self) -> None:
+        """_TopLevelHelpAction.__call__ receives option_string='-h' when -h is used (AC-FUNC-004)."""
+        received: list[str | None] = []
+
+        class _CapturingAction(_TopLevelHelpAction):
+            def __call__(
+                self,
+                parser: argparse.ArgumentParser,
+                namespace: argparse.Namespace,
+                values: str | list[str] | None,
+                option_string: str | None = None,
+            ) -> None:
+                received.append(option_string)
+                raise SystemExit(0)
+
+        parser = build_parser()
+        # Replace the help action with our capturing subclass
+        for action in parser._actions:
+            if isinstance(action, _TopLevelHelpAction):
+                action.__class__ = _CapturingAction
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["-h"])
+
+        assert len(received) == 1, f"Action was called {len(received)} times, expected 1"
+        assert received[0] == "-h", f"option_string was {received[0]!r} when '-h' was passed, expected '-h'"
+
+    def test_top_level_help_action_receives_option_string_double_dash_help(self) -> None:
+        """_TopLevelHelpAction.__call__ receives option_string='--help' when --help is used (AC-FUNC-004)."""
+        received: list[str | None] = []
+
+        class _CapturingAction(_TopLevelHelpAction):
+            def __call__(
+                self,
+                parser: argparse.ArgumentParser,
+                namespace: argparse.Namespace,
+                values: str | list[str] | None,
+                option_string: str | None = None,
+            ) -> None:
+                received.append(option_string)
+                raise SystemExit(0)
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, _TopLevelHelpAction):
+                action.__class__ = _CapturingAction
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--help"])
+
+        assert len(received) == 1, f"Action was called {len(received)} times, expected 1"
+        assert received[0] == "--help", f"option_string was {received[0]!r} when '--help' was passed, expected '--help'"
+
+    def test_short_h_produces_stdout_output(self) -> None:
+        """main(['-h']) writes to stdout before exiting (AC-FUNC-001)."""
+        import io
+
+        captured_stdout = io.StringIO()
+        with patch("kanon_cli.cli.sys.stdout", captured_stdout):
+            with pytest.raises(SystemExit):
+                main(["-h"])
+        output = captured_stdout.getvalue()
+        assert len(output) > 0, "main(['-h']) produced no stdout output"
+        assert "kanon" in output.lower(), f"'-h' output does not mention 'kanon': {output!r}"
 
 
 @pytest.mark.unit

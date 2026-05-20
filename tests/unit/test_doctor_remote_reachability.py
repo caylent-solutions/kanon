@@ -548,7 +548,8 @@ class TestAuthErrorPattern:
 
         findings = _check_remote_reachability(lockfile, _auth_fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
-        assert "example.com" in findings[0].message
+        # Canonical form strips .git suffix; anchored regex prevents partial-hostname false matches
+        assert re.search(r"\bexample\.com/", findings[0].message)
 
     def test_auth_error_finding_contains_stderr_preview(self, tmp_path: pathlib.Path) -> None:
         """Auth-error finding includes permission-denied text from stderr."""

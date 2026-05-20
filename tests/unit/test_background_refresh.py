@@ -78,12 +78,8 @@ def test_refresh_bg_non_integer_does_not_fork_and_warns(
         mock_fork.assert_not_called()
 
     warning = fake_stderr.getvalue()
-    assert warning, (
-        f"KANON_COMPLETION_REFRESH_BG={env_value!r}: expected a warning on stderr but got none"
-    )
-    assert "KANON_COMPLETION_REFRESH_BG" in warning, (
-        f"Warning must name the env var; got: {warning!r}"
-    )
+    assert warning, f"KANON_COMPLETION_REFRESH_BG={env_value!r}: expected a warning on stderr but got none"
+    assert "KANON_COMPLETION_REFRESH_BG" in warning, f"Warning must name the env var; got: {warning!r}"
     assert repr(env_value) in warning or env_value in warning, (
         f"Warning must include the invalid value {env_value!r}; got: {warning!r}"
     )

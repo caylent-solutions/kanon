@@ -618,17 +618,11 @@ class TestListSubcommandRegistration:
         args = parser.parse_args(["list", "--catalog-source", "https://example.com/repo.git@main"])
         assert args.catalog_source == "https://example.com/repo.git@main"
 
-    def test_list_subcommand_catalog_source_default_none(self) -> None:
+    def test_list_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--catalog-source defaults to None when unset and env var is absent."""
-        import os
-
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         parser = build_parser()
-        env_backup = os.environ.pop("KANON_CATALOG_SOURCE", None)
-        try:
-            args = parser.parse_args(["list"])
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CATALOG_SOURCE"] = env_backup
+        args = parser.parse_args(["list"])
         assert args.catalog_source is None
 
     def test_list_subcommand_has_no_color_flag(self) -> None:

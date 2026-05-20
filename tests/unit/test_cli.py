@@ -260,6 +260,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
             "why": ["https://github.com/org/repo"],
             "__complete_catalog_entries": [],
+            "__complete_catalog_versions": [],
             "__complete_names_in_lockfile": [],
             "__complete_source_names_in_kanon": [],
         }
@@ -1270,3 +1271,72 @@ class TestCompleteLockfileNamesRegistration:
         parser = build_parser()
         args = parser.parse_args(["__complete_names_in_lockfile"])
         assert args.func is _handle
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __complete_catalog_versions subcommand (AC-FUNC-007, E7-F2-S1-T4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompleteCatalogVersionsRegistration:
+    """build_parser() registers hidden __complete_catalog_versions subcommand (AC-FUNC-007)."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__complete_catalog_versions is a valid subcommand (parseable)."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions"])
+        assert args.command == "__complete_catalog_versions"
+
+    def test_hidden_subcommand_accepts_prefix_token(self) -> None:
+        """__complete_catalog_versions accepts an optional current-token argument."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions", "1.0"])
+        assert args.current_token == "1.0"
+
+    def test_hidden_subcommand_default_token_empty(self) -> None:
+        """Without a prefix argument, current_token defaults to empty string."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions"])
+        assert args.current_token == ""
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__complete_catalog_versions does not appear in kanon --help output (AC-FUNC-007)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "__complete_catalog_versions" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __complete_catalog_versions must not appear in _TOP_LEVEL_HELP"
+        )
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__complete_catalog_versions")
+                assert sub is not None, "__complete_catalog_versions must be registered"
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__complete_catalog_versions":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__complete_catalog_versions help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__complete_catalog_versions sets args.func to _handle."""
+        from kanon_cli.completions.catalog_versions import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions"])
+        assert args.func is _handle
+
+    def test_refresh_only_flag_registered(self) -> None:
+        """__complete_catalog_versions accepts --refresh-only flag."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions", "--refresh-only"])
+        assert args.refresh_only is True
+
+    def test_refresh_only_defaults_to_false(self) -> None:
+        """Without --refresh-only, refresh_only defaults to False."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_catalog_versions"])
+        assert args.refresh_only is False

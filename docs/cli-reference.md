@@ -422,6 +422,31 @@ kanon why https://github.com/org/myproject \
 kanon why https://github.com/org/myproject --format json | jq '.[0] | length'
 ```
 
+### `kanon list`
+
+Discover catalog entries and versions from the manifest repo.
+
+The `--catalog-source` flag on this command is registered by
+`add_catalog_source_arg` from `kanon_cli.core.cli_args`.
+
+#### `--since-version <spec>`
+
+Filter the historical-versions walker to only include versions that satisfy
+the given PEP 440 constraint. Used with `--all-versions`.
+
+```
+kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source <url>@<ref>
+```
+
+**Dynamic tab-completion source:** The `<spec>` argument of
+`--since-version` is completed by the
+`__complete_catalog_versions` hidden subcommand (spec Section 11.3 row 4).
+The completer calls `git ls-remote --tags --heads` against the manifest repo,
+filters tags to PEP 440-valid names (using `packaging.version.Version`),
+passes branches through unfiltered, deduplicates, and returns one ref name
+per line sorted (tags by Version ordering, then branches alphabetically).
+Results are cached in `${KANON_CACHE_DIR}/catalogs/<sha>/tags.txt`.
+
 ### `kanon bootstrap`
 
 Scaffold a new Kanon project with catalog entry package files.

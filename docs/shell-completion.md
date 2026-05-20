@@ -209,12 +209,43 @@ only.
 Used when completing the `--catalog-source <url>@<ref>` flag for
 `kanon list`, `kanon add`, `kanon outdated`, and related commands.
 
-### Mid-token splitter: `_kanon_complete_add_arg`
+### Mid-token splitting
 
-Handles `kanon add foo@<TAB>` style completion by detecting the `@`
-separator. When an `@` is present, `_kanon_complete_project_versions`
-is called against the repo URL for the entry to the left of the `@`.
-Without `@`, `_kanon_complete_catalog_entries` is called.
+The `_kanon_complete_add_arg` shell helper drives `kanon add <name>[@<spec>]`
+completion. It applies the LAST-`@` split rule (spec Section 4.0) to the
+current completion token and routes to the appropriate completer.
+
+**LAST-`@` split rule.** The token is split at the LAST `@` character. The
+portion before the last `@` is the entry name; the portion after is the spec
+prefix. Examples:
+
+| Token | Entry name | Spec prefix |
+|-------|------------|-------------|
+| `foo` | `foo` | (no `@` present) |
+| `foo@` | `foo` | `""` |
+| `foo@1` | `foo` | `1` |
+| `foo@bar@baz` | `foo@bar` | `baz` |
+| `@1.0.0` | `""` | `1.0.0` |
+
+**Routing table.** After the split:
+
+| Condition | Action |
+|-----------|--------|
+| No `@` in token | Call `_kanon_complete_catalog_entries <token>` |
+| `@` present AND resolver returns a URL | Call `_kanon_complete_project_versions <repo-url> <spec>` |
+| `@` present AND resolver fails (unknown entry or disabled) | Emit empty; no error output |
+
+**Entry-name to repo-URL resolution.** When `@` is detected, the shell helper
+shells out to `kanon __resolve_entry_to_repo_url <name>` to obtain the
+catalog source URL for that entry. The subcommand consults the local
+completion cache (populated by `kanon __complete_catalog_entries`) and returns
+the catalog git URL on stdout, or exits non-zero if the entry is not cached.
+If the subcommand exits non-zero or returns an empty URL, the splitter emits
+no candidates for the spec portion.
+
+**`KANON_COMPLETION_ENABLED=0`.** When completion is disabled, the splitter
+returns immediately without shelling out to `__resolve_entry_to_repo_url`.
+The COMPREPLY / compadd list is left empty.
 
 ## Cache and environment variables
 

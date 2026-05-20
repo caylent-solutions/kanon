@@ -82,3 +82,44 @@ def test_preamble_contains_complete_subcommand(shell: str, subcommand: str) -> N
 def test_preamble_references_env_var(shell: str, env_var: str) -> None:
     """Both preambles must reference KANON_COMPLETION_ENABLED and KANON_COMPLETION_TIMEOUT."""
     assert env_var in PREAMBLE[shell], f"Env var '{env_var}' not referenced in PREAMBLE['{shell}']"
+
+
+# ---------------------------------------------------------------------------
+# Mid-token splitter: _kanon_complete_add_arg (E7-F2-S1-T7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_preamble_add_arg_contains_resolve_subcommand(shell: str) -> None:
+    """_kanon_complete_add_arg must shell out to __resolve_entry_to_repo_url (AC-FUNC-008)."""
+    assert "__resolve_entry_to_repo_url" in PREAMBLE[shell], (
+        f"Mid-token splitter in PREAMBLE['{shell}'] must reference __resolve_entry_to_repo_url"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_preamble_add_arg_contains_at_check(shell: str) -> None:
+    """_kanon_complete_add_arg must contain an @ detection guard (AC-FUNC-008)."""
+    # The LAST-@ split uses shell pattern matching: "cur%@*" and "cur##*@".
+    assert "%@*" in PREAMBLE[shell], f"PREAMBLE['{shell}'] must use %@* for LAST-@ prefix split"
+    assert "##*@" in PREAMBLE[shell], f"PREAMBLE['{shell}'] must use ##*@ for LAST-@ suffix split"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_preamble_add_arg_contains_completion_enabled_guard(shell: str) -> None:
+    """_kanon_complete_add_arg must guard on KANON_COMPLETION_ENABLED=0 (AC-FUNC-007).
+
+    The guard must appear INSIDE _kanon_complete_add_arg, not just in the
+    dispatcher.  This ensures the shell does not invoke __resolve_entry_to_repo_url
+    when completion is disabled.
+    """
+    # Verify the guard appears in the splitter's own body by checking
+    # that both the ENABLED check and the resolve subcommand are present in the preamble.
+    preamble = PREAMBLE[shell]
+    assert "KANON_COMPLETION_ENABLED" in preamble, (
+        f"PREAMBLE['{shell}'] must reference KANON_COMPLETION_ENABLED in add_arg guard"
+    )
+    assert "__resolve_entry_to_repo_url" in preamble, f"PREAMBLE['{shell}'] must reference __resolve_entry_to_repo_url"

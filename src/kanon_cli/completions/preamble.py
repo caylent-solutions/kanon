@@ -17,10 +17,14 @@ Environment variables honoured by every helper:
   is not on ``$PATH``, the subprocess relies on kanon's own internal timeout
   (also bounded by this variable).
 
-The mid-token splitter helper (``_kanon_complete_add_arg``) ships with a
-placeholder body that calls ``_kanon_complete_catalog_entries``
-unconditionally. E7-F2-S1-T7 replaces the body with the full ``@``-splitting
-logic.
+The mid-token splitter helper (``_kanon_complete_add_arg``) detects the ``@``
+separator in the current completion token, splits on the LAST ``@`` (spec
+Section 4.0 LAST-``@`` split rule), and routes to the appropriate completer:
+
+- No ``@`` in token: delegates to ``_kanon_complete_catalog_entries``.
+- ``@`` present: shells out to ``kanon __resolve_entry_to_repo_url <name>``
+  to get the repo URL for the entry to the left of the last ``@``, then
+  delegates to ``_kanon_complete_project_versions <repo_url> <spec>``.
 """
 
 from __future__ import annotations
@@ -94,11 +98,36 @@ _kanon_complete_cached_catalogs() {
     _kanon_run_complete __complete_cached_catalogs "$cur"
 }
 
-# _kanon_complete_add_arg -- mid-token splitter helper (placeholder body).
-# E7-F2-S1-T7 replaces this body with the full @-splitting logic.
+# _kanon_complete_add_arg -- mid-token splitter helper.
+#
+# Implements spec Section 11.5: detects the @ separator and routes to the
+# appropriate completer. Splits on the LAST @ (spec Section 4.0).
+#
+# When KANON_COMPLETION_ENABLED=0, returns immediately with empty COMPREPLY
+# without shelling out to kanon __resolve_entry_to_repo_url.
 _kanon_complete_add_arg() {
     local cur="${1:-}"
-    _kanon_complete_catalog_entries "$cur"
+    # Honour KANON_COMPLETION_ENABLED (default 1 = enabled).
+    if [[ "${KANON_COMPLETION_ENABLED:-1}" == "0" ]]; then
+        COMPREPLY=()
+        return 0
+    fi
+    if [[ "$cur" == *@* ]]; then
+        # Split on the LAST @ per spec Section 4.0.
+        local _name="${cur%@*}"
+        local _spec="${cur##*@}"
+        local _repo_url
+        local _timeout="${KANON_COMPLETION_TIMEOUT:-2}"
+        if command -v timeout > /dev/null 2>&1; then
+            _repo_url=$(timeout "$_timeout" kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        else
+            _repo_url=$(kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        fi
+        [[ -z "$_repo_url" ]] && return 0
+        _kanon_complete_project_versions "$_repo_url" "$_spec"
+    else
+        _kanon_complete_catalog_entries "$cur"
+    fi
 }
 """
 
@@ -173,11 +202,35 @@ _kanon_complete_cached_catalogs() {
     _kanon_run_complete __complete_cached_catalogs "$cur"
 }
 
-# _kanon_complete_add_arg -- mid-token splitter helper (placeholder body).
-# E7-F2-S1-T7 replaces this body with the full @-splitting logic.
+# _kanon_complete_add_arg -- mid-token splitter helper.
+#
+# Implements spec Section 11.5: detects the @ separator and routes to the
+# appropriate completer. Splits on the LAST @ (spec Section 4.0).
+#
+# When KANON_COMPLETION_ENABLED=0, returns immediately without shelling out
+# to kanon __resolve_entry_to_repo_url.
 _kanon_complete_add_arg() {
     local cur="${1:-}"
-    _kanon_complete_catalog_entries "$cur"
+    # Honour KANON_COMPLETION_ENABLED (default 1 = enabled).
+    if [[ "${KANON_COMPLETION_ENABLED:-1}" == "0" ]]; then
+        return 0
+    fi
+    if [[ "$cur" == *@* ]]; then
+        # Split on the LAST @ per spec Section 4.0.
+        local _name="${cur%@*}"
+        local _spec="${cur##*@}"
+        local _repo_url
+        local _timeout="${KANON_COMPLETION_TIMEOUT:-2}"
+        if command -v timeout > /dev/null 2>&1; then
+            _repo_url=$(timeout "$_timeout" kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        else
+            _repo_url=$(kanon __resolve_entry_to_repo_url "$_name" 2>/dev/null) || return 0
+        fi
+        [[ -z "$_repo_url" ]] && return 0
+        _kanon_complete_project_versions "$_repo_url" "$_spec"
+    else
+        _kanon_complete_catalog_entries "$cur"
+    fi
 }
 """
 

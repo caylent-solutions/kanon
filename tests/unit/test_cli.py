@@ -265,6 +265,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "__complete_project_versions": ["https://example.com/proj.git", ""],
             "__complete_source_names_in_kanon": [],
             "__complete_cached_catalogs": [],
+            "__resolve_entry_to_repo_url": ["foo"],
         }
         return minimal[subcommand]
 
@@ -1464,4 +1465,64 @@ class TestCompleteCachedCatalogsRegistration:
 
         parser = build_parser()
         args = parser.parse_args(["__complete_cached_catalogs"])
+        assert args.func is _handle
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __resolve_entry_to_repo_url subcommand (E7-F2-S1-T7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolveEntryToRepoUrlRegistration:
+    """build_parser() registers hidden __resolve_entry_to_repo_url subcommand."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__resolve_entry_to_repo_url is a valid subcommand (parseable)."""
+        parser = build_parser()
+        args = parser.parse_args(["__resolve_entry_to_repo_url", "foo"])
+        assert args.command == "__resolve_entry_to_repo_url"
+
+    def test_hidden_subcommand_accepts_entry_name(self) -> None:
+        """__resolve_entry_to_repo_url accepts a required entry-name argument."""
+        parser = build_parser()
+        args = parser.parse_args(["__resolve_entry_to_repo_url", "my-entry"])
+        assert args.entry_name == "my-entry"
+
+    def test_hidden_subcommand_requires_entry_name(self) -> None:
+        """__resolve_entry_to_repo_url requires exactly one positional argument."""
+        import pytest
+
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["__resolve_entry_to_repo_url"])
+        assert exc_info.value.code != 0
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__resolve_entry_to_repo_url does not appear in kanon --help output."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "__resolve_entry_to_repo_url" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __resolve_entry_to_repo_url must not appear in _TOP_LEVEL_HELP"
+        )
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__resolve_entry_to_repo_url")
+                assert sub is not None, "__resolve_entry_to_repo_url must be registered"
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__resolve_entry_to_repo_url":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__resolve_entry_to_repo_url help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__resolve_entry_to_repo_url sets args.func to _handle."""
+        from kanon_cli.completions.midtoken import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__resolve_entry_to_repo_url", "foo"])
         assert args.func is _handle

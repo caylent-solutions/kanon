@@ -262,6 +262,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "__complete_catalog_entries": [],
             "__complete_catalog_versions": [],
             "__complete_names_in_lockfile": [],
+            "__complete_project_versions": ["https://example.com/proj.git", ""],
             "__complete_source_names_in_kanon": [],
         }
         return minimal[subcommand]
@@ -1340,3 +1341,69 @@ class TestCompleteCatalogVersionsRegistration:
         parser = build_parser()
         args = parser.parse_args(["__complete_catalog_versions"])
         assert args.refresh_only is False
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __complete_project_versions subcommand (E7-F2-S1-T5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompleteProjectVersionsRegistration:
+    """build_parser() registers hidden __complete_project_versions subcommand."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__complete_project_versions is a valid subcommand (parseable with two args)."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_project_versions", "https://example.com/proj.git", ""])
+        assert args.command == "__complete_project_versions"
+
+    def test_hidden_subcommand_accepts_repo_url_and_prefix(self) -> None:
+        """__complete_project_versions accepts repo_url and current_token arguments."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_project_versions", "https://example.com/proj.git", "1.0"])
+        assert args.repo_url == "https://example.com/proj.git"
+        assert args.current_token == "1.0"
+
+    def test_hidden_subcommand_repo_url_required(self) -> None:
+        """AC-FUNC-004: missing repo_url (first positional) causes non-zero exit."""
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["__complete_project_versions"])
+        assert exc_info.value.code != 0
+
+    def test_hidden_subcommand_current_token_required(self) -> None:
+        """AC-FUNC-004: missing current_token (second positional) causes non-zero exit."""
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["__complete_project_versions", "https://example.com/proj.git"])
+        assert exc_info.value.code != 0
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__complete_project_versions does not appear in kanon --help output (AC-FUNC-007)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "__complete_project_versions" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __complete_project_versions must not appear in _TOP_LEVEL_HELP"
+        )
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__complete_project_versions")
+                assert sub is not None, "__complete_project_versions must be registered"
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__complete_project_versions":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__complete_project_versions help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__complete_project_versions sets args.func to _handle."""
+        from kanon_cli.completions.project_versions import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__complete_project_versions", "https://example.com/proj.git", ""])
+        assert args.func is _handle

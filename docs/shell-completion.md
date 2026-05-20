@@ -164,10 +164,25 @@ Used when completing `@<version>` suffixes on `kanon add` arguments.
 
 **Shell helper:** `_kanon_complete_project_versions`
 
-Retrieves available versions for a project URL. Calls
+Retrieves available versions for a project repository URL. Takes
+two positional arguments: the project repo URL (first) and the
+current completion prefix (second). Calls
 `git ls-remote --tags --heads <repo-url>`, filters to PEP 440-valid
-tags and branches, and returns them one per line (deduped). Results
-are cached in `${KANON_CACHE_DIR}/projects/<sha256>/tags.txt`.
+tags and branches, and returns them one per line (deduped, sorted).
+Results are cached in
+`${KANON_CACHE_DIR}/projects/<sha256>/tags.txt`.
+
+**URL canonicalization:** Before computing the cache key, the raw
+repo URL is canonicalized via the internal `canonicalize_repo_url`
+helper (spec Section 4.0). Two URL shapes that resolve to the same
+canonical URL share the same cache entry. For example,
+`https://example.com/org/proj.git` and
+`git@example.com:org/proj.git` both canonicalize to
+`https://example.com/org/proj` and therefore hash to the same
+`projects/<sha256>/tags.txt` file. The original (non-canonical) URL
+is passed to `git ls-remote` so the transport (SSH, HTTPS, file,
+etc.) is preserved. A malformed URL that cannot be canonicalized
+produces empty stdout and a structured log entry.
 
 Used when completing the `<spec>` portion of `kanon add foo@<TAB>`.
 

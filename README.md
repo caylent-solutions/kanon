@@ -9,6 +9,11 @@ via declarative manifests.
 
 ## Table of Contents
 
+- [Quick Start: Find and Add Dependencies](#quick-start-find-and-add-dependencies)
+- [Tab Completion](#tab-completion)
+- [Subcommands](#subcommands)
+- [Git Authentication](#git-authentication)
+- [Migration from kanon bootstrap](#migration-from-kanon-bootstrap)
 - [What is Kanon?](#what-is-kanon)
   - [Use Cases](#use-cases)
 - [Quick Start](#quick-start)
@@ -65,6 +70,125 @@ via declarative manifests.
   - [CI/CD Pipeline](#cicd-pipeline)
 - [Documentation](#documentation)
 - [License](#license)
+
+---
+
+## Quick Start: Find and Add Dependencies
+
+The following five-step workflow shows how to discover, inspect, add, and
+install a dependency from a remote manifest catalog -- using the placeholder
+URL `https://example.com/org/manifest-repo.git@main` throughout.
+
+**Step 1: Discover available packages.**
+
+```bash
+kanon list --catalog-source 'https://example.com/org/manifest-repo.git@main'
+```
+
+Lists every package declared in the remote catalog so you can see what is
+available.
+
+**Step 2: Inspect a package.**
+
+```bash
+kanon list my-package \
+  --catalog-source 'https://example.com/org/manifest-repo.git@main' \
+  --detail
+```
+
+Shows the full metadata for `my-package` -- version history, description,
+and source URL.
+
+**Step 3: Add the package at a pinned version.**
+
+```bash
+kanon add 'my-package@==1.2.3' \
+  --catalog-source 'https://example.com/org/manifest-repo.git@main'
+```
+
+Writes `my-package@==1.2.3` into your `.kanon` manifest file. The `==`
+prefix pins to an exact version; PEP 440 range constraints (e.g., `~=1.2.0`,
+`>=1.0.0,<2.0.0`) are also accepted.
+
+**Step 4: Install (first run writes `.kanon.lock`).**
+
+```bash
+kanon install
+```
+
+Resolves all declared packages against the catalog, clones them into
+`.kanon-data/sources/`, aggregates symlinks under `.packages/`, and writes
+`.kanon.lock` with exact resolved versions so every subsequent install is
+reproducible.
+
+**Step 5: Commit both `.kanon` and `.kanon.lock`.**
+
+```bash
+git add .kanon .kanon.lock
+git commit -m "feat: add my-package 1.2.3"
+```
+
+Committing both files ensures the entire team installs the same resolved
+package versions. Never commit `.packages/` or `.kanon-data/` -- these are
+ephemeral and are gitignored automatically by `kanon install`.
+
+---
+
+## Tab Completion
+
+Kanon ships built-in shell completion for bash and zsh via the
+`kanon completion <shell>` subcommand. Run `eval "$(kanon completion bash)"`
+(or `zsh`) once in your shell session, or add it to your shell RC file, to
+enable tab-completion of subcommand names, flags, and catalog entries. For
+persistent installation and advanced options including fish support and
+system-wide setup, see [docs/shell-completion.md](docs/shell-completion.md).
+
+---
+
+## Subcommands
+
+| Subcommand | Summary | Doc |
+| --- | --- | --- |
+| `kanon list` | List packages available in a catalog or show detail for one | [docs/list-and-add.md](docs/list-and-add.md) |
+| `kanon add` | Add a package (with optional version constraint) to `.kanon` | [docs/list-and-add.md](docs/list-and-add.md) |
+| `kanon remove` | Remove a package from `.kanon` | [docs/list-and-add.md](docs/list-and-add.md) |
+| `kanon outdated` | Show packages in `.kanon` that have newer versions available | [docs/outdated-and-why.md](docs/outdated-and-why.md) |
+| `kanon why` | Explain why a specific package version was resolved | [docs/outdated-and-why.md](docs/outdated-and-why.md) |
+| `kanon install` | Resolve, clone, and symlink all packages; writes `.kanon.lock` | [docs/lockfile.md](docs/lockfile.md) |
+| `kanon doctor` | Diagnose the local Kanon installation and report problems | [docs/doctor.md](docs/doctor.md) |
+| `kanon catalog audit` | Audit a catalog for missing or malformed entries | [docs/catalog-author-guide.md](docs/catalog-author-guide.md) |
+| `kanon validate xml` | Validate XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
+| `kanon validate marketplace` | Validate marketplace XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
+| `kanon validate metadata` | Validate catalog entry metadata | [docs/catalog-author-guide.md](docs/catalog-author-guide.md) |
+| `kanon clean` | Remove all synced packages and Kanon state directories | [docs/lifecycle.md](docs/lifecycle.md) |
+| `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
+| `kanon completion` | Emit a shell completion script for bash or zsh | [docs/shell-completion.md](docs/shell-completion.md) |
+| `kanon bootstrap` | **deprecated; see `kanon add` / `kanon list`** -- scaffold a project from a catalog entry | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
+| `kanon bootstrap list` | **deprecated; see `kanon list`** -- list available catalog entries | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
+
+---
+
+## Git Authentication
+
+Kanon uses the `git` binary for all remote operations and never prompts for
+credentials or caches them itself -- authentication is delegated entirely to
+the operator's git client (SSH keys, credential helpers, `GIT_TOKEN`, etc.).
+For setup instructions covering SSH key forwarding, HTTPS token helpers, and
+URL rewriting for private Git hosts, see
+[docs/git-auth-setup.md](docs/git-auth-setup.md).
+
+---
+
+## Migration from kanon bootstrap
+
+The `kanon bootstrap` subcommand is deprecated. Its catalog-discovery and
+project-scaffolding responsibilities have been replaced by `kanon list`
+(discover and inspect packages) and `kanon add` (add a pinned dependency to
+`.kanon`). If your workflow currently uses `kanon bootstrap <entry>`, the
+[docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md)
+guide walks through the equivalent `kanon list` + `kanon add` + `kanon
+install` steps and explains the lockfile model that replaces hand-editing
+`.kanon`.
 
 ---
 

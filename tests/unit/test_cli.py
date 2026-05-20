@@ -260,6 +260,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
             "why": ["https://github.com/org/repo"],
             "__complete_catalog_entries": [],
+            "__complete_source_names_in_kanon": [],
         }
         return minimal[subcommand]
 
@@ -1153,4 +1154,61 @@ class TestCompleteCatalogEntriesRegistration:
 
         parser = build_parser()
         args = parser.parse_args(["__complete_catalog_entries"])
+        assert args.func is _handle
+
+
+# ---------------------------------------------------------------------------
+# Tests for the hidden __complete_source_names_in_kanon subcommand (AC-FUNC-007)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompleteSourceNamesRegistration:
+    """build_parser() registers hidden __complete_source_names_in_kanon subcommand."""
+
+    def test_hidden_subcommand_registered(self) -> None:
+        """__complete_source_names_in_kanon is a valid subcommand (parseable)."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_source_names_in_kanon"])
+        assert args.command == "__complete_source_names_in_kanon"
+
+    def test_hidden_subcommand_accepts_prefix_token(self) -> None:
+        """__complete_source_names_in_kanon accepts an optional current-token argument."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_source_names_in_kanon", "fo"])
+        assert args.current_token == "fo"
+
+    def test_hidden_subcommand_default_token_empty(self) -> None:
+        """Without a prefix argument, current_token defaults to empty string."""
+        parser = build_parser()
+        args = parser.parse_args(["__complete_source_names_in_kanon"])
+        assert args.current_token == ""
+
+    def test_hidden_subcommand_not_in_help_text(self) -> None:
+        """__complete_source_names_in_kanon does not appear in kanon --help output (AC-FUNC-007)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "__complete_source_names_in_kanon" not in _TOP_LEVEL_HELP, (
+            "Hidden subcommand __complete_source_names_in_kanon must not appear in _TOP_LEVEL_HELP"
+        )
+
+        parser = build_parser()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub = action.choices.get("__complete_source_names_in_kanon")
+                assert sub is not None, "__complete_source_names_in_kanon must be registered"
+                for choice_action in action._choices_actions:
+                    if choice_action.dest == "__complete_source_names_in_kanon":
+                        assert choice_action.help == argparse.SUPPRESS, (
+                            "__complete_source_names_in_kanon help must be argparse.SUPPRESS"
+                        )
+                        break
+                break
+
+    def test_hidden_subcommand_sets_func(self) -> None:
+        """__complete_source_names_in_kanon sets args.func to _handle."""
+        from kanon_cli.completions.source_names import _handle
+
+        parser = build_parser()
+        args = parser.parse_args(["__complete_source_names_in_kanon"])
         assert args.func is _handle

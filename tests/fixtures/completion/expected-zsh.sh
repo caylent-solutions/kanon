@@ -6,6 +6,7 @@
 _shtab_kanon_commands() {
   local _commands=(
     "__complete_catalog_entries:Internal hidden subcommand for shell completion of catalog entry names."
+    "__complete_source_names_in_kanon:Internal hidden subcommand for shell completion of .kanon source names."
     "add:Resolve catalog entries from a manifest repo and append the"
     "bootstrap:DEPRECATED command. Use the replacements below."
     "catalog:Subcommands for inspecting and auditing manifest repos."
@@ -57,6 +58,14 @@ _shtab_kanon___complete_catalog_entries_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon___complete_catalog_entries_defaults_added=0
+
+_shtab_kanon___complete_source_names_in_kanon_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  ":Completion prefix to filter results.:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon___complete_source_names_in_kanon_defaults_added=0
 
 _shtab_kanon_add_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -271,6 +280,7 @@ _shtab_kanon() {
       curcontext="${curcontext%:*:*}:_shtab_kanon-$line[1]:"
       case $line[1] in
         __complete_catalog_entries) _arguments -C -s $_shtab_kanon___complete_catalog_entries_options ;;
+        __complete_source_names_in_kanon) _arguments -C -s $_shtab_kanon___complete_source_names_in_kanon_options ;;
         add) _arguments -C -s $_shtab_kanon_add_options ;;
         bootstrap) _arguments -C -s $_shtab_kanon_bootstrap_options ;;
         catalog) _shtab_kanon_catalog ;;

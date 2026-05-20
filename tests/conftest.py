@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+from collections.abc import Generator
 
 import pytest
 
@@ -427,6 +428,23 @@ def write_lockfile_doctor_integration(
     lock_path = directory / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return lock_path
+
+
+@pytest.fixture(autouse=True)
+def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Clear KANON_CATALOG_SOURCE after every test function.
+
+    Belt-and-suspenders teardown that unconditionally deletes
+    KANON_CATALOG_SOURCE from os.environ after every test, regardless of
+    whether the test or any of its fixtures set it. Prevents env-var leaks
+    between tests when a fixture or test directly mutates os.environ without
+    using monkeypatch (which would otherwise undo changes automatically).
+
+    The fixture is function-scoped (the default) and autouse so it runs for
+    every test in the suite without per-test opt-in.
+    """
+    yield
+    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
 
 
 @pytest.fixture()

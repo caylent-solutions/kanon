@@ -132,10 +132,18 @@ name. Tab-completion is suggest-only.
 
 **Shell helper:** `_kanon_complete_names_in_lockfile`
 
-Retrieves names recorded in the lock file. Reads `${KANON_LOCK_FILE}`
-(resolved per the lockfile search order) and emits one top-level
-source name, every transitive `<include>` path, and every
-`<project>` URL, one per line.
+Retrieves names recorded in the lockfile. Resolves the lockfile path
+using the three-tier precedence chain:
+
+1. `${KANON_LOCK_FILE}` -- explicit lockfile path override.
+2. `${KANON_KANON_FILE}.lock` -- derived from the kanon file env var.
+3. `./.kanon.lock` -- default path in the current directory.
+
+Emits, one per line (sorted, deduplicated):
+- Every top-level source name.
+- Every transitive include `path_in_repo` value (recursive through
+  nested includes).
+- Every project URL.
 
 Used for completing the `<name-or-url>` positional argument of
 `kanon why`.

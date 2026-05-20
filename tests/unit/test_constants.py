@@ -2194,3 +2194,50 @@ class TestShellMetachars:
 
         for char in SHELL_METACHARS:
             assert len(char) == 1, f"Non-single-char element in SHELL_METACHARS: {char!r}"
+
+
+@pytest.mark.unit
+class TestCompletionSanitizationConstants:
+    """Tests for COMPLETION_MAX_ENTRY_LEN and COMPLETION_UNSAFE_CHARS (spec Section 11.3)."""
+
+    def test_completion_max_entry_len_is_int(self) -> None:
+        """COMPLETION_MAX_ENTRY_LEN must be a positive integer."""
+        from kanon_cli.constants import COMPLETION_MAX_ENTRY_LEN
+
+        assert isinstance(COMPLETION_MAX_ENTRY_LEN, int)
+        assert COMPLETION_MAX_ENTRY_LEN > 0
+
+    def test_completion_max_entry_len_value(self) -> None:
+        """COMPLETION_MAX_ENTRY_LEN must be exactly 128 per spec Section 11.3."""
+        from kanon_cli.constants import COMPLETION_MAX_ENTRY_LEN
+
+        assert COMPLETION_MAX_ENTRY_LEN == 128
+
+    def test_completion_unsafe_chars_is_frozenset(self) -> None:
+        """COMPLETION_UNSAFE_CHARS must be a frozenset (immutable, hashable)."""
+        from kanon_cli.constants import COMPLETION_UNSAFE_CHARS
+
+        assert isinstance(COMPLETION_UNSAFE_CHARS, frozenset)
+
+    def test_completion_unsafe_chars_is_nonempty(self) -> None:
+        """COMPLETION_UNSAFE_CHARS must contain at least one character."""
+        from kanon_cli.constants import COMPLETION_UNSAFE_CHARS
+
+        assert len(COMPLETION_UNSAFE_CHARS) > 0
+
+    @pytest.mark.parametrize(
+        "char",
+        [" ", "\t", "\n", "\r", ";", "|", "&", "$", "`"],
+    )
+    def test_completion_unsafe_chars_contains_required_char(self, char: str) -> None:
+        """Each shell-special and whitespace character must be in COMPLETION_UNSAFE_CHARS."""
+        from kanon_cli.constants import COMPLETION_UNSAFE_CHARS
+
+        assert char in COMPLETION_UNSAFE_CHARS, f"Missing required unsafe char: {char!r}"
+
+    def test_completion_unsafe_chars_contains_only_single_chars(self) -> None:
+        """Every element of COMPLETION_UNSAFE_CHARS is a single character."""
+        from kanon_cli.constants import COMPLETION_UNSAFE_CHARS
+
+        for char in COMPLETION_UNSAFE_CHARS:
+            assert len(char) == 1, f"Non-single-char element in COMPLETION_UNSAFE_CHARS: {char!r}"

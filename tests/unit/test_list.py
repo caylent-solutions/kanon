@@ -484,6 +484,22 @@ class TestRegister:
         assert "--catalog-source" in help_text
         assert "KANON_CATALOG_SOURCE" in help_text
 
+    def test_list_short_dash_h_exits_0(self) -> None:
+        """kanon list -h exits 0 (add_help=True on the list subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["list", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_list_subparser_has_add_help_true(self) -> None:
+        """The 'list' subparser has add_help=True set explicitly."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        list_parser = subparsers.choices["list"]
+        assert list_parser.add_help is True, "list subparser must have add_help=True so '-h' is accepted"
+
 
 # ---------------------------------------------------------------------------
 # Tests for MISSING_CATALOG_ERROR_TEMPLATE constant

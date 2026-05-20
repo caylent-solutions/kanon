@@ -102,6 +102,24 @@ class TestDoctorSubparser:
     # others via PRE_CONFLICT).  The integration between register() and the live
     # top-level parser will be verified by whichever task lands that registration.
 
+    def test_doctor_short_dash_h_exits_0(self) -> None:
+        """kanon doctor -h exits 0 (add_help=True on the doctor subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["doctor", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_doctor_subparser_has_add_help_true(self) -> None:
+        """The 'doctor' subparser has add_help=True set explicitly."""
+        from kanon_cli.commands.doctor import register
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        doctor_parser = subparsers.choices["doctor"]
+        assert doctor_parser.add_help is True, "doctor subparser must have add_help=True so '-h' is accepted"
+
 
 # ---------------------------------------------------------------------------
 # run_doctor -- --refresh-completion-cache uses KANON_CACHE_DIR

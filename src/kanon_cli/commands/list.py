@@ -1277,6 +1277,7 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "list",
+        add_help=True,
         help="List catalog entry names from a manifest repo.",
         description=(
             "Print one catalog entry name per line to stdout, sorted\n"

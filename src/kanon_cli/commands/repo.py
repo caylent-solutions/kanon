@@ -67,6 +67,7 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "repo",
+        add_help=True,
         help="Run a kanon repo subcommand (manifest-driven sync)",
         description=(
             "Run kanon's repo subcommands.\n\n"

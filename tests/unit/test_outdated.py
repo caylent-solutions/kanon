@@ -577,6 +577,31 @@ class TestRegister:
         args = root_parser.parse_args(["outdated", "--catalog-source", "file:///x@HEAD", "--format", "table"])
         assert args.format == "table"
 
+    def test_outdated_short_dash_h_exits_0(self) -> None:
+        """kanon outdated -h exits 0 (add_help=True on the outdated subparser)."""
+        import argparse
+
+        from kanon_cli.commands.outdated import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        with pytest.raises(SystemExit) as exc_info:
+            root_parser.parse_args(["outdated", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_outdated_subparser_has_add_help_true(self) -> None:
+        """The 'outdated' subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.outdated import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        outdated_parser = subparsers.choices["outdated"]
+        assert outdated_parser.add_help is True, "outdated subparser must have add_help=True so '-h' is accepted"
+
 
 # ---------------------------------------------------------------------------
 # run() happy path via patched _list_tags

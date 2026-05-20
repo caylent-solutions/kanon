@@ -491,6 +491,19 @@ class TestAddSubparser:
             main(["add", "--help"])
         assert exc_info.value.code == 0
 
+    def test_add_short_dash_h_exits_0(self) -> None:
+        """kanon add -h exits 0 (add_help=True on the add subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["add", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_add_subparser_has_add_help_true(self) -> None:
+        """The 'add' subparser has add_help=True set explicitly."""
+        add_parser = self._get_add_parser()
+        assert add_parser.add_help is True, "add subparser must have add_help=True so '-h' is accepted"
+
     def test_add_help_mentions_kanon_file(self, capsys: pytest.CaptureFixture[str]) -> None:
         """kanon add --help text mentions --kanon-file and its env var."""
         add_parser = self._get_add_parser()

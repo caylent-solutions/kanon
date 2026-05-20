@@ -60,6 +60,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "add",
+        add_help=True,
         help="Add one or more catalog entries to the .kanon file.",
         description=(
             "Resolve catalog entries from a manifest repo and append the\n"

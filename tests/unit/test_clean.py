@@ -155,3 +155,34 @@ class TestCleanSymlinkResolution:
         assert (symlink_dir / ".packages").exists(), (
             "AC-1/AC-2: .packages/ in the symlink's parent (symlink_dir) must NOT be removed"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for add_help=True on the 'clean' subparser
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCleanSubparserHelp:
+    """The 'clean' subparser has add_help=True and accepts '-h'."""
+
+    def test_clean_short_dash_h_exits_0(self) -> None:
+        """kanon clean -h exits 0 (add_help=True on the clean subparser)."""
+
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["clean", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_clean_subparser_has_add_help_true(self) -> None:
+        """The 'clean' subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.clean import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        clean_parser = subparsers.choices["clean"]
+        assert clean_parser.add_help is True, "clean subparser must have add_help=True so '-h' is accepted"

@@ -509,6 +509,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "outdated",
+        add_help=True,
         help="Show which installed sources are behind the catalog.",
         description=(
             "Compare each KANON_SOURCE_<name>_* block in the .kanon file against\n"

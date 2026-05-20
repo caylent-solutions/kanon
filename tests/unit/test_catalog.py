@@ -270,3 +270,62 @@ class TestCloneRemoteCatalog:
         mock_resolve.assert_not_called()
         cmd = mock_run.call_args[0][0]
         assert "v2.0.0" in cmd
+
+
+# ---------------------------------------------------------------------------
+# Tests for add_help=True on the 'catalog' and 'catalog audit' subparsers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCatalogSubparserHelp:
+    """The 'catalog' and 'catalog audit' subparsers have add_help=True and accept '-h'."""
+
+    def test_catalog_short_dash_h_exits_0(self) -> None:
+        """kanon catalog -h exits 0 (add_help=True on the catalog subparser)."""
+
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["catalog", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_catalog_audit_short_dash_h_exits_0(self) -> None:
+        """kanon catalog audit -h exits 0 (add_help=True on the audit sub-subparser)."""
+
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["catalog", "audit", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_catalog_subparser_has_add_help_true(self) -> None:
+        """The 'catalog' subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.catalog import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        catalog_parser = subparsers.choices["catalog"]
+        assert catalog_parser.add_help is True, "catalog subparser must have add_help=True so '-h' is accepted"
+
+    def test_catalog_audit_subparser_has_add_help_true(self) -> None:
+        """The 'catalog audit' sub-subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.catalog import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        catalog_parser = subparsers.choices["catalog"]
+        for action in catalog_parser._actions:
+            if hasattr(action, "choices") and action.choices and "audit" in action.choices:
+                audit_parser = action.choices["audit"]
+                assert audit_parser.add_help is True, (
+                    "catalog audit sub-subparser must have add_help=True so '-h' is accepted"
+                )
+                return
+        raise AssertionError("No 'audit' sub-subparser found under 'catalog'")

@@ -938,6 +938,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     catalog_parser: argparse.ArgumentParser = subparsers.add_parser(
         "catalog",
+        add_help=True,
         help="Catalog management subcommands.",
         description="Subcommands for inspecting and auditing manifest repos.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -970,6 +971,7 @@ def _register_audit(
     valid_checks_list = ", ".join(sorted(KANON_CATALOG_AUDIT_VALID_CHECKS))
     audit_parser: argparse.ArgumentParser = catalog_subparsers.add_parser(
         "audit",
+        add_help=True,
         help="Audit a manifest repo for catalog soft-spot violations.",
         description=(
             "Audit a manifest repo for catalog soft-spot violations.\n\n"

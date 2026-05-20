@@ -67,6 +67,7 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "install",
+        add_help=True,
         help="Full install lifecycle: multi-source manifest sync and marketplace setup",
         description=(
             "Execute the full Kanon install lifecycle.\n\n"

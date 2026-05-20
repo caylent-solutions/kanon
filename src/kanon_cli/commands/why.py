@@ -712,6 +712,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "why",
+        add_help=True,
         help="Explain why a project is in the resolved dependency tree.",
         description=(
             "Reads the .kanon file, resolves the full dependency tree\n"

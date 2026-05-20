@@ -157,6 +157,22 @@ class TestRegisterSubparser:
         args = parser.parse_args(["remove", "foo_bar"])
         assert args.func is run_remove
 
+    def test_remove_short_dash_h_exits_0(self) -> None:
+        """kanon remove -h exits 0 (add_help=True on the remove subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["remove", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_remove_subparser_has_add_help_true(self) -> None:
+        """The 'remove' subparser has add_help=True set explicitly."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        remove_parser = subparsers.choices["remove"]
+        assert remove_parser.add_help is True, "remove subparser must have add_help=True so '-h' is accepted"
+
 
 # ---------------------------------------------------------------------------
 # _scan_source_lines helper

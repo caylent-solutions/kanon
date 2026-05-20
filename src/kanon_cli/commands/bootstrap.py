@@ -101,6 +101,7 @@ def register(subparsers) -> None:
 
     parser = _DeprecatedPrefixParser(
         prog=prog,
+        add_help=True,
         description=_BOOTSTRAP_DESCRIPTION,
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,

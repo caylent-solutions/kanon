@@ -1170,6 +1170,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "doctor",
+        add_help=True,
         help="Workspace health checks and cache management.",
         description=(
             "Run workspace health checks against the current project directory.\n\n"

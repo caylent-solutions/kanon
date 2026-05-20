@@ -23,6 +23,7 @@ def register(subparsers) -> None:
     """
     validate_parser = subparsers.add_parser(
         "validate",
+        add_help=True,
         help="Validate XML manifests",
         description="Validate manifest XML files for well-formedness and correctness.",
     )
@@ -36,6 +37,7 @@ def register(subparsers) -> None:
     # xml sub-subcommand
     xml_parser = validate_subs.add_parser(
         "xml",
+        add_help=True,
         help="Validate manifest XML files (well-formedness, required attributes, include chains)",
         description=(
             "Validate all XML manifest files under repo-specs/.\n\n"
@@ -56,6 +58,7 @@ def register(subparsers) -> None:
     # marketplace sub-subcommand
     mp_parser = validate_subs.add_parser(
         "marketplace",
+        add_help=True,
         help="Validate marketplace XML manifests (linkfile dest, include chains, name uniqueness, tag format)",
         description=(
             "Validate all marketplace XML manifests under repo-specs/.\n\n"
@@ -76,6 +79,7 @@ def register(subparsers) -> None:
     # metadata sub-subcommand
     meta_parser = validate_subs.add_parser(
         "metadata",
+        add_help=True,
         help=(
             "Check catalog metadata soft-spots (required/recommended fields, "
             "source-name derivation, entry-name uniqueness) without network access."

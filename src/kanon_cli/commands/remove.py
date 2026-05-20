@@ -68,6 +68,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "remove",
+        add_help=True,
         help="Remove one or more source-name dependency triples from the .kanon file.",
         description=(
             "Remove the three KANON_SOURCE_<name>_{URL,REVISION,PATH} lines for one\n"

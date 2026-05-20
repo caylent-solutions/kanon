@@ -50,6 +50,26 @@ _TOP_LEVEL_SUBCOMMANDS = [
     "repo",
 ]
 
+# All 13 kanon subcommands plus 'catalog audit' as a nested case (AC-2.2).
+# Each entry is a tuple of positional args that precede '-h'.
+# Parametrize IDs derive from " ".join(args) for readable test names.
+_ALL_SUBCOMMAND_DASH_H_CASES = [
+    ("add",),
+    ("remove",),
+    ("list",),
+    ("outdated",),
+    ("why",),
+    ("doctor",),
+    ("install",),
+    ("clean",),
+    ("validate",),
+    ("catalog",),
+    ("catalog", "audit"),
+    ("completion",),
+    ("bootstrap",),
+    ("repo",),
+]
+
 # Repo subcommands that support --help via passthrough to the embedded tool.
 # Each subcommand's --help is handled before the .repo directory is consulted.
 _REPO_SUBCOMMANDS = [
@@ -242,6 +262,39 @@ class TestSubcommandHelpFlags:
         result = _run_kanon("validate", "marketplace", "-h")
         assert result.returncode == 0, (
             f"'kanon validate marketplace -h' exited {result.returncode}, expected 0.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "subcmd_args",
+        _ALL_SUBCOMMAND_DASH_H_CASES,
+        ids=[" ".join(args) for args in _ALL_SUBCOMMAND_DASH_H_CASES],
+    )
+    def test_subcommand_dash_h_exits_zero(self, subcmd_args: tuple[str, ...]) -> None:
+        """'kanon <subcmd> -h' must exit 0 and print usage: for every subcommand (AC-2.2).
+
+        Covers all 13 subcommands plus 'catalog audit' as a separate case.
+        Asserts exit code 0, 'usage:' substring in stdout, and that at least
+        one token from the subcommand path appears in the combined output.
+        """
+        result = _run_kanon(*subcmd_args, "-h")
+        cmd_display = "kanon " + " ".join(subcmd_args) + " -h"
+        assert result.returncode == 0, (
+            f"'{cmd_display}' exited {result.returncode}, expected 0.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+        combined = result.stdout + result.stderr
+        assert "usage:" in combined.lower(), (
+            f"'{cmd_display}' output does not contain 'usage:'.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+        # The last subcommand name must appear in the help output.
+        leaf_subcmd = subcmd_args[-1]
+        assert leaf_subcmd in combined, (
+            f"'{cmd_display}' output does not mention subcommand name {leaf_subcmd!r}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )

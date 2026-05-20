@@ -426,3 +426,31 @@ class TestInstallWorkspaceLock:
 
         lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
         assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"
+
+
+# ---------------------------------------------------------------------------
+# Tests for add_help=True on the 'install' subparser
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInstallSubparserHelp:
+    """The 'install' subparser has add_help=True and accepts '-h'."""
+
+    def test_install_short_dash_h_exits_0(self) -> None:
+        """kanon install -h exits 0 (add_help=True on the install subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["install", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_install_subparser_has_add_help_true(self) -> None:
+        """The 'install' subparser has add_help=True set explicitly."""
+        from kanon_cli.commands.install import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        install_parser = subparsers.choices["install"]
+        assert install_parser.add_help is True, "install subparser must have add_help=True so '-h' is accepted"

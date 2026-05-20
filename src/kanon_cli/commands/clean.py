@@ -15,6 +15,7 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "clean",
+        add_help=True,
         help="Full teardown: uninstall, remove dirs",
         description=(
             "Execute the full Kanon clean lifecycle.\n\n"

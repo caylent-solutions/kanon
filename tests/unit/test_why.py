@@ -875,3 +875,31 @@ class TestLiveResolveTree:
 
         with pytest.raises(NotImplementedError):
             _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
+
+
+# ---------------------------------------------------------------------------
+# Tests for add_help=True on the 'why' subparser
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestWhySubparserHelp:
+    """The 'why' subparser has add_help=True and accepts '-h'."""
+
+    def test_why_short_dash_h_exits_0(self) -> None:
+        """kanon why -h exits 0 (add_help=True on the why subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["why", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_why_subparser_has_add_help_true(self) -> None:
+        """The 'why' subparser has add_help=True set explicitly."""
+        from kanon_cli.commands.why import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        why_parser = subparsers.choices["why"]
+        assert why_parser.add_help is True, "why subparser must have add_help=True so '-h' is accepted"

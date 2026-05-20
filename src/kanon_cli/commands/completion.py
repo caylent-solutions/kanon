@@ -38,6 +38,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     """
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "completion",
+        add_help=True,
         help="Print a shell completion script to stdout.",
         description=(
             "Emit the shell completion script for kanon to stdout.\n\n"

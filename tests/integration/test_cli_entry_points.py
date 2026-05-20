@@ -83,14 +83,29 @@ class TestMainDispatch:
             main(["install"])
         assert exc_info.value.code == 1
 
-    def test_bootstrap_list_exits_0(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_bootstrap_list_exits_3_with_warn(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         monkeypatch.chdir(tmp_path)
-        main(["bootstrap", "list"])
+        with pytest.raises(SystemExit) as exc:
+            main(["bootstrap", "list"])
+        assert exc.value.code == 3
+        captured = capsys.readouterr()
+        assert "WARN: 'kanon bootstrap list' is deprecated." in captured.err
 
-    def test_bootstrap_kanon_with_output_dir(self, tmp_path: pathlib.Path) -> None:
-        output = tmp_path / "project"
-        main(["bootstrap", "kanon", "--output-dir", str(output)])
-        assert (output / ".kanon").is_file()
+    def test_bootstrap_kanon_exits_3_with_warn(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with pytest.raises(SystemExit) as exc:
+            main(["bootstrap", "kanon", "--output-dir", str(tmp_path / "project")])
+        assert exc.value.code == 3
+        captured = capsys.readouterr()
+        assert "WARN: 'kanon bootstrap kanon' is deprecated." in captured.err
 
     def test_validate_xml_with_explicit_repo_root_exits_1_when_empty(self, tmp_path: pathlib.Path) -> None:
         with pytest.raises(SystemExit) as exc_info:

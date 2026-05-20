@@ -1,0 +1,6 @@
+ERROR: Lockfile SHA for source 'example_pkg' is no longer reachable.
+  Source  : example_pkg
+  SHA     : aabbccdd1122334455667788990011223344556677889900aabbccdd11223344
+  Remote  : https://example.com/org/manifest-repo.git
+  Remediation: run 'kanon install --refresh-lock-source example_pkg'
+  to re-resolve this source's full chain and update the lockfile entry.

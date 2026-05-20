@@ -1,0 +1,2 @@
+ERROR: repo-specs/example-pkg-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace.
+ERROR: manifest repo `https://example.com/org/manifest-repo.git` has integrity issues in the following XML paths: repo-specs/example-pkg-marketplace.xml

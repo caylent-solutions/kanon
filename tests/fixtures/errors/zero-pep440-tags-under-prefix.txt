@@ -1,0 +1,4 @@
+ERROR: manifest repo has no PEP 440-valid tags; pin to a branch or SHA explicitly (e.g., 'kanon add foo@main') or ask the catalog author to publish a release tag.
+Skipped non-PEP-440 tags:
+  - refs/tags/legacy-1.0
+  - refs/tags/release-2024

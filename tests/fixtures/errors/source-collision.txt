@@ -1,0 +1,2 @@
+ERROR: source-name 'example_pkg' already mapped to https://example.com/org/manifest-repo.git/repo-specs/example-pkg-marketplace.xml (revision ==1.0.0); requested mapping is https://example.com/org/manifest-repo.git/repo-specs/example-pkg-marketplace.xml (revision ==2.0.0).
+Use --force to overwrite, or 'kanon remove example_pkg' first.

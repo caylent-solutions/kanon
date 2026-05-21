@@ -181,3 +181,134 @@ def test_remove_force_scenarios(
         assert not any(line.startswith("-") for line in captured.out.splitlines()), (
             "dry-run + force with unknown-only source must produce no '-' diff lines in stdout"
         )
+
+
+# ---------------------------------------------------------------------------
+# Named test functions required by AC-TEST-001 (test-gaps-spec.md section 4.4)
+# Each function covers exactly one of the four row-65 scenarios and asserts
+# the full contract from spec section 4.4: setup, invocation, exit code,
+# stderr content, and file state.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_force_on_unknown_source_exits_0(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Scenario 1: kanon remove unknown_source --force on a .kanon with no unknown keys.
+
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples.
+    Invocation: kanon remove unknown_source --force
+    Assertion: exit code is 0 AND .kanon content is byte-for-byte unchanged.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(_TWO_KNOWN_CONTENT)
+    original_bytes = kanon_file.read_bytes()
+
+    args = _make_args(["unknown_source"], str(kanon_file), force=True, dry_run=False)
+    result = run_remove(args)
+
+    assert result == 0, f"Expected exit code 0, got {result}"
+    assert kanon_file.read_bytes() == original_bytes, (
+        ".kanon must be byte-for-byte unchanged when unknown source is skipped via --force"
+    )
+    captured = capsys.readouterr()
+    assert "ERROR:" not in captured.err, (
+        f"Expected no ERROR in stderr for --force on unknown source, got: {captured.err!r}"
+    )
+
+
+@pytest.mark.unit
+def test_force_on_mixed_known_and_unknown_removes_known(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Scenario 2: kanon remove known_source unknown_source --force removes known, skips unknown.
+
+    Setup: .kanon contains KANON_SOURCE_known_a_{URL,REVISION,PATH} triples.
+    Invocation: kanon remove known_a unknown_source --force
+    Assertion: exit code is 0 AND the three KANON_SOURCE_known_a_* lines are absent
+    from the post-write .kanon AND the file write applies the existing line-ending,
+    blank-run collapse, and trailing-newline normalisation rules.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(_TWO_KNOWN_CONTENT)
+
+    args = _make_args(["known_a", "unknown_source"], str(kanon_file), force=True, dry_run=False)
+    result = run_remove(args)
+
+    assert result == 0, f"Expected exit code 0, got {result}"
+    after = kanon_file.read_text()
+    assert "KANON_SOURCE_known_a_URL" not in after, "KANON_SOURCE_known_a_URL must be absent after removal"
+    assert "KANON_SOURCE_known_a_REVISION" not in after, "KANON_SOURCE_known_a_REVISION must be absent after removal"
+    assert "KANON_SOURCE_known_a_PATH" not in after, "KANON_SOURCE_known_a_PATH must be absent after removal"
+    assert after != _TWO_KNOWN_CONTENT, "File must differ from original after known source removal"
+    assert after.endswith("\n"), "File must end with a trailing newline per normalisation rules"
+    captured = capsys.readouterr()
+    assert "ERROR:" not in captured.err, (
+        f"Expected no ERROR in stderr for --force on mixed sources, got: {captured.err!r}"
+    )
+
+
+@pytest.mark.unit
+def test_no_force_on_unknown_source_errors(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Scenario 3: kanon remove unknown_source (no --force) errors with R232 message.
+
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples
+    (no KANON_SOURCE_unknown_source_* keys).
+    Invocation: kanon remove unknown_source (--force OMITTED)
+    Assertion: exit code is 1 AND stderr contains the canonical R232 message AND
+    .kanon is unchanged.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(_TWO_KNOWN_CONTENT)
+    original_bytes = kanon_file.read_bytes()
+
+    args = _make_args(["unknown_source"], str(kanon_file), force=False, dry_run=False)
+    with pytest.raises(SystemExit) as exc_info:
+        run_remove(args)
+
+    assert exc_info.value.code == 1, f"Expected exit code 1, got {exc_info.value.code}"
+    captured = capsys.readouterr()
+    assert "not fully present in .kanon" in captured.err, (
+        f"Expected canonical R232 message in stderr, got: {captured.err!r}"
+    )
+    assert "unknown_source" in captured.err or "unknown_source" in captured.err.lower(), (
+        f"Expected source name in stderr, got: {captured.err!r}"
+    )
+    assert kanon_file.read_bytes() == original_bytes, ".kanon must be byte-for-byte unchanged on non-force error exit"
+
+
+@pytest.mark.unit
+def test_force_with_dry_run_no_changes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Scenario 4: kanon remove unknown_source --dry-run --force produces empty diff.
+
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples
+    (identical to scenario 1 setup).
+    Invocation: kanon remove unknown_source --dry-run --force
+    Assertion: exit code is 0 AND stdout contains no lines beginning with '-'
+    (empty diff) AND .kanon is byte-for-byte unchanged.
+    """
+    kanon_file = tmp_path / ".kanon"
+    kanon_file.write_text(_TWO_KNOWN_CONTENT)
+    original_bytes = kanon_file.read_bytes()
+
+    args = _make_args(["unknown_source"], str(kanon_file), force=True, dry_run=True)
+    result = run_remove(args)
+
+    assert result == 0, f"Expected exit code 0, got {result}"
+    captured = capsys.readouterr()
+    assert not any(line.startswith("-") for line in captured.out.splitlines()), (
+        "dry-run + force with unknown-only source must produce no '-' diff lines in stdout; "
+        f"got stdout: {captured.out!r}"
+    )
+    assert kanon_file.read_bytes() == original_bytes, (
+        ".kanon must be byte-for-byte unchanged after --dry-run --force on unknown source"
+    )

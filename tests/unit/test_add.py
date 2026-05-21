@@ -521,6 +521,32 @@ class TestAddSubparser:
         help_text = buf.getvalue()
         assert "@" in help_text
 
+    @pytest.mark.parametrize(
+        "expected_substring",
+        [
+            "Note: when supplying a PEP 440 range, quote the spec to avoid shell parsing:",
+            "kanon add 'package-a@>=1.0,<2.0'",
+        ],
+        ids=["quoting-reminder-note", "quoting-reminder-example"],
+    )
+    def test_add_help_contains_quoting_reminder(self, expected_substring: str) -> None:
+        """kanon add --help text contains the spec sec4.7 shell-quoting reminder.
+
+        AC-FUNC-001 requires the quoting-reminder note text.
+        AC-FUNC-002 requires the worked example with a range operator.
+        AC-TEST-002 requires this assertion to be parametrized so it can
+        actually fail if the reminder is removed.
+        """
+        add_parser = self._get_add_parser()
+        buf = io.StringIO()
+        add_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        assert expected_substring in help_text, (
+            f"kanon add --help is missing required quoting-reminder text.\n"
+            f"Expected substring: {expected_substring!r}\n"
+            f"Actual help text:\n{help_text}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Tests for spec-split on last '@'

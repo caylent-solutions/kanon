@@ -73,6 +73,10 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "manifest repo is selected automatically."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Note: when supplying a PEP 440 range, quote the spec to avoid shell parsing:\n"
+            "   kanon add 'package-a@>=1.0,<2.0'"
+        ),
     )
 
     parser.add_argument(

@@ -43,3 +43,6 @@ options:
                         within-request and against-existing collisions are
                         reported before a diff is shown (unless --force is
                         also passed).
+
+Note: when supplying a PEP 440 range, quote the spec to avoid shell parsing:
+   kanon add 'package-a@>=1.0,<2.0'

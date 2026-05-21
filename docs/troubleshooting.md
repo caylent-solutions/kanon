@@ -25,10 +25,10 @@ ERROR: list requires a catalog source.
 
 ### Reproducer
 
-```bash
-# Wrong -- shell redirects output to file named "2.0"
-kanon add package-a@>=1.0,<2.0 --catalog-source <url>@main
-```
+Run the `add` command with the spec argument unquoted, for example
+`package-a@>=1.0,<2.0` without surrounding single quotes. The shell treats
+`>=` as a redirect operator, creating a file named `2.0` instead of passing
+the spec to kanon.
 
 ### Fix
 

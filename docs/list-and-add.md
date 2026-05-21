@@ -338,25 +338,19 @@ interprets as redirection operators. Always quote the full
 `<name>@<spec>` argument:
 
 ```bash
-# Single quotes (recommended)
+# Single quotes (recommended) -- quote the full <name>@<spec> argument
 kanon add 'package-a@>=1.0,<2.0' \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 
-# Double quotes also work
-kanon add "package-a@~=1.2" \
+# Single quotes work for any range style, e.g. ~=
+kanon add 'package-a@~=1.2' \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
-
-# Quoting only the spec portion
-kanon add package-a@'>=1.0,<2.0' \
-    --catalog-source \
-    https://example.com/org/manifest-repo.git@main
-
-# WRONG -- shell interprets >= as redirection
-# Do NOT do this:
-kanon add package-a@>=1.0,<2.0
 ```
+
+Do NOT omit the quotes: `package-a@>=1.0,<2.0` passed without quotes causes the
+shell to treat `>=` as a redirect operator, breaking the command silently.
 
 Failing to quote a range spec causes the shell to redirect
 stderr before kanon runs. kanon emits a friendly error when it
@@ -480,13 +474,9 @@ With `--force`, the existing block is replaced.
 
 #### add error 1 -- Unquoted PEP 440 range
 
-Reproducer:
-
-```bash
-kanon add package-a@>=1.0,<2.0 \
-    --catalog-source \
-    https://example.com/org/manifest-repo.git@main
-```
+Reproducer: run the `add` command with the spec argument unquoted, e.g.
+`package-a@>=1.0,<2.0` passed without surrounding single quotes. The shell
+treats `>=` as a redirect operator and the spec is never received by kanon.
 
 Expected message (shell creates an empty redirection target):
 

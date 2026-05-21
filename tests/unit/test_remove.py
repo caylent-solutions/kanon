@@ -715,3 +715,147 @@ class TestRunRemoveWorkspaceLock:
             "run_remove --dry-run must not create .kanon-data/; "
             "the workspace lock is only acquired on the non-dry-run write path"
         )
+
+
+# ---------------------------------------------------------------------------
+# run_remove -- --force flag behavior (AC-FUNC-001 through AC-FUNC-004)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRunRemoveForce:
+    """--force silently skips sources not fully present; known sources are still removed (AC-FUNC-001..004)."""
+
+    _KNOWN_CONTENT = (
+        "GITBASE=https://git.example.com\n"
+        "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
+        "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+        "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+    )
+
+    def test_force_unknown_only_exits_0(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """AC-FUNC-001: remove unknown --force exits 0; file is byte-for-byte unchanged."""
+        kanon_file = tmp_path / ".kanon"
+        original = self._KNOWN_CONTENT
+        kanon_file.write_text(original)
+        args = _make_args(["unknown_source"], str(kanon_file), force=True)
+
+        result = run_remove(args)
+
+        assert result == 0
+        assert kanon_file.read_text() == original
+
+    def test_force_unknown_only_file_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """AC-FUNC-001: file content is byte-for-byte unchanged when the only requested source is absent."""
+        kanon_file = tmp_path / ".kanon"
+        original = self._KNOWN_CONTENT
+        kanon_file.write_text(original)
+        args = _make_args(["unknown_source"], str(kanon_file), force=True)
+
+        run_remove(args)
+
+        assert kanon_file.read_text() == original
+
+    def test_force_known_and_unknown_removes_known_exits_0(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """AC-FUNC-002: remove known unknown --force removes the known triple; unknown is skipped; exits 0."""
+        content = (
+            "GITBASE=https://git.example.com\n"
+            "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
+            "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+        )
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(content)
+        args = _make_args(["known_a", "unknown_source"], str(kanon_file), force=True)
+
+        result = run_remove(args)
+
+        assert result == 0
+        after = kanon_file.read_text()
+        assert "KANON_SOURCE_known_a_URL" not in after
+        assert "KANON_SOURCE_known_a_REVISION" not in after
+        assert "KANON_SOURCE_known_a_PATH" not in after
+        assert "GITBASE=https://git.example.com" in after
+
+    def test_no_force_unknown_exits_1(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """AC-FUNC-003: remove unknown (no --force) still exits 1 with the spec-canonical error."""
+        kanon_file = tmp_path / ".kanon"
+        original = self._KNOWN_CONTENT
+        kanon_file.write_text(original)
+        args = _make_args(["unknown_source"], str(kanon_file), force=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_remove(args)
+
+        assert exc_info.value.code != 0
+        stderr = capsys.readouterr().err
+        assert "not fully present in .kanon" in stderr
+        assert kanon_file.read_text() == original
+
+    def test_force_dry_run_unknown_exits_0_no_diff_output(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """AC-FUNC-004: remove unknown --dry-run --force exits 0; no '-' lines printed; file unchanged."""
+        kanon_file = tmp_path / ".kanon"
+        original = self._KNOWN_CONTENT
+        kanon_file.write_text(original)
+        args = _make_args(["unknown_source"], str(kanon_file), force=True, dry_run=True)
+
+        result = run_remove(args)
+
+        assert result == 0
+        stdout = capsys.readouterr().out
+        assert not any(line.startswith("-") for line in stdout.splitlines())
+        assert kanon_file.read_text() == original
+
+    def test_force_help_text_updated(self) -> None:
+        """AC-FUNC-005: --force help text no longer says 'Reserved for future use'."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        remove_parser = subparsers.choices["remove"]
+        # Find the --force action
+        force_action = next(
+            (a for a in remove_parser._actions if "--force" in (a.option_strings or [])),
+            None,
+        )
+        assert force_action is not None
+        assert "Reserved for future use" not in (force_action.help or "")
+        assert "skip" in (force_action.help or "").lower()
+
+    def test_force_two_unknown_exits_0_file_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """With two unknown sources and --force, both are silently skipped; file is unchanged."""
+        kanon_file = tmp_path / ".kanon"
+        original = self._KNOWN_CONTENT
+        kanon_file.write_text(original)
+        args = _make_args(["unknown_a", "unknown_b"], str(kanon_file), force=True)
+
+        result = run_remove(args)
+
+        assert result == 0
+        assert kanon_file.read_text() == original
+
+    def test_force_atomicity_known_pair_removed_in_single_write(self, tmp_path: pathlib.Path) -> None:
+        """AC-FUNC-002 atomicity: two known sources + one unknown --force writes all known removals atomically."""
+        content = (
+            "GITBASE=https://git.example.com\n"
+            "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
+            "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+            "KANON_SOURCE_known_b_URL=https://example.com/known_b.git\n"
+            "KANON_SOURCE_known_b_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_known_b_PATH=repo-specs/known_b.xml\n"
+        )
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(content)
+        args = _make_args(["known_a", "known_b", "unknown_source"], str(kanon_file), force=True)
+
+        result = run_remove(args)
+
+        assert result == 0
+        after = kanon_file.read_text()
+        assert "KANON_SOURCE_known_a_" not in after
+        assert "KANON_SOURCE_known_b_" not in after
+        assert "GITBASE=https://git.example.com" in after

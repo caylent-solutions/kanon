@@ -122,7 +122,11 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         dest="force",
         action="store_true",
         default=False,
-        help=("Reserved for future use (catalog-membership cross-check). Currently accepted and ignored."),
+        help=(
+            "Silently skip sources that are not fully present in the .kanon file "
+            "(used to clean up partially-orphaned entries). "
+            "Known sources are still removed atomically."
+        ),
     )
 
     parser.add_argument(
@@ -344,6 +348,7 @@ def run_remove(args: argparse.Namespace) -> int:
     """
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
     dry_run: bool = getattr(args, "dry_run", False)
+    force: bool = getattr(args, "force", False)
 
     if not kanon_file.exists():
         print(
@@ -357,11 +362,21 @@ def run_remove(args: argparse.Namespace) -> int:
     lines = raw_text.splitlines(keepends=True)
 
     # Validate ALL names first (atomicity pre-flight).
+    # When --force is set, sources that are not fully present (fewer than 3 keys)
+    # are silently skipped rather than causing a hard error; known sources are
+    # still validated and collected for atomic removal.
     removal_plan: list[tuple[str, str, set[int]]] = []
     for input_name in args.names:
         normalized = derive_source_name(input_name)
-        # _collect_removal_lines calls sys.exit on failure -- no write occurs.
-        indices = _collect_removal_lines(lines, normalized, input_name)
+        if force:
+            matched = _scan_source_lines(lines, normalized)
+            if len(matched) < 3:
+                # Silently skip this source -- it is not fully present.
+                continue
+            indices: set[int] = matched
+        else:
+            # _collect_removal_lines calls sys.exit on failure -- no write occurs.
+            indices = _collect_removal_lines(lines, normalized, input_name)
         removal_plan.append((input_name, normalized, indices))
 
     # Build the combined set of line indices to remove across all sources.

@@ -346,15 +346,28 @@ def test_regression_resolve_call_present_in_install_run_source() -> None:
 
 @pytest.mark.unit
 def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
-    """AC-FUNC-001: resolve() appears before parse_kanonenv and install() in _run source.
+    """Invariant guard: resolve() precedes parse_kanonenv() and install() in _run source.
 
-    Verifies the ordering of the resolve() call relative to the downstream
-    parse_kanonenv() and install() calls. The resolve() must happen first so
-    that both downstream calls always receive an absolute path.
+    Invariant under guard: catalog-source resolution (args.kanonenv_path.resolve())
+    happens BEFORE .kanon is parsed (parse_kanonenv()) AND BEFORE the core
+    install() is invoked, ensuring every downstream call always receives an
+    absolute path regardless of whether --catalog-source was supplied.
 
-    If resolve() appears after parse_kanonenv or install in the source, the
-    fix is incorrectly positioned and E0-INSTALL-RELATIVE may still regress
-    for the first downstream call.
+    How this exercises the invariant under the new install state machine
+    (src/kanon_cli/core/install.py): _run() is the CLI boundary for
+    'kanon install'. When the operator supplies a relative .kanon path -- or
+    when KANON_CATALOG_SOURCE is set -- _run() must resolve the path before
+    delegating to parse_kanonenv() and then to install(). This test inspects
+    the source of _run() and asserts that the character positions satisfy:
+        resolve_pos < parse_pos < install_pos
+    so that any future refactor that moves the resolve() call after either
+    downstream call is immediately caught.
+
+    The install() call in the new state machine is formatted as a multi-line
+    call: install(\n    args.kanonenv_path, ...). The test therefore locates
+    the install invocation by searching for the unique keyword argument
+    'catalog_source=args.catalog_source' that is passed to install() and
+    is not present in any other part of _run().
 
     AC-FUNC-001
     """
@@ -362,7 +375,9 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
 
     resolve_pos = source.find("args.kanonenv_path.resolve()")
     parse_pos = source.find("parse_kanonenv(")
-    install_pos = source.find("install(args.kanonenv_path,")
+    # The install() call in _run is formatted as a multi-line call; locate it
+    # via a keyword argument unique to the install() invocation.
+    install_pos = source.find("catalog_source=args.catalog_source")
 
     assert resolve_pos != -1, (
         "E0-INSTALL-RELATIVE regression guard: resolve() call not found in _run. "
@@ -373,8 +388,11 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
         "The install command must call parse_kanonenv() to validate the .kanon file."
     )
     assert install_pos != -1, (
-        "E0-INSTALL-RELATIVE regression guard: install(args.kanonenv_path, ...) call not found "
-        "in _run. The install command must delegate to core install() after path resolution."
+        "E0-INSTALL-RELATIVE regression guard: catalog_source=args.catalog_source keyword "
+        "argument not found in _run. The install() call must pass catalog_source so "
+        "--catalog-source / KANON_CATALOG_SOURCE is forwarded to the resolver. "
+        "Check that install() is called with catalog_source=args.catalog_source in "
+        "src/kanon_cli/commands/install.py."
     )
 
     assert resolve_pos < parse_pos, (

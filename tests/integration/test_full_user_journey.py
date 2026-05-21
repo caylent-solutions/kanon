@@ -5,7 +5,7 @@ full kanon CLI command chain via subprocess, and asserts on filesystem state,
 stdout/stderr output, and mock claude binary invocations where applicable.
 
 Tests marked @pytest.mark.integration exercise:
-  - bootstrap -> install -> clean roundtrips
+  - write .kanon -> install -> clean roundtrips
   - marketplace plugin lifecycle with a mock claude binary
   - validate xml and validate marketplace subcommands
   - version constraint resolution
@@ -47,6 +47,13 @@ _PLUGIN_NAME = "test-plugin"
 _MARKETPLACE_DIR_REL = ".claude-marketplaces"
 _GITIGNORE_PACKAGES = ".packages/"
 _GITIGNORE_KANON_DATA = ".kanon-data/"
+# Dummy catalog source used in catalog_source= arguments so install() passes
+# catalog-source validation.  The _resolve_ref_to_sha function is mocked by
+# the integration conftest autouse fixture, so the URL need not be real.
+_DUMMY_CATALOG_SOURCE = "https://example.com/catalog.git@main"
+# Minimal well-formed manifest XML written by fake_repo_sync helpers so that
+# install()'s include-walker can parse the manifest path after sync.
+_EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +299,21 @@ def _read_claude_invocations(bin_dir: pathlib.Path) -> list[str]:
     return [line.strip() for line in log_file.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _write_empty_manifest(repo_dir: str, manifest_filename: str = _MANIFEST_FILENAME) -> None:
+    """Write a minimal empty manifest XML to repo_dir/manifest_filename.
+
+    Used by fake_repo_sync helpers so that install()'s include-walker can
+    parse the manifest path after sync without a real git clone.
+
+    Args:
+        repo_dir: The source directory passed by install() to repo_sync.
+        manifest_filename: Manifest file name relative to repo_dir.
+    """
+    manifest_path = pathlib.Path(repo_dir) / manifest_filename
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # AC-TEST-001: test_full_journey_bootstrap_install_clean
 # ---------------------------------------------------------------------------
@@ -299,22 +321,20 @@ def _read_claude_invocations(bin_dir: pathlib.Path) -> list[str]:
 
 @pytest.mark.integration
 class TestFullJourneyBootstrapInstallClean:
-    """AC-TEST-001: bootstrap -> install -> verify -> clean -> verify clean state."""
+    """AC-TEST-001: write .kanon directly -> install -> verify -> clean -> verify clean state."""
 
     def test_full_journey_bootstrap_install_clean(self, tmp_path: pathlib.Path) -> None:
-        """Create a real catalog repo, bootstrap a project, install, then clean.
+        """Create a real catalog repo, write .kanon directly, install, then clean.
 
         Steps:
         1. Create a bare content repo with one committed file.
         2. Create a bare manifest repo referencing the content repo.
         3. Create a local catalog repo with a .kanon pointing at the manifest repo.
-        4. Create a project directory.
-        5. Run: kanon bootstrap my-pkg --catalog-source file://... --output-dir project/
-        6. Verify .kanon created in project/.
-        7. Run: kanon install (with mocked repo operations so no network needed).
-        8. Verify .packages/ populated, .kanon-data/ created, .gitignore updated.
-        9. Run: kanon clean.
-        10. Verify .packages/ gone, .kanon-data/ gone.
+        4. Create a project directory and write .kanon directly from the catalog template.
+        5. Run: kanon install (with mocked repo operations so no network needed).
+        6. Verify .packages/ populated, .kanon-data/ created, .gitignore updated.
+        7. Run: kanon clean.
+        8. Verify .packages/ gone, .kanon-data/ gone.
         """
         repos_dir = tmp_path / "repos"
         repos_dir.mkdir()
@@ -335,25 +355,16 @@ class TestFullJourneyBootstrapInstallClean:
         catalog_bare = _create_catalog_repo(repos_dir, kanonenv_content)
 
         project_dir = tmp_path / "project"
-        bootstrap_result = _run_kanon(
-            "bootstrap",
-            _CATALOG_PKG_NAME,
-            "--catalog-source",
-            f"file://{catalog_bare}@main",
-            "--output-dir",
-            str(project_dir),
-        )
-        assert bootstrap_result.returncode == 0, (
-            f"bootstrap failed with exit {bootstrap_result.returncode}.\n"
-            f"  stdout: {bootstrap_result.stdout!r}\n"
-            f"  stderr: {bootstrap_result.stderr!r}"
-        )
+        project_dir.mkdir()
 
         kanonenv_path = project_dir / ".kanon"
-        assert kanonenv_path.is_file(), ".kanon must exist after bootstrap"
+        kanonenv_path.write_text(kanonenv_content, encoding="utf-8")
+        assert kanonenv_path.is_file(), ".kanon must exist"
 
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
-            pkg = pathlib.Path(repo_dir) / ".packages" / "synced-pkg"
+            repo_path = pathlib.Path(repo_dir)
+            _write_empty_manifest(repo_dir)
+            pkg = repo_path / ".packages" / "synced-pkg"
             pkg.mkdir(parents=True, exist_ok=True)
             (pkg / "tool.sh").write_text("#!/bin/sh\necho tool\n")
 
@@ -361,8 +372,13 @@ class TestFullJourneyBootstrapInstallClean:
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
+            patch.dict("os.environ", {"KANON_ALLOW_INSECURE_REMOTES": "1"}),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=f"file://{catalog_bare}@main",
+            )
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must exist after install"
         assert (project_dir / ".packages" / "synced-pkg").is_symlink(), (
@@ -427,6 +443,7 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
         remove_calls: list[str] = []
 
         def fake_repo_sync_mp(repo_dir: str, **kwargs) -> None:
+            _write_empty_manifest(repo_dir)
             mp_dir = marketplaces_dir / _MARKETPLACE_NAME
             mp_dir.mkdir(parents=True, exist_ok=True)
             cp_dir = mp_dir / ".claude-plugin"
@@ -457,7 +474,11 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
                 side_effect=lambda claude, pname, mpname: install_calls.append(f"{pname}@{mpname}") or True,
             ),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         assert len(register_calls) >= 1, f"Expected at least one marketplace register call, got: {register_calls!r}"
         assert len(install_calls) >= 1, f"Expected at least one plugin install call, got: {install_calls!r}"
@@ -556,12 +577,20 @@ class TestFullJourneyBootstrapInstallValidateClean:
             encoding="utf-8",
         )
 
+        def fake_repo_sync_validate(repo_dir: str, **kwargs) -> None:
+            _write_empty_manifest(repo_dir)
+
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_validate),
+            patch.dict("os.environ", {"KANON_ALLOW_INSECURE_REMOTES": "1"}),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
 
@@ -642,13 +671,21 @@ class TestFullJourneyWithVersionConstraints:
             resolved_calls.append((url, rev_spec))
             return "refs/tags/1.1.0"
 
+        def fake_repo_sync_version(repo_dir: str, **kwargs) -> None:
+            _write_empty_manifest(repo_dir)
+
         with (
             patch("kanon_cli.core.install.resolve_version", side_effect=fake_resolve_version),
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_version),
+            patch.dict("os.environ", {"KANON_ALLOW_INSECURE_REMOTES": "1"}),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         assert len(resolved_calls) == 1, f"resolve_version must be called once per source, got: {resolved_calls!r}"
         called_rev_spec = resolved_calls[0][1]
@@ -706,7 +743,9 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
         )
 
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
-            pkg = pathlib.Path(repo_dir) / ".packages" / "auto-pkg"
+            repo_path = pathlib.Path(repo_dir)
+            _write_empty_manifest(repo_dir)
+            pkg = repo_path / ".packages" / "auto-pkg"
             pkg.mkdir(parents=True, exist_ok=True)
             (pkg / "script.sh").write_text("#!/bin/sh\necho auto\n")
 
@@ -715,7 +754,11 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
+            install(
+                discovered,
+                lock_file_path=discovered.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must be created relative to project/"
         assert (project_dir / ".packages" / "auto-pkg").is_symlink(), ".packages/auto-pkg must be a symlink"
@@ -765,9 +808,11 @@ class TestFullJourneyMultiSourceWithMarketplace:
         synced_sources: list[str] = []
 
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
-            source_name = pathlib.Path(repo_dir).name
+            repo_path = pathlib.Path(repo_dir)
+            source_name = repo_path.name
             synced_sources.append(source_name)
             if source_name == "mp":
+                _write_empty_manifest(repo_dir)
                 mp_dir = marketplaces_dir / _MARKETPLACE_NAME
                 mp_dir.mkdir(parents=True, exist_ok=True)
                 cp_dir = mp_dir / ".claude-plugin"
@@ -781,7 +826,8 @@ class TestFullJourneyMultiSourceWithMarketplace:
                     encoding="utf-8",
                 )
             else:
-                pkg = pathlib.Path(repo_dir) / ".packages" / "non-mp-pkg"
+                _write_empty_manifest(repo_dir, manifest_filename="meta.xml")
+                pkg = repo_path / ".packages" / "non-mp-pkg"
                 pkg.mkdir(parents=True, exist_ok=True)
                 (pkg / "tool.sh").write_text("#!/bin/sh\necho tool\n")
 
@@ -807,7 +853,11 @@ class TestFullJourneyMultiSourceWithMarketplace:
                 side_effect=lambda claude, pname, mpname: install_calls.append(pname) or True,
             ),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         assert "mp" in synced_sources, f"'mp' source must be synced, got: {synced_sources!r}"
         assert "pkgs" in synced_sources, f"'pkgs' source must be synced, got: {synced_sources!r}"
@@ -873,15 +923,22 @@ class TestFullJourneyEnvVarOverrides:
         def fake_repo_envsubst(repo_dir: str, env_vars: dict) -> None:
             envsubst_calls.append(dict(env_vars))
 
+        def fake_repo_sync_env(repo_dir: str, **kwargs) -> None:
+            _write_empty_manifest(repo_dir)
+
         original_gitbase = os.environ.get("GITBASE")
         try:
             os.environ["GITBASE"] = "override-base"
             with (
                 patch("kanon_cli.repo.repo_init"),
                 patch("kanon_cli.repo.repo_envsubst", side_effect=fake_repo_envsubst),
-                patch("kanon_cli.repo.repo_sync"),
+                patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_env),
             ):
-                install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+                install(
+                    kanonenv_path,
+                    lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                    catalog_source=_DUMMY_CATALOG_SOURCE,
+                )
         finally:
             if original_gitbase is None:
                 os.environ.pop("GITBASE", None)
@@ -929,7 +986,9 @@ class TestFullJourneyInstallTwiceThenClean:
         )
 
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
-            pkg = pathlib.Path(repo_dir) / ".packages" / "idempotent-pkg"
+            repo_path = pathlib.Path(repo_dir)
+            _write_empty_manifest(repo_dir)
+            pkg = repo_path / ".packages" / "idempotent-pkg"
             pkg.mkdir(parents=True, exist_ok=True)
             (pkg / "script.sh").write_text("#!/bin/sh\necho idempotent\n")
 
@@ -938,7 +997,11 @@ class TestFullJourneyInstallTwiceThenClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         first_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
         assert first_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
@@ -950,7 +1013,11 @@ class TestFullJourneyInstallTwiceThenClean:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                catalog_source=_DUMMY_CATALOG_SOURCE,
+            )
 
         second_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
         assert second_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
@@ -1003,10 +1070,12 @@ class TestFullJourneyErrorRecovery:
         )
 
         def fake_repo_sync_partial(repo_dir: str, **kwargs) -> None:
-            source_name = pathlib.Path(repo_dir).name
+            repo_path = pathlib.Path(repo_dir)
+            source_name = repo_path.name
             if source_name == "bad":
                 raise RepoCommandError("sync failed: invalid URL")
-            pkg = pathlib.Path(repo_dir) / ".packages" / "good-pkg"
+            _write_empty_manifest(repo_dir)
+            pkg = repo_path / ".packages" / "good-pkg"
             pkg.mkdir(parents=True, exist_ok=True)
             (pkg / "script.sh").write_text("#!/bin/sh\necho good\n")
 
@@ -1016,7 +1085,11 @@ class TestFullJourneyErrorRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_partial),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: invalid URL"):
-                install(kanonenv_path, lock_file_path=kanonenv_path.parent / ".kanon.lock")
+                install(
+                    kanonenv_path,
+                    lock_file_path=kanonenv_path.parent / ".kanon.lock",
+                    catalog_source=_DUMMY_CATALOG_SOURCE,
+                )
 
         partial_exists = (project_dir / ".kanon-data" / "sources" / "good").is_dir() or (
             project_dir / ".kanon-data" / "sources" / "bad"

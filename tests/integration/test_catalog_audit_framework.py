@@ -41,9 +41,19 @@ def _run_kanon(
 
 @pytest.fixture()
 def empty_manifest_repo(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Create a minimal manifest-repo skeleton with repo-specs/ but no XML files."""
+    """Create a minimal manifest-repo skeleton with repo-specs/ but no XML files.
+
+    Initializes a bare git repository so that kanon catalog audit's tag-format
+    check can run git ls-remote --tags against the directory without error.
+    """
     repo_specs = tmp_path / "repo-specs"
     repo_specs.mkdir()
+    subprocess.run(
+        ["git", "init", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     return tmp_path
 
 

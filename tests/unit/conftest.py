@@ -3,14 +3,47 @@
 This conftest is loaded automatically by pytest for every test under
 tests/unit/.  It provides fixtures that prevent network I/O in unit
 tests that call doctor_command with a lockfile.
+
+It also exports shared helper functions used by multiple test modules:
+
+- ``_make_ls_remote_stub``: builds a callable stub that simulates
+  ``git ls-remote --tags`` output for injecting into
+  ``_check_tag_format`` in catalog audit tests.
 """
 
 from __future__ import annotations
 
-from collections.abc import Generator
+import pathlib
+from collections.abc import Callable, Generator
 from unittest.mock import patch
 
 import pytest
+
+
+def _make_ls_remote_stub(tags: list[str]) -> Callable[[pathlib.Path], str]:
+    """Return a callable stub that produces ``git ls-remote --tags`` output.
+
+    The stub mimics the output format of ``git ls-remote --tags <path>``:
+    each line is ``<sha>\\trefs/tags/<tag-name>``.
+
+    Shared by ``test_catalog_audit_tag_format.py`` and
+    ``test_catalog_audit_project_tag_format.py`` to avoid duplicate helper
+    definitions.
+
+    Args:
+        tags: List of tag name strings (without ``refs/tags/`` prefix).
+
+    Returns:
+        A callable accepting a ``target_path`` argument and returning the
+        raw stdout string of the simulated ``git ls-remote --tags`` command.
+    """
+
+    def _stub(target_path: pathlib.Path) -> str:
+        sha = "a" * 40  # deterministic placeholder SHA
+        lines = [f"{sha}\trefs/tags/{tag}" for tag in tags]
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    return _stub
 
 
 @pytest.fixture(autouse=True)

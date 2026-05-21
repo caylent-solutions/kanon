@@ -17,41 +17,12 @@ AC-FUNC-001 through AC-FUNC-009.
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Callable
 
 import pytest
 
 from kanon_cli.commands.catalog import AUDIT_CHECK_REGISTRY, AuditFinding
 from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT
-
-
-# ---------------------------------------------------------------------------
-# ls-remote stub helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_ls_remote_stub(tags: list[str]) -> Callable[[pathlib.Path], str]:
-    """Return a callable stub that produces git ls-remote --tags output for the given tag names.
-
-    The stub mimics the output format of ``git ls-remote --tags <path>``:
-    each line is ``<sha>\\trefs/tags/<tag-name>``.
-
-    Args:
-        tags: List of tag name strings (without ``refs/tags/`` prefix).
-
-    Returns:
-        A zero-argument callable (accepting only target_path) that returns the
-        raw stdout string of the simulated ``git ls-remote --tags`` command.
-    """
-
-    def _stub(target_path: pathlib.Path) -> str:
-        lines = []
-        for tag in tags:
-            sha = "a" * 40  # deterministic placeholder SHA
-            lines.append(f"{sha}\trefs/tags/{tag}")
-        return "\n".join(lines) + ("\n" if lines else "")
-
-    return _stub
+from tests.unit.conftest import _make_ls_remote_stub
 
 
 def _run_check(

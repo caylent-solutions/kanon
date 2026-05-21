@@ -165,6 +165,18 @@ An empty audit produces `{"findings": []}`.
 
 Use `kanon catalog audit` for those checks.
 
+**Note on soft-spot 5 and `<project>`-referenced tags:**
+
+`kanon catalog audit --check tag-format` covers ALL tags in the manifest repo,
+including tags referenced by `<project revision="..."/>` elements. Spec section 0.4
+describes a check that warns on every `<project>` tag whose last path component is
+not a valid PEP 440 version; this is satisfied by the existing `--check tag-format`
+implementation (soft-spot rule 5, spec section 3.5) because the manifest repo's
+`git ls-remote --tags` output already includes those tags. No separate
+`--check project-tag-format` surface exists or is needed.
+
+Resolution recorded: `(a) R3 == R89 / soft-spot 5; no new check required.`
+
 **Example:**
 
 ```bash

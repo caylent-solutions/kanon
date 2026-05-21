@@ -195,23 +195,24 @@ class TestCS:
                 extra_env={"KANON_CATALOG_SOURCE": catalog_source},
             )
 
-        # Doc pass criterion 1: exit code 0, stdout contains entry name
-        assert list_result.returncode == 0, (
-            f"{cs_id}: bootstrap list exited {list_result.returncode}\n"
+        # Post-branch deprecation: bootstrap is a shim that exits 3 (spec R352-R368).
+        # The catalog is never resolved; no files are created in out_dir.
+        assert list_result.returncode == 3, (
+            f"{cs_id}: bootstrap list expected exit 3 (shim), got {list_result.returncode}\n"
             f"stdout={list_result.stdout!r}\nstderr={list_result.stderr!r}"
         )
-        assert _CATALOG_ENTRY in list_result.stdout, (
-            f"{cs_id}: expected '{_CATALOG_ENTRY}' in bootstrap list stdout: {list_result.stdout!r}"
+        assert "WARN:" in list_result.stderr, (
+            f"{cs_id}: expected WARN on stderr from bootstrap list: {list_result.stderr!r}"
         )
 
-        # Doc pass criterion 2: constraint resolves to the expected tag
-        assert bootstrap_result.returncode == 0, (
-            f"{cs_id}: bootstrap test-entry exited {bootstrap_result.returncode}\n"
+        assert bootstrap_result.returncode == 3, (
+            f"{cs_id}: bootstrap {_CATALOG_ENTRY!r} expected exit 3 (shim), got {bootstrap_result.returncode}\n"
             f"stdout={bootstrap_result.stdout!r}\nstderr={bootstrap_result.stderr!r}"
         )
-        version_file = out_dir / "version.txt"
-        assert version_file.exists(), f"{cs_id}: version.txt not found in output dir {out_dir}"
-        actual_tag = version_file.read_text().strip()
-        assert actual_tag == expected_tag, (
-            f"{cs_id}: constraint '{constraint}' resolved to tag '{actual_tag}', expected '{expected_tag}'"
+        assert "WARN:" in bootstrap_result.stderr, (
+            f"{cs_id}: expected WARN on stderr from bootstrap {_CATALOG_ENTRY!r}: {bootstrap_result.stderr!r}"
+        )
+        # The shim must not clone or write any files.
+        assert not (out_dir / "version.txt").exists(), (
+            f"{cs_id}: version.txt must NOT exist (shim must not resolve catalog): {out_dir}"
         )

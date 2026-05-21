@@ -79,7 +79,10 @@ class TestEC:
         )
         # Inherit the parent env but strip CLAUDE_MARKETPLACES_DIR so the
         # subprocess hits the documented "not defined" branch.
+        # KANON_CATALOG_SOURCE is provided so the catalog-source check does not
+        # mask the marketplace-dir check (which is the error this test targets).
         env_no_mkt = {k: v for k, v in os.environ.items() if k != "CLAUDE_MARKETPLACES_DIR"}
+        env_no_mkt["KANON_CATALOG_SOURCE"] = "file:///does/not/matter@main"
         result = run_kanon("install", ".kanon", cwd=tmp_path, env=env_no_mkt)
         assert result.returncode == 1, f"stderr={result.stderr!r}"
         assert "KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined" in result.stderr, (

@@ -110,7 +110,11 @@ class TestLF:
             marketplace_install="false",
         )
 
-        result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, (
             f"kanon install exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"

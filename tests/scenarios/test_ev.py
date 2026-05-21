@@ -119,9 +119,14 @@ class TestEV:
             extra_lines=["GITBASE=https://default.example.com"],
         )
 
+        catalog_source = f"{manifest_url}@main"
         result = kanon_install(
             work_dir,
-            extra_env={"GITBASE": "https://override.example.com"},
+            extra_env={
+                "GITBASE": "https://override.example.com",
+                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_ALLOW_INSECURE_REMOTES": "1",
+            },
         )
 
         assert result.returncode == 0, (
@@ -149,9 +154,14 @@ class TestEV:
             ],
         )
 
+        catalog_source = f"{manifest_url}@main"
         result = kanon_install(
             work_dir,
-            extra_env={"KANON_MARKETPLACE_INSTALL": "false"},
+            extra_env={
+                "KANON_MARKETPLACE_INSTALL": "false",
+                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_ALLOW_INSECURE_REMOTES": "1",
+            },
         )
 
         assert result.returncode == 0, (
@@ -172,7 +182,7 @@ class TestEV:
         kanon_clean(work_dir, extra_env={"KANON_MARKETPLACE_INSTALL": "false"})
 
     def test_ev_03_kanon_catalog_source_for_bootstrap(self, tmp_path: pathlib.Path) -> None:
-        """EV-03: KANON_CATALOG_SOURCE env var points bootstrap list at a custom catalog repo."""
+        """EV-03: bootstrap is a deprecation shim (exit 3 + WARN) regardless of KANON_CATALOG_SOURCE."""
         catalog_bare = _build_custom_catalog_repo(tmp_path / "fixtures")
 
         # KANON_CATALOG_SOURCE format: <git_url>@<ref>
@@ -184,7 +194,9 @@ class TestEV:
             extra_env={"KANON_CATALOG_SOURCE": catalog_source},
         )
 
-        assert result.returncode == 0, (
-            f"kanon bootstrap list exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        # Post-branch deprecation: bootstrap exits 3 (shim) per spec R352-R368.
+        assert result.returncode == 3, (
+            f"kanon bootstrap list expected exit 3 (shim), got {result.returncode}\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "my-template" in result.stdout, f"'my-template' not found in stdout: {result.stdout!r}"
+        assert "WARN:" in result.stderr, f"Expected WARN on stderr from bootstrap list: {result.stderr!r}"

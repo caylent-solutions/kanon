@@ -97,7 +97,11 @@ class TestTCClean:
             marketplace_install="false",
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -135,7 +139,11 @@ class TestTCClean:
             marketplace_install="false",
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"

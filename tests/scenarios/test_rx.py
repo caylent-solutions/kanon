@@ -195,7 +195,11 @@ def _run_rx_scenario(
             ("pep", manifest_bare.as_uri(), "main", xml_filename),
         ],
     )
-    return kanon_install(work_dir)
+    catalog_source = f"{manifest_bare.as_uri()}@main"
+    return kanon_install(
+        work_dir,
+        extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+    )
 
 
 def _resolved_tag(work_dir: pathlib.Path) -> str:

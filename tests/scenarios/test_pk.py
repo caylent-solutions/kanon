@@ -211,7 +211,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk01.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk01.xml")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk01")
 
@@ -234,7 +237,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk02.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk02.xml", revision="main")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk02")
 
@@ -265,7 +271,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk03.xml": xml}, with_tags=True)
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk03.xml", revision="refs/tags/~=1.0.0")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk03")
 
@@ -291,7 +300,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk04.xml": xml}, with_tags=True)
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk04.xml", revision="refs/tags/>=1.0.0,<2.0.0")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk04")
 
@@ -342,9 +354,11 @@ class TestPK:
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk06", "path": ".packages/pk06", "revision": "main"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk06.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk06.xml")
+        _cs = f"{mfst_bare.as_uri()}@main"
+        _cs_env = {"KANON_CATALOG_SOURCE": _cs, "KANON_ALLOW_INSECURE_REMOTES": "1"}
 
         # First install
-        result = kanon_install(work_dir)
+        result = kanon_install(work_dir, extra_env=_cs_env)
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk06")
 
@@ -354,7 +368,7 @@ class TestPK:
         assert not (work_dir / ".packages").exists(), ".packages/ not removed by first clean"
 
         # Second install
-        result = kanon_install(work_dir)
+        result = kanon_install(work_dir, extra_env=_cs_env)
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk06")
 
@@ -381,7 +395,11 @@ class TestPK:
 
         result = kanon_install(
             work_dir,
-            extra_env={"KANON_SOURCE_pk_REVISION": "refs/tags/~=2.0.0"},
+            extra_env={
+                "KANON_SOURCE_pk_REVISION": "refs/tags/~=2.0.0",
+                "KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main",
+                "KANON_ALLOW_INSECURE_REMOTES": "1",
+            },
         )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk07")
@@ -409,7 +427,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk08.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk08.xml", revision="main")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert result.returncode != 0, (
             f"Expected non-zero exit for invalid constraint ==* but got 0\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -443,7 +464,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk09.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk09.xml")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk09")
         _assert_symlink_exists(work_dir, "pk09-extra")
@@ -476,7 +500,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk10.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk10.xml")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk10")
         linkfile_target = work_dir / ".packages" / "pk10-main.py"
@@ -516,7 +543,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk11.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk11.xml")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
         _assert_symlink_exists(work_dir, "pk11a")
         _assert_symlink_exists(work_dir, "pk11b")
@@ -552,7 +582,10 @@ class TestPK:
             "KANON_SOURCE_b_PATH=pk12.xml\n"
         )
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_a.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert result.returncode != 0, (
             f"Expected non-zero exit for package name collision but got 0\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -577,7 +610,10 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk13.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk13.xml")
 
-        result = kanon_install(work_dir)
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_ok(result, work_dir)
 
         gitignore = work_dir / ".gitignore"

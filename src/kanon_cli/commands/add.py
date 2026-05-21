@@ -258,8 +258,14 @@ def _build_entry_catalog(
             metadata = _parse_catalog_metadata(xml_path)
             entries.append((metadata, xml_path, url))
         except CatalogMetadataParseError as exc:
-            error_paths.append(str(xml_path))
-            print(f"ERROR: {exc}", file=sys.stderr)
+            # Use the manifest-relative path in all error output so messages
+            # are reproducible regardless of the temp clone directory.
+            # Canonical fixture: tests/fixtures/errors/missing-required-metadata-field.txt
+            # Spec section: spec/kanon-list-add-lock-features-spec.md Section 3.
+            rel_path = str(xml_path.relative_to(manifest_root))
+            error_paths.append(rel_path)
+            error_msg = str(exc).replace(str(xml_path), rel_path)
+            print(f"ERROR: {error_msg}", file=sys.stderr)
 
     if error_paths:
         offending = ", ".join(error_paths)
@@ -709,11 +715,18 @@ def run_add(args: argparse.Namespace) -> int:
         )
 
         # Against-existing collision detection (runs for both normal and dry-run paths).
+        # Use the user's original version spec in the collision message so the
+        # error shows intent (e.g. "==2.0.0") rather than the resolved git ref
+        # (e.g. "refs/tags/v2.0.0").  When the user gave no explicit spec
+        # (spec is None), the resolved_revision is the auto-selected latest
+        # version and is the most informative value to display.
+        # Canonical fixture: tests/fixtures/errors/source-collision.txt.
+        # Spec section: spec/kanon-list-add-lock-features-spec.md Section 4.0.
         _check_against_existing_blocks(
             kanon_file=kanon_file,
             source_name=source_name,
             new_url=entry_url,
-            new_revision=resolved_revision,
+            new_revision=spec if spec is not None else resolved_revision,
             new_path=rel_path,
             force=force,
         )

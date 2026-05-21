@@ -82,9 +82,38 @@ _GIT_USER_NAME: str = "Error Snapshot Test"
 # Default branch name used for all local bare repos in triggers.
 _GIT_DEFAULT_BRANCH: str = "main"
 
+# Canonical example HTTPS URL used in error-snapshot fixtures for source-collision
+# and missing-required-metadata-field.  Tests redirect this URL to a local bare
+# repo via a git ``url.<real>.insteadOf = <canonical>`` rewrite so that git
+# operations succeed without a real network connection while the error messages
+# show the canonical URL rather than the runtime file:// path.
+_CANONICAL_CATALOG_URL: str = "https://example.com/org/manifest-repo.git"
+
 # ---------------------------------------------------------------------------
 # Workspace builder helpers
 # ---------------------------------------------------------------------------
+
+
+def _write_git_insteadof_config(config_path: pathlib.Path, canonical_url: str, local_url: str) -> None:
+    """Write a git config file that rewrites ``canonical_url`` to ``local_url``.
+
+    Used to redirect an example HTTPS catalog URL to a local bare repo so that
+    git operations inside the kanon CLI succeed without a real network connection
+    while error messages display the canonical URL.
+
+    The config uses the ``url.<local>.insteadOf = <canonical>`` form so that
+    every git subcommand (clone, ls-remote, fetch) transparently substitutes
+    the local path for the canonical URL.
+
+    Args:
+        config_path: Destination path for the git config file.
+        canonical_url: The canonical HTTPS URL that should appear in error messages.
+        local_url: The local file:// URL that git operations should actually use.
+    """
+    config_path.write_text(
+        "[url " + f'"{local_url}"' + f"]\n\tinsteadOf = {canonical_url}\n",
+        encoding="utf-8",
+    )
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -247,15 +276,23 @@ def _build_missing_catalog_source(tmp_path: pathlib.Path) -> pathlib.Path:
 def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
     """Workspace for lockfile-hash-mismatch.
 
-    Writes a .kanon file, computes its real kanon_hash, then writes a
-    .kanon.lock with a deliberately different kanon_hash so that the
-    hash-mismatch check fires immediately on ``kanon install``.
-    """
-    from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
+    Writes a .kanon file whose source triples hash to the deterministic value
+    sha256:2391f761252aa51bfed01b99b60deb08da28644fb84c9b7a5037d42ff111df1a,
+    then writes a .kanon.lock with a fixed wrong kanon_hash
+    (sha256: followed by 64 'a' chars) so that the hash-mismatch check fires
+    immediately on ``kanon install``.
 
+    The fixed wrong hash and the deterministic current hash match the values
+    in tests/fixtures/errors/lockfile-hash-mismatch.txt exactly, making the
+    snapshot test reproducible across environments.
+    """
     ws = tmp_path / "ws"
     ws.mkdir()
 
+    # .kanon content is fixed so that kanon_hash() always returns the same
+    # digest (sha256:2391f7...) regardless of the test environment.
+    # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt.
+    # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         "KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git\n"
@@ -264,13 +301,10 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
         encoding="utf-8",
     )
 
-    actual_hash = _kanon_hash(kanon_file)
-    # Build a wrong hash by toggling one hex digit in the actual hash.
-    assert actual_hash.startswith("sha256:"), f"Unexpected hash format: {actual_hash!r}"
-    hex_part = actual_hash[len("sha256:") :]
-    # Flip the first hex char between 'a' and 'b' to guarantee mismatch.
-    flipped = ("b" if hex_part[0] == "a" else "a") + hex_part[1:]
-    wrong_hash = f"sha256:{flipped}"
+    # The fixed wrong hash is a 64-'a' hex string, matching the fixture's
+    # "Lockfile kanon_hash" line. The mismatch check fires because this
+    # differs from the real hash of the .kanon file above.
+    wrong_hash = "sha256:" + "a" * 64
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
@@ -357,13 +391,27 @@ def _build_source_collision(tmp_path: pathlib.Path) -> pathlib.Path:
     bare = _create_bare_catalog_repo(tmp_path, xml_body=_full_catalog_xml("example_pkg"))
     (tmp_path / "_bare_path").write_text(str(bare), encoding="utf-8")
 
+    # Write a git insteadOf config so that kanon add --catalog-source
+    # https://example.com/org/manifest-repo.git@... is silently rewritten
+    # to the local bare clone path.  This keeps the canonical HTTPS URL in
+    # the error message (matching the fixture) while avoiding a real network
+    # call.  The config file path is stored in _git_cfg_path for use in
+    # _make_cli_args via the GIT_CONFIG_GLOBAL env var.
+    # Canonical fixture: tests/fixtures/errors/source-collision.txt.
+    # Spec section: spec/kanon-list-add-lock-features-spec.md Section 4.0.
+    git_cfg = tmp_path / "_git_insteadof.cfg"
+    _write_git_insteadof_config(git_cfg, _CANONICAL_CATALOG_URL, f"file://{bare}")
+    (tmp_path / "_git_cfg_path").write_text(str(git_cfg), encoding="utf-8")
+
     ws = tmp_path / "ws"
     ws.mkdir()
 
     # Pre-populate .kanon with the example_pkg triple so the second add collides.
+    # Both the existing entry and the second add use the canonical HTTPS URL,
+    # matching the fixture's expected error text.
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
-        "KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git\n"
+        f"KANON_SOURCE_example_pkg_URL={_CANONICAL_CATALOG_URL}\n"
         "KANON_SOURCE_example_pkg_REVISION===1.0.0\n"
         "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n",
         encoding="utf-8",
@@ -399,8 +447,15 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
 
     sha_a = "aabbccdd1122334455667788990011223344556677889900aabbccdd11223344"
     sha_b = "1122334455667788990011223344556677889900aabbccdd11223344aabbccdd"
-    canonical_url = "https://example.com/vendor/shared-lib"
 
+    # The lockfile contains only [[sources]] entries -- no [[sources.projects]].
+    # Each top-level source entry IS the project being conflict-checked here
+    # (source URL == shared-lib URL, as in a single-project manifest repo).
+    # Adding [[sources.projects]] with the same URL would produce duplicate
+    # lines in CanonicalUrlConflictError because _gather_resolved_projects
+    # collects both the source entry and its project entries.
+    # Canonical fixture: tests/fixtures/errors/conflict-detected.txt.
+    # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
         "schema_version = 1\n"
@@ -416,29 +471,13 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
         f'resolved_sha = "{sha_a}"\n'
         'path = "repo-specs/shared-lib-marketplace.xml"\n'
         "\n"
-        "[[sources.projects]]\n"
-        'name = "shared-lib"\n'
-        'url = "https://example.com/vendor/shared-lib.git"\n'
-        f'canonical_url = "{canonical_url}"\n'
-        'revision_spec = "main"\n'
-        'resolved_ref = "refs/heads/main"\n'
-        f'resolved_sha = "{sha_a}"\n'
-        "\n"
         "[[sources]]\n"
         'name = "source_b"\n'
         'url = "https://example.com/vendor/shared-lib.git"\n'
         'revision_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_b}"\n'
-        'path = "repo-specs/shared-lib-marketplace.xml"\n'
-        "\n"
-        "[[sources.projects]]\n"
-        'name = "shared-lib"\n'
-        'url = "https://example.com/vendor/shared-lib.git"\n'
-        f'canonical_url = "{canonical_url}"\n'
-        'revision_spec = "main"\n'
-        'resolved_ref = "refs/heads/main"\n'
-        f'resolved_sha = "{sha_b}"\n',
+        'path = "repo-specs/shared-lib-marketplace.xml"\n',
         encoding="utf-8",
     )
     return ws
@@ -471,6 +510,17 @@ def _build_missing_required_metadata_field(tmp_path: pathlib.Path) -> pathlib.Pa
         xml_filename="example-pkg-marketplace.xml",
     )
     (tmp_path / "_bare_path").write_text(str(bare), encoding="utf-8")
+
+    # Write a git insteadOf config so that kanon add --catalog-source
+    # https://example.com/org/manifest-repo.git@... resolves to the local
+    # bare clone.  This makes the "manifest repo `...`" error line show
+    # the canonical HTTPS URL from the fixture rather than the runtime
+    # file:// path.
+    # Canonical fixture: tests/fixtures/errors/missing-required-metadata-field.txt.
+    # Spec section: spec/kanon-list-add-lock-features-spec.md Section 3.
+    git_cfg = tmp_path / "_git_insteadof.cfg"
+    _write_git_insteadof_config(git_cfg, _CANONICAL_CATALOG_URL, f"file://{bare}")
+    (tmp_path / "_git_cfg_path").write_text(str(git_cfg), encoding="utf-8")
 
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -567,28 +617,41 @@ def _make_cli_args(slug: str, tmp_path: pathlib.Path) -> tuple[list[str], "dict[
         ], None
 
     if slug == "source-collision":
+        # Use the canonical HTTPS URL as the catalog source.  A git insteadOf
+        # rewrite (written by _build_source_collision) redirects it to the local
+        # bare repo so git operations succeed without a network call.  The
+        # GIT_CONFIG_GLOBAL env var activates the rewrite inside the subprocess.
+        # Canonical fixture: tests/fixtures/errors/source-collision.txt.
+        git_cfg = (tmp_path / "_git_cfg_path").read_text(encoding="utf-8").strip()
         return [
             "add",
             "example_pkg@==2.0.0",
             "--catalog-source",
-            _bare_catalog_source("v2.0.0"),
+            f"{_CANONICAL_CATALOG_URL}@==2.0.0",
             "--kanon-file",
             str(ws / ".kanon"),
-        ], None
+        ], {"GIT_CONFIG_GLOBAL": git_cfg}
 
     if slug == "conflict-detected":
         kanon_path = str(ws / ".kanon")
         return ["install", kanon_path], None
 
     if slug == "missing-required-metadata-field":
+        # Use the canonical HTTPS URL as the catalog source.  A git insteadOf
+        # rewrite (written by _build_missing_required_metadata_field) redirects
+        # it to the local bare repo.  The GIT_CONFIG_GLOBAL env var activates the
+        # rewrite inside the subprocess so the "manifest repo `...`" error line
+        # shows the canonical HTTPS URL matching the fixture.
+        # Canonical fixture: tests/fixtures/errors/missing-required-metadata-field.txt.
+        git_cfg = (tmp_path / "_git_cfg_path").read_text(encoding="utf-8").strip()
         return [
             "add",
             "example_pkg",
             "--catalog-source",
-            _bare_catalog_source("v1.0.0"),
+            f"{_CANONICAL_CATALOG_URL}@==1.0.0",
             "--kanon-file",
             str(ws / ".kanon"),
-        ], None
+        ], {"GIT_CONFIG_GLOBAL": git_cfg}
 
     if slug == "zero-pep440-tags-under-prefix":
         return [

@@ -1,6 +1,6 @@
 ERROR: .kanon has been modified since the lockfile was written.
   Lockfile kanon_hash : sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  Current  kanon_hash : sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  Current  kanon_hash : sha256:2391f761252aa51bfed01b99b60deb08da28644fb84c9b7a5037d42ff111df1a
   Remediation: run 'kanon install --refresh-lock' to rebuild the entire
   lockfile, or 'kanon install --refresh-lock-source <name>' to re-resolve
   one source chain while preserving all other lockfile entries.

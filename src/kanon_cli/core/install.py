@@ -169,6 +169,9 @@ class KanonHashMismatchError(InstallError):
     Spec row: ``.kanon modified (hash mismatch)``.
     Remediation: ``kanon install --refresh-lock`` or ``--refresh-lock-source <name>``.
 
+    Canonical error text: ``tests/fixtures/errors/lockfile-hash-mismatch.txt``.
+    Spec section: ``spec/kanon-list-add-lock-features-spec.md`` Section 6.
+
     Args:
         lockfile_hash: The ``kanon_hash`` value stored in the lockfile.
         computed_hash: The ``kanon_hash`` freshly computed from the current ``.kanon``.
@@ -195,6 +198,9 @@ class LockfileUnreachableShaError(InstallError):
 
     Spec row: ``.kanon.lock references a SHA no longer reachable on remote``.
     Remediation: ``kanon install --refresh-lock-source <name>``.
+
+    Canonical error text: ``tests/fixtures/errors/lockfile-sha-unreachable.txt``.
+    Spec section: ``spec/kanon-list-add-lock-features-spec.md`` Section 6.
 
     Args:
         source_name: The top-level source name whose SHA is unreachable.
@@ -432,6 +438,9 @@ class CanonicalUrlConflictError(InstallError):
     pointing at the same canonicalized repo URL but pinning different SHAs
     is a hard error. The operator must either remove one source or align the
     REVISION values so all sources pin the same SHA.
+
+    Canonical error text: ``tests/fixtures/errors/conflict-detected.txt``.
+    Spec section: ``spec/kanon-list-add-lock-features-spec.md`` Section 6.
 
     Args:
         reports: One or more ``CanonicalUrlConflictReport`` instances.

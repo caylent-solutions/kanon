@@ -218,7 +218,15 @@ def _run(args) -> int | None:
             strict_lock=args.strict_lock,
             strict_drift=args.strict_drift,
         )
-    except (InstallError, OSError, ValueError, RepoCommandError) as exc:
+    except InstallError as exc:
+        # InstallError subclasses already format their message with an "ERROR:"
+        # prefix per the spec-canonical error shape (spec Section 4 header).
+        # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt,
+        # lockfile-sha-unreachable.txt, conflict-detected.txt.
+        # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    except (OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     return None

@@ -1742,15 +1742,17 @@ def _run_install(
         run_repo_sync(source_dir)
 
         # Walk the <include> chain from the checked-out manifest XML.
-        # The manifest XML is located at source_dir / source_data["path"].
-        # _walk_includes uses source_dir as the manifest repo root so all
+        # After repo init + repo sync, manifest files live under
+        # source_dir/.repo/manifests/ (the repo tool's manifest checkout dir).
+        # _walk_includes uses that directory as the manifest repo root so all
         # <include name=...> values (relative to the repo root) resolve correctly.
         # The walker raises IncludeCycleError on cycles and MalformedIncludeError
         # on malformed elements -- both propagate unconditionally (fail-fast).
         # Only the root's children become [[sources.includes]] entries; the root
         # itself is already recorded in the [[sources]] entry above.
-        manifest_xml_path = source_dir / source_data["path"]
-        include_tree = _walk_includes(manifest_xml_path, source_dir)
+        manifest_repo_root = source_dir / ".repo" / "manifests"
+        manifest_xml_path = manifest_repo_root / source_data["path"]
+        include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
         # resolved_entries[-1] is the SourceEntry appended for this source
         # in the resolution branches above. Populate its includes list with
         # the DFS-ordered, diamond-deduped tree the walker produced.

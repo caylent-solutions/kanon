@@ -114,16 +114,17 @@ def _write_two_source_kanonenv(
 
 
 def _write_empty_manifest(repo_dir: str, sub_path: str = "repo-specs/manifest.xml") -> None:
-    """Write a minimal empty manifest XML to repo_dir/sub_path.
+    """Write a minimal empty manifest XML under repo_dir/.repo/manifests/sub_path.
 
-    Used by sync helpers so that install()'s include-walker can parse the
-    manifest path after sync without a real git clone.
+    After repo init + repo sync, manifest files live at source_dir/.repo/manifests/
+    (the repo tool's manifest checkout dir). This helper mirrors that layout so
+    install()'s include-walker finds the manifest at the expected location.
 
     Args:
         repo_dir: The source directory passed by install() to repo_sync.
-        sub_path: Manifest path relative to repo_dir.
+        sub_path: Manifest path relative to the manifests repo root.
     """
-    manifest_path = pathlib.Path(repo_dir) / sub_path
+    manifest_path = pathlib.Path(repo_dir) / ".repo" / "manifests" / sub_path
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
 

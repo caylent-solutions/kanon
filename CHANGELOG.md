@@ -70,6 +70,12 @@
   wheel -- the third-tier bundled fallback in `resolve_catalog_dir()`
   is no longer shipped.
 
+### Fixed
+
+* Fixed manifest XML path resolution in `kanon install` include-chain
+  walker to look under `source_dir/.repo/manifests/` (the repo tool
+  manifest checkout directory) instead of `source_dir/` directly.
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

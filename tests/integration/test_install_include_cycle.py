@@ -93,13 +93,17 @@ class TestInstallIncludeCycleTriangle:
         # Write the .kanon file.
         kanonenv = _write_kanonenv(base, manifest_path="a.xml")
 
-        # Pre-populate the source directory that install() will create.
+        # Pre-populate the manifest checkout directory that install() will use.
+        # After real repo init + repo sync, manifests live at
+        # source_dir/.repo/manifests/; pre-populate that path so _walk_includes
+        # finds the fixture files in the same location the production code expects.
         source_dir = base / ".kanon-data" / "sources" / "test"
-        source_dir.mkdir(parents=True, exist_ok=True)
+        manifest_repo = source_dir / ".repo" / "manifests"
+        manifest_repo.mkdir(parents=True, exist_ok=True)
 
-        _write_manifest(source_dir / "a.xml", includes=["b.xml"])
-        _write_manifest(source_dir / "b.xml", includes=["c.xml"])
-        _write_manifest(source_dir / "c.xml", includes=["a.xml"])
+        _write_manifest(manifest_repo / "a.xml", includes=["b.xml"])
+        _write_manifest(manifest_repo / "b.xml", includes=["c.xml"])
+        _write_manifest(manifest_repo / "c.xml", includes=["a.xml"])
 
         return kanonenv, source_dir
 
@@ -167,8 +171,9 @@ class TestInstallIncludeSelfCycle:
         """install() raises IncludeCycleError for a self-referencing include."""
         kanonenv = _write_kanonenv(tmp_path, manifest_path="a.xml")
         source_dir = tmp_path / ".kanon-data" / "sources" / "test"
-        source_dir.mkdir(parents=True, exist_ok=True)
-        _write_manifest(source_dir / "a.xml", includes=["a.xml"])
+        manifest_repo = source_dir / ".repo" / "manifests"
+        manifest_repo.mkdir(parents=True, exist_ok=True)
+        _write_manifest(manifest_repo / "a.xml", includes=["a.xml"])
 
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)

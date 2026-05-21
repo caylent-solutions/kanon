@@ -300,16 +300,17 @@ def _read_claude_invocations(bin_dir: pathlib.Path) -> list[str]:
 
 
 def _write_empty_manifest(repo_dir: str, manifest_filename: str = _MANIFEST_FILENAME) -> None:
-    """Write a minimal empty manifest XML to repo_dir/manifest_filename.
+    """Write a minimal empty manifest XML under repo_dir/.repo/manifests/manifest_filename.
 
-    Used by fake_repo_sync helpers so that install()'s include-walker can
-    parse the manifest path after sync without a real git clone.
+    After repo init + repo sync, manifest files live at source_dir/.repo/manifests/
+    (the repo tool's manifest checkout dir). This helper mirrors that layout so
+    install()'s include-walker finds the manifest at the expected location.
 
     Args:
         repo_dir: The source directory passed by install() to repo_sync.
-        manifest_filename: Manifest file name relative to repo_dir.
+        manifest_filename: Manifest file name relative to the manifests repo root.
     """
-    manifest_path = pathlib.Path(repo_dir) / manifest_filename
+    manifest_path = pathlib.Path(repo_dir) / ".repo" / "manifests" / manifest_filename
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
 

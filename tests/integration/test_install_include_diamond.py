@@ -109,13 +109,18 @@ class TestInstallIncludeDiamond:
         """
         kanonenv = _write_kanonenv(base, manifest_path="a.xml")
 
+        # Pre-populate the manifest checkout directory that install() will use.
+        # After real repo init + repo sync, manifests live at
+        # source_dir/.repo/manifests/; pre-populate that path so _walk_includes
+        # finds the fixture files in the same location the production code expects.
         source_dir = base / ".kanon-data" / "sources" / "test"
-        source_dir.mkdir(parents=True, exist_ok=True)
+        manifest_repo = source_dir / ".repo" / "manifests"
+        manifest_repo.mkdir(parents=True, exist_ok=True)
 
-        _write_manifest(source_dir / "a.xml", includes=["b.xml", "c.xml"])
-        _write_manifest(source_dir / "b.xml", includes=["d.xml"])
-        _write_manifest(source_dir / "c.xml", includes=["d.xml"])
-        _write_manifest(source_dir / "d.xml", includes=[])
+        _write_manifest(manifest_repo / "a.xml", includes=["b.xml", "c.xml"])
+        _write_manifest(manifest_repo / "b.xml", includes=["d.xml"])
+        _write_manifest(manifest_repo / "c.xml", includes=["d.xml"])
+        _write_manifest(manifest_repo / "d.xml", includes=[])
 
         return kanonenv, source_dir
 

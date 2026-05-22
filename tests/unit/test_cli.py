@@ -171,7 +171,14 @@ class TestTopLevelHelpAlias:
             None,
         )
         assert help_action is not None, "No --help action registered on top-level parser"
-        assert isinstance(help_action, _TopLevelHelpAction), (
+        # Use a type-name check rather than isinstance because
+        # tests/integration/test_signal_handling.py calls importlib.reload(kanon_cli.cli)
+        # to verify SIGHUP handler isolation. That reload is intentional and load-bearing
+        # for that test. After a reload, build_parser() uses the reloaded class object
+        # while the module-level import at the top of this file still refers to the
+        # pre-reload object -- making isinstance fail due to class-identity mismatch.
+        # The name-equality check is immune to duplicate class loads (spec E12 remedy C).
+        assert type(help_action).__name__ == "_TopLevelHelpAction", (
             f"--help action is {type(help_action)!r}, expected _TopLevelHelpAction"
         )
 
@@ -203,9 +210,14 @@ class TestTopLevelHelpAlias:
                 raise SystemExit(0)
 
         parser = build_parser()
-        # Replace the help action with our capturing subclass
+        # Replace the help action with our capturing subclass.
+        # Use a type-name check rather than isinstance: importlib.reload(kanon_cli.cli)
+        # in tests/integration/test_signal_handling.py (intentional, tests SIGHUP isolation)
+        # creates a new class object for _TopLevelHelpAction. build_parser() uses the
+        # reloaded class; the module-level import at the top of this file holds the
+        # pre-reload class. isinstance fails on identity mismatch; name-equality does not.
         for action in parser._actions:
-            if isinstance(action, _TopLevelHelpAction):
+            if type(action).__name__ == "_TopLevelHelpAction":
                 action.__class__ = _CapturingAction
 
         with pytest.raises(SystemExit):
@@ -230,8 +242,12 @@ class TestTopLevelHelpAlias:
                 raise SystemExit(0)
 
         parser = build_parser()
+        # Use a type-name check rather than isinstance for the same reason as
+        # test_top_level_help_action_receives_option_string_short_h: the intentional
+        # importlib.reload(kanon_cli.cli) in test_signal_handling.py creates a second
+        # class object, breaking isinstance identity (spec E12 remedy C).
         for action in parser._actions:
-            if isinstance(action, _TopLevelHelpAction):
+            if type(action).__name__ == "_TopLevelHelpAction":
                 action.__class__ = _CapturingAction
 
         with pytest.raises(SystemExit):

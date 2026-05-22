@@ -241,7 +241,7 @@ _shtab_kanon_outdated_defaults_added=0
 _shtab_kanon_remove_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
   "--kanon-file[Path to the .kanon file to modify. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
-  "--force[Reserved for future use (catalog-membership cross-check). Currently accepted and ignored.]"
+  "--force[Silently skip sources that are not fully present in the .kanon file (used to clean up partially-orphaned entries). Known sources are still removed atomically.]"
   "--dry-run[Preview mode\: shows which lines would be removed. Each removed line is
 printed to stdout with a \'-\' prefix. Makes no on-disk change. Exits 0.
 The file-writing rules (line-ending preservation, blank-run collapse,

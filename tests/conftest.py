@@ -13,12 +13,59 @@ MINIMAL_KANONENV = (
     "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
 )
 
+# Default catalog source used by tests that need a catalog source but are not
+# exercising catalog-resolution logic. Uses an RFC 2606 reserved example.com
+# domain so no real network request is ever attempted.  The autouse
+# _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCE after every
+# test; tests that need this value must either:
+#   (a) pass it as catalog_source=DEFAULT_CATALOG_SOURCE to install(), or
+#   (b) set KANON_CATALOG_SOURCE via monkeypatch.setenv before calling code
+#       that reads the env var, or
+#   (c) request the opt-in _set_default_catalog_source fixture.
+DEFAULT_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
+
 
 def write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     """Write a minimal valid .kanon file in directory and return its path."""
     kanonenv = directory / ".kanon"
     kanonenv.write_text(MINIMAL_KANONENV)
     return kanonenv
+
+
+def write_manifest_for_sync(directory: pathlib.Path, sub_path: str = "repo-specs/manifest.xml") -> pathlib.Path:
+    """Write a minimal valid XML manifest at the repo-tool layout path inside directory.
+
+    After ``repo init`` + ``repo sync``, manifest files live under
+    ``directory/.repo/manifests/<sub_path>``.  This helper creates that directory
+    structure and writes the smallest well-formed manifest that satisfies the XML
+    include-walker, avoiding per-test duplication of the mkdir + write_text pattern.
+
+    Tests that mock ``repo_init`` or ``repo_sync`` must call this helper so that
+    ``install()``'s include-walker can find the manifest at the expected location.
+
+    Args:
+        directory: The source workspace directory (the path passed by install() to
+            repo_init / repo_sync as ``repo_dir``).
+        sub_path: Manifest path relative to the manifests repo root, matching the
+            ``KANON_SOURCE_<name>_PATH`` value in the ``.kanon`` file.  Defaults
+            to ``"repo-specs/manifest.xml"``.
+
+    Returns:
+        Absolute path to the written manifest file.
+
+    Example::
+
+        def fake_repo_init(repo_dir: str, url: str, revision: str,
+                           manifest_path: str, repo_rev: str = "") -> None:
+            write_manifest_for_sync(pathlib.Path(repo_dir), sub_path=manifest_path)
+    """
+    manifest = directory / ".repo" / "manifests" / sub_path
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<manifest></manifest>\n"
+    )
+    return manifest
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -449,18 +496,27 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
 
 @pytest.fixture()
 def make_install_args():
-    """Factory fixture that returns a MagicMock with kanonenv_path set.
+    """Factory fixture that returns a MagicMock with kanonenv_path and catalog_source set.
 
     Returns a callable that accepts a kanonenv path and returns a MagicMock
     suitable for passing to the install CLI handler _run(args). This allows
     integration and functional tests to invoke the CLI boundary without
     duplicating the argparse namespace setup inline.
 
+    The factory sets ``args.catalog_source`` to ``DEFAULT_CATALOG_SOURCE`` so
+    that tests which do not exercise catalog-resolution logic do not fail with
+    ``MissingCatalogSourceError`` due to the autouse ``_scrub_catalog_source_env``
+    fixture clearing ``KANON_CATALOG_SOURCE`` between every test.  Tests that
+    intentionally exercise the missing-catalog-source error path must override
+    ``args.catalog_source = None`` after calling the factory and must also
+    ensure ``KANON_CATALOG_SOURCE`` is absent (the autouse scrubber guarantees
+    that at test start).
+
     Args: (none -- use the returned factory)
 
     Returns:
         A factory function that accepts kanonenv_path (Path) and returns a
-        MagicMock with kanonenv_path attribute set to that value.
+        MagicMock with kanonenv_path, lock_file, and catalog_source attributes set.
 
     Example::
 
@@ -479,6 +535,43 @@ def make_install_args():
         args = MagicMock()
         args.kanonenv_path = kanonenv_path
         args.lock_file = None
+        args.catalog_source = DEFAULT_CATALOG_SOURCE
+        args.refresh_lock = False
+        args.refresh_lock_source = None
+        args.strict_lock = False
+        args.strict_drift = False
         return args
 
     return _factory
+
+
+@pytest.fixture()
+def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Opt-in fixture: sets KANON_CATALOG_SOURCE to DEFAULT_CATALOG_SOURCE for one test.
+
+    This fixture is opt-in (no ``autouse=True``).  Tests that invoke code paths
+    which read ``KANON_CATALOG_SOURCE`` from the environment (e.g. subprocess-
+    based tests, or tests that call ``install()`` without passing the
+    ``catalog_source`` keyword argument) can request this fixture by name to
+    inject the standard test value for the duration of that test.
+
+    The autouse ``_scrub_catalog_source_env`` fixture clears ``KANON_CATALOG_SOURCE``
+    after every test; this fixture sets it fresh via ``monkeypatch.setenv`` so it
+    is automatically reverted by pytest's monkeypatch teardown in addition to
+    the scrubber's ``delenv`` -- belt-and-suspenders isolation.
+
+    Returns:
+        The catalog source string that was set (``DEFAULT_CATALOG_SOURCE``), so
+        callers can assert against the expected value if needed.
+
+    Example::
+
+        def test_install_via_env(tmp_path, _set_default_catalog_source):
+            from kanon_cli.core.install import install
+            kanonenv = tmp_path / ".kanon"
+            kanonenv.write_text("KANON_SOURCE_s_URL=https://example.com/s.git\\n...")
+            # KANON_CATALOG_SOURCE is already set by the fixture
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+    """
+    monkeypatch.setenv("KANON_CATALOG_SOURCE", DEFAULT_CATALOG_SOURCE)
+    return DEFAULT_CATALOG_SOURCE

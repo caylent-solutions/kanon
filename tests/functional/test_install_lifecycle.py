@@ -7,6 +7,7 @@ import pytest
 
 from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
+from tests.conftest import DEFAULT_CATALOG_SOURCE, write_manifest_for_sync
 
 
 def _write_kanonenv(path: Path, content: str) -> Path:
@@ -26,17 +27,20 @@ class TestInstallLifecycle:
             ),
         )
 
+        def fake_repo_init(repo_dir: str, url: str, revision: str, manifest_path: str, repo_rev: str = "") -> None:
+            write_manifest_for_sync(Path(repo_dir), sub_path=manifest_path)
+
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
             packages = Path(repo_dir) / ".packages" / "pkg-a"
             packages.mkdir(parents=True, exist_ok=True)
             (packages / "file.txt").write_text("content")
 
         with (
-            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_init", side_effect=fake_repo_init),
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
         assert (tmp_path / ".packages" / "pkg-a").is_symlink()
@@ -62,6 +66,7 @@ class TestInstallLifecycle:
 
         def fake_repo_init(repo_dir: str, url: str, revision: str, manifest_path: str, repo_rev: str = "") -> None:
             init_calls.append(repo_dir)
+            write_manifest_for_sync(Path(repo_dir), sub_path=manifest_path)
 
         def fake_repo_sync(repo_dir: str, **kwargs) -> None:
             sync_calls.append(repo_dir)
@@ -74,7 +79,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert len(init_calls) == 2
         assert len(sync_calls) == 2
@@ -124,7 +129,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1

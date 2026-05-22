@@ -33,6 +33,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
@@ -146,7 +147,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
                 exit_code = 0
             except SystemExit as exc:
                 exit_code = exc.code
@@ -170,7 +171,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
             except SystemExit:
                 pass
 
@@ -199,7 +200,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
             except SystemExit:
                 pass
 
@@ -452,7 +453,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when repo_sync fails with a network error; got exit code {exc_info.value.code!r}"
@@ -483,7 +484,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"repo sync failure must write 'Error' to stderr; got stderr={captured.err!r}"
@@ -513,7 +514,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error:" not in captured.out, (
@@ -553,7 +554,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for network error {error_message!r}; got exit code {exc_info.value.code!r}"

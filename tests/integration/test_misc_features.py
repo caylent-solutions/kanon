@@ -45,6 +45,7 @@ from kanon_cli.core.install import (
     update_gitignore,
 )
 from kanon_cli.core.kanonenv import parse_kanonenv
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +282,6 @@ class TestKanonenvEdgeCases:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
         assert (tmp_path / ".kanon-data" / "sources" / "s").is_dir()
         assert (tmp_path / ".gitignore").is_file()

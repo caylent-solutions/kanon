@@ -18,6 +18,7 @@ import pytest
 
 from kanon_cli.cli import main
 from kanon_cli.repo import RepoCommandError
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, "KANON_MARKETPLACE_INSTALL=false\n")
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv)])
+            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when no sources are defined; got code {exc_info.value.code}"
@@ -161,7 +162,7 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, content)
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv)])
+            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when source REVISION is missing; got code {exc_info.value.code}"
@@ -189,7 +190,7 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, content)
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv)])
+            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when source PATH is missing; got code {exc_info.value.code}"
@@ -227,7 +228,7 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, "".join(lines))
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv)])
+            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -273,7 +274,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("network timeout"),
                 ),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, f"install must exit 1 on repo_sync failure; got code {exc_info.value.code}"
 
@@ -298,7 +299,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("remote: authentication required"),
                 ),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"stderr must contain 'Error' when repo_sync fails; got stderr={captured.err!r}"
@@ -324,7 +325,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("connection refused"),
                 ),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error" not in captured.out, (
@@ -353,7 +354,7 @@ class TestGitSyncFailureExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, f"install must exit 1 on repo_init failure; got code {exc_info.value.code}"
         captured = capsys.readouterr()
@@ -392,7 +393,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError(error_message),
                 ),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for error {error_message!r}; got code {exc_info.value.code}"
@@ -434,7 +435,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, f"install must exit 1 on package collision; got code {exc_info.value.code}"
 
@@ -458,7 +459,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "collision-pkg" in captured.err, (
@@ -485,7 +486,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "alpha" in captured.err, f"Diagnostic must name source 'alpha'; got stderr={captured.err!r}"
@@ -511,7 +512,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "channel-test-pkg" in captured.err, (
@@ -550,7 +551,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for collision on '{colliding_pkg}'; got code {exc_info.value.code}"

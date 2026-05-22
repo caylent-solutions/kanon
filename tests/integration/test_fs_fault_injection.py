@@ -21,6 +21,7 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +297,7 @@ class TestSymlinkedKanonFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(symlink_kanon, lock_file_path=symlink_kanon.parent / ".kanon.lock")
+            install(symlink_kanon, lock_file_path=symlink_kanon.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         # .kanon-data/ must be created inside the real project directory (where .kanon lives),
         # not inside the directory where the symlink lives.
@@ -393,7 +394,7 @@ class TestPathsWithSpaces:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(spaced_project, lock_file_path=spaced_project.parent / ".kanon.lock")
+            install(spaced_project, lock_file_path=spaced_project.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert (spaced_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created inside directory with spaces: {spaced_dir}"
@@ -412,7 +413,7 @@ class TestPathsWithSpaces:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(spaced_project, lock_file_path=spaced_project.parent / ".kanon.lock")
+            install(spaced_project, lock_file_path=spaced_project.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         gitignore = spaced_dir / ".gitignore"
         assert gitignore.is_file(), f".gitignore must be created inside directory with spaces: {spaced_dir}"

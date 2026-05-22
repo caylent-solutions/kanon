@@ -111,7 +111,7 @@ class TestInstallRelativePath:
 
         received_paths: list[pathlib.Path] = []
 
-        def capture_path(path: pathlib.Path) -> None:
+        def capture_path(path: pathlib.Path, **kwargs: object) -> None:
             received_paths.append(path)
 
         with patch("kanon_cli.commands.install.install", side_effect=capture_path):

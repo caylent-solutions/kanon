@@ -491,7 +491,7 @@ class TestWalkAllVersions:
                 )
 
         captured = capsys.readouterr()
-        assert "example.com" in captured.err
+        assert "https://example.com/repo.git" in captured.err
 
     def test_all_versions_filtered_out_returns_empty(
         self,

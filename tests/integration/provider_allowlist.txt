@@ -30,3 +30,6 @@ CHANGELOG.md:Historical changelog may reference maintainer-run CLI invocations f
 uv.lock:uv.lock may contain PyPI package-path fragments (e.g. /bb/) that match word-boundary patterns but are not provider-CLI references
 # This test module lists forbidden token strings as Python string literals
 tests/functional/test_provider_agnostic.py:The test module itself contains the forbidden token strings as quoted literals; AC-SEC-001 verifies every occurrence is inside a string literal
+# Unit tests that enumerate forbidden tokens by design
+tests/unit/test_provider_agnosticism.py:Unit test for the provider-agnostic enforcement logic; it must reference each forbidden token as a string literal to verify the enumeration is exhaustive -- these are test inputs, not production provider dependencies
+tests/unit/test_doctor_cache_flags.py:Cache-flags test references a provider abbreviation as a test input string to exercise cache filename logic; this is not provider-specific behaviour in production code

@@ -74,9 +74,9 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
 
 ## What is Kanon?
 
-Kanon is a DevOps Platform Dependency Manager that brings version-controlled, reproducible automation to your projects through declarative manifests. Kanon enables you to centralize, version, and share automation across your organization without replacing your existing tools.
+Kanon is a **DevOps Platform Dependency Manager** that brings version-controlled, reproducible automation to your projects through declarative manifests. Kanon enables you to centralize, version, and share automation across your organization without replacing your existing tools.
 
-Solves a common problem: Organizations have quality automation and operational knowledge scattered across teams -- build conventions, linting rules, security scanning, test frameworks, local dev tooling, and shared markdown documentation that work well but are not widely adopted because they are hard to discover, version, test, and distribute. Kanon enables you to package this automation and share it across projects in a tested, reproducible way.
+**Solves a common problem:** Organizations have quality automation and operational knowledge scattered across teams -- build conventions, linting rules, security scanning, test frameworks, local dev tooling, and shared markdown documentation that work well but are not widely adopted because they are hard to discover, version, test, and distribute. Kanon enables you to package this automation and share it across projects in a tested, reproducible way.
 
 ### Fully customizable
 

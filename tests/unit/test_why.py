@@ -10,9 +10,12 @@ Covers:
 - Lockfile present -> skips live-resolve, reads SHAs from lockfile.
 - URL canonicalization equivalence: git@github.com and https forms match same project.
 - Include-chain placement: projects placed under leaf includes in tree.
-- Live-resolve raises NotImplementedError -> run() converts to clean error message.
+- Live-resolve raises LiveResolveError -> run() converts to clean error message.
+- _live_resolve_tree returns ResolvedTree with source ChainNodes on success.
+- _live_resolve_tree raises LiveResolveError when _resolve_ref_to_sha fails.
+- _live_resolve_tree raises LiveResolveError when _enforce_remote_url_policy rejects URL.
 
-AC-TEST-001
+AC-TEST-001, AC-TEST-002, AC-FUNC-005
 """
 
 import argparse
@@ -31,6 +34,7 @@ from kanon_cli.commands.why import (
     _render_text,
     run,
     ChainNode,
+    LiveResolveError,
     ResolvedTree,
 )
 
@@ -738,10 +742,14 @@ class TestRunErrors:
         mock_live.assert_called_once()
         assert exit_code == 0
 
-    def test_live_resolve_not_implemented_produces_clean_error(
+    def test_live_resolve_error_produces_clean_error(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
     ) -> None:
-        """When _live_resolve_tree raises NotImplementedError, run() exits with clean message."""
+        """When _live_resolve_tree raises LiveResolveError, run() exits with clean structured message.
+
+        Replaces test_live_resolve_not_implemented_produces_clean_error (AC-FIX-002).
+        Monkeypatches _live_resolve_tree directly so no real git calls are made.
+        """
         kanon_file = _make_minimal_kanon_file(tmp_path)
 
         args = _make_args(
@@ -751,14 +759,19 @@ class TestRunErrors:
             catalog_source="file:///fake/catalog@HEAD",
         )
 
-        with pytest.raises(SystemExit) as exc_info:
-            run(args)
+        with patch("kanon_cli.commands.why._live_resolve_tree") as mock_live:
+            mock_live.side_effect = LiveResolveError(
+                "FOO",
+                "ref 'main' not found in remote https://github.com/org/catalog",
+            )
+            with pytest.raises(SystemExit) as exc_info:
+                run(args)
+
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        # Must be a clean error message, not a Python traceback
-        assert "ERROR:" in captured.err
-        assert "Live-resolution is not yet implemented" in captured.err
-        assert "kanon install" in captured.err
+        # Must be the LiveResolveError structured message
+        assert "ERROR: cannot resolve" in captured.err
+        assert "FOO" in captured.err
         # Must NOT expose a Python traceback
         assert "Traceback" not in captured.err
         assert "NotImplementedError" not in captured.err
@@ -866,15 +879,122 @@ class TestCollectLeafIncludeNodes:
 
 @pytest.mark.unit
 class TestLiveResolveTree:
-    """Tests for _live_resolve_tree -- verifies it raises NotImplementedError in T1."""
+    """Tests for _live_resolve_tree -- verifies LiveResolveError-based implementation.
 
-    def test_raises_not_implemented_error(self, tmp_path: pathlib.Path) -> None:
-        """_live_resolve_tree raises NotImplementedError in T1 (live-resolve not yet implemented)."""
-        kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("# placeholder\n")
+    AC-FIX-001, AC-FIX-003, AC-FIX-004
+    """
 
-        with pytest.raises(NotImplementedError):
-            _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
+    def _make_kanonenv_for_source(
+        self,
+        source_name: str = "FOO",
+        url: str = "https://github.com/org/catalog",
+        revision: str = "main",
+    ) -> dict:
+        """Build a minimal parse_kanonenv return dict for a single source."""
+        return {
+            "KANON_SOURCES": [source_name],
+            "sources": {
+                source_name: {
+                    "url": url,
+                    "revision": revision,
+                    "path": "./foo",
+                }
+            },
+        }
+
+    def test_raises_live_resolve_error_when_ref_resolution_fails(self, tmp_path: pathlib.Path) -> None:
+        """_live_resolve_tree raises LiveResolveError when _resolve_ref_to_sha raises ValueError.
+
+        Replaces test_raises_not_implemented_error (AC-FIX-001).
+        Monkeypatches parse_kanonenv and _resolve_ref_to_sha; no real git calls.
+        """
+        kanon_file = _make_minimal_kanon_file(tmp_path)
+        fake_kanonenv = self._make_kanonenv_for_source()
+
+        with (
+            patch("kanon_cli.commands.why.parse_kanonenv", return_value=fake_kanonenv),
+            patch("kanon_cli.commands.why._enforce_remote_url_policy"),
+            patch(
+                "kanon_cli.commands.why._resolve_ref_to_sha",
+                side_effect=ValueError("ref 'main' not found"),
+            ),
+        ):
+            with pytest.raises(LiveResolveError) as exc_info:
+                _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
+
+        err = exc_info.value
+        assert err.name == "FOO"
+        assert "cannot resolve" in str(err)
+        assert "Remediation" in str(err)
+
+    @pytest.mark.parametrize(
+        "source_name, url, sha",
+        [
+            ("FOO", "https://github.com/org/catalog", "a" * 40),
+            ("BAR", "https://github.com/org/other", "b" * 40),
+        ],
+    )
+    def test_returns_resolved_tree_with_source_chain_nodes(
+        self,
+        tmp_path: pathlib.Path,
+        source_name: str,
+        url: str,
+        sha: str,
+    ) -> None:
+        """_live_resolve_tree returns a ResolvedTree with source ChainNodes on success.
+
+        AC-FIX-003: Parametrized over different source names, URLs and SHAs.
+        Node kind must be 'source', SHA and URL must match the resolved values.
+        """
+        from kanon_cli.core.install import _RefResolution
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, source_name=source_name)
+        fake_kanonenv = self._make_kanonenv_for_source(source_name=source_name, url=url)
+
+        with (
+            patch("kanon_cli.commands.why.parse_kanonenv", return_value=fake_kanonenv),
+            patch("kanon_cli.commands.why._enforce_remote_url_policy"),
+            patch(
+                "kanon_cli.commands.why._resolve_ref_to_sha",
+                return_value=_RefResolution(sha=sha, resolved_ref="main"),
+            ),
+        ):
+            tree = _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
+
+        assert len(tree.sources) == 1
+        node = tree.sources[0]
+        assert node.kind == "source"
+        assert node.name == source_name
+        assert node.sha == sha
+        assert node.url == url
+
+    def test_raises_live_resolve_error_when_url_policy_rejects(self, tmp_path: pathlib.Path) -> None:
+        """_live_resolve_tree raises LiveResolveError when _enforce_remote_url_policy raises.
+
+        AC-FIX-004: Verifies that policy violations are wrapped as LiveResolveError.
+        """
+        from kanon_cli.core.remote_url import InsecureRemoteUrlError
+
+        kanon_file = _make_minimal_kanon_file(tmp_path)
+        fake_kanonenv = self._make_kanonenv_for_source(url="http://insecure.example.com/org/catalog")
+
+        with (
+            patch("kanon_cli.commands.why.parse_kanonenv", return_value=fake_kanonenv),
+            patch(
+                "kanon_cli.commands.why._enforce_remote_url_policy",
+                side_effect=InsecureRemoteUrlError(
+                    "http://insecure.example.com/org/catalog",
+                    "FOO",
+                    "FOO",
+                ),
+            ),
+        ):
+            with pytest.raises(LiveResolveError) as exc_info:
+                _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
+
+        err = exc_info.value
+        assert err.name == "FOO"
+        assert "cannot resolve" in str(err)
 
 
 # ---------------------------------------------------------------------------

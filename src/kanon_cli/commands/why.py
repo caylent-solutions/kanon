@@ -34,6 +34,7 @@ import sys
 from dataclasses import dataclass, field
 
 from kanon_cli.constants import (
+    KANON_ALLOW_INSECURE_REMOTES,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
@@ -47,8 +48,11 @@ from kanon_cli.constants import (
 )
 from kanon_cli.utils.levenshtein import levenshtein_distance
 from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.install import _resolve_ref_to_sha
+from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
 from kanon_cli.core.metadata import derive_source_name
+from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
@@ -229,32 +233,97 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
 
 
 # ---------------------------------------------------------------------------
-# Live tree resolution (placeholder -- requires catalog + full install machinery)
+# Live tree resolution
 # ---------------------------------------------------------------------------
 
 
-def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> ResolvedTree:
-    """Resolve the dependency tree live against the catalog.
+class LiveResolveError(Exception):
+    """Raised when the live-resolve catalog walk fails for a named source.
 
-    This path is used when no .kanon.lock is present. Requires a catalog source.
+    Attributes:
+        name: The source or project name that could not be resolved.
+        reason: A human-readable explanation of the failure (one line).
+    """
+
+    def __init__(self, name: str, reason: str) -> None:
+        self.name = name
+        self.reason = reason
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: cannot resolve '{self.name}' via catalog walk: {self.reason}\n"
+            "Remediation: Verify --catalog-source URL + revision are reachable "
+            "and the catalog manifest is well-formed."
+        )
+
+
+def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> ResolvedTree:
+    """Resolve the dependency tree live from the .kanon file.
+
+    This path is used when no .kanon.lock is present. Requires a catalog source
+    to satisfy the caller's precondition check; the actual source resolution
+    reads URLs and revisions directly from the parsed .kanon file entries.
+
+    For each KANON_SOURCE_<name> entry in the .kanon file:
+      - Enforces the remote URL security policy.
+      - Resolves the declared revision to a concrete commit SHA via git ls-remote.
+      - Builds a ChainNode(kind='source') for the source.
+
+    The resulting tree has one source node per .kanon entry, with no include or
+    project children. This is sufficient for the three-category argument matcher
+    (source name, XML path, project URL) to locate top-level sources by name.
 
     Args:
         kanon_file: Path to the .kanon configuration file.
         catalog_source: The catalog source string in '<git-url>@<ref>' format.
+            Not used for resolution -- included as a parameter to preserve the
+            caller's precondition API (catalog source required on live path).
 
     Returns:
-        A ResolvedTree populated from the live-resolved manifest XML.
+        A ResolvedTree with one source ChainNode per .kanon source entry.
 
     Raises:
-        NotImplementedError: The live-resolve path is not yet implemented in T1.
-            T1 scopes only to the lockfile path; the live-resolve path is fully
-            implemented in later tasks when the install machinery is extended.
+        LiveResolveError: If ref-to-SHA resolution fails for any source entry,
+            or if the remote URL policy rejects a source URL.
+        ValueError: From parse_kanonenv when the .kanon file is malformed or
+            missing required source variables.
     """
-    raise NotImplementedError(
-        "ERROR: Live-resolution of the dependency tree is not yet implemented.\n"
-        "Provide a .kanon.lock file (run 'kanon install' to generate one) and "
-        "re-run 'kanon why' to use the lockfile path."
-    )
+    allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
+    kanonenv = parse_kanonenv(kanon_file)
+    source_nodes: list[ChainNode] = []
+
+    for source_name in kanonenv["KANON_SOURCES"]:
+        source_data = kanonenv["sources"][source_name]
+        url: str = source_data["url"]
+        revision: str = source_data["revision"]
+
+        try:
+            _enforce_remote_url_policy(
+                url=url,
+                allow_insecure=allow_insecure,
+                remote_name=source_name,
+                source_path=source_name,
+            )
+        except Exception as exc:
+            raise LiveResolveError(source_name, str(exc)) from exc
+
+        try:
+            ref_resolution = _resolve_ref_to_sha(url, revision)
+        except ValueError as exc:
+            raise LiveResolveError(source_name, str(exc)) from exc
+
+        source_nodes.append(
+            ChainNode(
+                kind="source",
+                name=source_name,
+                ref=None,
+                sha=ref_resolution.sha,
+                url=url,
+            )
+        )
+
+    return ResolvedTree(sources=source_nodes)
 
 
 # ---------------------------------------------------------------------------
@@ -317,9 +386,20 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
     found_chains: list[list[ChainNode]] = []
 
     def _dfs_collect_all_leaves(node: ChainNode, path: list[ChainNode]) -> None:
-        """Collect all chains from the current node to every leaf (project) descendant."""
+        """Collect all chains from the current node to every leaf descendant.
+
+        A leaf is either:
+          - A 'project' node (always a leaf regardless of children), or
+          - Any node with no children (source or include with no nested entries).
+        """
         current_path = path + [node]
         if node.kind == "project":
+            found_chains.append(current_path)
+            return
+        if not node.children:
+            # Source or include node with no nested children: the node itself
+            # is the leaf of the chain (e.g. a live-resolved source with no
+            # projects, or a top-level source that is the match target).
             found_chains.append(current_path)
             return
         for child in node.children:
@@ -860,14 +940,11 @@ def run(args: argparse.Namespace) -> int:
                 end="",
             )
             sys.exit(1)
-        # Delegate to live resolver (not yet implemented in T1).
+        # Delegate to live resolver.
         try:
             tree = _live_resolve_tree(kanon_path, args.catalog_source)
-        except NotImplementedError:
-            print(
-                "ERROR: Live-resolution is not yet implemented. Run kanon install to generate a lockfile.",
-                file=sys.stderr,
-            )
+        except LiveResolveError as exc:
+            print(str(exc), file=sys.stderr)
             sys.exit(1)
 
     # -- Resolve the match (all three categories; ambiguity detection) --

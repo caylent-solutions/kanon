@@ -488,10 +488,14 @@ class TestAddCollisionError:
             ],
             cwd=workspace,
         )
-        # Must name the source name and relevant details
+        # Must name the source name and relevant details.
+        # The existing mapping was stored with the canonical git ref form
+        # ("refs/tags/1.0.0"); the requested mapping is reported with the raw
+        # PEP 440 specifier the user supplied on the command line ("==2.0.0")
+        # because that is what surfaces the collision before any ref resolution.
         assert "entry_a" in result.stderr
         assert "refs/tags/1.0.0" in result.stderr
-        assert "refs/tags/2.0.0" in result.stderr
+        assert "==2.0.0" in result.stderr
 
     def test_collision_error_references_force_or_remove(self, tmp_path: pathlib.Path) -> None:
         """Error message references --force or 'kanon remove'."""

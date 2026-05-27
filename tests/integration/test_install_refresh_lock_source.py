@@ -116,7 +116,17 @@ def _write_two_source_kanon(
     alpha_revision: str = "==1.0.0",
     beta_revision: str = "==1.0.0",
 ) -> pathlib.Path:
-    """Write a .kanon file pointing at two sources: alpha and beta."""
+    """Write a .kanon file pointing at two sources: alpha and beta.
+
+    Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
+    introduced by E1-F2-S1-T1 accepts them; the autouse
+    ``_default_allow_insecure_remotes`` fixture in conftest then permits the
+    non-HTTPS/SSH scheme through ``_enforce_remote_url_policy``.
+    """
+    if alpha_url.startswith("/"):
+        alpha_url = f"file://{alpha_url}"
+    if beta_url.startswith("/"):
+        beta_url = f"file://{beta_url}"
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text(
         f"GITBASE=https://unused.example.com\n"

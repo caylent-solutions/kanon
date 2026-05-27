@@ -29,10 +29,26 @@ from kanon_cli.core.install import _RefResolution
 _MOCK_RESOLVED_SHA = "a" * 40
 _MOCK_RESOLVED_REF = "refs/heads/main"
 
-_MINIMAL_MANIFEST_XML = (
-    '<?xml version="1.0" encoding="UTF-8"?>\n'
-    "<manifest></manifest>\n"
-)
+_MINIMAL_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
+
+
+@pytest.fixture(autouse=True)
+def _default_allow_insecure_remotes(monkeypatch: pytest.MonkeyPatch):
+    """Default ``KANON_ALLOW_INSECURE_REMOTES=1`` for synthetic-URL integration tests.
+
+    Integration tests in this suite intentionally use ``file://`` URLs as
+    deterministic, network-free fixtures (synthetic local bare repos).  After
+    the URL-scheme policy from E3-F3-S1-T8 landed, every install code path
+    raises ``InsecureRemoteUrlError`` for non-HTTPS/SSH schemes unless this
+    env var is exactly ``"1"``.
+
+    The dedicated policy-enforcement suite
+    (``tests/integration/test_install_remote_url_policy.py``) explicitly calls
+    ``monkeypatch.delenv("KANON_ALLOW_INSECURE_REMOTES", raising=False)`` in
+    every test that needs the policy to fire; that delenv runs after this
+    setenv on the same per-test monkeypatch and cleanly overrides it.
+    """
+    monkeypatch.setenv("KANON_ALLOW_INSECURE_REMOTES", "1")
 
 
 @pytest.fixture(autouse=True)

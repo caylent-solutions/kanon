@@ -111,7 +111,15 @@ def _write_kanon(
     source_url: str,
     revision: str = "==1.0.0",
 ) -> pathlib.Path:
-    """Write a minimal .kanon file pointing at source_url with the given revision."""
+    """Write a minimal .kanon file pointing at source_url with the given revision.
+
+    Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
+    introduced by E1-F2-S1-T1 accepts them; the autouse
+    ``_default_allow_insecure_remotes`` fixture in conftest then permits the
+    non-HTTPS/SSH scheme through ``_enforce_remote_url_policy``.
+    """
+    if source_url.startswith("/"):
+        source_url = f"file://{source_url}"
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text(
         f"GITBASE=https://unused.example.com\n"

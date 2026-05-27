@@ -108,7 +108,15 @@ def _advance_branch(repo: pathlib.Path) -> str:
 
 
 def _write_kanon(directory: pathlib.Path, source_name: str, remote_url: str) -> pathlib.Path:
-    """Write a minimal .kanon pointing at a branch-shaped source."""
+    """Write a minimal .kanon pointing at a branch-shaped source.
+
+    Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
+    introduced by E1-F2-S1-T1 accepts them; the autouse
+    ``_default_allow_insecure_remotes`` fixture in conftest then permits the
+    non-HTTPS/SSH scheme through ``_enforce_remote_url_policy``.
+    """
+    if remote_url.startswith("/"):
+        remote_url = f"file://{remote_url}"
     kanon_path = directory / ".kanon"
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
@@ -156,7 +164,7 @@ def _run_install_with_fake_catalog(
 
     def _resolve_ref_to_sha_side_effect(url: str, ref: str) -> _RefResolution:
         # For source URLs that are local paths, use the real git binary.
-        if str(url) == str(fixture_repo):
+        if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo), ref],
                 capture_output=True,
@@ -177,7 +185,7 @@ def _run_install_with_fake_catalog(
 
     def _check_sha_reachable_side_effect(url: str, sha: str, source_name: str) -> None:
         # Use real git ls-remote for local fixture repos; others are no-ops.
-        if str(url) == str(fixture_repo):
+        if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo)],
                 capture_output=True,
@@ -378,7 +386,16 @@ class TestStrictLockEndToEnd:
         orphan_url: str,
         orphan_sha: str,
     ) -> None:
-        """Write a lockfile with one active source and one orphaned source."""
+        """Write a lockfile with one active source and one orphaned source.
+
+        Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
+        introduced by E1-F2-S1-T1 accepts the locked URLs when the install
+        engine re-validates them.
+        """
+        if active_url.startswith("/"):
+            active_url = f"file://{active_url}"
+        if orphan_url.startswith("/"):
+            orphan_url = f"file://{orphan_url}"
         lock_path.write_text(
             f"schema_version = 1\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
@@ -428,7 +445,7 @@ class TestStrictLockEndToEnd:
         kanon_path = project_dir / ".kanon"
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
-            f"KANON_SOURCE_alpha_URL={fixture_alpha}\n"
+            f"KANON_SOURCE_alpha_URL=file://{fixture_alpha}\n"
             f"KANON_SOURCE_alpha_REVISION=main\n"
             f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
         )
@@ -496,7 +513,7 @@ class TestStrictLockEndToEnd:
         kanon_path = project_dir / ".kanon"
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
-            f"KANON_SOURCE_alpha_URL={fixture_alpha}\n"
+            f"KANON_SOURCE_alpha_URL=file://{fixture_alpha}\n"
             f"KANON_SOURCE_alpha_REVISION=main\n"
             f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
         )

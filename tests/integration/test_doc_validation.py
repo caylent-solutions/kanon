@@ -28,7 +28,6 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
 _README = _REPO_ROOT / "README.md"
 _CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
-_CATALOG_KANONENV = _REPO_ROOT / "src" / "kanon_cli" / "catalog" / "kanon" / ".kanon"
 
 # All markdown documentation files (docs/ tree plus top-level README and CHANGELOG).
 _ALL_DOC_FILES: list[Path] = sorted(list(_DOCS_DIR.glob("**/*.md")) + [_README, _CHANGELOG])
@@ -218,36 +217,9 @@ class TestDocsUseAutoDiscover:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: catalog/.kanon has no uncommented REPO_URL or REPO_REV lines
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.integration
-class TestCatalogNoRepoUrl:
-    """AC-TEST-005: The bundled catalog/.kanon template must not contain any
-    active (uncommented) REPO_URL or REPO_REV lines.
-
-    `REPO_URL` and `REPO_REV` are not recognized by kanon and must not appear
-    as active configuration in the catalog template.
-    """
-
-    def test_catalog_kanonenv_exists(self) -> None:
-        """The catalog .kanon template must be present."""
-        assert _CATALOG_KANONENV.is_file(), f"catalog .kanon not found at {_CATALOG_KANONENV}"
-
-    @pytest.mark.parametrize("keyword", ["REPO_URL", "REPO_REV"])
-    def test_catalog_no_repo_url(self, keyword: str) -> None:
-        """catalog/.kanon must have no uncommented {keyword} lines."""
-        assert _CATALOG_KANONENV.is_file(), f"catalog .kanon not found at {_CATALOG_KANONENV}"
-        lines = _CATALOG_KANONENV.read_text(encoding="utf-8").splitlines()
-        uncommented = [
-            f"line {i + 1}: {line.strip()}"
-            for i, line in enumerate(lines)
-            if keyword in line and not line.strip().startswith("#")
-        ]
-        assert not uncommented, (
-            f"Found uncommented {keyword} line(s) in {_CATALOG_KANONENV}.\n"
-            f"{keyword} is not recognized by kanon -- remove the line from the catalog template:\n"
-            + "\n".join(uncommented)
-        )
+# AC-TEST-005 (bundled-catalog REPO_URL/REPO_REV guard) was retired by
+# E6-F2-S1-T1, which deleted src/kanon_cli/catalog/ from the wheel and added
+# the .gitignore + CI guards enforcing its absence. The previous
+# TestCatalogNoRepoUrl class asserted on a path that no longer exists in the
+# repo; the CI check "Verify bundled catalog removed (E6-F2-S1-T1)" plus the
+# unit assertions in tests/test_wheel_layout.py now cover the invariant.

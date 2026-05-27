@@ -9,7 +9,12 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
 ## Table of Contents
 
 - [What is Kanon?](#what-is-kanon)
-  - [Use Cases](#use-cases)
+  - [Fully customizable](#fully-customizable)
+  - [Core Purpose](#core-purpose)
+- [Use Cases](#use-cases)
+  - [Unify Disparate Automation](#unify-disparate-automation)
+  - [Platform Engineering](#platform-engineering)
+  - [Multi-Project Consistency](#multi-project-consistency)
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
   - [Install the Kanon CLI](#install-the-kanon-cli)
@@ -69,32 +74,38 @@ A standalone Python CLI for managing versioned DevOps automation packages via de
 
 ## What is Kanon?
 
-Kanon is a **DevOps Platform Dependency Manager** that brings version-controlled, reproducible automation to your projects through declarative manifests. Kanon enables you to centralize, version, and share automation across your organization without replacing your existing tools.
+Kanon is a DevOps Platform Dependency Manager that brings version-controlled, reproducible automation to your projects through declarative manifests. Kanon enables you to centralize, version, and share automation across your organization without replacing your existing tools.
 
-**Solves a common problem:**
-Organizations have quality automation scattered across teams -- build conventions, linting rules, security scanning, test frameworks, and local dev tooling that work well but are not widely adopted because they are hard to discover, version, test, and distribute. Kanon enables you to package this automation and share it across projects in a tested, reproducible way.
+Solves a common problem: Organizations have quality automation and operational knowledge scattered across teams -- build conventions, linting rules, security scanning, test frameworks, local dev tooling, and shared markdown documentation that work well but are not widely adopted because they are hard to discover, version, test, and distribute. Kanon enables you to package this automation and share it across projects in a tested, reproducible way.
 
-**Fully customizable:**
-- **Public or Private** -- Use public repositories or host everything privately within your organization
-- **Your Infrastructure** -- Point to your own Git repositories and package sources
-- **Your Standards** -- Define your own manifests, packages, and automation
-- **Portable** -- Teams retain access to automation even after external partnerships end
+### Fully customizable
 
-**Core Purpose:**
-- **Platform Dependency Management** -- Centralize and version your DevOps automation, dependencies, and standards
-- **Flexible Overlay** -- Works alongside your preferred build tools and dependency managers, or standalone with no task runner at all
-- **Team Standards** -- Share tested, versioned automation, tasks, and approaches across teams dynamically
-- **Tool Agnostic** -- Adapts to your workflow, not the other way around
+* **Public or Private** -- Use public repositories or host everything privately within your organization
+* **Your Infrastructure** -- Point to your own Git repositories and package sources
+* **Your Standards** -- Define your own manifests, packages, and automation
+* **Portable** -- Teams retain access to automation even after external partnerships end
 
-### Use Cases
+### Core Purpose
 
-**Unify Disparate Automation:**
+* **Platform Dependency Management** -- Centralize and version your DevOps automation, shared knowledge, dependencies, and standards
+* **Flexible Overlay** -- Works alongside your preferred build tools and dependency managers, or standalone with no task runner at all
+* **Team Standards** -- Share tested, versioned automation, tasks, and approaches across teams dynamically
+* **Tool Agnostic** -- Adapts to your workflow, not the other way around
+
+## Use Cases
+
+### Unify Disparate Automation
+
 Your organization has quality automation scattered across teams -- testing frameworks, linting configs, deployment scripts, security scans -- but they are not widely adopted because they are hard to find, version, and integrate. Kanon lets you package this automation, version it, and make it available to all teams through simple manifests.
 
-**Platform Engineering:**
-Provide golden paths and paved roads to development teams. Package your organization's standards, policies, and automation as versioned dependencies that teams can pull into their projects.
+### Platform Engineering
 
-**Multi-Project Consistency:**
+Provide golden paths and paved roads to development teams. Package your organization's standards, policies, automation, and shared operational knowledge as versioned dependencies that teams can pull into their projects.
+
+This can include CI/CD workflows, security policies, deployment automation, coding standards, architecture guidance, operational runbooks, and shared markdown knowledge bases used by both developers and AI coding agents.
+
+### Multi-Project Consistency
+
 Ensure the same testing, linting, security scanning, and deployment automation across projects without copy-pasting or manual synchronization.
 
 ---
@@ -164,7 +175,7 @@ This removes all synced packages, Kanon state directories, and optionally uninst
 Remote catalogs provide pre-configured `.kanon` files that require no placeholder editing. Set `KANON_CATALOG_SOURCE` or pass `--catalog-source` to bootstrap from a remote repository:
 
 ```bash
-# Set once in your shell rc file — pin to current major version
+# Set once in your shell rc file -- pin to current major version
 export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@>=2.0.0,<3.0.0'
 
 # Bootstrap a pre-configured entry

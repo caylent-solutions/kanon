@@ -61,10 +61,7 @@ def write_manifest_for_sync(directory: pathlib.Path, sub_path: str = "repo-specs
     """
     manifest = directory / ".repo" / "manifests" / sub_path
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        "<manifest></manifest>\n"
-    )
+    manifest.write_text('<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n')
     return manifest
 
 

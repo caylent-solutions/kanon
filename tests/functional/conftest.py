@@ -86,10 +86,7 @@ import pytest
 from kanon_cli.core.include_walker import _walk_includes as _real_walk_includes
 from kanon_cli.core.install import _RefResolution
 
-_MINIMAL_MANIFEST_XML = (
-    '<?xml version="1.0" encoding="UTF-8"?>\n'
-    "<manifest></manifest>\n"
-)
+_MINIMAL_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
 _MOCK_RESOLVED_SHA = "a" * 40
 _MOCK_RESOLVED_REF = "refs/heads/main"
@@ -137,6 +134,7 @@ def _auto_create_manifest_on_walk():
         side_effect=_walk_includes_with_auto_create,
     ):
         yield
+
 
 # ---------------------------------------------------------------------------
 # Default values for the shared git helpers.  Consumer test modules supply

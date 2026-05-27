@@ -605,7 +605,9 @@ class TestSymlinkSemanticsParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(abs_symlink, lock_file_path=abs_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(
+                abs_symlink, lock_file_path=abs_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE
+            )
 
         assert (real_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created in the real file's parent when using an absolute symlink. "
@@ -642,7 +644,9 @@ class TestSymlinkSemanticsParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(rel_symlink, lock_file_path=rel_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(
+                rel_symlink, lock_file_path=rel_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE
+            )
 
         assert (real_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created in the real file's parent when using a relative symlink. "

@@ -75,6 +75,10 @@
 
 ### Fixed
 
+* `kanon install` now verifies each claude marketplace is registered via
+  `claude plugin marketplace add` per source; install errors fast if `claude`
+  is unavailable while `KANON_MARKETPLACE_INSTALL=true` (DEFECT-004).
+
 * `kanon install` now auto-prunes orphaned lockfile entries with one INFO
   line per orphan (`pruned orphaned lock entry: <name>`); `--strict-lock`
   remains the opt-in error path (DEFECT-014).

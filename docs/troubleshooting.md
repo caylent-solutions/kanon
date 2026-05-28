@@ -860,3 +860,86 @@ KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
 
 - [docs/configuration.md](configuration.md)
 - [docs/exit-codes.md](exit-codes.md)
+
+---
+
+## 18. Claude Marketplace Not Registered After Install
+
+### Symptom
+
+`kanon install` exits 0 but `claude plugin marketplace list` shows no
+marketplace entries. This occurred prior to the DEFECT-004 fix because
+`kanon install` cloned sources into `CLAUDE_MARKETPLACES_DIR` but never
+called `claude plugin marketplace add` to register each entry with
+the Claude Code CLI.
+
+### Expected Behaviour After Fix
+
+With the DEFECT-004 fix, every `kanon install` run that has
+`KANON_MARKETPLACE_INSTALL=true` invokes:
+
+```text
+claude plugin marketplace add <absolute-path-to-marketplace-entry>
+```
+
+once per discovered marketplace directory under `CLAUDE_MARKETPLACES_DIR`.
+After install completes, `claude plugin marketplace list` must show one
+registered entry per source that ships a marketplace root
+(`.claude-plugin/marketplace.json` present).
+
+### Failure Mode: `claude` binary unavailable
+
+When `KANON_MARKETPLACE_INSTALL=true` and the `claude` binary is not on
+`$PATH`, `kanon install` now fails fast with exit code 1. The exact
+text written to stderr is:
+
+```text
+Error: claude binary not found on $PATH. Ensure claude is installed and available.
+```
+
+This replaces the previous silent-skip behaviour (DEFECT-004). The install
+does not proceed past the binary check; no partial marketplace state is left
+behind.
+
+### Diagnostic
+
+To confirm which step failed, check the last lines of stderr from
+`kanon install`. The marketplace registration summary line:
+
+```text
+Install summary: N marketplaces processed, M registered, P plugins installed
+```
+
+is written to stdout on completion. If this line does not appear, the
+install failed before reaching the registration loop (typically the
+missing-binary case above).
+
+### Remediation
+
+**Option 1: Install the `claude` CLI and re-run.**
+
+Ensure `claude` is installed and on `$PATH`, then re-run:
+
+```bash
+kanon install
+```
+
+**Option 2: Skip marketplace registration.**
+
+If Claude Code marketplace integration is not required in this environment,
+set:
+
+```bash
+export KANON_MARKETPLACE_INSTALL=false
+kanon install
+```
+
+With `KANON_MARKETPLACE_INSTALL=false`, `kanon install` skips all
+`claude plugin marketplace add` invocations. The source repos are still
+cloned; only the Claude Code plugin registration step is skipped.
+
+### See also
+
+- [docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md) -- marketplace setup and configuration
+- [docs/configuration.md](configuration.md)
+- [docs/exit-codes.md](exit-codes.md)

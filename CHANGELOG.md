@@ -109,6 +109,8 @@
 
 * `kanon why` now resolves dependency chains via catalog walk when no lockfile is present (DEFECT-008).
 
+* `kanon why` now resolves top-level `[[sources]]` entries in the lockfile-present path (DEFECT-009).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

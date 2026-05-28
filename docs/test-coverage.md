@@ -186,3 +186,81 @@ pytest tests/integration/test_remove_*.py -v
 12 from `test_remove_dry_run.py`.
 
 **Authoritative source**: spec §4 E39 (Files / Change / Verification + closure rows 46-52).
+
+---
+
+## Install command coverage
+
+### Purpose
+
+This section documents the automated test coverage for the `kanon install` command,
+satisfying spec §4 E42. All seven behaviour rows from `test-fixtures/findings.md`
+rows 53-59 are end-to-end asserted by the cited integration tests -- each test
+invokes the real `kanon install` CLI via subprocess against a temporary workspace
+and asserts both the process exit code and the resulting lockfile state.
+
+No new test file was required per spec §4 E42. The failing tests introduced by E22
+(DEFECT-001: bare install after add), E25 (DEFECT-010: refresh-lock-source counters),
+and E26 (DEFECT-011: strict-lock orphan naming) close the previously-uncovered
+assertion gaps for rows 53, 56, and 57 respectively. The `TestStrictDriftEndToEnd`
+class (row 58) was unblocked after E36 resolved FIXTURE-DEFECT-001 by replacing the
+legacy static `test-fixtures/synthetic-fixtures/` seeds with runtime-generated
+pytest fixtures that include the required `<remote>` and `<default>` manifest
+declarations.
+
+**Authoritative source**: spec §4 E42 (Files / Change / Verification + closure rows 53-59).
+
+### Coverage mapping
+
+| findings.md row | Behaviour | Test file | Class | Line |
+|----------------:|-----------|-----------|-------|-----:|
+| 53 | install / basic (bare after add) | `tests/integration/test_install_after_add.py` | `TestInstallAfterAdd` | 42 |
+| 53 | install / basic (flag-passed deprecation path) | `tests/integration/test_install_command.py` | `TestInstallDeprecationWarningSubprocess` | 90 |
+| 54 | install / lockfile-consistent-replay | `tests/integration/test_install_lockfile_replay.py` | `TestLockfileReplay` | 191 |
+| 55 | install / refresh-lock | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockRebuildsLockfile` | 184 |
+| 55 | install / refresh-lock (cycle) | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockCycle` | 271 |
+| 56 | install / refresh-lock-source (named rebuild) | `tests/integration/test_install_refresh_lock_source.py` | `TestRefreshLockSourceRebuildsOnlyNamedSource` | 204 |
+| 56 | install / refresh-lock-source (counters -- E25) | `tests/integration/test_install_refresh_lock_source.py` | `TestRefreshLockSourceCounters` | 533 |
+| 57 | install / strict-lock-orphan (end-to-end) | `tests/integration/test_install_strict.py` | `TestStrictLockEndToEnd` | 366 |
+| 57 | install / strict-lock-orphan (error message -- E26) | `tests/integration/test_install_strict.py` | `TestStrictLockOrphanErrorMessage` | 578 |
+| 58 | install / strict-drift (unblocked by E36) | `tests/integration/test_install_strict.py` | `TestStrictDriftEndToEnd` | 232 |
+| 59 | install / custom-lock-file | `tests/integration/test_install_lock_file_derivation.py` | `TestExplicitLockFileFlag` | 124 |
+
+**Notes on mapping:**
+
+- Row 53 maps to two test classes. `TestInstallAfterAdd` (E22) guards the defect-fixed
+  path where bare `kanon install` after `kanon add` must succeed without re-passing
+  `--catalog-source`. `TestInstallDeprecationWarningSubprocess` covers the flag-present
+  path and legacy env-var deprecation notices.
+- Row 54 maps to `TestLockfileReplay` (class name `TestLockfileReplay`, not `TestReplay`
+  as the spec draft used). The class exercises first-install lockfile creation and
+  second-install lockfile-consistent replay at lines 194-306.
+- Rows 55 and 56 each map to two classes: the primary happy-path class and a secondary
+  class that exercises a specific sub-scenario (cycle / counter-reporting).
+- Row 57 maps to `TestStrictLockEndToEnd` (end-to-end orphan exit-1) and
+  `TestStrictLockOrphanErrorMessage` (E26: error names each orphan source and provides
+  remediation text).
+- Row 58 maps to `TestStrictDriftEndToEnd`. This class was authored before E36 landed
+  the synthetic-fixture fix and was blocked on FIXTURE-DEFECT-001. After E36, the
+  `create_drift_fixture` helper produces a compliant `manifest.xml` that `repo init`
+  accepts, allowing the drift scenario to reach the `--strict-drift` code path.
+- Row 59 maps to `TestExplicitLockFileFlag` in `test_install_lock_file_derivation.py`,
+  which asserts that `--lock-file ./alt.kanon.lock` writes only the alternate path
+  and leaves the default `.kanon.lock` absent. The spec draft cited class name
+  `TestCustomLockFile` which was not the name used in the implementation.
+
+### Verification command
+
+```
+pytest tests/integration/test_install_*.py -v
+```
+
+### Verification result
+
+163 passed, 5 failed (2026-05-28). The 5 failing tests are pre-existing intentional
+RED test guards authored by E34 (default-install auto-prune: 4 tests in
+`TestStrictLockDefaultAutoPrune`) and E35 (install marketplace registration: 1 test in
+`TestInstallMarketplaceRegistration`). These RED guards await their implementation
+tasks (E34-F1-S1-T2 and E35-F1-S1-T2 respectively) and are not regressions
+introduced by this task. All 11 classes cited in the mapping table above contributed
+passing tests in this run.

@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import typing
 
 import pytest
 
-from kanon_cli.commands.doctor import run_doctor
+from kanon_cli.commands.doctor import DoctorArgsTypeError, run_doctor
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +131,7 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
             f"got:\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
         )
         assert "no kanon workspace" not in captured.err, (
-            f"Expected no workspace-not-found diagnostic in stderr; "
-            f"got:\nstderr: {captured.err!r}"
+            f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
         )
 
     @pytest.mark.parametrize("flag_kwargs,expected_message", _CACHE_FLAG_PARAMS)
@@ -180,6 +180,46 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
             f"got:\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
         )
         assert "no kanon workspace" not in captured.err, (
-            f"Expected no workspace-not-found diagnostic in stderr; "
-            f"got:\nstderr: {captured.err!r}"
+            f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# DoctorArgsTypeError contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestDoctorArgsTypeError:
+    """doctor_command raises DoctorArgsTypeError when args is not a Namespace.
+
+    This covers the defensive type-guard introduced by DEFECT-013 fix in
+    doctor_command. The exception carries the received type so callers can
+    emit a structured error message.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_args",
+        [
+            pytest.param({}, id="dict"),
+            pytest.param(object(), id="object"),
+            pytest.param("string", id="str"),
+        ],
+    )
+    def test_non_namespace_args_raises_doctor_args_type_error(
+        self,
+        bad_args: object,
+    ) -> None:
+        """Non-Namespace args raises DoctorArgsTypeError with received type.
+
+        Args:
+            bad_args: A non-Namespace object that must trigger the type guard.
+        """
+        with pytest.raises(DoctorArgsTypeError) as exc_info:
+            run_doctor(typing.cast(argparse.Namespace, bad_args))
+        assert exc_info.value.received_type is type(bad_args), (
+            f"Expected received_type={type(bad_args)!r}; got {exc_info.value.received_type!r}"
+        )
+        assert "argparse.Namespace" in str(exc_info.value), (
+            f"Expected 'argparse.Namespace' in error message; got: {str(exc_info.value)!r}"
         )

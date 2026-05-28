@@ -65,6 +65,39 @@ from kanon_cli.core.cli_args import add_catalog_source_arg
 # string value of KANON_CATALOG_SOURCE) means the user typed it on the CLI.
 _UNSET: object = object()
 
+# ---------------------------------------------------------------------------
+# Workspace-free flag names
+# ---------------------------------------------------------------------------
+
+# Flags whose actions operate solely on KANON_CACHE_DIR and require no
+# per-project .kanon workspace. When the set of active (truthy) flag names is
+# non-empty AND a subset of WORKSPACE_FREE_FLAGS, workspace discovery is
+# skipped entirely. Mixed invocations (any cache flag combined with any
+# subcheck flag) still require the workspace and are NOT short-circuited.
+WORKSPACE_FREE_FLAGS: frozenset[str] = frozenset({"refresh_completion_cache", "prune_cache"})
+
+
+# ---------------------------------------------------------------------------
+# DoctorArgsTypeError exception
+# ---------------------------------------------------------------------------
+
+
+class DoctorArgsTypeError(TypeError):
+    """Raised when doctor_command receives args that is not an argparse.Namespace.
+
+    The CLI layer is responsible for catching this and emitting a structured
+    ERROR message with non-zero exit code.
+
+    Attributes:
+        received_type: The type that was passed instead of argparse.Namespace.
+    """
+
+    def __init__(self, received_type: type) -> None:
+        self.received_type = received_type
+        super().__init__(
+            f"args must be an argparse.Namespace; got {received_type!r}. Supply a valid Namespace from argparse."
+        )
+
 
 # ---------------------------------------------------------------------------
 # DoctorFinding dataclass
@@ -1080,6 +1113,17 @@ def doctor_command(
                     remediation="",
                 )
             )
+
+    # -- Short-circuit for workspace-free flags --
+    # When only workspace-free flags (e.g. --refresh-completion-cache,
+    # --prune-cache) are active, skip all workspace-dependent checks and return
+    # 0 immediately. Mixed invocations (cache flag + any subcheck flag) fall
+    # through to the full workspace-dependent path below.
+    if not isinstance(args, argparse.Namespace):
+        raise DoctorArgsTypeError(type(args))
+    active_flag_names = {name for name, value in vars(args).items() if value}
+    if active_flag_names and active_flag_names.issubset(WORKSPACE_FREE_FLAGS):
+        return 0
 
     # -- Check 1: .kanon / .kanon.lock presence + hash match --
     consistency_finding = _check_kanon_hash(kanon_file, lock_file)

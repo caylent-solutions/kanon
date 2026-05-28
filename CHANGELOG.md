@@ -105,6 +105,8 @@
 
 * `kanon doctor --refresh-completion-cache` and `kanon doctor --prune-cache` no longer require a `.kanon` workspace; both flags operate on `KANON_CACHE_DIR` globally (DEFECT-013).
 
+* `kanon outdated` now parses `refs/tags/X.Y.Z` revisions written by `kanon add` (DEFECT-007).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

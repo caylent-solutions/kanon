@@ -637,6 +637,86 @@ Mutually exclusive with `--refresh-lock`.
 
 ---
 
+## Revision forms
+
+The `KANON_SOURCE_<name>_REVISION` entry in a `.kanon` file (and the
+corresponding `revision_spec` field in the lockfile) may be recorded in
+several forms. `kanon outdated` recognises and handles all four.
+
+### Supported revision forms
+
+- **PEP 440 version** (e.g., `1.0.0`, `==2.3.1`, `>=1.0.0,<2.0.0`) --
+  a bare version or constraint specifier without any `refs/` prefix.
+  `kanon outdated` compares the resolved version against available tags
+  using PEP 440 ordering to determine the upgrade type.
+
+- **Tag ref** (`refs/tags/X.Y.Z`) -- a fully-qualified tag reference
+  written by `kanon add`. `kanon outdated` strips the `refs/tags/`
+  prefix and then treats the remainder as a PEP 440 version for
+  upgrade-type classification.
+
+- **Branch ref** (`refs/heads/<branch>`) -- a fully-qualified branch
+  reference pointing to a branch in the source repository. After
+  stripping the prefix, the bare branch name is used for display and
+  drift detection.
+
+- **Remote-tracking ref** (`refs/remotes/origin/<branch>`) -- a
+  fully-qualified remote-tracking reference. After stripping the
+  prefix, the bare branch name is used for display and drift detection.
+
+### Prefix-stripping semantics
+
+When `kanon outdated` reads a `REVISION` that starts with one of the
+three recognized git ref prefixes, it strips the prefix before
+classifying the bare remainder. The prefixes are checked in the
+following order (longest-first to avoid partial matches):
+
+1. `refs/remotes/origin/`
+2. `refs/heads/`
+3. `refs/tags/`
+
+After stripping, the bare string is classified:
+
+- If the bare string is a valid PEP 440 version, the revision is
+  classified as `version` and upgrade-type computation proceeds with
+  standard PEP 440 comparison against available tags.
+- If the matched prefix was `refs/heads/` or `refs/remotes/origin/`,
+  the revision is classified as `branch` regardless of the bare string's
+  content.
+
+A `refs/tags/` bare remainder that is not a valid PEP 440 version raises
+a hard parse error; `kanon outdated` exits immediately with a non-zero
+code and an error message naming the malformed revision.
+
+### Branch-shaped revision display
+
+When a `REVISION` is stored as a fully-qualified branch ref
+(`refs/heads/<branch>` or `refs/remotes/origin/<branch>`), `kanon
+outdated` applies the following display rules (spec D5):
+
+- The `current`, `latest-matching-spec`, and `latest-available` columns
+  all show the **bare branch name** (the portion after the prefix),
+  not a SHA truncation.
+- The `upgrade-type` column shows `drift` when the locked commit SHA
+  differs from the current branch HEAD, or `none` when the locked SHA
+  matches the HEAD or no lockfile is present.
+
+### Example `.kanon` entries
+
+```bash
+# Tag-shaped revision -- written by `kanon add` when resolving a versioned entry
+KANON_SOURCE_foo_REVISION=refs/tags/1.0.0
+
+# Branch-shaped revision -- written by `kanon add` when targeting a branch
+KANON_SOURCE_bar_REVISION=refs/heads/main
+```
+
+Both forms are accepted by `kanon install`, `kanon outdated`, and
+`kanon doctor`. The prefix is stripped internally; operators see the
+bare version or branch name in all `kanon outdated` output columns.
+
+---
+
 ## See also
 
 - [docs/configuration.md](configuration.md) -- all environment variables,

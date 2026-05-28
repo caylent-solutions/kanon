@@ -366,6 +366,32 @@ KANON_HEADER_GITBASE = "GITBASE=<YOUR_GIT_ORG_BASE_URL>"
 KANON_HEADER_CLAUDE_MARKETPLACES_DIR = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
 KANON_HEADER_MARKETPLACE_INSTALL = "KANON_MARKETPLACE_INSTALL=<true|false>"
 
+# -- kanon outdated revision normalization (DEFECT-007 fix) --
+# Individual git ref prefix constants for all recognized prefix forms.
+# These are the canonical string values; all code in outdated.py and elsewhere
+# must reference these constants rather than inline string literals.
+REVISION_REF_PREFIX_TAGS = "refs/tags/"
+REVISION_REF_PREFIX_HEADS = "refs/heads/"
+REVISION_REF_PREFIX_REMOTES = "refs/remotes/origin/"
+
+# Ordered tuple of git ref prefixes that 'kanon outdated' recognizes and strips
+# before classifying a REVISION as a PEP 440 version or a branch name.
+# Order matters: refs/remotes/origin/ is checked before refs/heads/ and
+# refs/tags/ so that longer prefixes are consumed first.
+REVISION_REF_PREFIXES: tuple[str, ...] = (
+    REVISION_REF_PREFIX_REMOTES,
+    REVISION_REF_PREFIX_HEADS,
+    REVISION_REF_PREFIX_TAGS,
+)
+
+# Classification token returned by _normalize_revision_for_constraint when the
+# bare ref (after prefix stripping) is a valid PEP 440 version.
+REVISION_CLASSIFICATION_VERSION = "version"
+
+# Classification token returned by _normalize_revision_for_constraint when the
+# bare ref is from a branch-shaped prefix (refs/heads/ or refs/remotes/origin/).
+REVISION_CLASSIFICATION_BRANCH = "branch"
+
 # -- kanon outdated --
 # Environment variable name that controls the output format for 'kanon outdated'.
 # The CLI flag --format takes precedence when both are set.

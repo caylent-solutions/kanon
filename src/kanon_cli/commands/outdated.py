@@ -35,6 +35,7 @@ import pathlib
 import sys
 from dataclasses import dataclass
 
+from packaging.version import InvalidVersion
 from packaging.version import Version
 
 from kanon_cli.constants import (
@@ -46,6 +47,12 @@ from kanon_cli.constants import (
     KANON_OUTDATED_FORMAT_JSON,
     KANON_OUTDATED_JSON_INDENT,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    REVISION_CLASSIFICATION_BRANCH,
+    REVISION_CLASSIFICATION_VERSION,
+    REVISION_REF_PREFIX_HEADS,
+    REVISION_REF_PREFIX_REMOTES,
+    REVISION_REF_PREFIX_TAGS,
+    REVISION_REF_PREFIXES,
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
@@ -59,6 +66,140 @@ from kanon_cli.version import (
     _resolve_constraint_from_tags,
     _truncate_sha,
 )
+
+
+# ---------------------------------------------------------------------------
+# Revision normalization errors
+# ---------------------------------------------------------------------------
+
+
+class RevisionParseError(ValueError):
+    """Raised when a REVISION string cannot be classified as a PEP 440 version or a branch ref.
+
+    Attributes:
+        revision: The offending REVISION string.
+        reason: A human-readable explanation of why the revision could not be parsed.
+    """
+
+    def __init__(self, revision: str, reason: str) -> None:
+        self.revision = revision
+        self.reason = reason
+        super().__init__(
+            f"ERROR: cannot parse revision {revision!r}: {reason}\n"
+            "Supply a PEP 440 version (e.g., `1.0.0`) or a `refs/...`-prefixed git ref."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Revision normalization helper (DEFECT-007 fix)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
+    """Normalize a git ref REVISION string for use in upgrade-detection.
+
+    Strips known git ref prefixes defined in ``REVISION_REF_PREFIXES`` and
+    classifies the result as a PEP 440 version or a branch-shaped ref.
+
+    Classification rules (applied after prefix stripping):
+
+    1. If the bare ref is a valid PEP 440 version, return
+       ``(bare_version, REVISION_CLASSIFICATION_VERSION)``.
+    2. If the matched prefix was ``refs/heads/`` or ``refs/remotes/origin/``
+       (branch-shaped), return ``(None, REVISION_CLASSIFICATION_BRANCH)``.
+    3. If no prefix matched and the string contains a ``/`` (e.g.,
+       ``feature/some-name`` without a ``refs/heads/`` prefix),
+       raise :class:`RevisionParseError` -- the caller must supply a
+       fully-qualified ``refs/...`` ref.
+    4. If the bare ref is neither a valid PEP 440 version nor branch-shaped,
+       raise :class:`RevisionParseError` with the offending input recorded.
+
+    Note: strings that do NOT start with any known prefix and do NOT contain
+    a ``/`` are plain branch names (e.g., ``main``, ``develop``). These are
+    already classified as ``BRANCH`` by ``_classify_revision_shape`` and
+    should not reach this helper; they are returned unchanged as branch
+    classifications for forward-compatibility.
+
+    Args:
+        rev: The raw REVISION string from a ``KANON_SOURCE_<name>_REVISION``
+            entry.
+
+    Returns:
+        A 2-tuple ``(normalized, classification)`` where:
+        - ``normalized`` is the bare version string (without the
+          ``refs/tags/`` prefix) when ``classification`` is
+          ``REVISION_CLASSIFICATION_VERSION``, or ``None`` when
+          ``classification`` is ``REVISION_CLASSIFICATION_BRANCH``.
+        - ``classification`` is one of ``REVISION_CLASSIFICATION_VERSION``
+          or ``REVISION_CLASSIFICATION_BRANCH``.
+
+    Raises:
+        RevisionParseError: If ``rev`` is neither a valid PEP 440 version
+            (after stripping a known prefix) nor a branch-shaped ref.
+    """
+    matched_prefix: str | None = None
+    bare = rev
+
+    for prefix in REVISION_REF_PREFIXES:
+        if rev.startswith(prefix):
+            matched_prefix = prefix
+            bare = rev[len(prefix) :]
+            break
+
+    # Attempt PEP 440 version parse on the bare component.
+    try:
+        Version(bare)
+        return (bare, REVISION_CLASSIFICATION_VERSION)
+    except InvalidVersion:
+        pass
+
+    # Branch-shaped prefix: refs/heads/ or refs/remotes/origin/
+    if matched_prefix in (REVISION_REF_PREFIX_HEADS, REVISION_REF_PREFIX_REMOTES):
+        return (None, REVISION_CLASSIFICATION_BRANCH)
+
+    # Plain branch name (no prefix, no slash): forward-compatible branch pass-through.
+    if matched_prefix is None and "/" not in rev:
+        return (None, REVISION_CLASSIFICATION_BRANCH)
+
+    raise RevisionParseError(
+        rev,
+        reason="not a valid PEP 440 version and not a branch-shaped ref",
+    )
+
+
+def _normalize_tag_revision_to_constraint(revision: str) -> str:
+    """Convert a bare refs/tags/<version> REVISION to a PEP 440 exact-match constraint.
+
+    When ``kanon add foo@==1.0.0`` writes ``refs/tags/1.0.0`` as the REVISION,
+    ``_resolve_constraint_from_tags`` cannot evaluate it because the last path
+    component ``1.0.0`` is a bare version, not a PEP 440 specifier. This helper
+    converts ``refs/tags/1.0.0`` to ``refs/tags/==1.0.0`` so the specifier
+    evaluation succeeds (DEFECT-007 fix).
+
+    Only the ``refs/tags/`` prefix form is relevant here; other forms (plain
+    constraints like ``~=1.0.0``, prefixed constraints like
+    ``refs/tags/prefix/~=1.0.0``) are left unchanged.
+
+    Args:
+        revision: The REVISION string for a TAG-classified source.
+
+    Returns:
+        The revision with a bare terminal version component replaced by an
+        exact-match specifier (``==<version>``); all other forms are returned
+        unchanged.
+    """
+    if not revision.startswith(REVISION_REF_PREFIX_TAGS):
+        return revision
+
+    bare = revision[len(REVISION_REF_PREFIX_TAGS) :]
+
+    # If the bare component is itself a valid PEP 440 version (not a specifier),
+    # convert to an exact-match constraint.
+    try:
+        Version(bare)
+        return REVISION_REF_PREFIX_TAGS + "==" + bare
+    except InvalidVersion:
+        return revision
 
 
 # ---------------------------------------------------------------------------
@@ -197,12 +338,38 @@ def _build_row(
         return _build_row_sha_pinned(name=name, revision=revision, lock_ref=lock_ref)
 
     if shape is RevisionShape.BRANCH:
+        # Detect prefixed branch refs (refs/heads/main, refs/remotes/origin/main)
+        # and strip the prefix before dispatching (DEFECT-007 branch-shaped ref fix).
+        # For prefixed-ref forms, _normalize_revision_for_constraint is used to
+        # classify and confirm the branch classification; the bare branch name is
+        # then displayed in all version columns per spec D5.
+        # Plain branch names (e.g. "main", "feature/foo") have no refs/ prefix
+        # and go directly to _build_row_branch_pinned unchanged.
+        branch_prefix: str | None = None
+        for prefix in (p for p in REVISION_REF_PREFIXES if p != REVISION_REF_PREFIX_TAGS):
+            if revision.startswith(prefix):
+                branch_prefix = prefix
+                break
+        if branch_prefix is not None:
+            # Prefixed ref: use _normalize_revision_for_constraint to classify.
+            # This call returns (None, REVISION_CLASSIFICATION_BRANCH) for valid
+            # branch-shaped refs; RevisionParseError is raised (and propagated)
+            # for malformed refs that slip through the classification filter.
+            _, classification = _normalize_revision_for_constraint(revision)
+            if classification == REVISION_CLASSIFICATION_BRANCH:
+                bare_branch = revision[len(branch_prefix) :]
+                return _build_row_refs_branch_pinned(name=name, url=url, bare_branch=bare_branch, lock_ref=lock_ref)
         return _build_row_branch_pinned(name=name, url=url, branch=revision, lock_ref=lock_ref)
 
-    # Tag-pinned (default T1 path)
+    # Tag-pinned (default T1 path).
+    # When the REVISION is a bare refs/tags/<version> ref (e.g. refs/tags/1.0.0),
+    # normalize it to an exact-match PEP 440 constraint (refs/tags/==<version>)
+    # so _resolve_constraint_from_tags can evaluate it via SpecifierSet
+    # (DEFECT-007 refs/tags-shaped ref fix).
+    normalized_revision = _normalize_tag_revision_to_constraint(revision)
     return _build_row_tag_pinned(
         name=name,
-        revision=revision,
+        revision=normalized_revision,
         available_tags=available_tags,
         lock_ref=lock_ref,
     )
@@ -305,6 +472,55 @@ def _build_row_branch_pinned(
         current=current,
         latest_matching_spec=head_sha_12,
         latest_available=head_sha_12,
+        upgrade_type=upgrade_type,
+    )
+
+
+def _build_row_refs_branch_pinned(
+    *,
+    name: str,
+    url: str,
+    bare_branch: str,
+    lock_ref: str | None,
+) -> OutdatedRow:
+    """Build an OutdatedRow for a refs/heads/<branch> or refs/remotes/origin/<branch> source.
+
+    Per spec D5: when a REVISION is stored as a fully-qualified branch ref
+    (e.g. ``refs/heads/main``, ``refs/remotes/origin/main``), the display form
+    in all three version columns is the bare branch name (``main``), not a
+    SHA truncation. The ``upgrade-type`` reflects drift when a lockfile is
+    present and the locked SHA differs from the current branch HEAD, or
+    ``none`` when no lockfile is present.
+
+    This helper is distinct from :func:`_build_row_branch_pinned` (which is
+    used for plain branch names like ``main`` and shows the SHA) so that the
+    two display conventions do not interfere with each other.
+
+    Args:
+        name: Source name.
+        url: Git repository URL.
+        bare_branch: Branch name without any ``refs/...`` prefix.
+        lock_ref: Locked SHA from the lockfile, or ``None`` when no lockfile
+            is present.
+
+    Returns:
+        A populated :class:`OutdatedRow` with the bare branch name in the
+        ``current``, ``latest_matching_spec``, and ``latest_available`` columns.
+    """
+    head_sha = _list_branch_head(url, bare_branch)
+    head_sha_12 = _truncate_sha(head_sha)
+
+    if lock_ref is not None:
+        locked_sha_12 = _truncate_sha(lock_ref)
+        upgrade_type = "drift" if locked_sha_12 != head_sha_12 else "none"
+    else:
+        upgrade_type = "none"
+
+    return OutdatedRow(
+        name=name,
+        current=bare_branch,
+        latest_matching_spec=bare_branch,
+        latest_available=bare_branch,
         upgrade_type=upgrade_type,
     )
 

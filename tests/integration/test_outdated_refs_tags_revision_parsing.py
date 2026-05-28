@@ -172,8 +172,12 @@ class TestOutdatedRefsTagsParsing:
             f"stderr: {outdated_result.stderr!r}"
         )
 
-        assert "FOO" in outdated_result.stdout, (
-            f"Expected source name 'FOO' in output for revision {revision!r}.\n"
+        # Accept either uppercase 'FOO' (refs/heads case: template writes
+        # KANON_SOURCE_FOO_URL) or lowercase 'foo' (refs/tags case: kanon add
+        # lowercases via derive_source_name).
+        stdout_lower = outdated_result.stdout.lower()
+        assert "foo" in stdout_lower, (
+            f"Expected source name 'foo' (case-insensitive) in output for revision {revision!r}.\n"
             f"stdout: {outdated_result.stdout!r}"
         )
 

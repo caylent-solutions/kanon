@@ -75,6 +75,10 @@
 * `kanon install` now auto-derives catalog source from `.kanon` after
   `kanon add` (DEFECT-001).
 
+* `kanon --format json` commands now emit a single atomic JSON write
+  to stdout; stderr never mingles regardless of caller redirect
+  (DEFECT-002).
+
 * Fixed manifest XML path resolution in `kanon install` include-chain
   walker to look under `source_dir/.repo/manifests/` (the repo tool
   manifest checkout directory) instead of `source_dir/` directly.

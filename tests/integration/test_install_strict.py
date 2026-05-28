@@ -679,8 +679,7 @@ class TestStrictLockOrphanErrorMessage:
             f'revision_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{active_sha}"\n'
-            f"\n"
-            + active_block
+            f"\n" + active_block
         )
         for block in orphan_blocks:
             body += "\n" + block
@@ -782,20 +781,14 @@ class TestStrictLockOrphanErrorMessage:
 
         stderr = result.stderr
         assert result.returncode != 0, (
-            f"Expected non-zero exit for strict-lock orphan, got 0.\n"
-            f"stdout: {result.stdout!r}\nstderr: {stderr!r}"
+            f"Expected non-zero exit for strict-lock orphan, got 0.\nstdout: {result.stdout!r}\nstderr: {stderr!r}"
         )
         assert expected_orphan_name in stderr, (
-            f"Expected orphan name {expected_orphan_name!r} in stderr.\n"
-            f"stderr: {stderr!r}"
+            f"Expected orphan name {expected_orphan_name!r} in stderr.\nstderr: {stderr!r}"
         )
-        assert "--strict-lock" in stderr, (
-            f"Expected '--strict-lock' in stderr (remediation hint).\n"
-            f"stderr: {stderr!r}"
-        )
+        assert "--strict-lock" in stderr, f"Expected '--strict-lock' in stderr (remediation hint).\nstderr: {stderr!r}"
         assert "kanon remove" in stderr, (
-            f"Expected 'kanon remove' in stderr (alternative remediation).\n"
-            f"stderr: {stderr!r}"
+            f"Expected 'kanon remove' in stderr (alternative remediation).\nstderr: {stderr!r}"
         )
 
     @pytest.mark.parametrize(
@@ -875,8 +868,7 @@ class TestStrictLockOrphanErrorMessage:
         )
         expected_phrase = f"{orphan_count} orphaned lockfile {expected_word}"
         assert expected_phrase in stderr, (
-            f"Expected {expected_phrase!r} in stderr for {orphan_count} orphan(s).\n"
-            f"stderr: {stderr!r}"
+            f"Expected {expected_phrase!r} in stderr for {orphan_count} orphan(s).\nstderr: {stderr!r}"
         )
 
 
@@ -1105,24 +1097,20 @@ class TestStrictLockDefaultAutoPrune:
             f"stdout: {stdout!r}\nstderr: {second_result.stderr!r}"
         )
         assert "pruned orphaned lock entry:" in stdout, (
-            f"Expected 'pruned orphaned lock entry:' info line in stdout.\n"
-            f"stdout: {stdout!r}"
+            f"Expected 'pruned orphaned lock entry:' info line in stdout.\nstdout: {stdout!r}"
         )
         assert b_source_name in stdout, (
-            f"Expected orphan name {b_source_name!r} on the info line in stdout.\n"
-            f"stdout: {stdout!r}"
+            f"Expected orphan name {b_source_name!r} on the info line in stdout.\nstdout: {stdout!r}"
         )
 
         # Re-read the lockfile from disk after the subprocess exits.
         post_run_lock = read_lockfile(lock_path)
         post_run_names = [s.name for s in post_run_lock.sources]
         assert b_source_name not in post_run_names, (
-            f"Expected {b_source_name!r} to be absent from post-run lockfile.\n"
-            f"Post-run sources: {post_run_names!r}"
+            f"Expected {b_source_name!r} to be absent from post-run lockfile.\nPost-run sources: {post_run_names!r}"
         )
         assert a_source_name in post_run_names, (
-            f"Expected {a_source_name!r} to remain in post-run lockfile.\n"
-            f"Post-run sources: {post_run_names!r}"
+            f"Expected {a_source_name!r} to remain in post-run lockfile.\nPost-run sources: {post_run_names!r}"
         )
 
     @pytest.mark.parametrize("orphan_count", [1, 2, 3])

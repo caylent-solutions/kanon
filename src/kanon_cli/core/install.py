@@ -193,6 +193,11 @@ _ORPHAN_REMEDIATION = (
     "  run `kanon remove <name>` for each orphan to clean the lockfile."
 )
 
+# INFO-line prefix emitted once per orphaned lock entry that is auto-pruned
+# on default install (no --strict-lock).  Spec Section 4 E34 Change.
+# Rendered as: f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {name}"
+INFO_PRUNED_ORPHAN_LOCK_ENTRY = "pruned orphaned lock entry"
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -1733,16 +1738,64 @@ def _run_install(
             lockfile_hash_mismatch_lockfile = classification.lockfile
             lockfile_hash_mismatch_computed = classification.computed_hash
 
-    # Step 2: On hash mismatch, fail fast with a structured error.
+    # _consistent_has_orphans: set True when orphans were detected and pruned so
+    # step 7 knows to rewrite the lockfile without the orphaned entries.
+    # Declared here (before Step 2) so the hash-mismatch orphan-rescue path in
+    # Step 2 can set it when reclassifying a LOCKFILE_HASH_MISMATCH caused solely
+    # by orphan-triple removal from .kanon.
+    _consistent_has_orphans: bool = False
+
+    # Step 2: On hash mismatch, check whether the mismatch is caused solely by
+    # orphaned lock entries (sources in .kanon.lock absent from .kanon).  If so
+    # and strict_lock is False, auto-prune the orphans and continue as if the
+    # lockfile were consistent.  If strict_lock is True, raise OrphanedLockEntryError
+    # so the operator can decide.  If orphans do NOT explain the mismatch (i.e.
+    # the .kanon content changed for a reason other than orphan removal), raise
+    # KanonHashMismatchError.
     if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
         # Both fields are populated by _classify_install_state in the HASH_MISMATCH
         # branch (assigned above).  cast() communicates non-None to the type checker.
         existing_lockfile_nn = cast(Lockfile, lockfile_hash_mismatch_lockfile)
         computed_hash_nn = cast(str, lockfile_hash_mismatch_computed)
-        raise KanonHashMismatchError(
-            lockfile_hash=existing_lockfile_nn.kanon_hash,
-            computed_hash=computed_hash_nn,
-        )
+
+        # Parse .kanon to get the current set of source names so we can detect
+        # orphaned lock entries (lockfile sources absent from the current .kanon).
+        mismatch_config = parse_kanonenv(kanonenv_path)
+        mismatch_source_names: list[str] = mismatch_config["KANON_SOURCES"]
+        orphaned_on_mismatch = _detect_orphaned_lock_entries(existing_lockfile_nn, mismatch_source_names)
+        if orphaned_on_mismatch:
+            if strict_lock:
+                raise OrphanedLockEntryError(orphaned_names=orphaned_on_mismatch)
+            # Non-strict path: auto-prune the orphaned entries and continue as
+            # LOCKFILE_CONSISTENT so the install replays the remaining locked SHAs.
+            # The pruned lockfile carries the new kanon_hash (computed from the
+            # current .kanon, which already has the orphan triples removed).
+            for orphan_name in orphaned_on_mismatch:
+                print(f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {orphan_name}")
+            # Build the pruned lockfile with the current kanon_hash so the next
+            # install sees it as LOCKFILE_CONSISTENT.
+            active_names_set = set(mismatch_source_names)
+            pruned_sources_early = [e for e in existing_lockfile_nn.sources if e.name in active_names_set]
+            pruned_lockfile_early = Lockfile(
+                schema_version=existing_lockfile_nn.schema_version,
+                generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                generator=existing_lockfile_nn.generator,
+                kanon_hash=computed_hash_nn,
+                catalog=existing_lockfile_nn.catalog,
+                sources=pruned_sources_early,
+            )
+            write_lockfile(pruned_lockfile_early, lockfile_path)
+            # Reclassify: treat this run as LOCKFILE_CONSISTENT using the pruned lockfile.
+            # _consistent_has_orphans stays False here: the lockfile has already been
+            # written above, so Step 7's orphan-rewrite branch must NOT fire a second
+            # time for the same prune.
+            install_state = InstallState.LOCKFILE_CONSISTENT
+            existing_lockfile = pruned_lockfile_early
+        else:
+            raise KanonHashMismatchError(
+                lockfile_hash=existing_lockfile_nn.kanon_hash,
+                computed_hash=computed_hash_nn,
+            )
 
     # Step 3: Read catalog source from env var if not supplied by caller.
     env_catalog = os.environ.get(CATALOG_ENV_VAR)
@@ -1813,13 +1866,12 @@ def _run_install(
     # Orphan check: sources in the lockfile but absent from .kanon.
     # Drift check: branch-shaped sources whose remote tip differs from locked SHA.
     # Both checks run only in the consistent state; refresh and absent paths skip them.
-    # _consistent_has_orphans: set True when orphans were detected and pruned so
-    # step 7 knows to rewrite the lockfile without the orphaned entries.
+    # _consistent_has_orphans is declared before Step 2 so the hash-mismatch
+    # orphan-rescue path can set it when reclassifying to LOCKFILE_CONSISTENT.
     # _drifted_source_names: set of source names with detected branch drift in
     # the consistent state.  Used to skip SHA reachability checks for those
     # sources (the locked SHA is not a current ref head after the branch moved,
     # but we are intentionally reusing it in the default drift-reuse path).
-    _consistent_has_orphans: bool = False
     _drifted_source_names: set[str] = set()
     if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
         orphaned = _detect_orphaned_lock_entries(existing_lockfile, source_names)
@@ -1828,7 +1880,7 @@ def _run_install(
                 raise OrphanedLockEntryError(orphaned_names=orphaned)
             _consistent_has_orphans = True
             for orphan_name in orphaned:
-                print(f"pruned orphaned lock entry: {orphan_name}")
+                print(f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {orphan_name}")
 
         drift_reports = _detect_branch_drift(existing_lockfile)
         if drift_reports:

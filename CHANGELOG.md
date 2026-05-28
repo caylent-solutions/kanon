@@ -85,6 +85,9 @@
 
 * `kanon list --tree` emits sibling-continuation marker (DEFECT-005).
 
+* `kanon install --refresh-lock-source` summary line now reports
+  accurate refreshed / preserved project counts (DEFECT-010).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

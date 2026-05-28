@@ -75,6 +75,10 @@
 
 ### Fixed
 
+* `kanon list --all-versions` no longer aborts on the first malformed
+  historical revision; the walk continues, emitting a stderr warning
+  naming each skipped `(entry, revision)` pair (DEFECT-006).
+
 * `kanon add` no longer writes literal `<YOUR_GIT_ORG_BASE_URL>` or
   `<true|false>` placeholders; `GITBASE` is derived from the
   catalog-source URL and `KANON_MARKETPLACE_INSTALL` defaults to

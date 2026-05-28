@@ -130,6 +130,27 @@ _REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION = (
     "--refresh-lock-source requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
 )
 
+# ---------------------------------------------------------------------------
+# OrphanedLockEntryError message templates (spec Section 4 E26)
+# ---------------------------------------------------------------------------
+
+# Header line template for a single orphaned lockfile entry (N == 1).
+_ORPHAN_HEADER_SINGULAR = "ERROR: {count} orphaned lockfile entry: {names}"
+
+# Header line template for multiple orphaned lockfile entries (N >= 2).
+_ORPHAN_HEADER_PLURAL = "ERROR: {count} orphaned lockfile entries: {names}"
+
+# Context line explaining why the entries are orphaned.
+_ORPHAN_CONTEXT = "These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon."
+
+# Remediation block (three options) presented after the context line.
+_ORPHAN_REMEDIATION = (
+    "Remediation:\n"
+    "  Run `kanon install` (without --strict-lock) to auto-prune, or\n"
+    "  restore the missing KANON_SOURCE_<name>_* triples in .kanon, or\n"
+    "  run `kanon remove <name>` for each orphan to clean the lockfile."
+)
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -349,26 +370,28 @@ class OrphanedLockEntryError(InstallError):
     every orphaned entry so the operator can decide intentionally.
 
     Args:
-        orphaned_names: List of source names present in the lockfile but absent
-            from the current ``.kanon`` source declarations.
+        orphaned_names: Non-empty iterable of source names present in the lockfile
+            but absent from the current ``.kanon`` source declarations.
+
+    Raises:
+        ValueError: When ``orphaned_names`` is empty; constructing this exception
+            with zero names is a logic error -- the caller must only raise it
+            when at least one orphan is detected.
     """
 
     def __init__(self, orphaned_names: list[str]) -> None:
-        self.orphaned_names = orphaned_names
+        deduplicated = tuple(sorted(set(orphaned_names)))
+        if not deduplicated:
+            raise ValueError("OrphanedLockEntryError requires at least one orphan name; received an empty sequence.")
+        self.orphaned_names: tuple[str, ...] = deduplicated
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        names_list = ", ".join(repr(n) for n in sorted(self.orphaned_names))
-        return (
-            "ERROR: Lockfile contains orphaned sources not present in .kanon.\n"
-            f"  Orphaned sources: {names_list}\n"
-            "  These sources appear in .kanon.lock but have no corresponding\n"
-            "  KANON_SOURCE_<name>_* triples in the current .kanon file.\n"
-            "  Remediation: run 'kanon install' without --strict-lock to prune\n"
-            "  the orphaned entries automatically, or restore the missing\n"
-            "  KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, and\n"
-            "  KANON_SOURCE_<name>_PATH triples to .kanon."
-        )
+        count = len(self.orphaned_names)
+        names_csv = ", ".join(self.orphaned_names)
+        header_template = _ORPHAN_HEADER_SINGULAR if count == 1 else _ORPHAN_HEADER_PLURAL
+        header = header_template.format(count=count, names=names_csv)
+        return f"{header}\n{_ORPHAN_CONTEXT}\n\n{_ORPHAN_REMEDIATION}"
 
 
 class BranchDriftReport(NamedTuple):

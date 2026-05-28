@@ -165,3 +165,81 @@ for the changelog entry, and
 `spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
 E31 for the specification decision record. For the full `kanon why` flag
 reference see [docs/outdated-and-why.md](outdated-and-why.md).
+
+---
+
+## kanon doctor -- per-subcheck output format
+
+`kanon doctor` performs a series of consistency subchecks against the
+`.kanon` file, `.kanon.lock` lockfile, install workspace, and completion
+cache. Each subcheck produces exactly one output line on stdout.
+
+### Output format
+
+Each line follows one of three shapes depending on the outcome of the
+subcheck:
+
+- `[ok] <name>` -- the subcheck passed; no issues found.
+- `[fail] <name>: <reason>` -- the subcheck detected a problem; `<reason>`
+  describes what was found and what to do about it.
+- `[info] <name>` -- the subcheck produced an informational notice;
+  no action is required.
+
+The three prefix tokens (`[ok]`, `[fail]`, `[info]`) are fixed strings
+defined in `kanon_cli.constants` as `FINDING_PREFIX_OK`, `FINDING_PREFIX_FAIL`,
+and `FINDING_PREFIX_INFO` respectively. They do not vary between invocation
+modes.
+
+### Subcheck names
+
+The default `kanon doctor` run executes three subchecks whose names appear
+verbatim in the output:
+
+- `kanon_hash consistency` -- verifies the `.kanon` file hash recorded in
+  the lockfile matches the current file on disk.
+- `no orphaned lock entries` -- verifies every entry in `.kanon.lock` still
+  has a corresponding source declared in `.kanon`.
+- `no branch drift` -- verifies none of the locked sources has drifted from
+  the branch tip declared in the catalog.
+
+A sample successful default run looks like:
+
+```text
+[ok] kanon_hash consistency
+[ok] no orphaned lock entries
+[ok] no branch drift
+```
+
+A run that finds an orphan and a drift issue looks like:
+
+```text
+[ok] kanon_hash consistency
+[fail] no orphaned lock entries: 2 orphaned entries -- run kanon install --prune to clean
+[fail] no branch drift: source 'mylib' is behind branch tip by 3 commits
+```
+
+### Verbosity flag interaction
+
+The global `--quiet` flag suppresses INFO-level lines. When `--quiet` is
+set, any `[info] <name>` lines are omitted from stdout; `[ok]` and `[fail]`
+lines are always emitted regardless of verbosity.
+
+The default verbosity (no `--quiet` flag) emits all three severities.
+
+### Exit-code contract
+
+`kanon doctor` exits with code `0` when no `[fail]` line appears in the
+output -- that is, when all subchecks produce `[ok]` or `[info]` results.
+
+`kanon doctor` exits with a non-zero code when one or more `[fail]` lines
+are present. This preserves the pre-DEFECT-012 failure-path semantics: a
+non-zero exit is the authoritative signal for CI gates and scripted
+consumers.
+
+### Traceability
+
+The per-subcheck output format was introduced as the fix for **DEFECT-012**.
+See the `[Unreleased]` `### Fixed` section in [CHANGELOG.md](../CHANGELOG.md)
+for the changelog entry, and
+`spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
+E33 for the specification decision record.

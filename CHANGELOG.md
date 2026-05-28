@@ -103,6 +103,9 @@
 * `kanon install --strict-lock` error now enumerates each orphan
   source name with remediation hints (DEFECT-011).
 
+* `kanon doctor` now emits per-subcheck `[ok]`/`[fail]` lines on default
+  and combined runs (DEFECT-012).
+
 * `kanon doctor --refresh-completion-cache` and `kanon doctor --prune-cache` no longer require a `.kanon` workspace; both flags operate on `KANON_CACHE_DIR` globally (DEFECT-013).
 
 * `kanon outdated` now parses `refs/tags/X.Y.Z` revisions written by `kanon add` (DEFECT-007).

@@ -88,6 +88,9 @@
 * `kanon install --refresh-lock-source` summary line now reports
   accurate refreshed / preserved project counts (DEFECT-010).
 
+* `kanon install --strict-lock` error now enumerates each orphan
+  source name with remediation hints (DEFECT-011).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

@@ -689,21 +689,47 @@ kanon install --refresh-lock-source <name> \
 
 ---
 
-## 15. Orphaned Lock Entries
+## 15. Strict-lock Orphan Errors
 
 ### Symptom
+
+Without `--strict-lock`, `kanon install` silently prunes orphaned lockfile
+entries and emits one info line per orphan to stderr:
 
 ```text
 pruned orphaned lock entry: <name>
 ```
 
-Or with `--strict-lock`:
+With `--strict-lock`, the command exits non-zero and enumerates every orphaned
+source by name. For a single orphaned entry (N == 1):
 
 ```text
-ERROR: Lockfile contains orphaned sources not present in .kanon.
-  Orphaned sources: '<name>'
-  ...
+ERROR: 1 orphaned lockfile entry: alpha
+These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
+
+Remediation:
+  Run `kanon install` (without --strict-lock) to auto-prune, or
+  restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
+  run `kanon remove <name>` for each orphan to clean the lockfile.
 ```
+
+For two or more orphaned entries (N >= 2, names are sorted alphabetically and
+joined by `, `):
+
+```text
+ERROR: 2 orphaned lockfile entries: alpha, beta
+These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
+
+Remediation:
+  Run `kanon install` (without --strict-lock) to auto-prune, or
+  restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
+  run `kanon remove <name>` for each orphan to clean the lockfile.
+```
+
+An orphaned lock entry is a `[[sources]]` row in `.kanon.lock` whose `name`
+no longer appears in the current `.kanon` source declarations. This happens
+when a source is removed from `.kanon` (e.g., via `kanon remove`) but the
+lockfile has not yet been updated.
 
 ### Reproducer
 
@@ -715,14 +741,43 @@ kanon install --strict-lock
 
 ### Fix
 
-Without `--strict-lock`, orphaned entries are pruned automatically.
-With `--strict-lock`, re-run without the flag to accept the prune,
-or restore the missing source triples to `.kanon`.
+Three remediation options are available; pick the one that matches your intent:
+
+- **Option 1: Auto-prune (accept the removal).**
+  Re-run `kanon install` without `--strict-lock`. The orphaned entries are
+  removed from the lockfile automatically. Use this option when the source
+  removal was intentional and you want the lockfile to reflect it.
+
+  ```bash
+  kanon install
+  ```
+
+- **Option 2: Restore the missing triples (undo the removal).**
+  Re-add the `KANON_SOURCE_<name>_URL`, `KANON_SOURCE_<name>_REVISION`, and
+  `KANON_SOURCE_<name>_PATH` triples to `.kanon` for each listed orphan name.
+  Then re-run install. Use this option when the source removal was accidental.
+
+  ```bash
+  # Edit .kanon to restore the removed triples, then:
+  kanon install --strict-lock
+  ```
+
+- **Option 3: Remove each orphan explicitly.**
+  Run `kanon remove <name>` for each orphan listed in the error message. This
+  cleans both `.kanon` and the lockfile in a single tracked operation. Use this
+  option when you want a clean, auditable removal rather than an auto-prune.
+
+  ```bash
+  kanon remove alpha
+  kanon remove beta
+  kanon install --strict-lock
+  ```
 
 ### See also
 
 - [docs/lockfile.md](lockfile.md)
 - [docs/configuration.md](configuration.md)
+- spec/defect-resolution-and-fixture-automation-2026-06/spec.md Section 0 (DEFECT-011)
 
 ---
 

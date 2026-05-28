@@ -571,6 +571,19 @@ KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
     "see docs/migration-bootstrap-to-add.md"
 )
 
+# -- Doctor subcheck Finding severity tokens (DEFECT-012 fix) --
+# Canonical severity identifiers used by the Finding dataclass validator.
+# All three values are checked by Finding.__post_init__; any other value raises ValueError.
+FINDING_SEVERITY_OK = "ok"
+FINDING_SEVERITY_FAIL = "fail"
+FINDING_SEVERITY_INFO = "info"
+
+# Prefix tokens printed by the doctor dispatcher for each Finding severity level.
+# Format: "[ok] <name>", "[fail] <name>: <reason>", "[info] <name>" (or with reason).
+FINDING_PREFIX_OK = "[ok]"
+FINDING_PREFIX_FAIL = "[fail]"
+FINDING_PREFIX_INFO = "[info]"
+
 # -- kanon why scope tags (DEFECT-009 fix) --
 # Scope tag applied to lockfile index entries that originate from top-level
 # [[sources]] entries (i.e. not transitively included via [[sources.includes]]).

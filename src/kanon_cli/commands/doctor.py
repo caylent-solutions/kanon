@@ -34,6 +34,12 @@ if TYPE_CHECKING:
 
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
+    FINDING_PREFIX_FAIL,
+    FINDING_PREFIX_INFO,
+    FINDING_PREFIX_OK,
+    FINDING_SEVERITY_FAIL,
+    FINDING_SEVERITY_INFO,
+    FINDING_SEVERITY_OK,
     GIT_AUTH_ERROR_PATTERNS,
     GIT_RETRY_COUNT_DEFAULT,
     GIT_RETRY_COUNT_ENV_VAR,
@@ -97,6 +103,84 @@ class DoctorArgsTypeError(TypeError):
         super().__init__(
             f"args must be an argparse.Namespace; got {received_type!r}. Supply a valid Namespace from argparse."
         )
+
+
+# ---------------------------------------------------------------------------
+# Subcheck name constants (DEFECT-012 fix)
+# ---------------------------------------------------------------------------
+
+# Canonical name strings emitted by the dispatcher for each subcheck on success.
+# These identifiers appear in `[ok] <name>` / `[fail] <name>: <reason>` output.
+# All code that constructs a Finding for a named subcheck MUST reference these
+# constants rather than inline string literals (CLAUDE.md NO HARD-CODED VALUES).
+DOCTOR_SUBCHECK_KANON_HASH = "kanon_hash consistency"
+DOCTOR_SUBCHECK_ORPHAN_LOCKS = "no orphaned lock entries"
+DOCTOR_SUBCHECK_BRANCH_DRIFT = "no branch drift"
+
+
+# ---------------------------------------------------------------------------
+# DoctorContractError exception
+# ---------------------------------------------------------------------------
+
+
+class DoctorContractError(RuntimeError):
+    """Raised when a subcheck handler returns a value that is not a Finding.
+
+    This exception surfaces a programming-contract violation immediately so
+    that a refactor miss is caught at runtime rather than silently degrading
+    the structured output.
+
+    Attributes:
+        handler_name: Name of the subcheck handler that violated the contract.
+        received: The unexpected return value.
+    """
+
+    def __init__(self, handler_name: str, received: object) -> None:
+        self.handler_name = handler_name
+        self.received = received
+        super().__init__(
+            f"Subcheck handler '{handler_name}' returned {type(received)!r} instead of Finding. "
+            "All subcheck handlers must return a Finding instance."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Finding dataclass (DEFECT-012 fix)
+# ---------------------------------------------------------------------------
+
+_VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
+    {FINDING_SEVERITY_OK, FINDING_SEVERITY_FAIL, FINDING_SEVERITY_INFO}
+)
+
+
+@dataclass(frozen=True)
+class Finding:
+    """A structured output record produced by the doctor dispatcher.
+
+    Each Finding corresponds to one named subcheck. The dispatcher iterates
+    findings and prints them per the severity-to-prefix map:
+      - ok   -> "[ok] <name>"
+      - fail -> "[fail] <name>: <reason>"
+      - info -> "[info] <name>" or "[info] <name>: <reason>" when reason is set
+
+    Attributes:
+        severity: One of FINDING_SEVERITY_OK, FINDING_SEVERITY_FAIL, or
+            FINDING_SEVERITY_INFO. Validated in __post_init__.
+        name: Subcheck identifier string (e.g. DOCTOR_SUBCHECK_KANON_HASH).
+        reason: Optional detail string. Populated for fail/info severities;
+            None for ok findings.
+    """
+
+    severity: str
+    name: str
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate that severity is one of the three allowed values."""
+        if self.severity not in _VALID_FINDING_SEVERITIES:
+            raise ValueError(
+                f"Finding.severity must be one of {sorted(_VALID_FINDING_SEVERITIES)!r}; got {self.severity!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +1014,78 @@ def _print_finding(finding: DoctorFinding) -> None:
         print(f"  Remediation: {finding.remediation}", file=sys.stderr)
 
 
+_FINDING_PREFIX_MAP: dict[str, str] = {
+    FINDING_SEVERITY_OK: FINDING_PREFIX_OK,
+    FINDING_SEVERITY_FAIL: FINDING_PREFIX_FAIL,
+    FINDING_SEVERITY_INFO: FINDING_PREFIX_INFO,
+}
+
+
+def _print_structured_finding(finding: Finding, quiet: bool = False) -> None:
+    """Print a structured Finding to stdout per the severity-to-prefix map.
+
+    Format:
+      - ok   -> "[ok] <name>"
+      - fail -> "[fail] <name>: <reason>"
+      - info -> "[info] <name>" or "[info] <name>: <reason>" when reason is set
+
+    When ``quiet`` is True, INFO-level findings are suppressed (not printed).
+
+    Args:
+        finding: The Finding to print.
+        quiet: When True, INFO-severity findings are suppressed.
+    """
+    if quiet and finding.severity == FINDING_SEVERITY_INFO:
+        return
+    prefix = _FINDING_PREFIX_MAP[finding.severity]
+    if finding.reason:
+        print(f"{prefix} {finding.name}: {finding.reason}")
+    else:
+        print(f"{prefix} {finding.name}")
+
+
+def _emit_subcheck_result(
+    subcheck_name: str,
+    doctor_findings: list[DoctorFinding],
+    quiet: bool,
+) -> bool:
+    """Emit the structured Finding for a multi-result subcheck and return whether errors exist.
+
+    Iterates the DoctorFinding list via _print_finding (for detailed diagnostics to
+    stderr), then emits a single structured Finding on stdout summarizing the outcome:
+      - Any error-level DoctorFinding -> Finding(fail, <name>, reason=<first error message>)
+      - No error-level DoctorFindings -> Finding(ok, <name>)
+
+    Args:
+        subcheck_name: The subcheck identifier constant (e.g. DOCTOR_SUBCHECK_ORPHAN_LOCKS).
+        doctor_findings: List of DoctorFinding objects returned by the subcheck handler.
+        quiet: Passed through to _print_structured_finding for INFO suppression.
+
+    Returns:
+        True if any error-level DoctorFinding was present; False otherwise.
+    """
+    first_error: DoctorFinding | None = None
+    for df in doctor_findings:
+        _print_finding(df)
+        if df.kind == "error" and first_error is None:
+            first_error = df
+    if first_error is not None:
+        _print_structured_finding(
+            Finding(
+                severity=FINDING_SEVERITY_FAIL,
+                name=subcheck_name,
+                reason=first_error.message,
+            ),
+            quiet=quiet,
+        )
+        return True
+    _print_structured_finding(
+        Finding(severity=FINDING_SEVERITY_OK, name=subcheck_name),
+        quiet=quiet,
+    )
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Completion subchecks runner (7 + 9)
 # ---------------------------------------------------------------------------
@@ -1125,12 +1281,22 @@ def doctor_command(
     if active_flag_names and active_flag_names.issubset(WORKSPACE_FREE_FLAGS):
         return 0
 
+    quiet: bool = bool(getattr(args, "quiet", False))
+
     # -- Check 1: .kanon / .kanon.lock presence + hash match --
     consistency_finding = _check_kanon_hash(kanon_file, lock_file)
 
     if consistency_finding is not None:
         if consistency_finding.code == "NO_KANON":
             _print_finding(consistency_finding)
+            _print_structured_finding(
+                Finding(
+                    severity=FINDING_SEVERITY_FAIL,
+                    name=DOCTOR_SUBCHECK_KANON_HASH,
+                    reason=consistency_finding.message,
+                ),
+                quiet=quiet,
+            )
             return 1
 
         if consistency_finding.code == "NO_LOCKFILE":
@@ -1143,7 +1309,21 @@ def doctor_command(
 
         if consistency_finding.code == "HASH_MISMATCH":
             _print_finding(consistency_finding)
+            _print_structured_finding(
+                Finding(
+                    severity=FINDING_SEVERITY_FAIL,
+                    name=DOCTOR_SUBCHECK_KANON_HASH,
+                    reason=consistency_finding.message,
+                ),
+                quiet=quiet,
+            )
             return 1
+
+    # Subcheck 1 passed -- emit structured ok finding.
+    _print_structured_finding(
+        Finding(severity=FINDING_SEVERITY_OK, name=DOCTOR_SUBCHECK_KANON_HASH),
+        quiet=quiet,
+    )
 
     # Hash matched -- load the lockfile and run checks 3-5 and 6.
     from kanon_cli.core.lockfile import read_lockfile
@@ -1154,17 +1334,13 @@ def doctor_command(
 
     # -- Check 3: orphan lock entries --
     orphan_findings = _check_orphan_locks(kanon_file, lockfile)
-    for finding in orphan_findings:
-        _print_finding(finding)
-        if finding.kind == "error":
-            has_errors = True
+    if _emit_subcheck_result(DOCTOR_SUBCHECK_ORPHAN_LOCKS, orphan_findings, quiet):
+        has_errors = True
 
     # -- Check 4: branch drift --
     drift_findings = _check_branch_drift(lockfile, strict_drift=strict_drift)
-    for finding in drift_findings:
-        _print_finding(finding)
-        if finding.kind == "error":
-            has_errors = True
+    if _emit_subcheck_result(DOCTOR_SUBCHECK_BRANCH_DRIFT, drift_findings, quiet):
+        has_errors = True
 
     # -- Check 5: dangling SHA --
     dangling_findings = _check_dangling_shas(lockfile)

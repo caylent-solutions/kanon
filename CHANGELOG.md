@@ -91,6 +91,8 @@
 * `kanon install --strict-lock` error now enumerates each orphan
   source name with remediation hints (DEFECT-011).
 
+* `kanon doctor --refresh-completion-cache` and `kanon doctor --prune-cache` no longer require a `.kanon` workspace; both flags operate on `KANON_CACHE_DIR` globally (DEFECT-013).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

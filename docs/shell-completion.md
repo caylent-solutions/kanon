@@ -335,6 +335,44 @@ catalog, the cache has not yet refreshed.
    kanon doctor --prune-cache
    ```
 
+### Refreshing the completion cache without a workspace
+
+`kanon doctor --refresh-completion-cache` and
+`kanon doctor --prune-cache` operate on `KANON_CACHE_DIR` globally
+and do NOT require a `.kanon` workspace to be present in the current
+directory. Both flags inspect and modify only the cache directory;
+they never read or write `.kanon` or `.kanon.lock`. This means they
+can be invoked from any directory -- including `$HOME` or a
+freshly-created empty directory -- with no project context.
+
+Example: refresh the completion cache from `$HOME` (no `.kanon`
+present):
+
+```bash
+cd ~
+kanon doctor --refresh-completion-cache
+# exit 0; output similar to:
+# [ok] Completion cache refreshed (KANON_CACHE_DIR=~/.cache/kanon)
+```
+
+Example: prune the entire cache from any directory:
+
+```bash
+kanon doctor --prune-cache
+# exit 0; output similar to:
+# [ok] Cache pruned (KANON_CACHE_DIR=~/.cache/kanon)
+```
+
+Override the cache directory via `KANON_CACHE_DIR` to target a
+non-default location:
+
+```bash
+KANON_CACHE_DIR=/tmp/my-kanon-cache kanon doctor --refresh-completion-cache
+```
+
+See [docs/installation.md](installation.md) for the broader
+completion-installation context and initial setup instructions.
+
 ### Log file location
 
 Errors that occur inside `__complete_*` subcommands are written to

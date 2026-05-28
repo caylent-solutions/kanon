@@ -72,6 +72,9 @@
 
 ### Fixed
 
+* `kanon install` now auto-derives catalog source from `.kanon` after
+  `kanon add` (DEFECT-001).
+
 * Fixed manifest XML path resolution in `kanon install` include-chain
   walker to look under `source_dir/.repo/manifests/` (the repo tool
   manifest checkout directory) instead of `source_dir/` directly.

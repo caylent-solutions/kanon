@@ -392,10 +392,14 @@ creates it with the standard header before appending the source
 triples:
 
 ```bash
-GITBASE=<YOUR_GIT_ORG_BASE_URL>
+GITBASE=https://github.com/<org>
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
-KANON_MARKETPLACE_INSTALL=<true|false>
+KANON_MARKETPLACE_INSTALL=false
 ```
+
+> **Note:** `GITBASE` is derived automatically from the catalog-source URL of the first
+> source entry in the `.kanon` file. `KANON_MARKETPLACE_INSTALL` defaults to `false`
+> unless explicitly overridden.
 
 ### add -- Written triples
 

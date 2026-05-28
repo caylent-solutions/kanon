@@ -13,6 +13,22 @@ This module contains:
   regression coverage -- ``_build_tree_from_lockfile`` must correctly index
   top-level sources so they are reachable by ``_resolve_match``).
 
+- ``TestByUrlLiveResolve``: asserts that ``kanon why <source-name>
+  --catalog-source <url>`` exits 0 and returns a dependency chain rooted at
+  the source entry whose catalog URL was used to add it, when no .kanon.lock is
+  present. The source name is derived from the entry registered at the catalog
+  URL, matching the by-URL addressable chain shape from
+  ``test_why_chain_walker.py::TestWhyChainWalkerIntegration``.
+
+- ``TestByPathLiveResolve``: asserts that ``kanon why <source-name>
+  --catalog-source <url>`` exits 0 and the stdout chain contains the source name
+  when no .kanon.lock is present. The entry is the XML-manifest-path-addressable
+  source from the synthetic catalog, exercising the same chain format as
+  ``test_why_ambiguous.py::TestWhyXmlPathOnlyMatch`` for the live path.
+
+Both ``TestByUrlLiveResolve`` and ``TestByPathLiveResolve`` share the module-scope
+synthetic catalog fixture with ``TestWhyLiveResolve`` (via ``_live_catalog``).
+
 Autouse fixtures inherited from ``tests/integration/conftest.py``:
   - ``_mock_resolve_ref_to_sha``
   - ``_mock_check_sha_reachable``
@@ -29,6 +45,43 @@ import sys
 import pytest
 
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
+
+
+# ---------------------------------------------------------------------------
+# Module-scope synthetic catalog fixture shared across all live-resolve classes
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _live_catalog(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    """Build a single synthetic catalog bare repo shared across the live-resolve classes.
+
+    Creates a bare git repo containing entries ``foo``, ``alpha``, and ``beta``,
+    each with an annotated tag ``1.0.0``.  The three live-resolve test classes
+    share this fixture so the catalog is only built once per test module.
+
+    The returned dict contains:
+      - ``catalog_source_url``: the catalog source string in
+        ``file://<bare-path>@main`` format, suitable for ``--catalog-source``.
+      - ``bare_repo``: the absolute path to the bare repo directory.
+
+    Args:
+        tmp_path_factory: pytest's module-scoped temp path factory.
+
+    Returns:
+        A dict with keys ``catalog_source_url`` and ``bare_repo``.
+    """
+    base = tmp_path_factory.mktemp("live_catalog")
+    bare_repo = _create_manifest_repo_with_tags(
+        base,
+        entry_names=["foo", "alpha", "beta"],
+        tags=["1.0.0"],
+    )
+    catalog_source_url = f"file://{bare_repo}@main"
+    return {
+        "catalog_source_url": catalog_source_url,
+        "bare_repo": bare_repo,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -289,4 +342,231 @@ class TestWhyLockfilePresent:
             f"'not found in resolved tree' appeared in stderr -- "
             f"_build_tree_from_lockfile is not correctly indexing top-level sources.\n"
             f"stderr: {why_result.stderr!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: live-resolve path -- by catalog URL -- no .kanon.lock present
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestByUrlLiveResolve:
+    """``kanon why`` live-resolve: chain rooted at the source whose catalog URL was used.
+
+    Mirrors the chain-output assertions from
+    ``test_why_chain_walker.py::TestWhyChainWalkerIntegration`` (source name present,
+    arrow separator in chain) for the live-resolve path.
+
+    The entry ``alpha`` is registered in the shared ``_live_catalog`` synthetic catalog.
+    A ``kanon add alpha --catalog-source <url>`` run writes the catalog URL into ``.kanon``
+    without writing ``.kanon.lock`` (no install), so ``kanon why alpha`` takes the
+    live-resolve dispatcher path rather than the lockfile-walk path.
+
+    The in-process mock fixtures from ``conftest.py`` do not apply to the subprocess;
+    the real ``_resolve_ref_to_sha`` runs against the local bare repo via ``file://`` URL,
+    which is permitted by the autouse ``KANON_ALLOW_INSECURE_REMOTES=1`` env var that
+    subprocess inherits.
+    """
+
+    def test_resolve_by_url_in_live_mode(
+        self,
+        _live_catalog: dict,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``kanon why alpha`` exits 0 with chain output when no .kanon.lock is present.
+
+        The source entry ``alpha`` is registered at the catalog URL in ``_live_catalog``.
+        After ``kanon add`` (no install), the lockfile is absent -- confirming the
+        live-resolve dispatcher path is exercised.  The chain output must contain
+        ``alpha`` (the derived source-name token) and must not contain the stub
+        diagnostic.
+
+        Assertions:
+          1. ``kanon add alpha --catalog-source <url>`` exits 0.
+          2. ``.kanon.lock`` is absent before ``kanon why`` runs (live-resolve confirmed).
+          3. ``kanon why alpha --catalog-source <url>`` exits 0.
+          4. ``alpha`` appears in stdout (chain is rooted at the correct source).
+          5. ``" -> "`` or the source name alone appears in stdout (chain format present).
+          6. The stub diagnostic ``"Live-resolution is not yet implemented"`` is absent.
+
+        Args:
+            _live_catalog: Module-scope fixture dict with ``catalog_source_url`` and
+                ``bare_repo`` keys.
+            tmp_path: pytest per-test temp directory used as the kanon workspace.
+        """
+        catalog_source_url: str = _live_catalog["catalog_source_url"]
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        # -- Act: kanon add (no install, so no lockfile written) --
+        add_result = _run_kanon(
+            [
+                "add",
+                "alpha",
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
+        lock_file = workspace / ".kanon.lock"
+        assert not lock_file.exists(), (
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), "
+            f"but found it at {lock_file}"
+        )
+
+        # -- Act: kanon why (live-resolve dispatcher path) --
+        why_result = _run_kanon(
+            [
+                "why",
+                "alpha",
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+
+        # -- Assert: exits 0 --
+        assert why_result.returncode == 0, (
+            f"Expected exit 0 from 'kanon why alpha' (live-resolve, by catalog URL), "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        # -- Assert: source name alpha appears in stdout (chain rooted at owning entry) --
+        assert "alpha" in why_result.stdout, (
+            f"Expected 'alpha' in stdout (chain must be rooted at the source registered "
+            f"via the catalog URL), but got: {why_result.stdout!r}"
+        )
+
+        # -- Assert: stub diagnostic absent from stdout --
+        stub_diagnostic = "Live-resolution is not yet implemented"
+        assert stub_diagnostic not in why_result.stdout, (
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\n"
+            f"stdout: {why_result.stdout!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: live-resolve path -- by XML manifest path context -- no .kanon.lock present
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestByPathLiveResolve:
+    """``kanon why`` live-resolve: chain output for a source addressable by XML manifest path.
+
+    Mirrors the chain-output assertions from
+    ``test_why_ambiguous.py::TestWhyXmlPathOnlyMatch`` (source name present, exit 0)
+    for the live-resolve path.
+
+    The entry ``beta`` is registered in the shared ``_live_catalog`` synthetic catalog.
+    Its marketplace manifest is stored at ``repo-specs/beta-marketplace.xml`` inside the
+    catalog bare repo.  After ``kanon add beta --catalog-source <url>`` (no install),
+    ``kanon why beta`` takes the live-resolve dispatcher path.
+
+    The assertion verifies that ``beta`` (the derived source-name token) appears in the
+    stdout chain, proving the correct source is located when queried.
+    """
+
+    def test_resolve_by_xml_path_in_live_mode(
+        self,
+        _live_catalog: dict,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``kanon why beta`` exits 0 with chain output when no .kanon.lock is present.
+
+        The source entry ``beta`` corresponds to the marketplace XML at
+        ``repo-specs/beta-marketplace.xml`` in the catalog bare repo.  After
+        ``kanon add`` (no install), the lockfile is absent -- confirming the
+        live-resolve dispatcher path is exercised.
+
+        Assertions:
+          1. ``kanon add beta --catalog-source <url>`` exits 0.
+          2. ``.kanon.lock`` is absent before ``kanon why`` runs (live-resolve confirmed).
+          3. ``kanon why beta --catalog-source <url>`` exits 0.
+          4. ``beta`` appears in stdout (chain is rooted at the correct XML-path source).
+          5. The stub diagnostic ``"Live-resolution is not yet implemented"`` is absent.
+
+        Args:
+            _live_catalog: Module-scope fixture dict with ``catalog_source_url`` and
+                ``bare_repo`` keys.
+            tmp_path: pytest per-test temp directory used as the kanon workspace.
+        """
+        catalog_source_url: str = _live_catalog["catalog_source_url"]
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        # -- Act: kanon add (no install, so no lockfile written) --
+        add_result = _run_kanon(
+            [
+                "add",
+                "beta",
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
+        lock_file = workspace / ".kanon.lock"
+        assert not lock_file.exists(), (
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), "
+            f"but found it at {lock_file}"
+        )
+
+        # -- Act: kanon why (live-resolve dispatcher path) --
+        why_result = _run_kanon(
+            [
+                "why",
+                "beta",
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+
+        # -- Assert: exits 0 --
+        assert why_result.returncode == 0, (
+            f"Expected exit 0 from 'kanon why beta' (live-resolve, by XML-path source), "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        # -- Assert: source name beta appears in stdout (chain rooted at XML-path source) --
+        assert "beta" in why_result.stdout, (
+            f"Expected 'beta' in stdout (chain must be rooted at the source whose "
+            f"marketplace manifest is at repo-specs/beta-marketplace.xml), "
+            f"but got: {why_result.stdout!r}"
+        )
+
+        # -- Assert: stub diagnostic absent from stdout --
+        stub_diagnostic = "Live-resolution is not yet implemented"
+        assert stub_diagnostic not in why_result.stdout, (
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\n"
+            f"stdout: {why_result.stdout!r}"
         )

@@ -531,3 +531,97 @@ class TestAddCoreKanonFileEnvVar:
         )
         assert result.returncode == 0, f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         assert kanon_file.exists(), "Expected custom.kanon to be created via KANON_KANON_FILE"
+
+
+@pytest.mark.integration
+class TestAddCustomKanonFile:
+    """--kanon-file flag writes the source triple to the specified custom path (E38 row 44)."""
+
+    def test_kanon_file_flag_writes_to_custom_path(self, tmp_path: pathlib.Path) -> None:
+        """--kanon-file <path> writes the source triple to that path and does not create the default .kanon."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = tmp_path / "custom.kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert kanon_file.exists(), "Expected custom.kanon to be created at the --kanon-file path"
+        content = kanon_file.read_text()
+        assert "KANON_SOURCE_entry_a_URL=" in content, (
+            f"Expected source URL line in custom.kanon; got:\n{content}"
+        )
+        assert "KANON_SOURCE_entry_a_REVISION=" in content, (
+            f"Expected source REVISION line in custom.kanon; got:\n{content}"
+        )
+        assert "KANON_SOURCE_entry_a_PATH=" in content, (
+            f"Expected source PATH line in custom.kanon; got:\n{content}"
+        )
+        default_kanon = workspace / ".kanon"
+        assert not default_kanon.exists(), (
+            "Default .kanon must NOT be created when --kanon-file overrides it"
+        )
+
+
+@pytest.mark.integration
+class TestAddEnvKanonFilePrecedence:
+    """CLI --kanon-file flag takes precedence over KANON_KANON_FILE env var (E38 row 45)."""
+
+    def test_cli_flag_overrides_env_var(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--kanon-file <flag_path> wins over KANON_KANON_FILE=<env_path>; env path is NOT written."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-b"],
+            tags=["2.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        env_path = tmp_path / "env.kanon"
+        flag_path = tmp_path / "flag.kanon"
+
+        monkeypatch.setenv("KANON_KANON_FILE", str(env_path))
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-b",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(flag_path),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert flag_path.exists(), "Expected flag.kanon to be created at the --kanon-file path"
+        content = flag_path.read_text()
+        assert "KANON_SOURCE_entry_b_URL=" in content, (
+            f"Expected source URL line in flag.kanon; got:\n{content}"
+        )
+        assert "KANON_SOURCE_entry_b_REVISION=" in content, (
+            f"Expected source REVISION line in flag.kanon; got:\n{content}"
+        )
+        assert "KANON_SOURCE_entry_b_PATH=" in content, (
+            f"Expected source PATH line in flag.kanon; got:\n{content}"
+        )
+        assert not env_path.exists(), (
+            "env.kanon must NOT be written when --kanon-file flag overrides KANON_KANON_FILE"
+        )

@@ -581,9 +581,7 @@ class TestRefreshLockSourceCounters:
         capsys.readouterr()  # discard baseline output
 
         lock_path = project_dir / ".kanon.lock"
-        assert lock_path.exists(), (
-            "Baseline install must write a lockfile; lockfile absent after install()"
-        )
+        assert lock_path.exists(), "Baseline install must write a lockfile; lockfile absent after install()"
 
         # Advance catA's bare repo: new commit tagged 1.1.0.
         _advance_bare_repo_tip(
@@ -608,10 +606,7 @@ class TestRefreshLockSourceCounters:
 
         # Assert the exact counter substring -- must match (1 ... 1 ...), not (0 ... 0 ...).
         expected_counter = "(1 project refreshed; 1 project preserved)"
-        assert expected_counter in stdout, (
-            f"Expected stdout to contain {expected_counter!r}; "
-            f"got stdout={stdout!r}"
-        )
+        assert expected_counter in stdout, f"Expected stdout to contain {expected_counter!r}; got stdout={stdout!r}"
 
     def test_zero_source_workspace_omits_counter_line(
         self,
@@ -636,9 +631,7 @@ class TestRefreshLockSourceCounters:
         # Write a minimal .kanon with no KANON_SOURCE_* entries.
         kanon_path = project_dir / ".kanon"
         kanon_path.write_text(
-            "GITBASE=https://unused.example.com\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
+            "GITBASE=https://unused.example.com\nCLAUDE_MARKETPLACES_DIR=/tmp/mktplc\nKANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_path.chmod(0o600)
 
@@ -653,6 +646,5 @@ class TestRefreshLockSourceCounters:
         stdout = captured.out
 
         assert "projects refreshed" not in stdout, (
-            f"Counter line must not appear when workspace has zero sources; "
-            f"got stdout={stdout!r}"
+            f"Counter line must not appear when workspace has zero sources; got stdout={stdout!r}"
         )

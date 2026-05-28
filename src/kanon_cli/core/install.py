@@ -930,19 +930,24 @@ def _emit_install_state(
         projects: The total number of resolved projects across all sources.
         refreshed_source_name: The source name that was refreshed. Required when
             ``state`` is ``REFRESH_LOCK_SOURCE``; ignored for other states.
-        refreshed_count: The number of projects in the refreshed source. Used
-            when ``state`` is ``REFRESH_LOCK_SOURCE``.
-        preserved_count: The total number of projects in all preserved sources.
+        refreshed_count: The number of top-level sources that were refreshed.
             Used when ``state`` is ``REFRESH_LOCK_SOURCE``.
+        preserved_count: The number of top-level sources that were preserved
+            (kept as-is from the existing lockfile). Used when ``state`` is
+            ``REFRESH_LOCK_SOURCE``.
     """
     if state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         print(f"lockfile rebuilt from .kanon ({sources} sources, {projects} projects)")
     elif state is InstallState.LOCKFILE_CONSISTENT:
         print(f"installing from lockfile ({sources} sources, {projects} projects)")
     elif state is InstallState.REFRESH_LOCK_SOURCE:
+        assert refreshed_count >= 0, f"refreshed_count must be >= 0; got {refreshed_count}"
+        assert preserved_count >= 0, f"preserved_count must be >= 0; got {preserved_count}"
+        refreshed_noun = "project" if refreshed_count == 1 else "projects"
+        preserved_noun = "project" if preserved_count == 1 else "projects"
         print(
             f"lockfile partially rebuilt: source {refreshed_source_name} "
-            f"({refreshed_count} projects refreshed; {preserved_count} projects preserved)"
+            f"({refreshed_count} {refreshed_noun} refreshed; {preserved_count} {preserved_noun} preserved)"
         )
 
 
@@ -1907,12 +1912,12 @@ def _run_install(
 
     # Step 6: Emit the spec's info-line for the current state.
     if install_state is InstallState.REFRESH_LOCK_SOURCE and target_source_entry is not None:
-        # Compute refreshed vs preserved project counts from resolved_entries.
-        # Each SourceEntry carries a projects list populated during resolution; we
-        # count projects belonging to the refreshed source (M) and all other sources (K).
+        # Count refreshed vs preserved top-level source entries.
+        # A source is refreshed when its name matches the target; all other
+        # top-level sources in resolved_entries are preserved (kept as-is).
         refreshed_name = target_source_entry.name
-        refreshed_count = sum(len(e.projects) for e in resolved_entries if e.name == refreshed_name)
-        preserved_count = sum(len(e.projects) for e in resolved_entries if e.name != refreshed_name)
+        refreshed_count = sum(1 for e in resolved_entries if e.name == refreshed_name)
+        preserved_count = sum(1 for e in resolved_entries if e.name != refreshed_name)
         _emit_install_state(
             install_state,
             sources=len(source_names),

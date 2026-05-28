@@ -653,9 +653,13 @@ class TestInstallRefreshLockSourceKwarg:
     ) -> None:
         """AC-FUNC-006: install(refresh_lock_source='alpha') emits partial-rebuild info-line.
 
-        Beta is given 3 projects in the existing lockfile so the preserved count is
-        non-zero and the assertion can actually fail if the code regresses to 0.
-        Alpha is re-resolved fresh (no XML parsing), so refreshed_count is 0.
+        With two top-level sources (alpha and beta), refreshing alpha yields:
+        - refreshed_count == 1 (the alpha top-level source entry was re-resolved)
+        - preserved_count == 1 (the beta top-level source entry was kept as-is)
+
+        Counters reflect the number of top-level source entries, not sub-project
+        XML include entries. The singular form "project" is used because both
+        counts equal 1.
         """
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_path = _write_kanon(tmp_path)
@@ -692,7 +696,8 @@ class TestInstallRefreshLockSourceKwarg:
         captured = capsys.readouterr()
         assert "lockfile partially rebuilt" in captured.out
         assert "alpha" in captured.out
-        # alpha is re-resolved fresh with no project-XML rows: refreshed_count == 0.
-        # beta is preserved verbatim from the existing lockfile: preserved_count == 3.
-        assert "0 projects refreshed" in captured.out
-        assert "3 projects preserved" in captured.out
+        # refreshed_count == 1: the alpha top-level source entry was re-resolved.
+        # preserved_count == 1: the beta top-level source entry was kept as-is.
+        # Singular form "project" is used for count == 1.
+        assert "1 project refreshed" in captured.out
+        assert "1 project preserved" in captured.out

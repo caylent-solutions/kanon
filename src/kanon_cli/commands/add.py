@@ -15,9 +15,11 @@ Section 2.1 (worked example step 3), Section 1.1 (.kanon file definition).
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 
 from packaging.version import InvalidVersion, Version
 
@@ -26,8 +28,6 @@ from kanon_cli.constants import (
     KANON_CATALOG_BLOCK_HEADER,
     KANON_CATALOG_BLOCK_KEY,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
-    KANON_HEADER_GITBASE,
-    KANON_HEADER_MARKETPLACE_INSTALL,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     MISSING_CATALOG_ERROR_TEMPLATE,
@@ -52,6 +52,10 @@ _ZERO_PEP440_TAGS_ERROR = (
     " explicitly (e.g., 'kanon add foo@main') or ask the catalog author"
     " to publish a release tag."
 )
+
+# Pre-compiled regex for SCP-shorthand git URLs: git@host:org/repo[.git]
+# Compiled at module load time to avoid re-compiling on every derivation call.
+_SCP_URL_PATTERN = re.compile(r"^(git@[^:]+):([^/]+)/[^/]+(?:\.git)?$")
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -140,8 +144,103 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
 
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class CatalogSourceURLDerivationError(ValueError):
+    """Raised when GITBASE cannot be derived from the catalog-source URL.
+
+    Spec reference: spec/defect-resolution-and-fixture-automation-2026-06/spec.md
+    Section 4 E28 + CLAUDE.md Error Handling Contract.
+
+    Args:
+        url: The catalog-source URL that could not be parsed.
+        reason: A human-readable explanation of why derivation failed.
+    """
+
+    def __init__(self, url: str, reason: str) -> None:
+        self.url = url
+        self.reason = reason
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: cannot derive GITBASE from catalog-source URL {self.url}: {self.reason}\n"
+            "Pass an explicit GITBASE via the KANON_GITBASE env var or"
+            " hand-edit .kanon after running kanon add."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _derive_gitbase_from_catalog_source(url: str) -> str:
+    """Derive the GITBASE value from a catalog-source URL.
+
+    Extracts the scheme + authority (host + optional org/user prefix) from
+    the supplied URL. Supports the following URL forms:
+
+    - ``https://host/org/repo(.git)?`` -> ``https://host/org`` (or ``https://host``
+      when there is no org path segment before the repo)
+    - ``http://host/org/repo(.git)?`` -> ``http://host/org``
+    - ``ssh://user@host/org/repo(.git)?`` -> ``ssh://user@host/org``
+    - ``git@host:org/repo(.git)?`` (SCP shorthand) -> ``git@host:org``
+    - ``file:///path/to/bare-repo`` -> ``file:///path/to`` (parent directory of the repo)
+
+    Args:
+        url: The catalog-source URL (without the ``@<ref>`` suffix).
+
+    Returns:
+        The derived GITBASE string.
+
+    Raises:
+        CatalogSourceURLDerivationError: When no scheme+host can be extracted.
+        ValueError: When url is empty or None.
+    """
+    if not url:
+        raise ValueError("catalog-source URL is required for kanon add")
+
+    # SCP-shorthand form: git@host:org/repo(.git)?
+    # urllib.parse.urlsplit does not recognise this form, so handle it first.
+    scp_match = _SCP_URL_PATTERN.match(url)
+    if scp_match:
+        host_part = scp_match.group(1)  # e.g. git@github.com
+        org_part = scp_match.group(2)  # e.g. my-org
+        return f"{host_part}:{org_part}"
+
+    parsed = urllib.parse.urlsplit(url)
+    if not parsed.scheme:
+        raise CatalogSourceURLDerivationError(
+            url,
+            "URL has no scheme; expected https://, http://, ssh://, git@host:, or file://",
+        )
+
+    # file:// URLs have an empty netloc; return scheme:// + parent directory.
+    # e.g. file:///tmp/bare-repo.git -> file:///tmp
+    if parsed.scheme == "file":
+        parent_path = str(pathlib.PurePosixPath(parsed.path).parent)
+        return f"{parsed.scheme}://{parsed.netloc}{parent_path}"
+
+    if not parsed.netloc:
+        raise CatalogSourceURLDerivationError(
+            url,
+            f"URL scheme '{parsed.scheme}' has no host/authority component",
+        )
+
+    # For https/http/ssh, extract the leading path segment (the org/owner part)
+    # before the repository name. The path looks like /org/repo[.git].
+    # Strip a leading slash, then take the first segment.
+    path_segments = [s for s in parsed.path.split("/") if s]
+    if len(path_segments) >= 2:
+        # At least org/repo present -- include the org segment.
+        org_segment = path_segments[0]
+        return f"{parsed.scheme}://{parsed.netloc}/{org_segment}"
+
+    # Only a single path segment (just the repo, no org prefix) or no path.
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def _split_name_spec(raw: str) -> tuple[str, str | None]:
@@ -189,32 +288,44 @@ def _build_triple_lines(
     ]
 
 
-def _write_standard_header(dest: pathlib.Path, catalog_source: str) -> None:
+def _write_standard_header(
+    dest: pathlib.Path,
+    catalog_source: str,
+    gitbase: str,
+    marketplace_install: str,
+) -> None:
     """Write the standard .kanon header lines to dest, if dest does not exist.
 
-    Creates dest and writes the three standard header lines drawn from the
-    constants module, followed by a ``[catalog]`` block that records the
-    catalog source URL so ``kanon install`` can read it back without requiring
-    the operator to pass ``--catalog-source`` again.
+    Creates dest and writes the three standard header lines with derived values,
+    followed by a ``[catalog]`` block that records the catalog source URL so
+    ``kanon install`` can read it back without requiring the operator to pass
+    ``--catalog-source`` again.
 
     Does nothing when dest already exists -- the caller owns the decision of
     whether to create or append, so an existing file must never be rewritten
     by this helper. The ``[catalog]`` block is therefore written ONLY on the
     first ``kanon add`` invocation (fresh file path).
 
+    The GITBASE value is derived from the catalog-source URL by the caller via
+    ``_derive_gitbase_from_catalog_source``; the marketplace_install value is
+    sourced from the ``KANON_MARKETPLACE_INSTALL`` environment variable (defaulting
+    to ``"false"``). Neither value is ever a literal placeholder string.
+
     Args:
         dest: Destination .kanon file path.
         catalog_source: The ``--catalog-source`` value passed to ``kanon add``.
             Written verbatim as the ``KANON_CATALOG_SOURCE=`` value inside the
             ``[catalog]`` block.
+        gitbase: The derived GITBASE value (scheme + authority from catalog URL).
+        marketplace_install: The KANON_MARKETPLACE_INSTALL value (from env or default).
     """
     if dest.exists():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        f"{KANON_HEADER_GITBASE}\n"
+        f"GITBASE={gitbase}\n"
         f"{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\n"
-        f"{KANON_HEADER_MARKETPLACE_INSTALL}\n"
+        f"KANON_MARKETPLACE_INSTALL={marketplace_install}\n"
         f"\n"
         f"{KANON_CATALOG_BLOCK_HEADER}\n"
         f"{KANON_CATALOG_BLOCK_KEY}={catalog_source}\n"
@@ -700,6 +811,18 @@ def run_add(args: argparse.Namespace) -> int:
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
 
+    # Derive GITBASE and marketplace_install early (before any file writes) so
+    # any derivation failure exits before cloning the manifest repo.
+    # The catalog_source has the form <url>@<ref>; strip the trailing @<ref>
+    # to obtain the bare URL for GITBASE derivation.
+    catalog_source_url = catalog_source[: catalog_source.rfind("@")] if "@" in catalog_source else catalog_source
+    try:
+        gitbase = _derive_gitbase_from_catalog_source(catalog_source_url)
+    except CatalogSourceURLDerivationError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    marketplace_install = os.environ.get("KANON_MARKETPLACE_INSTALL", "false").strip()
+
     # Pre-flight: within-request collision detection (before any catalog work).
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
     _check_within_request_collisions(raw_names)
@@ -773,7 +896,7 @@ def run_add(args: argparse.Namespace) -> int:
     with kanon_workspace_lock(workspace_root):
         # Create header if file does not exist, then append or overwrite each
         # resolved triple in argument order.
-        _write_standard_header(kanon_file, catalog_source)
+        _write_standard_header(kanon_file, catalog_source, gitbase, marketplace_install)
 
         for source_name, _rel_path, lines in resolved_entries:
             if force and kanon_file.exists():

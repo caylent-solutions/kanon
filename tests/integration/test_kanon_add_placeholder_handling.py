@@ -58,18 +58,26 @@ def _bare_url_without_ref(catalog_source: str) -> str:
 def _derive_expected_gitbase(catalog_source: str) -> str:
     """Derive the expected GITBASE value from a catalog-source URL.
 
-    Mirrors the derivation rule the GREEN-phase fix must implement:
-    scheme + ``://`` + netloc (authority).  For ``file://`` URLs the
-    netloc is empty, so the result is ``file://``.
+    Mirrors the derivation rule implemented in
+    ``_derive_gitbase_from_catalog_source`` in ``commands/add.py``:
+
+    - For ``https://``, ``http://``, and ``ssh://`` URLs: scheme + ``://``
+      + netloc (authority) + the first path segment (org/owner prefix).
+    - For ``file://`` URLs: netloc is empty, so the result is
+      scheme + ``://`` + empty netloc + the parent directory of the path,
+      e.g. ``file:///tmp/foo.git`` -> ``file:///tmp``.
 
     Args:
         catalog_source: A catalog-source string of the form ``<url>@<ref>``.
 
     Returns:
-        The expected GITBASE value (scheme + ``://`` + netloc).
+        The expected GITBASE value.
     """
     url = _bare_url_without_ref(catalog_source)
     parsed = urlparse(url)
+    if parsed.scheme == "file":
+        parent_path = str(pathlib.PurePosixPath(parsed.path).parent)
+        return f"{parsed.scheme}://{parsed.netloc}{parent_path}"
     return f"{parsed.scheme}://{parsed.netloc}"
 
 

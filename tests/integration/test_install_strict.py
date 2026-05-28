@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
+import sys
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -29,7 +30,10 @@ from kanon_cli.core.install import (
     _RefResolution,
     install,
 )
+from kanon_cli.core.kanon_hash import kanon_hash as _compute_kanon_hash
 from kanon_cli.core.lockfile import read_lockfile
+from kanon_cli.core.metadata import derive_source_name
+from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
 # ---------------------------------------------------------------------------
@@ -563,3 +567,314 @@ class TestStrictLockEndToEnd:
         source_names = [s.name for s in updated_lf.sources]
         assert "ghost" not in source_names
         assert "alpha" in source_names
+
+
+# ---------------------------------------------------------------------------
+# TestStrictLockOrphanErrorMessage: verify error message content (DEFECT-011)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestStrictLockOrphanErrorMessage:
+    """Verify that --strict-lock error names each orphan source and includes remediation.
+
+    DEFECT-011: the error message produced by OrphanedLockEntryError must contain
+    the normalized orphan source name, the substring '--strict-lock', the substring
+    'kanon remove', and a count-prefixed noun phrase that is grammatically correct
+    for singular (1 orphaned lockfile entry:) and plural (N orphaned lockfile entries:).
+
+    Each test constructs a LOCKFILE_CONSISTENT state manually: a .kanon with only
+    the active source, a lockfile with the correct kanon_hash for that .kanon but
+    containing additional orphaned [[sources]] entries. Running
+    'kanon install --strict-lock' as a subprocess surfaces the error on stderr.
+    """
+
+    def _write_kanon_single_source(
+        self,
+        directory: pathlib.Path,
+        source_name: str,
+        source_url: str,
+    ) -> pathlib.Path:
+        """Write .kanon with a single source triple and return the path.
+
+        Args:
+            directory: Directory in which to create the .kanon file.
+            source_name: The KANON_SOURCE_<name> key suffix (already normalized).
+            source_url: URL for the source; bare paths are coerced to file://.
+        """
+        if source_url.startswith("/"):
+            source_url = f"file://{source_url}"
+        kanon_path = directory / ".kanon"
+        kanon_path.write_text(
+            f"KANON_MARKETPLACE_INSTALL=false\n"
+            f"KANON_SOURCE_{source_name}_URL={source_url}\n"
+            f"KANON_SOURCE_{source_name}_REVISION=main\n"
+            f"KANON_SOURCE_{source_name}_PATH=manifest.xml\n"
+        )
+        kanon_path.chmod(0o600)
+        return kanon_path
+
+    def _write_lockfile_with_orphans(
+        self,
+        lock_path: pathlib.Path,
+        kanon_hash: str,
+        catalog_source: str,
+        active_name: str,
+        active_url: str,
+        active_sha: str,
+        orphan_entries: list[tuple[str, str, str]],
+    ) -> None:
+        """Write a lockfile with correct kanon_hash but extra orphaned source entries.
+
+        The lockfile is in the LOCKFILE_CONSISTENT state (hash matches the current
+        .kanon) but contains additional [[sources]] entries that are absent from
+        the current .kanon, making them orphans detectable by --strict-lock.
+
+        Args:
+            lock_path: Path at which to write the lockfile.
+            kanon_hash: The kanon_hash that matches the current .kanon content.
+            catalog_source: The catalog source URL@ref used in the lockfile header.
+            active_name: Source name for the non-orphaned active entry.
+            active_url: URL for the active source; bare paths coerced to file://.
+            active_sha: Resolved SHA for the active source.
+            orphan_entries: List of (name, url, sha) tuples for orphaned entries.
+        """
+        if active_url.startswith("/"):
+            active_url = f"file://{active_url}"
+
+        active_block = (
+            f"[[sources]]\n"
+            f'name = "{active_name}"\n'
+            f'url = "{active_url}"\n'
+            f'revision_spec = "main"\n'
+            f'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{active_sha}"\n'
+            f'path = "manifest.xml"\n'
+        )
+
+        orphan_blocks = []
+        for orphan_name, orphan_url, orphan_sha in orphan_entries:
+            if orphan_url.startswith("/"):
+                orphan_url = f"file://{orphan_url}"
+            orphan_blocks.append(
+                f"[[sources]]\n"
+                f'name = "{orphan_name}"\n'
+                f'url = "{orphan_url}"\n'
+                f'revision_spec = "main"\n'
+                f'resolved_ref = "refs/heads/main"\n'
+                f'resolved_sha = "{orphan_sha}"\n'
+                f'path = "manifest.xml"\n'
+            )
+
+        catalog_url = catalog_source.rsplit("@", 1)[0]
+        body = (
+            f"schema_version = 1\n"
+            f'generated_at = "2026-01-15T00:00:00Z"\n'
+            f'generator = "kanon-cli/test"\n'
+            f'kanon_hash = "{kanon_hash}"\n'
+            f"\n"
+            f"[catalog]\n"
+            f'source = "{catalog_source}"\n'
+            f'url = "{catalog_url}"\n'
+            f'revision_spec = "main"\n'
+            f'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{active_sha}"\n'
+            f"\n"
+            + active_block
+        )
+        for block in orphan_blocks:
+            body += "\n" + block
+
+        lock_path.write_text(body)
+
+    def _run_strict_lock_install(
+        self,
+        project_dir: pathlib.Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run 'kanon install --strict-lock' as a subprocess in project_dir.
+
+        Args:
+            project_dir: The working directory containing the .kanon file.
+
+        Returns:
+            The completed subprocess result with stdout and stderr captured.
+        """
+        env = dict(os.environ)
+        env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
+        return subprocess.run(
+            [sys.executable, "-m", "kanon_cli", "install", "--strict-lock"],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(project_dir),
+        )
+
+    def test_error_names_each_orphan_source_and_remediation(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--strict-lock stderr must contain orphan name, '--strict-lock', and 'kanon remove'.
+
+        Spec reference: spec Section 4 E26 Failing test.
+
+        DEFECT-011 root cause: the current OrphanedLockEntryError message does not
+        include 'kanon remove' in the remediation hint. The test fails RED because the
+        expected substring is absent.
+
+        Setup:
+        - Two bare repos: catA (entry 'source-delta') and catB (entry 'source-echo').
+        - .kanon with only source-delta active.
+        - Lockfile with correct kanon_hash for that .kanon, but also containing
+          a source-echo orphaned entry (simulating the state after 'kanon remove'
+          was not followed by a lockfile prune).
+        """
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Build two bare repos: one for the active source, one for the orphan.
+        cat_a_bare = _create_manifest_repo_with_tags(
+            repos_dir / "catA",
+            entry_names=["source-delta"],
+            tags=["1.0.0"],
+        )
+        cat_b_bare = _create_manifest_repo_with_tags(
+            repos_dir / "catB",
+            entry_names=["source-echo"],
+            tags=["1.0.0"],
+        )
+
+        # Derive normalized source names the same way kanon's install engine does.
+        active_entry_name = "source-delta"
+        orphan_entry_name = "source-echo"
+        active_source_key = derive_source_name(active_entry_name)
+        expected_orphan_name = derive_source_name(orphan_entry_name)
+
+        # Placeholder SHAs (orphan check runs before SHA resolution).
+        placeholder_sha = "a" * 40
+
+        # Write .kanon with only the active source triple.
+        kanon_path = self._write_kanon_single_source(
+            project_dir,
+            source_name=active_source_key,
+            source_url=str(cat_a_bare),
+        )
+
+        # Compute kanon_hash for the single-source .kanon so the lockfile is CONSISTENT.
+        real_hash = _compute_kanon_hash(kanon_path)
+        catalog_source = f"file://{cat_a_bare}@main"
+
+        # Write lockfile: consistent hash, active entry, plus orphaned source-echo.
+        lock_path = project_dir / ".kanon.lock"
+        self._write_lockfile_with_orphans(
+            lock_path,
+            kanon_hash=real_hash,
+            catalog_source=catalog_source,
+            active_name=active_source_key,
+            active_url=str(cat_a_bare),
+            active_sha=placeholder_sha,
+            orphan_entries=[(expected_orphan_name, str(cat_b_bare), placeholder_sha)],
+        )
+
+        # Run kanon install --strict-lock and capture the result.
+        result = self._run_strict_lock_install(project_dir)
+
+        stderr = result.stderr
+        assert result.returncode != 0, (
+            f"Expected non-zero exit for strict-lock orphan, got 0.\n"
+            f"stdout: {result.stdout!r}\nstderr: {stderr!r}"
+        )
+        assert expected_orphan_name in stderr, (
+            f"Expected orphan name {expected_orphan_name!r} in stderr.\n"
+            f"stderr: {stderr!r}"
+        )
+        assert "--strict-lock" in stderr, (
+            f"Expected '--strict-lock' in stderr (remediation hint).\n"
+            f"stderr: {stderr!r}"
+        )
+        assert "kanon remove" in stderr, (
+            f"Expected 'kanon remove' in stderr (alternative remediation).\n"
+            f"stderr: {stderr!r}"
+        )
+
+    @pytest.mark.parametrize(
+        ("orphan_count", "expected_word"),
+        [(1, "entry:"), (2, "entries:")],
+    )
+    def test_error_grammatically_correct_for_single_vs_multiple_orphans(
+        self,
+        tmp_path: pathlib.Path,
+        orphan_count: int,
+        expected_word: str,
+    ) -> None:
+        """Singular/plural count prefix is grammatically correct in --strict-lock stderr.
+
+        For 1 orphan: stderr contains '1 orphaned lockfile entry:'.
+        For 2 orphans: stderr contains '2 orphaned lockfile entries:'.
+
+        Spec reference: spec Section 4 E26 Edge cases.
+
+        DEFECT-011 root cause: the current error message has no count-prefixed phrase;
+        both parametrized cases fail RED because neither expected substring is present.
+        """
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Build one bare repo for the active source.
+        cat_active_bare = _create_manifest_repo_with_tags(
+            repos_dir / "cat-active",
+            entry_names=["source-foxtrot"],
+            tags=["1.0.0"],
+        )
+        active_source_key = derive_source_name("source-foxtrot")
+
+        # Build one bare repo per orphan (named golf-0, golf-1, ...).
+        orphan_entries: list[tuple[str, str, str]] = []
+        placeholder_sha = "b" * 40
+        for idx in range(orphan_count):
+            orphan_entry_name = f"source-golf-{idx}"
+            orphan_bare = _create_manifest_repo_with_tags(
+                repos_dir / f"cat-orphan-{idx}",
+                entry_names=[orphan_entry_name],
+                tags=["1.0.0"],
+            )
+            orphan_source_key = derive_source_name(orphan_entry_name)
+            orphan_entries.append((orphan_source_key, str(orphan_bare), placeholder_sha))
+
+        # Write .kanon with only the active source.
+        placeholder_active_sha = "c" * 40
+        kanon_path = self._write_kanon_single_source(
+            project_dir,
+            source_name=active_source_key,
+            source_url=str(cat_active_bare),
+        )
+
+        real_hash = _compute_kanon_hash(kanon_path)
+        catalog_source = f"file://{cat_active_bare}@main"
+
+        lock_path = project_dir / ".kanon.lock"
+        self._write_lockfile_with_orphans(
+            lock_path,
+            kanon_hash=real_hash,
+            catalog_source=catalog_source,
+            active_name=active_source_key,
+            active_url=str(cat_active_bare),
+            active_sha=placeholder_active_sha,
+            orphan_entries=orphan_entries,
+        )
+
+        result = self._run_strict_lock_install(project_dir)
+
+        stderr = result.stderr
+        assert result.returncode != 0, (
+            f"Expected non-zero exit for strict-lock with {orphan_count} orphan(s), got 0.\n"
+            f"stdout: {result.stdout!r}\nstderr: {stderr!r}"
+        )
+        expected_phrase = f"{orphan_count} orphaned lockfile {expected_word}"
+        assert expected_phrase in stderr, (
+            f"Expected {expected_phrase!r} in stderr for {orphan_count} orphan(s).\n"
+            f"stderr: {stderr!r}"
+        )

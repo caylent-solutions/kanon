@@ -45,6 +45,8 @@ from kanon_cli.constants import (
     KANON_WHY_SUGGEST_MAX_DISTANCE,
     KANON_WHY_SUGGEST_TOP_N,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    WHY_SCOPE_TOP_LEVEL,
+    WHY_SCOPE_TRANSITIVE,
 )
 from kanon_cli.utils.levenshtein import levenshtein_distance
 from kanon_cli.core.cli_args import add_catalog_source_arg
@@ -75,6 +77,9 @@ class ChainNode:
         url: The repository URL for 'source' and 'project' nodes. None for 'include' nodes.
         canonical_url: The canonicalized URL for 'project' nodes (used for URL matching).
             None for 'source' and 'include' nodes.
+        scope: Scope tag for the node. For nodes built from the lockfile, source nodes
+            carry WHY_SCOPE_TOP_LEVEL and include nodes carry WHY_SCOPE_TRANSITIVE.
+            None for nodes built via live-resolve or for project nodes.
         children: Direct child nodes (populated when building the tree from the lockfile).
     """
 
@@ -84,6 +89,7 @@ class ChainNode:
     sha: str
     url: str | None
     canonical_url: str | None = None
+    scope: str | None = None
     children: list[ChainNode] = field(default_factory=list)
 
 
@@ -107,6 +113,10 @@ class ResolvedTree:
 def _include_entry_to_node(entry: IncludeEntry) -> ChainNode:
     """Convert a lockfile IncludeEntry to a ChainNode (recursively).
 
+    Each include node is tagged with WHY_SCOPE_TRANSITIVE to distinguish it
+    from top-level source nodes (tagged WHY_SCOPE_TOP_LEVEL) when walking
+    chains from a named node.
+
     Args:
         entry: A lockfile IncludeEntry dataclass instance.
 
@@ -119,6 +129,7 @@ def _include_entry_to_node(entry: IncludeEntry) -> ChainNode:
         ref=entry.path_in_repo,
         sha=entry.resolved_sha,
         url=None,
+        scope=WHY_SCOPE_TRANSITIVE,
     )
     for child_include in entry.includes:
         node.children.append(_include_entry_to_node(child_include))
@@ -180,6 +191,7 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
             ref=None,
             sha=source_entry.resolved_sha,
             url=source_entry.url,
+            scope=WHY_SCOPE_TOP_LEVEL,
         )
 
         # Build include subtree (recursive)
@@ -369,8 +381,18 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
     """Walk the resolved tree DFS and collect all chains passing through the target node.
 
     Used when the argument matched an include or source node (not a project URL).
-    For source nodes, chains include all descendants under that source.
-    For include nodes, chains include the include node and all project nodes under it.
+
+    Scope-aware chain construction:
+      - When target_node carries WHY_SCOPE_TOP_LEVEL (a lockfile top-level source),
+        return a single-node chain containing just that source. The source is the
+        terminal point of interest; callers requested the source by name and the
+        single-node chain correctly represents "this source is installed directly".
+      - When target_node carries WHY_SCOPE_TRANSITIVE (a lockfile transitive include),
+        walk all descendant chains from the include node down to leaf project nodes,
+        prefixed by the path from the tree root to the include (existing behaviour).
+      - When target_node.scope is None (live-resolve source or project node), fall
+        back to the original leaf-collection behaviour: descend all children or
+        return the node itself when it has no children.
 
     Args:
         tree: The fully resolved dependency tree.
@@ -378,9 +400,11 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
 
     Returns:
         A list of chains. Each chain is a list of ChainNode objects starting from
-        a top-level source down to a leaf project node that passes through target_node.
-        When target_node is a source node, returns all chains starting at that source.
-        When target_node is an include node, returns all chains passing through it.
+        a top-level source down through target_node and its descendants.
+        When target_node carries WHY_SCOPE_TOP_LEVEL, returns a single-element list
+        containing the single-node chain [target_node].
+        When target_node carries WHY_SCOPE_TRANSITIVE, returns all chains passing
+        through it down to leaf project nodes.
         Returns an empty list when no chains pass through the target node.
     """
     found_chains: list[list[ChainNode]] = []
@@ -406,8 +430,14 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
             _dfs_collect_all_leaves(child, current_path)
 
     def _dfs_find(node: ChainNode, path: list[ChainNode]) -> None:
-        """Walk the tree looking for target_node; once found, collect all descendant chains."""
+        """Walk the tree looking for target_node; once found, collect chains."""
         if node is target_node:
+            if node.scope == WHY_SCOPE_TOP_LEVEL:
+                # Top-level source match: return a single-node chain. The source is
+                # the terminal point; no need to descend into includes or projects.
+                found_chains.append([node])
+                return
+            # Transitive include or unscoped (live-resolve) node: collect all leaves.
             _dfs_collect_all_leaves(node, path)
             return
         for child in node.children:

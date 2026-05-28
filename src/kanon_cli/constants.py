@@ -571,6 +571,15 @@ KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
     "see docs/migration-bootstrap-to-add.md"
 )
 
+# -- kanon why scope tags (DEFECT-009 fix) --
+# Scope tag applied to lockfile index entries that originate from top-level
+# [[sources]] entries (i.e. not transitively included via [[sources.includes]]).
+WHY_SCOPE_TOP_LEVEL = "top_level"
+
+# Scope tag applied to lockfile index entries that originate from transitive
+# [[sources.includes]] entries (i.e. pulled in by a top-level source's manifest).
+WHY_SCOPE_TRANSITIVE = "transitive"
+
 # -- kanon why closest-match suggestion thresholds --
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this

@@ -70,9 +70,7 @@ class TestWhyLiveResolve:
     path (DEFECT-009) without modifying this class.
     """
 
-    def test_why_succeeds_with_no_lockfile_when_catalog_source_provided(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_why_succeeds_with_no_lockfile_when_catalog_source_provided(self, tmp_path: pathlib.Path) -> None:
         """kanon why exits 0 and names the package when no .kanon.lock exists.
 
         Flow:
@@ -124,8 +122,7 @@ class TestWhyLiveResolve:
         # -- Assert: no .kanon.lock exists (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert lock_file.exists() is False, (
-            "Expected .kanon.lock to be absent after 'kanon add' (no install ran), "
-            f"but found it at {lock_file}"
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
         # -- Act: kanon why (live-resolve path) --
@@ -149,15 +146,12 @@ class TestWhyLiveResolve:
         )
 
         # -- Assert: "foo" appears in stdout --
-        assert "foo" in why_result.stdout, (
-            f"Expected 'foo' in stdout but got: {why_result.stdout!r}"
-        )
+        assert "foo" in why_result.stdout, f"Expected 'foo' in stdout but got: {why_result.stdout!r}"
 
         # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
-            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\n"
-            f"stdout: {why_result.stdout!r}"
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
 
 
@@ -185,9 +179,7 @@ class TestWhyLockfilePresent:
     the "not found in resolved tree" diagnostic.
     """
 
-    def test_why_finds_top_level_source_after_install(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_why_finds_top_level_source_after_install(self, tmp_path: pathlib.Path) -> None:
         """Bare ``kanon why foo`` exits 0 and names ``foo`` when .kanon.lock is present.
 
         Flow:

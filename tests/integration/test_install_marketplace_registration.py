@@ -108,6 +108,12 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
     contains a ``<linkfile>`` element whose ``dest`` points to
     ``marketplace_dir/<source-name>/.claude-plugin/marketplace.json``.
 
+    Also writes a minimal ``.claude-plugin/marketplace.json`` into the
+    project's simulated checkout directory (``repo_dir/<source-name>/``).
+    This file is the ``src`` side of the ``<linkfile>`` element and is
+    required so that ``_process_manifest_linkfiles`` in ``install.py`` can
+    copy it to the ``dest`` path after ``repo_sync`` completes.
+
     The manifest path is derived from the ``manifest_path`` argument that
     ``install()`` passes to ``repo_init``, so it matches the
     ``KANON_SOURCE_<name>_PATH`` value in the .kanon file.
@@ -146,6 +152,15 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
                 marketplace_dest=str(marketplace_dest),
             )
         )
+
+        # Write the linkfile src file into the project checkout directory.
+        # ``_process_manifest_linkfiles`` (install.py) copies this file to
+        # the dest path after ``repo_sync`` completes.  In production, the
+        # repo tool checks out the project and the file is present; here we
+        # write it explicitly so the test does not depend on a real repo sync.
+        src_file = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
+        src_file.parent.mkdir(parents=True, exist_ok=True)
+        src_file.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
 
     return fake_repo_init
 

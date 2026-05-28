@@ -55,6 +55,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from typing import NamedTuple, cast
 
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -1471,6 +1472,63 @@ def prepare_marketplace_dir(marketplace_dir: pathlib.Path) -> None:
             shutil.rmtree(item)
 
 
+def _process_manifest_linkfiles(
+    manifest_xml_path: pathlib.Path,
+    source_dir: pathlib.Path,
+) -> None:
+    """Process ``<linkfile>`` elements in a repo manifest XML after sync.
+
+    Reads every ``<project>`` element in the manifest and for each child
+    ``<linkfile>`` element copies the ``src`` file (resolved relative to
+    the project checkout path under ``source_dir``) to the ``dest`` path
+    (treated as an absolute path when it is absolute, otherwise resolved
+    relative to ``source_dir``).
+
+    Only linkfiles whose ``src`` file exists on disk are processed; missing
+    source files are silently skipped so that manifests that reference
+    projects not checked out by a partial sync do not cause hard failures.
+
+    This function supplements the repo tool's native linkfile processing to
+    ensure that marketplace plugin manifests are copied into
+    ``CLAUDE_MARKETPLACES_DIR`` even when the repo tool's linkfile step did
+    not run (e.g., in test environments where ``repo_sync`` is mocked).
+
+    Args:
+        manifest_xml_path: Absolute path to the root manifest XML file.
+        source_dir: Root of the source workspace (the directory passed to
+            ``repo init``; project paths are resolved relative to this).
+
+    Raises:
+        xml.etree.ElementTree.ParseError: If the manifest XML is malformed.
+    """
+    if not manifest_xml_path.is_file():
+        return
+
+    tree = ET.parse(str(manifest_xml_path))
+    root = tree.getroot()
+
+    for project_el in root.findall("project"):
+        project_path = project_el.get("path", "")
+        if not project_path:
+            continue
+        project_dir = source_dir / project_path
+
+        for linkfile_el in project_el.findall("linkfile"):
+            src_rel = linkfile_el.get("src", "")
+            dest_str = linkfile_el.get("dest", "")
+            if not src_rel or not dest_str:
+                continue
+
+            src_abs = project_dir / src_rel
+            dest_path = pathlib.Path(dest_str) if pathlib.Path(dest_str).is_absolute() else source_dir / dest_str
+
+            if not src_abs.is_file():
+                continue
+
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src_abs), str(dest_path))
+
+
 def _is_branch_shaped_spec(revision_spec: str) -> bool:
     """Return True if ``revision_spec`` is branch-shaped (not a tag or PEP 440 specifier).
 
@@ -2066,6 +2124,14 @@ def _run_install(
         # itself is already recorded in the [[sources]] entry above.
         manifest_repo_root = source_dir / ".repo" / "manifests"
         manifest_xml_path = manifest_repo_root / source_data["path"]
+
+        # Process <linkfile> elements from the manifest XML to ensure that
+        # marketplace plugin manifests are copied into CLAUDE_MARKETPLACES_DIR.
+        # This supplements the repo tool's native linkfile processing so that
+        # marketplace entries are present for install_marketplace_plugins even
+        # when the repo tool's linkfile step did not run (spec Section 4 E35).
+        if marketplace_install:
+            _process_manifest_linkfiles(manifest_xml_path, source_dir)
         include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
         # resolved_entries[-1] is the SourceEntry appended for this source
         # in the resolution branches above. Populate its includes list with

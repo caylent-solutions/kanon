@@ -36,6 +36,14 @@ SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 # -- Catalog --
 CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
 
+# -- .kanon [catalog] block --
+# INI-style section header written by `kanon add` to a freshly-created .kanon
+# file to record the catalog source URL so `kanon install` can read it back
+# without requiring the operator to pass --catalog-source again.
+KANON_CATALOG_BLOCK_HEADER = "[catalog]"
+# Key name for the catalog source entry within the [catalog] block.
+KANON_CATALOG_BLOCK_KEY = "KANON_CATALOG_SOURCE"
+
 # -- List command error and notice strings --
 # Canonical missing-catalog error template (spec Section 4 header, verbatim).
 # Call with .format(command=<command-name>) to produce the final error string.

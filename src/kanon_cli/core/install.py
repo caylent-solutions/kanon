@@ -63,6 +63,8 @@ from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
     KANON_ALLOW_INSECURE_REMOTES,
+    KANON_CATALOG_BLOCK_HEADER,
+    KANON_CATALOG_BLOCK_KEY,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
@@ -274,6 +276,36 @@ class MissingCatalogSourceError(InstallError):
         if self.remediation is not None:
             return base + "\n" + self.remediation
         return base
+
+
+class CatalogBlockParseError(InstallError):
+    """Raised when a .kanon [catalog] block is present but malformed.
+
+    A malformed block is one where the ``[catalog]`` header is present but
+    the immediately-following line is not a valid
+    ``KANON_CATALOG_SOURCE=<value>`` assignment, or the value is empty.
+
+    This is a hard error: the operator must fix the block rather than having
+    the CLI silently fall back to the next precedence layer.
+
+    Args:
+        line_number: 1-based line number of the offending line in .kanon.
+        reason: Human-readable description of what is wrong with the line.
+        kanon_path: Path to the .kanon file containing the malformed block.
+    """
+
+    def __init__(self, line_number: int, reason: str, kanon_path: pathlib.Path) -> None:
+        self.line_number = line_number
+        self.reason = reason
+        self.kanon_path = kanon_path
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: malformed [catalog] block at {self.kanon_path}:{self.line_number}: {self.reason}\n"
+            f"Remove the block or supply a value of the form "
+            f"`{KANON_CATALOG_BLOCK_KEY}=<url>@<ref>`."
+        )
 
 
 class UnknownSourceError(InstallError):
@@ -712,11 +744,81 @@ def _classify_install_state(
     )
 
 
+def _parse_catalog_block(kanon_path: pathlib.Path) -> str | None:
+    """Parse the optional ``[catalog]`` block from a ``.kanon`` file.
+
+    Scans the file for a line equal to ``KANON_CATALOG_BLOCK_HEADER`` (``[catalog]``).
+    When found, reads the immediately-following non-blank line and expects it to
+    be a ``KANON_CATALOG_BLOCK_KEY=<value>`` assignment with a non-empty value.
+
+    Returns ``None`` when no ``[catalog]`` header is present -- absence of the
+    block is a normal condition on projects that were created before E22 and does
+    NOT trigger a fallback error.
+
+    Raises:
+        CatalogBlockParseError: When the ``[catalog]`` header is present but the
+            follow-up assignment is missing, malformed, or has an empty value.
+            The error includes the 1-based line number of the offending line.
+
+    Args:
+        kanon_path: Path to the ``.kanon`` file to read.
+
+    Returns:
+        The catalog source value string (``<url>@<ref>`` form), or ``None`` when
+        the block is absent.
+    """
+    if not kanon_path.exists():
+        return None
+
+    lines = kanon_path.read_text().splitlines()
+    expected_key_prefix = f"{KANON_CATALOG_BLOCK_KEY}="
+
+    for idx, line in enumerate(lines):
+        if line.strip() == KANON_CATALOG_BLOCK_HEADER:
+            header_line_number = idx + 1  # 1-based
+
+            # Find the immediately-following non-blank line.
+            next_idx = idx + 1
+            while next_idx < len(lines) and lines[next_idx].strip() == "":
+                next_idx += 1
+
+            if next_idx >= len(lines):
+                # Header at end of file with no follow-up line.
+                raise CatalogBlockParseError(
+                    line_number=header_line_number,
+                    reason=f"[catalog] header at line {header_line_number} has no following {KANON_CATALOG_BLOCK_KEY}= line",
+                    kanon_path=kanon_path,
+                )
+
+            follow_line = lines[next_idx].strip()
+            follow_line_number = next_idx + 1  # 1-based
+
+            if not follow_line.startswith(expected_key_prefix):
+                raise CatalogBlockParseError(
+                    line_number=follow_line_number,
+                    reason=f"expected {KANON_CATALOG_BLOCK_KEY}=<url>@<ref>, got {follow_line!r}",
+                    kanon_path=kanon_path,
+                )
+
+            value = follow_line[len(expected_key_prefix) :]
+            if not value:
+                raise CatalogBlockParseError(
+                    line_number=follow_line_number,
+                    reason=f"{KANON_CATALOG_BLOCK_KEY} value is empty; expected <url>@<ref>",
+                    kanon_path=kanon_path,
+                )
+
+            return value
+
+    return None
+
+
 def _resolve_catalog_source(
     cli_arg: str | None,
     env_value: str | None,
     lockfile_catalog_source: str | None,
     install_state: InstallState,
+    kanon_path: pathlib.Path | None = None,
 ) -> str:
     """Resolve the effective catalog source following the spec's precedence rule.
 
@@ -726,12 +828,16 @@ def _resolve_catalog_source(
     3. ``lockfile_catalog_source`` -- the ``[catalog].source`` field from the
        lockfile. This fallback applies ONLY in the ``LOCKFILE_CONSISTENT`` state
        and ONLY when both ``cli_arg`` and ``env_value`` are unset.
+    4. ``kanon_path`` -- the ``[catalog]`` block inside the ``.kanon`` file
+       written by ``kanon add``. This fallback applies when the block is present
+       and the three higher-priority layers all return ``None``. The refresh-lock
+       paths disable this fallback (same constraint as the lockfile fallback).
 
     When ``cli_arg`` or ``env_value`` is set and the lockfile's source differs,
     ``CatalogSourceMismatchError`` is raised (spec Section 4.7 -- the lockfile
     is authoritative; a deliberate catalog change requires ``--refresh-lock``).
 
-    When all three sources are unset (or the lockfile fallback is not applicable
+    When all four sources are unset (or their fallbacks are not applicable
     for the current state), ``MissingCatalogSourceError`` is raised.
 
     Args:
@@ -740,11 +846,14 @@ def _resolve_catalog_source(
         lockfile_catalog_source: The ``[catalog].source`` from a parsed lockfile,
             or ``None`` when no lockfile is available.
         install_state: The ``InstallState`` returned by ``_classify_install_state``.
+        kanon_path: Path to the ``.kanon`` file for the fourth fallback layer.
+            When ``None``, the ``.kanon`` block fallback is skipped.
 
     Returns:
         The effective catalog source string (``<url>@<ref>`` form).
 
     Raises:
+        CatalogBlockParseError: If the .kanon [catalog] block is malformed.
         CatalogSourceMismatchError: If CLI/env source differs from the lockfile source
             in the consistent state (AC-FUNC-005).
         MissingCatalogSourceError: If no catalog source can be resolved (AC-FUNC-007).
@@ -783,6 +892,15 @@ def _resolve_catalog_source(
     # No CLI/env source -- use lockfile fallback only in the consistent state.
     if install_state is InstallState.LOCKFILE_CONSISTENT and lockfile_catalog_source is not None:
         return lockfile_catalog_source
+
+    # Fourth precedence layer: read the [catalog] block from the .kanon file.
+    # This block is written by `kanon add` when creating a fresh .kanon file.
+    # _parse_catalog_block returns None when the block is absent (not an error),
+    # and raises CatalogBlockParseError when the block is present but malformed.
+    if kanon_path is not None:
+        kanon_block_source = _parse_catalog_block(kanon_path)
+        if kanon_block_source is not None:
+            return kanon_block_source
 
     raise MissingCatalogSourceError(command="install")
 
@@ -1513,14 +1631,17 @@ def _run_install(
     lockfile_catalog_source: str | None = existing_lockfile.catalog.source if existing_lockfile is not None else None
 
     # Step 4: Resolve the effective catalog source following precedence rules.
-    # _resolve_catalog_source enforces the three-tier precedence (CLI > env > lockfile
-    # fallback) and raises MissingCatalogSourceError when all tiers are unset
-    # (AC-FUNC-007).  The lockfile fallback applies only in LOCKFILE_CONSISTENT state.
+    # _resolve_catalog_source enforces the four-tier precedence (CLI > env > lockfile
+    # fallback > .kanon [catalog] block) and raises MissingCatalogSourceError when
+    # all tiers are unset (AC-FUNC-007). The lockfile fallback applies only in
+    # LOCKFILE_CONSISTENT state. The .kanon block fallback applies in LOCKFILE_ABSENT
+    # state when the block was written by a preceding `kanon add` invocation.
     effective_catalog_source: str = _resolve_catalog_source(
         cli_arg=catalog_source,
         env_value=env_catalog,
         lockfile_catalog_source=lockfile_catalog_source,
         install_state=install_state,
+        kanon_path=kanonenv_path,
     )
 
     print(f"kanon install: parsing {kanonenv_path}...")

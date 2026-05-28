@@ -23,6 +23,8 @@ from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
+    KANON_CATALOG_BLOCK_HEADER,
+    KANON_CATALOG_BLOCK_KEY,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     KANON_HEADER_GITBASE,
     KANON_HEADER_MARKETPLACE_INSTALL,
@@ -187,19 +189,36 @@ def _build_triple_lines(
     ]
 
 
-def _write_standard_header(dest: pathlib.Path) -> None:
+def _write_standard_header(dest: pathlib.Path, catalog_source: str) -> None:
     """Write the standard .kanon header lines to dest, if dest does not exist.
 
     Creates dest and writes the three standard header lines drawn from the
-    constants module. Does nothing when dest already exists.
+    constants module, followed by a ``[catalog]`` block that records the
+    catalog source URL so ``kanon install`` can read it back without requiring
+    the operator to pass ``--catalog-source`` again.
+
+    Does nothing when dest already exists -- the caller owns the decision of
+    whether to create or append, so an existing file must never be rewritten
+    by this helper. The ``[catalog]`` block is therefore written ONLY on the
+    first ``kanon add`` invocation (fresh file path).
 
     Args:
         dest: Destination .kanon file path.
+        catalog_source: The ``--catalog-source`` value passed to ``kanon add``.
+            Written verbatim as the ``KANON_CATALOG_SOURCE=`` value inside the
+            ``[catalog]`` block.
     """
     if dest.exists():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
-    header = f"{KANON_HEADER_GITBASE}\n{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\n{KANON_HEADER_MARKETPLACE_INSTALL}\n"
+    header = (
+        f"{KANON_HEADER_GITBASE}\n"
+        f"{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\n"
+        f"{KANON_HEADER_MARKETPLACE_INSTALL}\n"
+        f"\n"
+        f"{KANON_CATALOG_BLOCK_HEADER}\n"
+        f"{KANON_CATALOG_BLOCK_KEY}={catalog_source}\n"
+    )
     dest.write_text(header)
 
 
@@ -754,7 +773,7 @@ def run_add(args: argparse.Namespace) -> int:
     with kanon_workspace_lock(workspace_root):
         # Create header if file does not exist, then append or overwrite each
         # resolved triple in argument order.
-        _write_standard_header(kanon_file)
+        _write_standard_header(kanon_file, catalog_source)
 
         for source_name, _rel_path, lines in resolved_entries:
             if force and kanon_file.exists():

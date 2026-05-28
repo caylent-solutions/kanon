@@ -159,13 +159,15 @@ class TestBuildTripleLines:
 class TestStandardHeader:
     """Standard-header creation when the destination file is absent."""
 
+    _SAMPLE_CATALOG_SOURCE = "https://github.com/example/manifest.git@main"
+
     def test_header_written_when_file_absent(self, tmp_path: pathlib.Path) -> None:
         """_write_standard_header creates the file with the three header lines."""
         from kanon_cli.commands.add import _write_standard_header
 
         dest = tmp_path / ".kanon"
         assert not dest.exists()
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         assert dest.exists()
 
     def test_header_contains_gitbase(self, tmp_path: pathlib.Path) -> None:
@@ -173,7 +175,7 @@ class TestStandardHeader:
         from kanon_cli.commands.add import _write_standard_header
 
         dest = tmp_path / ".kanon"
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         content = dest.read_text()
         assert "GITBASE=" in content
 
@@ -182,7 +184,7 @@ class TestStandardHeader:
         from kanon_cli.commands.add import _write_standard_header
 
         dest = tmp_path / ".kanon"
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         content = dest.read_text()
         assert "CLAUDE_MARKETPLACES_DIR=" in content
 
@@ -191,7 +193,7 @@ class TestStandardHeader:
         from kanon_cli.commands.add import _write_standard_header
 
         dest = tmp_path / ".kanon"
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         content = dest.read_text()
         assert "KANON_MARKETPLACE_INSTALL=" in content
 
@@ -199,13 +201,13 @@ class TestStandardHeader:
         """Header values come from constants, not inline strings."""
         from kanon_cli.commands.add import _write_standard_header
         from kanon_cli.constants import (
-            KANON_HEADER_GITBASE,
             KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
+            KANON_HEADER_GITBASE,
             KANON_HEADER_MARKETPLACE_INSTALL,
         )
 
         dest = tmp_path / ".kanon"
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         content = dest.read_text()
         assert KANON_HEADER_GITBASE in content
         assert KANON_HEADER_CLAUDE_MARKETPLACES_DIR in content
@@ -217,11 +219,33 @@ class TestStandardHeader:
 
         dest = tmp_path / ".kanon"
         dest.write_text("EXISTING=value\n")
-        _write_standard_header(dest)
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
         content = dest.read_text()
         assert "EXISTING=value" in content
         # Standard header lines must NOT appear when file already exists
         assert "GITBASE=" not in content
+
+    def test_catalog_block_written_to_fresh_file(self, tmp_path: pathlib.Path) -> None:
+        """Fresh .kanon file gets a [catalog] block with the catalog source."""
+        from kanon_cli.commands.add import _write_standard_header
+        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER, KANON_CATALOG_BLOCK_KEY
+
+        dest = tmp_path / ".kanon"
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
+        content = dest.read_text()
+        assert KANON_CATALOG_BLOCK_HEADER in content
+        assert f"{KANON_CATALOG_BLOCK_KEY}={self._SAMPLE_CATALOG_SOURCE}" in content
+
+    def test_catalog_block_not_written_when_file_exists(self, tmp_path: pathlib.Path) -> None:
+        """Existing .kanon file is not rewritten -- no [catalog] block added."""
+        from kanon_cli.commands.add import _write_standard_header
+        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER
+
+        dest = tmp_path / ".kanon"
+        dest.write_text("EXISTING=value\n")
+        _write_standard_header(dest, self._SAMPLE_CATALOG_SOURCE)
+        content = dest.read_text()
+        assert KANON_CATALOG_BLOCK_HEADER not in content
 
 
 # ---------------------------------------------------------------------------

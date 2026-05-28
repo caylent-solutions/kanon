@@ -15,7 +15,7 @@ import pathlib
 
 import pytest
 
-from kanon_cli.commands.outdated import OutdatedRow, _format_json, _row_to_dict
+from kanon_cli.commands.outdated import OutdatedRow, _build_outdated_payload, _format_json, _row_to_dict
 
 
 # ---------------------------------------------------------------------------
@@ -464,3 +464,74 @@ class TestRunJsonDispatch:
             "latest-available",
             "upgrade-type",
         }
+
+
+# ---------------------------------------------------------------------------
+# Tests for _build_outdated_payload helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildOutdatedPayload:
+    """_build_outdated_payload returns a list of dicts consumed by _emit_json_payload."""
+
+    def test_single_row_has_five_keys(self) -> None:
+        """Each element has exactly the five spec-canonical keys."""
+        rows = [
+            OutdatedRow(
+                name="FOO",
+                current="1.0.0",
+                latest_matching_spec="1.0.1",
+                latest_available="1.1.0",
+                upgrade_type="patch",
+            )
+        ]
+        payload = _build_outdated_payload(rows)
+        assert isinstance(payload, list)
+        assert len(payload) == 1
+        assert set(payload[0].keys()) == {
+            "name",
+            "current",
+            "latest-matching-spec",
+            "latest-available",
+            "upgrade-type",
+        }
+
+    def test_values_match_row_fields(self) -> None:
+        """Field values match the OutdatedRow attributes."""
+        rows = [
+            OutdatedRow(
+                name="BAR",
+                current="2.0.0",
+                latest_matching_spec="2.1.0",
+                latest_available="3.0.0",
+                upgrade_type="minor",
+            )
+        ]
+        payload = _build_outdated_payload(rows)
+        obj = payload[0]
+        assert obj["name"] == "BAR"
+        assert obj["current"] == "2.0.0"
+        assert obj["latest-matching-spec"] == "2.1.0"
+        assert obj["latest-available"] == "3.0.0"
+        assert obj["upgrade-type"] == "minor"
+
+    def test_empty_rows_produces_empty_list(self) -> None:
+        """Empty input produces an empty list."""
+        assert _build_outdated_payload([]) == []
+
+    def test_result_is_json_serialisable(self) -> None:
+        """The payload round-trips through json.dumps / json.loads without error."""
+        rows = [
+            OutdatedRow(
+                name="ALPHA",
+                current="1.0.0",
+                latest_matching_spec="1.0.0",
+                latest_available="1.0.0",
+                upgrade_type="none",
+            )
+        ]
+        payload = _build_outdated_payload(rows)
+        serialised = json.dumps(payload)
+        parsed = json.loads(serialised)
+        assert parsed[0]["name"] == "ALPHA"

@@ -763,11 +763,30 @@ def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
     return result
 
 
+def _build_why_payload(chains: list[list[ChainNode]]) -> list[list[dict[str, object]]]:
+    """Build the JSON-serialisable payload for a list of chains.
+
+    Returns a nested list: the outer list contains one element per chain;
+    each inner list contains one node-dict per hop.
+
+    Args:
+        chains: A list of chains, each chain being a list of ChainNode objects.
+
+    Returns:
+        A list-of-lists of dicts ready for JSON serialisation.
+    """
+    return [_chain_to_node_dicts(chain) for chain in chains]
+
+
 def _render_json(chains: list[list[ChainNode]]) -> str:
     """Render a list of chains to a JSON string (spec Section 4.5 step 4).
 
     The output is a top-level JSON array of chains. Each chain is a list of
     node objects with exactly five keys: kind, name, ref, sha, url.
+
+    Kept for backward compatibility with callers that need the serialised
+    string directly (e.g. unit tests).  The :func:`run_why` handler calls
+    :func:`_emit_json_payload` via :func:`_build_why_payload` directly.
 
     Args:
         chains: A list of chains, each chain being a list of ChainNode objects.
@@ -775,8 +794,7 @@ def _render_json(chains: list[list[ChainNode]]) -> str:
     Returns:
         A JSON string representation of all chains, terminated with a newline.
     """
-    serialized: list[list[dict[str, object]]] = [_chain_to_node_dicts(chain) for chain in chains]
-    return json.dumps(serialized, sort_keys=False, indent=KANON_WHY_JSON_INDENT) + "\n"
+    return json.dumps(_build_why_payload(chains), sort_keys=False, indent=KANON_WHY_JSON_INDENT) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -976,7 +994,9 @@ def run(args: argparse.Namespace) -> int:
 
     # -- Render and emit output --
     if args.format == KANON_WHY_FORMAT_JSON:
-        print(_render_json(chains), end="")
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_why_payload(chains), sort_keys=False, indent=KANON_WHY_JSON_INDENT)
     else:
         lines = _render_text(chains)
         for line in lines:

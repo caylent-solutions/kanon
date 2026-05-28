@@ -1,10 +1,12 @@
 """Tests for the catalog resolution module."""
 
+import json
 import pathlib
 from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.catalog import AuditFinding, _build_findings_payload
 from kanon_cli.core.catalog import (
     MissingCatalogSourceError,
     _clone_remote_catalog,
@@ -329,3 +331,59 @@ class TestCatalogSubparserHelp:
                 )
                 return
         raise AssertionError("No 'audit' sub-subparser found under 'catalog'")
+
+
+# ---------------------------------------------------------------------------
+# Tests for _build_findings_payload helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildFindingsPayload:
+    """_build_findings_payload returns a dict consumed by _emit_json_payload."""
+
+    def _make_finding(
+        self,
+        kind: str = "error",
+        code: str = "E001",
+        message: str = "Something wrong.",
+        remediation: str = "",
+    ) -> AuditFinding:
+        """Build a minimal AuditFinding for testing."""
+        return AuditFinding(kind=kind, code=code, message=message, remediation=remediation)
+
+    def test_payload_has_findings_key(self) -> None:
+        """The payload dict has a single 'findings' key."""
+        finding = self._make_finding()
+        payload = _build_findings_payload([finding])
+        assert "findings" in payload
+        assert set(payload.keys()) == {"findings"}
+
+    def test_findings_list_length_matches_input(self) -> None:
+        """The 'findings' list has the same length as the input list."""
+        findings = [self._make_finding(), self._make_finding(kind="warn", code="W001")]
+        payload = _build_findings_payload(findings)
+        assert len(payload["findings"]) == 2
+
+    def test_empty_input_produces_empty_findings_list(self) -> None:
+        """Empty input produces {'findings': []}."""
+        payload = _build_findings_payload([])
+        assert payload == {"findings": []}
+
+    def test_finding_fields_are_preserved(self) -> None:
+        """Each finding dict contains the expected fields."""
+        finding = self._make_finding(kind="error", code="E001", message="Bad.", remediation="Fix it.")
+        payload = _build_findings_payload([finding])
+        finding_dict = payload["findings"][0]
+        assert finding_dict["kind"] == "error"
+        assert finding_dict["code"] == "E001"
+        assert finding_dict["message"] == "Bad."
+        assert finding_dict["remediation"] == "Fix it."
+
+    def test_result_is_json_serialisable(self) -> None:
+        """The payload round-trips through json.dumps / json.loads without error."""
+        finding = self._make_finding()
+        payload = _build_findings_payload([finding])
+        serialised = json.dumps(payload)
+        parsed = json.loads(serialised)
+        assert parsed["findings"][0]["code"] == "E001"

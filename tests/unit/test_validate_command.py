@@ -1,12 +1,13 @@
 """Tests for the validate command handler."""
 
+import json
 import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.commands.validate import _resolve_repo_root, _run_marketplace, _run_xml
+from kanon_cli.commands.validate import _resolve_repo_root, _run_marketplace, _run_xml, validate_metadata_command
 
 
 @pytest.mark.unit
@@ -73,3 +74,37 @@ class TestRunMarketplace:
             with pytest.raises(SystemExit) as exc_info:
                 _run_marketplace(args)
             assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests for validate_metadata_command JSON output via _build_findings_payload
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestValidateMetadataCommandJsonOutput:
+    """validate_metadata_command JSON output uses _build_findings_payload."""
+
+    def test_json_format_calls_emit_json_payload(self, tmp_path: Path, capsys) -> None:
+        """validate_metadata_command --format json routes output through _emit_json_payload."""
+        repo_specs = tmp_path / "repo-specs"
+        repo_specs.mkdir()
+        (repo_specs / "alpha-marketplace.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest><catalog-metadata>"
+            "<name>alpha</name><display-name>Alpha</display-name>"
+            "<description>Desc.</description><version>1.0.0</version>"
+            "<type>plugin</type><owner-name>T</owner-name>"
+            "<owner-email>t@e.com</owner-email><keywords>k</keywords>"
+            "</catalog-metadata></manifest>"
+        )
+        args = types.SimpleNamespace(repo_root=tmp_path, format="json")
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_metadata_command(args)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert "findings" in parsed
+        assert isinstance(parsed["findings"], list)

@@ -315,6 +315,21 @@ def _check_repo_specs_dir(path: pathlib.Path) -> None:
         sys.exit(1)
 
 
+def _build_findings_payload(findings: list[AuditFinding]) -> dict:
+    """Build the JSON-serialisable payload for a list of :class:`AuditFinding`.
+
+    Returns a dict with a single ``findings`` key whose value is a list of
+    finding dicts (via ``dataclasses.asdict``).
+
+    Args:
+        findings: The findings to convert.
+
+    Returns:
+        A dict ready for JSON serialisation.
+    """
+    return {"findings": [asdict(f) for f in findings]}
+
+
 def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
     """Format a list of AuditFinding objects for output.
 
@@ -331,7 +346,7 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
         ValueError: If fmt is not "text" or "json".
     """
     if fmt == KANON_CATALOG_AUDIT_FORMAT_JSON:
-        return json.dumps({"findings": [asdict(f) for f in findings]})
+        return json.dumps(_build_findings_payload(findings))
 
     if fmt == KANON_CATALOG_AUDIT_FORMAT_DEFAULT:
         if not findings:
@@ -905,9 +920,14 @@ def audit_command(args: argparse.Namespace) -> int:
     # and is not registered in AUDIT_CHECK_REGISTRY (not selectable via --check).
     findings.extend(_check_legacy_catalog_dir(target_path, _kanon_version))
 
-    formatted = _format_findings(findings, args.format)
-    if formatted:
-        print(formatted)
+    if args.format == KANON_CATALOG_AUDIT_FORMAT_JSON:
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_findings_payload(findings))
+    else:
+        formatted = _format_findings(findings, args.format)
+        if formatted:
+            print(formatted)
 
     errors = [f for f in findings if f.kind == "error"]
     warns = [f for f in findings if f.kind == "warn"]

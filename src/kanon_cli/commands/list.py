@@ -522,24 +522,24 @@ def _format_detail_record(metadata: CatalogMetadata) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _format_json_catalog(entries: list[CatalogMetadata]) -> str:
-    """Serialise a list of :class:`CatalogMetadata` to a JSON array string.
+def _build_catalog_payload(entries: list[CatalogMetadata]) -> list[dict]:
+    """Build the JSON-serialisable payload for a list of :class:`CatalogMetadata`.
 
     Each element is an object with the five fields specified in Section 4.1:
     ``name``, ``display-name``, ``type``, ``description``, ``version``.
     The ``type`` field is ``null`` in JSON when the metadata slot is ``None``.
 
-    Used by both the default mode and the ``--detail`` mode when
-    ``--format json`` is active; the ``--detail`` flag does not change the
-    JSON shape.
+    Used by :func:`_format_json_catalog` (for tests that inspect the JSON string)
+    and by the :func:`run_list` handler that calls :func:`_emit_json_payload`
+    directly.
 
     Args:
         entries: Sorted list of :class:`CatalogMetadata` instances.
 
     Returns:
-        A JSON-serialised string terminated by exactly one newline.
+        A list of dicts ready for JSON serialisation.
     """
-    records = [
+    return [
         {
             "name": m.name,
             "display-name": m.display_name,
@@ -549,11 +549,26 @@ def _format_json_catalog(entries: list[CatalogMetadata]) -> str:
         }
         for m in entries
     ]
-    return json.dumps(records) + "\n"
 
 
-def _format_json_all_versions(rows: list[VersionRow]) -> str:
-    """Serialise a list of :class:`VersionRow` to a JSON array string.
+def _format_json_catalog(entries: list[CatalogMetadata]) -> str:
+    """Serialise a list of :class:`CatalogMetadata` to a JSON array string.
+
+    Delegates to :func:`_build_catalog_payload` for the data structure and
+    then calls ``json.dumps``.  Kept for backward compatibility with callers
+    that need the serialised string directly (e.g. unit tests).
+
+    Args:
+        entries: Sorted list of :class:`CatalogMetadata` instances.
+
+    Returns:
+        A JSON-serialised string terminated by exactly one newline.
+    """
+    return json.dumps(_build_catalog_payload(entries)) + "\n"
+
+
+def _build_all_versions_payload(rows: list[VersionRow]) -> list[dict]:
+    """Build the JSON-serialisable payload for a list of :class:`VersionRow`.
 
     Each element is an object with the four fields specified in Section 4.1
     worked-example footer: ``name``, ``version``, ``ref``, ``sha``.
@@ -562,9 +577,9 @@ def _format_json_all_versions(rows: list[VersionRow]) -> str:
         rows: List of :class:`VersionRow` instances.
 
     Returns:
-        A JSON-serialised string terminated by exactly one newline.
+        A list of dicts ready for JSON serialisation.
     """
-    records = [
+    return [
         {
             "name": r.name,
             "version": r.version,
@@ -573,7 +588,22 @@ def _format_json_all_versions(rows: list[VersionRow]) -> str:
         }
         for r in rows
     ]
-    return json.dumps(records) + "\n"
+
+
+def _format_json_all_versions(rows: list[VersionRow]) -> str:
+    """Serialise a list of :class:`VersionRow` to a JSON array string.
+
+    Delegates to :func:`_build_all_versions_payload` for the data structure.
+    Kept for backward compatibility with callers that need the serialised
+    string directly (e.g. unit tests).
+
+    Args:
+        rows: List of :class:`VersionRow` instances.
+
+    Returns:
+        A JSON-serialised string terminated by exactly one newline.
+    """
+    return json.dumps(_build_all_versions_payload(rows)) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -1164,10 +1194,14 @@ def run_list(args: argparse.Namespace) -> int:
         if not rows:
             print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
             if list_format == "json":
-                print(_format_json_all_versions([]), end="")
+                from kanon_cli.cli import _emit_json_payload
+
+                _emit_json_payload(_build_all_versions_payload([]))
             return 0
         if list_format == "json":
-            print(_format_json_all_versions(rows), end="")
+            from kanon_cli.cli import _emit_json_payload
+
+            _emit_json_payload(_build_all_versions_payload(rows))
         else:
             for row in rows:
                 print(str(row), flush=True)
@@ -1216,7 +1250,9 @@ def run_list(args: argparse.Namespace) -> int:
         if not entries:
             print(LIST_FILTER_ZERO_MATCH_NOTE, file=sys.stderr)
             if list_format == "json":
-                print(_format_json_catalog([]), end="")
+                from kanon_cli.cli import _emit_json_payload
+
+                _emit_json_payload(_build_catalog_payload([]))
             return 0
     else:
         entries = all_entries
@@ -1224,11 +1260,15 @@ def run_list(args: argparse.Namespace) -> int:
     if not entries:
         print(LIST_EMPTY_CATALOG_NOTE, file=sys.stderr)
         if list_format == "json":
-            print(_format_json_catalog([]), end="")
+            from kanon_cli.cli import _emit_json_payload
+
+            _emit_json_payload(_build_catalog_payload([]))
         return 0
 
     if list_format == "json":
-        print(_format_json_catalog(entries), end="")
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_catalog_payload(entries))
     elif detail:
         for metadata in entries:
             print(_format_detail_record(metadata), flush=True)

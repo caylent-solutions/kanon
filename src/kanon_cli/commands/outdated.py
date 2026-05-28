@@ -404,6 +404,22 @@ def _row_to_dict(row: OutdatedRow) -> dict[str, str]:
     }
 
 
+def _build_outdated_payload(rows: list[OutdatedRow]) -> list[dict]:
+    """Build the JSON-serialisable payload for a list of :class:`OutdatedRow`.
+
+    Returns a list of dicts, one per source, each with exactly five keys
+    matching the table column headers: ``name``, ``current``,
+    ``latest-matching-spec``, ``latest-available``, ``upgrade-type``.
+
+    Args:
+        rows: The rows to convert.
+
+    Returns:
+        A list of dicts ready for JSON serialisation.
+    """
+    return [_row_to_dict(row) for row in rows]
+
+
 def _format_json(rows: list[OutdatedRow]) -> str:
     """Format OutdatedRow list as a JSON array with one object per source.
 
@@ -416,13 +432,17 @@ def _format_json(rows: list[OutdatedRow]) -> str:
     pretty-printed with ``KANON_OUTDATED_JSON_INDENT`` spaces of indentation
     (default 2). A trailing newline is appended for POSIX-tool friendliness.
 
+    Kept for backward compatibility with callers that need the serialised
+    string directly (e.g. unit tests).  The :func:`run` handler calls
+    :func:`_emit_json_payload` via :func:`_build_outdated_payload` directly.
+
     Args:
         rows: The rows to format.
 
     Returns:
         A JSON string ending with a trailing newline.
     """
-    return json.dumps([_row_to_dict(row) for row in rows], sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT) + "\n"
+    return json.dumps(_build_outdated_payload(rows), sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT) + "\n"
 
 
 def _derive_lock_file_path(kanon_file: str) -> pathlib.Path:
@@ -687,7 +707,9 @@ def run(args: argparse.Namespace) -> int:
 
     # -- Emit output --
     if args.format == KANON_OUTDATED_FORMAT_JSON:
-        print(_format_json(rows), end="")
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_outdated_payload(rows), sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT)
     else:
         print(_format_table(rows), end="")
 

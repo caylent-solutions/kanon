@@ -26,6 +26,7 @@ import pytest
 
 from kanon_cli.commands.why import (
     ChainNode,
+    _build_why_payload,
     _render_json,
     run,
 )
@@ -880,3 +881,67 @@ class TestRunJsonOutput:
         )
         assert result.returncode != 0
         assert "invalid choice" in result.stderr or "error" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests for _build_why_payload helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildWhyPayload:
+    """_build_why_payload returns a list-of-lists of dicts consumed by _emit_json_payload."""
+
+    def _make_chain_node(
+        self,
+        *,
+        kind: str = "project",
+        name: str = "example",
+        ref: str | None = None,
+        sha: str = "a" * 40,
+        url: str | None = "https://github.com/org/example",
+        canonical_url: str | None = None,
+    ) -> ChainNode:
+        """Build a minimal ChainNode for testing."""
+        return ChainNode(
+            kind=kind,
+            name=name,
+            ref=ref,
+            sha=sha,
+            url=url,
+            canonical_url=canonical_url or url,
+        )
+
+    def test_single_chain_single_node(self) -> None:
+        """One chain with one node produces [[{...}]]."""
+        node = self._make_chain_node()
+        payload = _build_why_payload([[node]])
+        assert isinstance(payload, list)
+        assert len(payload) == 1
+        assert len(payload[0]) == 1
+
+    def test_node_has_five_keys(self) -> None:
+        """Each node dict has exactly the five spec-canonical keys."""
+        node = self._make_chain_node()
+        payload = _build_why_payload([[node]])
+        node_dict = payload[0][0]
+        assert set(node_dict.keys()) == {"kind", "name", "ref", "sha", "url"}
+
+    def test_empty_chains_produces_empty_list(self) -> None:
+        """Empty chains input produces an empty list."""
+        assert _build_why_payload([]) == []
+
+    def test_result_is_json_serialisable(self) -> None:
+        """The payload round-trips through json.dumps / json.loads without error."""
+        node = self._make_chain_node(kind="project", name="alpha", sha="b" * 40)
+        payload = _build_why_payload([[node]])
+        serialised = json.dumps(payload)
+        parsed = json.loads(serialised)
+        assert parsed[0][0]["name"] == "alpha"
+
+    def test_multiple_chains_preserved(self) -> None:
+        """Multiple chains produce multiple inner lists."""
+        node_a = self._make_chain_node(name="a")
+        node_b = self._make_chain_node(name="b")
+        payload = _build_why_payload([[node_a], [node_b]])
+        assert len(payload) == 2

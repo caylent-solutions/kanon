@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 from kanon_cli.commands.catalog import (
+    KANON_CATALOG_AUDIT_FORMAT_JSON,
     AuditFinding,
+    _build_findings_payload,
     _check_entry_name_uniqueness,
     _check_metadata,
     _check_source_name_derivation,
@@ -235,9 +237,14 @@ def validate_metadata_command(args) -> None:
     findings.extend(_check_source_name_derivation(repo_root))
     findings.extend(_check_entry_name_uniqueness(repo_root))
 
-    formatted = _format_findings(findings, args.format)
-    if formatted:
-        print(formatted)
+    if args.format == KANON_CATALOG_AUDIT_FORMAT_JSON:
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_findings_payload(findings))
+    else:
+        formatted = _format_findings(findings, args.format)
+        if formatted:
+            print(formatted)
 
     has_error = any(f.kind == "error" for f in findings)
     sys.exit(1 if has_error else 0)

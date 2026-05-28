@@ -14,6 +14,7 @@ Provides the top-level ``kanon`` command with subcommands:
 """
 
 import argparse
+import json
 import os
 import signal
 import sys
@@ -43,6 +44,53 @@ from kanon_cli.completions.cached_catalogs import register as register_complete_
 from kanon_cli.completions.midtoken import register as register_resolve_entry_to_repo_url
 from kanon_cli.completions.source_names import register as register_complete_source_names
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
+
+# ---------------------------------------------------------------------------
+# JSON output contract (spec Section 13 D3)
+# ---------------------------------------------------------------------------
+
+
+def _emit_json_payload(
+    payload: object,
+    *,
+    sort_keys: bool = True,
+    indent: int | None = None,
+) -> None:
+    """Write a JSON document to stdout as a single atomic write followed by flush.
+
+    JSON commands emit a single JSON document on stdout terminated by a newline;
+    stderr may contain warnings; consumers should NEVER use ``2>&1`` when parsing
+    the JSON.
+
+    The serialised string and the trailing newline are concatenated before the
+    single ``sys.stdout.write`` call so the entire document lands in the OS pipe
+    buffer atomically.  ``sys.stdout.flush()`` is called immediately after so the
+    buffer drains before any subsequent stderr write or process exit, preserving
+    the ordering guarantee even when stdout and stderr share the same file
+    descriptor.
+
+    Args:
+        payload: The Python object to serialise. Must be JSON-serialisable; if not,
+            ``json.dumps`` raises ``TypeError`` which is allowed to propagate to the
+            caller's top-level error handler.
+        sort_keys: When True (default) object keys are sorted lexicographically.
+        indent: When None (default) the output is compact (no indentation). Pass an
+            integer to enable pretty-printing with that many spaces per level.
+
+    Raises:
+        TypeError: When ``payload`` contains a type not supported by the default
+            JSON encoder (e.g. a custom class, ``datetime``, ``bytes``). The
+            exception propagates to the CLI top-level handler which formats it as
+            ``ERROR: cannot serialise <type>: <repr>`` and exits non-zero.
+        BrokenPipeError: When the downstream consumer has closed the read end of
+            the pipe. The exception propagates to the CLI top-level handler which
+            exits with the standard SIGPIPE-compatible code.
+    """
+    separators = (",", ":") if indent is None else None
+    output = json.dumps(payload, sort_keys=sort_keys, indent=indent, separators=separators) + "\n"
+    sys.stdout.write(output)
+    sys.stdout.flush()
+
 
 # ---------------------------------------------------------------------------
 # Top-level help text (spec Section 14)

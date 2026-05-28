@@ -19,13 +19,15 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.list import (
-    _format_json_catalog,
+    _build_all_versions_payload,
+    _build_catalog_payload,
     _format_json_all_versions,
+    _format_json_catalog,
     register,
     run_list,
 )
-from kanon_cli.core.metadata import CatalogMetadata
 from kanon_cli.commands.list import VersionRow
+from kanon_cli.core.metadata import CatalogMetadata
 
 
 # ---------------------------------------------------------------------------
@@ -766,3 +768,78 @@ class TestListFormatEnvVarConstant:
         import kanon_cli.commands.list as list_module
 
         assert isinstance(list_module._KANON_LIST_FORMAT_ENV_VAR, str)
+
+
+# ---------------------------------------------------------------------------
+# Tests verifying _build_catalog_payload and _build_all_versions_payload helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildCatalogPayload:
+    """_build_catalog_payload returns a list of dicts consumed by _emit_json_payload."""
+
+    def test_single_entry_has_five_keys(self):
+        """Each element has exactly the five spec-canonical keys."""
+        metadata = _full_metadata("alpha")
+        payload = _build_catalog_payload([metadata])
+        assert isinstance(payload, list)
+        assert len(payload) == 1
+        assert set(payload[0].keys()) == {"name", "display-name", "type", "description", "version"}
+
+    def test_values_match_metadata_fields(self):
+        """Field values match the CatalogMetadata attributes."""
+        metadata = _full_metadata("alpha")
+        payload = _build_catalog_payload([metadata])
+        obj = payload[0]
+        assert obj["name"] == "alpha"
+        assert obj["display-name"] == "alpha Display"
+        assert obj["type"] == "library"
+        assert obj["description"] == "Description of alpha."
+        assert obj["version"] == "1.4.2"
+
+    def test_empty_input_produces_empty_list(self):
+        """Empty entry list produces an empty payload list."""
+        assert _build_catalog_payload([]) == []
+
+    def test_none_type_serialises_as_none(self):
+        """None type is preserved (serialises to JSON null)."""
+        metadata = _missing_type_metadata("b")
+        payload = _build_catalog_payload([metadata])
+        assert payload[0]["type"] is None
+
+    def test_result_is_json_serialisable(self):
+        """The payload round-trips through json.dumps / json.loads without error."""
+        import json
+
+        metadata = _full_metadata("alpha")
+        payload = _build_catalog_payload([metadata])
+        serialised = json.dumps(payload)
+        parsed = json.loads(serialised)
+        assert parsed[0]["name"] == "alpha"
+
+
+@pytest.mark.unit
+class TestBuildAllVersionsPayload:
+    """_build_all_versions_payload returns a list of dicts consumed by _emit_json_payload."""
+
+    def test_single_row_has_four_keys(self):
+        """Each element has exactly the four spec-canonical keys."""
+        rows = [VersionRow(name="alpha", version="1.0.0", ref="refs/tags/1.0.0", sha="abc")]
+        payload = _build_all_versions_payload(rows)
+        assert isinstance(payload, list)
+        assert len(payload) == 1
+        assert set(payload[0].keys()) == {"name", "version", "ref", "sha"}
+
+    def test_values_match_version_row_fields(self):
+        """Field values match the VersionRow attributes."""
+        rows = [VersionRow(name="alpha", version="1.0.0", ref="refs/tags/1.0.0", sha="deadbeef")]
+        payload = _build_all_versions_payload(rows)
+        assert payload[0]["name"] == "alpha"
+        assert payload[0]["version"] == "1.0.0"
+        assert payload[0]["ref"] == "refs/tags/1.0.0"
+        assert payload[0]["sha"] == "deadbeef"
+
+    def test_empty_input_produces_empty_list(self):
+        """Empty rows list produces an empty payload list."""
+        assert _build_all_versions_payload([]) == []

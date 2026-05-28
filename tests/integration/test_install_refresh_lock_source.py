@@ -13,6 +13,13 @@ AC-CYCLE-001: end-to-end cycle:
   - --refresh-lock-source alpha rewrites only the alpha row.
   - --refresh-lock-source <alpha-entry-name> (the derive_source_name form)
     produces a byte-identical lockfile to the prior run.
+
+E25-DEFECT-010: TestRefreshLockSourceCounters verifies that the summary line
+emitted by install(refresh_lock_source=<name>) correctly reflects the number
+of refreshed vs preserved top-level sources. Before the fix, the line always
+reads (0 projects refreshed; 0 projects preserved) because the counter reads
+SourceEntry.projects (sub-project XML includes) rather than the count of
+top-level source entries.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from kanon_cli.core.install import (
 )
 from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 from kanon_cli.core.lockfile import read_lockfile
+from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
 # ---------------------------------------------------------------------------
@@ -411,4 +419,240 @@ class TestRefreshLockSourceFreshKanonHash:
         # The lockfile must record the freshly-computed kanon_hash.
         assert lf_after.kanon_hash == expected_new_hash, (
             f"Expected kanon_hash {expected_new_hash!r}; got {lf_after.kanon_hash!r}"
+        )
+
+
+# ===========================================================================
+# E25-DEFECT-010: --refresh-lock-source summary line counters
+# ===========================================================================
+
+
+def _advance_bare_repo_tip(bare_path: pathlib.Path, new_tag: str, work_root: pathlib.Path) -> str:
+    """Clone a bare repo, add a new commit tagged with new_tag, and push back.
+
+    Args:
+        bare_path: Absolute path to the bare repo directory.
+        new_tag: PEP 440-valid tag name to apply on the new commit.
+        work_root: Parent directory under which the temporary clone is created.
+
+    Returns:
+        The resolved SHA for the new tag in the bare repo.
+    """
+    clone_dir = work_root / f"clone-for-{new_tag}"
+    clone_dir.mkdir(parents=True, exist_ok=True)
+    _git(
+        "clone",
+        str(bare_path),
+        str(clone_dir),
+        cwd=work_root,
+    )
+    _git("config", "user.name", "Test", cwd=clone_dir)
+    _git("config", "user.email", "t@t.com", cwd=clone_dir)
+    version_file = clone_dir / "VERSION"
+    version_file.write_text(f"{new_tag}\n")
+    _git("add", "VERSION", cwd=clone_dir)
+    _git("commit", "-m", f"release {new_tag}", cwd=clone_dir)
+    _git("tag", "-a", new_tag, "-m", f"Release {new_tag}", cwd=clone_dir)
+    _git("push", "origin", "HEAD:main", "--tags", cwd=clone_dir)
+    return _sha_for_ref(clone_dir, f"refs/tags/{new_tag}")
+
+
+def _write_two_source_kanon_for_bare(
+    project_dir: pathlib.Path,
+    srca_url: str,
+    srcb_url: str,
+    srca_revision: str = "==1.0.0",
+    srcb_revision: str = "==1.0.0",
+) -> pathlib.Path:
+    """Write a .kanon file pointing at two bare-repo sources: srca and srcb.
+
+    Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
+    accepts them; the autouse ``_default_allow_insecure_remotes`` fixture in
+    conftest permits the non-HTTPS/SSH scheme through ``_enforce_remote_url_policy``.
+
+    Args:
+        project_dir: Directory in which to write the .kanon file.
+        srca_url: URL (or bare path) for the first source.
+        srcb_url: URL (or bare path) for the second source.
+        srca_revision: Revision spec for the first source (default ==1.0.0).
+        srcb_revision: Revision spec for the second source (default ==1.0.0).
+
+    Returns:
+        Path to the written .kanon file.
+    """
+    if srca_url.startswith("/"):
+        srca_url = f"file://{srca_url}"
+    if srcb_url.startswith("/"):
+        srcb_url = f"file://{srcb_url}"
+    kanon_path = project_dir / ".kanon"
+    kanon_path.write_text(
+        f"GITBASE=https://unused.example.com\n"
+        f"CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
+        f"KANON_MARKETPLACE_INSTALL=false\n"
+        f"KANON_SOURCE_srca_URL={srca_url}\n"
+        f"KANON_SOURCE_srca_REVISION={srca_revision}\n"
+        f"KANON_SOURCE_srca_PATH=manifest.xml\n"
+        f"KANON_SOURCE_srcb_URL={srcb_url}\n"
+        f"KANON_SOURCE_srcb_REVISION={srcb_revision}\n"
+        f"KANON_SOURCE_srcb_PATH=manifest.xml\n"
+    )
+    kanon_path.chmod(0o600)
+    return kanon_path
+
+
+def _run_install_capturing_stdout(
+    kanon_path: pathlib.Path,
+    capsys: pytest.CaptureFixture,
+    catalog_source: str = _CATALOG_SOURCE,
+    refresh_lock_source: str | None = None,
+) -> str:
+    """Call install() with real-source patches and return captured stdout.
+
+    Wraps ``_run_install_with_real_sources`` and captures the stdout emitted
+    by install() using pytest's capsys fixture.
+
+    Args:
+        kanon_path: Path to the .kanon configuration file.
+        capsys: The pytest capture fixture for the calling test.
+        catalog_source: Catalog source string passed to install().
+        refresh_lock_source: Optional --refresh-lock-source value.
+
+    Returns:
+        The stdout text printed by install() during this invocation.
+    """
+    _run_install_with_real_sources(
+        kanon_path,
+        catalog_source=catalog_source,
+        refresh_lock_source=refresh_lock_source,
+    )
+    captured = capsys.readouterr()
+    return captured.out
+
+
+@pytest.mark.integration
+class TestRefreshLockSourceCounters:
+    """E25-DEFECT-010: --refresh-lock-source summary counter accuracy.
+
+    Verifies that the summary line emitted by install(refresh_lock_source=<name>)
+    reports the correct number of refreshed and preserved top-level sources,
+    and that the zero-source edge case does not emit a counter line.
+    """
+
+    def test_counters_reflect_actual_refresh_and_preserve_counts(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """AC-FUNC-002: summary reports (1 project refreshed; 1 project preserved).
+
+        Builds two synthetic sources A and B via _create_manifest_repo_with_tags,
+        installs both, advances source A's tip with a new tag, then runs
+        install(refresh_lock_source="srca") and asserts the summary line on stdout
+        reads exactly "(1 project refreshed; 1 project preserved)".
+
+        This test FAILS against the unfixed code because the counter reads
+        SourceEntry.projects (sub-project XML includes, always empty for these
+        synthetic fixture repos) instead of counting top-level source entries.
+        The resulting broken output is "(0 projects refreshed; 0 projects preserved)".
+        """
+        # Build two synthetic bare repos: catA and catB.
+        cat_a_bare = _create_manifest_repo_with_tags(
+            tmp_path / "catA",
+            entry_names=["A"],
+            tags=["1.0.0"],
+        )
+        cat_b_bare = _create_manifest_repo_with_tags(
+            tmp_path / "catB",
+            entry_names=["B"],
+            tags=["1.0.0"],
+        )
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        kanon_path = _write_two_source_kanon_for_bare(
+            project_dir,
+            srca_url=str(cat_a_bare),
+            srcb_url=str(cat_b_bare),
+        )
+
+        # Baseline install -- writes the lockfile with both 1.0.0 SHAs.
+        capsys.readouterr()  # discard any earlier output
+        _run_install_with_real_sources(kanon_path)
+        capsys.readouterr()  # discard baseline output
+
+        lock_path = project_dir / ".kanon.lock"
+        assert lock_path.exists(), (
+            "Baseline install must write a lockfile; lockfile absent after install()"
+        )
+
+        # Advance catA's bare repo: new commit tagged 1.1.0.
+        _advance_bare_repo_tip(
+            bare_path=cat_a_bare,
+            new_tag="1.1.0",
+            work_root=tmp_path / "advance-work",
+        )
+
+        # Rewrite .kanon to point srca at 1.1.0 so kanon_hash changes.
+        kanon_path = _write_two_source_kanon_for_bare(
+            project_dir,
+            srca_url=str(cat_a_bare),
+            srcb_url=str(cat_b_bare),
+            srca_revision="==1.1.0",
+            srcb_revision="==1.0.0",
+        )
+
+        # Run --refresh-lock-source srca and capture stdout.
+        _run_install_with_real_sources(kanon_path, refresh_lock_source="srca")
+        captured = capsys.readouterr()
+        stdout = captured.out
+
+        # Assert the exact counter substring -- must match (1 ... 1 ...), not (0 ... 0 ...).
+        expected_counter = "(1 project refreshed; 1 project preserved)"
+        assert expected_counter in stdout, (
+            f"Expected stdout to contain {expected_counter!r}; "
+            f"got stdout={stdout!r}"
+        )
+
+    def test_zero_source_workspace_omits_counter_line(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """AC-FUNC-005: zero-source workspace does not emit a counter line.
+
+        Builds a workspace with no KANON_SOURCE_* declarations and invokes
+        install(refresh_lock_source="nonexistent"). The call must raise an
+        error before reaching the summary-line code path, and stdout must NOT
+        contain the substring "projects refreshed", confirming the counter
+        line is never emitted when no sources are present.
+
+        The error raised is ValueError from kanonenv parsing (no sources
+        declared) which is the actual short-circuit that prevents the
+        counter line from being emitted on empty workspaces.
+        """
+        project_dir = tmp_path / "empty-project"
+        project_dir.mkdir()
+
+        # Write a minimal .kanon with no KANON_SOURCE_* entries.
+        kanon_path = project_dir / ".kanon"
+        kanon_path.write_text(
+            "GITBASE=https://unused.example.com\n"
+            "CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
+            "KANON_MARKETPLACE_INSTALL=false\n"
+        )
+        kanon_path.chmod(0o600)
+
+        capsys.readouterr()  # discard any earlier output
+
+        # Zero-source .kanon raises ValueError from kanonenv parsing
+        # (no KANON_SOURCE_* entries) before reaching the summary-line code.
+        with pytest.raises(ValueError, match="No sources found"):
+            _run_install_with_real_sources(kanon_path, refresh_lock_source="nonexistent")
+
+        captured = capsys.readouterr()
+        stdout = captured.out
+
+        assert "projects refreshed" not in stdout, (
+            f"Counter line must not appear when workspace has zero sources; "
+            f"got stdout={stdout!r}"
         )

@@ -713,3 +713,99 @@ class TestOutdatedFailOnUpgradeFlag:
             f"Expected exit 0 with --fail-on-upgrade when both sources at latest.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# FAIL-path class: 3-tag fixture pinned to oldest tag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestFailOnUpgradeFail:
+    """Tests that --fail-on-upgrade exits 1 when upgrades are available.
+
+    Uses a 3-tag synthetic fixture (1.0.0, 1.1.0, 1.2.0) pinned to the oldest
+    tag so two upgrades are available, asserting exit 1 and the documented
+    stderr diagnostic. Spec §4 E40 row 65.
+    """
+
+    def test_exit_one_when_upgrade_available(self, tmp_path: pathlib.Path) -> None:
+        """AC-FUNC-001 to AC-FUNC-004: 3-tag fixture pinned to oldest tag exits 1 with diagnostic.
+
+        Builds a bare fixture repo with tags 1.0.0, 1.1.0 and 1.2.0.
+        Pins the lockfile to refs/tags/1.0.0 (two upgrades are available).
+        Runs 'kanon outdated --fail-on-upgrade' and asserts:
+        - returncode == 1
+        - 'outdated source(s) found' appears in stderr
+        """
+        project_base = tmp_path / "project-repos"
+        project_base.mkdir()
+        # 3-tag fixture: 1.0.0 (oldest, pinned), 1.1.0, 1.2.0 (two upgrades available)
+        project_bare = _create_project_repo_with_tags(
+            project_base, "epsilon", ["1.0.0", "1.1.0", "1.2.0"]
+        )
+        project_url = f"file://{project_bare}"
+
+        manifest_base = tmp_path / "manifest-repos"
+        manifest_base.mkdir()
+        manifest_bare = _create_manifest_repo(manifest_base, ["epsilon"])
+        catalog_source = f"file://{manifest_bare}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+        kanon_file.write_text(
+            _KANON_SINGLE_TEMPLATE.format(
+                name_upper="EPSILON",
+                name_lower="epsilon",
+                url=project_url,
+                revision=">=1.0.0",
+            )
+        )
+        kanon_file.chmod(0o644)
+
+        # Pin lockfile to oldest tag (1.0.0) so two upgrades (1.1.0, 1.2.0) are available
+        sha_100 = _git_output(
+            ["ls-remote", project_url, "refs/tags/1.0.0"],
+            cwd=workspace,
+        ).split("\t")[0]
+        lock_file = workspace / ".kanon.lock"
+        _write_lockfile(
+            lock_file,
+            catalog_source=catalog_source,
+            catalog_url=f"file://{manifest_bare}",
+            sources=[
+                {
+                    "name": "EPSILON",
+                    "url": project_url,
+                    "revision_spec": ">=1.0.0",
+                    "resolved_ref": "refs/tags/1.0.0",
+                    "resolved_sha": sha_100,
+                    "path": "./epsilon",
+                }
+            ],
+        )
+
+        result = _run_kanon(
+            [
+                "outdated",
+                "--catalog-source",
+                catalog_source,
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--fail-on-upgrade",
+            ],
+            cwd=workspace,
+        )
+
+        assert result.returncode == 1, (
+            f"Expected exit 1 with --fail-on-upgrade and 2 upgrades available "
+            f"(pinned 1.0.0, latest 1.2.0).\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert "outdated source(s) found" in result.stderr, (
+            f"Expected 'outdated source(s) found' in stderr.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )

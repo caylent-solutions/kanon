@@ -930,6 +930,12 @@ def run(args: argparse.Namespace) -> int:
         print(_format_table(rows), end="")
 
     # -- Exit code gate (AC-FUNC-002 / AC-FUNC-004) --
-    if args.fail_on_upgrade and any(row.upgrade_type != "none" for row in rows):
-        return 1
+    if args.fail_on_upgrade:
+        outdated_names = [row.name for row in rows if row.upgrade_type != "none"]
+        if outdated_names:
+            print(
+                f"outdated source(s) found: {', '.join(outdated_names)}",
+                file=sys.stderr,
+            )
+            return 1
     return 0

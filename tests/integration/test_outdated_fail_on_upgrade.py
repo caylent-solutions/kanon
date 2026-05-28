@@ -555,6 +555,85 @@ class TestOutdatedFailOnUpgradeFlag:
             f"stdout: {result_with_flag.stdout!r}\nstderr: {result_with_flag.stderr!r}"
         )
 
+    def test_stderr_diagnostic_on_fail_on_upgrade(self, tmp_path: pathlib.Path) -> None:
+        """AC-TEST-001: --fail-on-upgrade emits 'outdated source(s) found' to stderr on exit 1.
+
+        Builds a 3-tag synthetic fixture, pins lockfile to the oldest tag so two
+        upgrades are available, then verifies returncode==1 AND stderr contains the
+        diagnostic message with the outdated source name.
+        """
+        project_base = tmp_path / "project-repos"
+        project_base.mkdir()
+        # 3-tag fixture: 1.0.0, 1.0.1, 1.0.2
+        project_bare = _create_project_repo_with_tags(project_base, "delta", ["1.0.0", "1.0.1", "1.0.2"])
+        project_url = f"file://{project_bare}"
+
+        manifest_base = tmp_path / "manifest-repos"
+        manifest_base.mkdir()
+        manifest_bare = _create_manifest_repo(manifest_base, ["delta"])
+        catalog_source = f"file://{manifest_bare}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+        kanon_file.write_text(
+            _KANON_SINGLE_TEMPLATE.format(
+                name_upper="DELTA",
+                name_lower="delta",
+                url=project_url,
+                revision=">=1.0.0,<1.1",
+            )
+        )
+        kanon_file.chmod(0o644)
+
+        # Pin to oldest tag so a patch upgrade is available
+        sha_100 = _git_output(
+            ["ls-remote", project_url, "refs/tags/1.0.0"],
+            cwd=workspace,
+        ).split("\t")[0]
+        lock_file = workspace / ".kanon.lock"
+        _write_lockfile(
+            lock_file,
+            catalog_source=catalog_source,
+            catalog_url=f"file://{manifest_bare}",
+            sources=[
+                {
+                    "name": "DELTA",
+                    "url": project_url,
+                    "revision_spec": ">=1.0.0,<1.1",
+                    "resolved_ref": "refs/tags/1.0.0",
+                    "resolved_sha": sha_100,
+                    "path": "./delta",
+                }
+            ],
+        )
+
+        result = _run_kanon(
+            [
+                "outdated",
+                "--catalog-source",
+                catalog_source,
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--fail-on-upgrade",
+            ],
+            cwd=workspace,
+        )
+
+        assert result.returncode == 1, (
+            f"Expected exit 1 with --fail-on-upgrade and upgrade available.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert "outdated source(s) found" in result.stderr, (
+            f"Expected 'outdated source(s) found' in stderr.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert "DELTA" in result.stderr, (
+            f"Expected outdated source name 'DELTA' in stderr diagnostic.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+
     def test_two_sources_both_at_latest_flag_set_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """AC-CYCLE-001: two sources both at latest; --fail-on-upgrade exits 0."""
         project_base = tmp_path / "project-repos"

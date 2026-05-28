@@ -52,6 +52,7 @@ import datetime
 import enum
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 from typing import NamedTuple, cast
@@ -129,6 +130,47 @@ _REFRESH_LOCK_MISSING_CATALOG_REMEDIATION = (
 _REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION = (
     "--refresh-lock-source requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
 )
+
+# ---------------------------------------------------------------------------
+# Unresolved-placeholder detection (spec Section 4 E28 Change (b))
+# ---------------------------------------------------------------------------
+
+# Compiled regex matching uppercase-with-underscores-or-pipes tokens enclosed
+# in angle brackets -- the canonical kanon placeholder shape.  The character
+# class is intentionally restricted to [A-Z_|] so the pattern does NOT match
+# lowercase XML element tags such as <remote> or <default>.
+_UNRESOLVED_PLACEHOLDER_PATTERN: re.Pattern[str] = re.compile(r"<[A-Z_|]+>")
+
+
+def _scan_kanonenv_for_unresolved_placeholders(
+    kanonenv_path: pathlib.Path,
+) -> list[tuple[int, str]]:
+    """Return ``[(line_number, placeholder_text), ...]`` for each unresolved
+    placeholder found in the env-var-value half of a ``.kanon`` file.
+
+    Scans every KEY=VALUE line (1-indexed).  Lines that start with ``#``
+    (comments) and lines that contain no ``=`` character are skipped.  The
+    scan operates on the value portion only (the text after the first ``=``),
+    so placeholder-shaped tokens on the key side are never flagged.
+
+    Args:
+        kanonenv_path: Absolute path to the ``.kanon`` file.
+
+    Returns:
+        A list of ``(line_number, matched_placeholder)`` tuples, one per
+        regex match.  The list is empty when no unresolved placeholders are
+        present.  Multiple matches on the same line each produce a separate
+        tuple.
+    """
+    findings: list[tuple[int, str]] = []
+    for line_number, line in enumerate(kanonenv_path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        if "=" not in line or line.lstrip().startswith("#"):
+            continue
+        _, _, value = line.partition("=")
+        for match in _UNRESOLVED_PLACEHOLDER_PATTERN.finditer(value):
+            findings.append((line_number, match.group(0)))
+    return findings
+
 
 # ---------------------------------------------------------------------------
 # OrphanedLockEntryError message templates (spec Section 4 E26)
@@ -520,6 +562,54 @@ class CanonicalUrlConflictError(InstallError):
                 f"resolve by removing one source or aligning REVISION values across sources."
             )
         return "\n".join(lines)
+
+
+class UnresolvedPlaceholderError(InstallError):
+    """Raised when a ``.kanon`` env-var value contains an unresolved placeholder token.
+
+    An unresolved placeholder is a token matching ``<[A-Z_|]+>`` (uppercase
+    letters, underscores, and pipes enclosed in angle brackets) that appears in
+    a ``.kanon`` env-var value before ``repo envsubst`` is invoked.  Example:
+    ``<YOUR_GIT_ORG_BASE_URL>``.
+
+    The validator runs BEFORE ``repo envsubst`` so the operator receives a
+    structured diagnostic instead of an opaque ``repo sync`` 404 or git-remote
+    error.
+
+    Spec reference: spec/defect-resolution-and-fixture-automation-2026-06/spec.md
+    Section 4 E28 Change (b).
+
+    Args:
+        line_number: 1-indexed line number in the ``.kanon`` file where the
+            first (or only) placeholder was found.
+        placeholder: The matched placeholder token (e.g. ``<YOUR_GIT_ORG_BASE_URL>``).
+        all_findings: Full list of ``(line_number, placeholder)`` tuples for every
+            unresolved placeholder detected in the file.  Defaults to the single
+            finding described by ``line_number`` and ``placeholder`` when omitted.
+    """
+
+    def __init__(
+        self,
+        line_number: int,
+        placeholder: str,
+        all_findings: list[tuple[int, str]] | None = None,
+    ) -> None:
+        self.line_number = line_number
+        self.placeholder = placeholder
+        self.all_findings: list[tuple[int, str]] = (
+            all_findings if all_findings is not None else [(line_number, placeholder)]
+        )
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        extra_count = len(self.all_findings) - 1
+        suffix = f" (and {extra_count} more unresolved placeholder(s) in .kanon)" if extra_count > 0 else ""
+        return (
+            f"unresolved placeholder {self.placeholder} at .kanon:{self.line_number}"
+            f"{suffix}\n"
+            "  Remediation: replace all placeholder tokens with real values before "
+            "running kanon install. See docs/configuration.md for details."
+        )
 
 
 def _detect_canonical_url_conflicts(
@@ -1674,6 +1764,20 @@ def _run_install(
 
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
+
+    # Scan .kanon for unresolved placeholders BEFORE repo envsubst (spec E28 Change (b)).
+    # Any value matching <[A-Z_|]+> is a literal placeholder the operator forgot to
+    # replace.  Raising here gives a structured diagnostic rather than an opaque
+    # repo sync 404 or git-remote error.
+    placeholder_findings = _scan_kanonenv_for_unresolved_placeholders(kanonenv_path)
+    if placeholder_findings:
+        first_line_no, first_placeholder = placeholder_findings[0]
+        raise UnresolvedPlaceholderError(
+            line_number=first_line_no,
+            placeholder=first_placeholder,
+            all_findings=placeholder_findings,
+        )
+
     base_dir = kanonenv_path.parent
     source_names = config["KANON_SOURCES"]
     sources = config["sources"]

@@ -83,6 +83,8 @@
   walker to look under `source_dir/.repo/manifests/` (the repo tool
   manifest checkout directory) instead of `source_dir/` directly.
 
+* `kanon list --tree` emits sibling-continuation marker (DEFECT-005).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

@@ -408,3 +408,87 @@ cited classes and functions. The five test files contributed: 17 tests from
 `test_validate_xml.py`, 24 tests from `test_validate_marketplace.py`, 18 tests from
 `test_validate_metadata.py`, 55 tests from `test_completion_bash.py`, and 54 tests from
 `test_completion_zsh.py`.
+
+---
+
+## Multi-step user-journey coverage
+
+### Purpose
+
+This section documents the automated test coverage for multi-step user journeys across
+the kanon CLI, satisfying spec §4 E48. All eight behaviour rows from
+`test-fixtures/findings.md` rows 78-85 are covered by existing integration tests. No
+new multi-step test was required because:
+
+- E47 authors `TestFullLifecycleSynthetic`, which covers rows 78 (install-then-clean-roundtrip)
+  and 85 (multi-source-install) end-to-end via a six-entry synthetic fixture lifecycle.
+- E26 (DEFECT-011) authors `TestStrictLockOrphanErrorMessage` and E34 (DEFECT-014) authors
+  `TestStrictLockDefaultAutoPrune`, which together cover row 81 (install-detect-orphan):
+  the structured error message path and the default auto-prune path respectively.
+- E36 (FIXTURE-DEFECT-001) resolves the manifest schema defect that blocked row 80
+  (upgrade-via-refresh-lock-source) and row 82 (install-detect-drift) by replacing the
+  legacy static seeds with runtime-generated fixtures that include the required `<remote>`
+  and `<default>` declarations. After E36, `TestRefreshLockSourceRebuildsOnlyNamedSource`
+  and `TestStrictDriftEndToEnd` pass.
+- Rows 79, 83, and 84 are covered by existing tests: `TestAddCoreMultipleEntries` and
+  `TestRemoveCoreErrorPaths` cover the add-multi-then-remove-one journey; `TestLockfileReplay`
+  covers lockfile-replay-pinned-sha; `TestAddCollisionError` + `TestAddForce` cover the
+  collision-error-then-force scenario.
+
+**Authoritative source**: spec §4 E48 (Files / Change / Verification + closure rows 78-85).
+
+### Coverage mapping
+
+| findings.md row | Behaviour | Test file | Class | Line |
+|----------------:|-----------|-----------|-------|-----:|
+| 78 | install-then-clean-roundtrip | `tests/integration/test_full_lifecycle_synthetic.py` | `TestFullLifecycleSynthetic` | 201 |
+| 79 | add-multi-then-remove-one (add side) | `tests/integration/test_add_core.py` | `TestAddCoreMultipleEntries` | 392 |
+| 79 | add-multi-then-remove-one (remove side) | `tests/integration/test_remove_core.py` | `TestRemoveCoreErrorPaths` | 226 |
+| 80 | upgrade-via-refresh-lock-source (unblocked by E36) | `tests/integration/test_install_refresh_lock_source.py` | `TestRefreshLockSourceRebuildsOnlyNamedSource` | 204 |
+| 81 | install-detect-orphan (error message -- E26) | `tests/integration/test_install_strict.py` | `TestStrictLockOrphanErrorMessage` | 578 |
+| 81 | install-detect-orphan (auto-prune -- E34) | `tests/integration/test_install_strict.py` | `TestStrictLockDefaultAutoPrune` | 882 |
+| 82 | install-detect-drift (unblocked by E36) | `tests/integration/test_install_strict.py` | `TestStrictDriftEndToEnd` | 232 |
+| 83 | lockfile-replay-pinned-sha | `tests/integration/test_install_lockfile_replay.py` | `TestLockfileReplay` | 191 |
+| 84 | collision-error-then-force (collision side) | `tests/integration/test_add_dry_run.py` | `TestAddCollisionError` | 424 |
+| 84 | collision-error-then-force (force side) | `tests/integration/test_add_dry_run.py` | `TestAddForce` | 297 |
+| 85 | multi-source-install | `tests/integration/test_full_lifecycle_synthetic.py` | `TestFullLifecycleSynthetic` | 201 |
+
+**Notes on row mapping:**
+
+- Row 78 and row 85 both map to `TestFullLifecycleSynthetic`. The single test method
+  `test_six_entry_add_install_clean_lifecycle` exercises add, install, and clean across
+  six synthetic entries drawn from two catalog sources, covering both the
+  install-then-clean-roundtrip (row 78) and the multi-source-install (row 85) journeys.
+- Row 79 requires two classes because the add and remove steps span separate command
+  modules. `TestAddCoreMultipleEntries.test_two_entries_in_argument_order` asserts that
+  `kanon add` with two arguments writes both blocks in argument order. `TestRemoveCoreErrorPaths`
+  exercises the selective-remove path via `test_multi_source_all_removed_when_all_valid`
+  (removes two sources in one invocation) and `test_atomicity_file_unchanged_when_one_name_fails`
+  (partial-failure atomicity guarantee).
+- Row 81 requires two classes because E26 and E34 cover distinct sub-scenarios. E26
+  (`TestStrictLockOrphanErrorMessage`) guards that the structured orphan-naming error message
+  is emitted with each orphan source named and a remediation hint. E34
+  (`TestStrictLockDefaultAutoPrune`) guards that bare `kanon install` (no `--strict-lock` flag)
+  automatically prunes orphaned entries and emits one INFO line per pruned entry.
+- Row 84 requires two classes because the collision-then-force user journey spans two
+  command sub-paths. `TestAddCollisionError` guards that `kanon add` exits non-zero when a
+  source name collision is detected and that the error message names both the existing and
+  new entries. `TestAddForce` guards that `kanon add --force` exits 0 and overwrites the
+  existing block without corrupting surrounding file content.
+- The spec draft for rows 80-84 used abbreviated class names (`TestRefreshOneSource`,
+  `TestStrictDrift`, `TestReplayIdentity`, `TestForce`). The implementation uses the
+  fully-qualified class names listed in this table, which match the `class` definitions
+  in the test files at the cited line numbers.
+
+### Verification command
+
+```
+pytest tests/integration/test_install_*.py tests/integration/test_add_*.py tests/integration/test_remove_*.py tests/integration/test_full_lifecycle_synthetic.py tests/scenarios/ -v
+```
+
+### Verification result
+
+571 passed, 19 skipped, 0 failed (2026-05-28). All eleven classes cited in the mapping
+table above contributed passing tests in this run. The 19 skipped tests are pre-existing
+scenario skips unrelated to this section (upload and smartsync scenarios that require
+external Gerrit connectivity).

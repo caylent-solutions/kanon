@@ -49,7 +49,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
-from kanon_cli.core.metadata import CatalogMetadata, _parse_catalog_metadata
+from kanon_cli.core.metadata import CatalogMetadata, CatalogMetadataParseError, _parse_catalog_metadata
 from kanon_cli.version import is_version_constraint, resolve_version
 
 # -- Detail formatter private constants --
@@ -61,6 +61,16 @@ _DETAIL_LABEL_WIDTH = 12
 # Choices: 'names' (default), 'json'.
 # CLI flag --format takes precedence when both are set.
 _KANON_LIST_FORMAT_ENV_VAR = "KANON_LIST_FORMAT"
+
+# Warning emitted to stderr when a historical revision has malformed catalog-metadata.
+# Uses .format(entry=<name>, revision=<version_str>, reason=<exc>) at the call site.
+_ALL_VERSIONS_PARSE_WARNING_FORMAT = (
+    "WARNING: malformed catalog-metadata for entry {entry} at revision {revision}: {reason}"
+)
+
+# Error emitted to stderr (and exits 1) when every revision is malformed.
+# Uses .format(name=<entry_name>) at the call site.
+_ALL_VERSIONS_ALL_MALFORMED_ERROR_FORMAT = "ERROR: every revision for entry {name} was malformed; no versions to list"
 
 # ---------------------------------------------------------------------------
 # Filter framework public constants
@@ -302,7 +312,11 @@ def _walk_all_versions(
         Flat list of :class:`VersionRow` objects, newest version first.
 
     Raises:
-        SystemExit: On git ls-remote or git clone failure.
+        SystemExit: On git ls-remote failure, on git clone failure for any
+            individual revision, or when every revision in the walk has
+            malformed catalog-metadata (all-revisions-malformed edge case).
+            Malformed individual revisions emit a stderr warning and are
+            skipped; the walk continues.
         ValueError: When ``since_version`` is not a valid PEP 440 specifier.
     """
     url, _ref = _parse_catalog_source(catalog_source)
@@ -335,32 +349,65 @@ def _walk_all_versions(
     if not sorted_triples:
         return []
 
-    # For the all-versions output we do NOT clone each version individually --
-    # we clone the repo once at the newest version to obtain the catalog entry
-    # names, then emit one row per (name, version) combination for all versions.
-    # This matches the spec worked-example which shows the entry names as they
-    # exist in the manifest repo's HEAD, attributed to each historical version.
-    newest_ref = sorted_triples[0][0]
-    newest_version_str = newest_ref.rsplit("/", 1)[-1]
+    # Clone each version individually and parse its catalog metadata.
+    # This ensures that the entry names emitted for each version reflect the
+    # state of the manifest repo at that specific tag, and that a malformed
+    # revision does not abort the entire walk.
+    rows: list[VersionRow] = []
+    successful_count = 0
+    for ref, ver, sha in sorted_triples:
+        version_str = ref.rsplit("/", 1)[-1]
+        clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-list-av-"))
+        repo_dir = clone_dir / "repo"
 
-    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-list-av-"))
-    repo_dir = clone_dir / "repo"
+        clone_result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", version_str, url, str(repo_dir)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if clone_result.returncode != 0:
+            print(
+                f"ERROR: Failed to clone manifest repo from {url}@{version_str}: {clone_result.stderr}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    clone_result = subprocess.run(
-        ["git", "clone", "--depth", "1", "--branch", newest_version_str, url, str(repo_dir)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if clone_result.returncode != 0:
+        xml_paths = _walk_marketplace_xmls(repo_dir)
+        version_names: list[str] = []
+        for xml_path in xml_paths:
+            try:
+                metadata = _parse_catalog_metadata(xml_path)
+                version_names.append(metadata.name)
+            except CatalogMetadataParseError as exc:
+                print(
+                    _ALL_VERSIONS_PARSE_WARNING_FORMAT.format(
+                        entry=xml_path.stem.removesuffix("-marketplace"),
+                        revision=version_str,
+                        reason=str(exc),
+                    ),
+                    file=sys.stderr,
+                )
+
+        if not version_names:
+            # No parseable entries at this version -- skip it entirely.
+            continue
+
+        successful_count += 1
+        for name in sorted(version_names):
+            rows.append(VersionRow(name=name, version=str(ver), ref=ref, sha=sha))
+
+    if successful_count == 0 and sorted_triples:
+        # Every revision that was walked had malformed catalog-metadata.
+        # Derive a representative entry name from the warning context already
+        # emitted; use a generic sentinel that tells the operator what happened.
         print(
-            f"ERROR: Failed to clone manifest repo from {url}@{newest_version_str}: {clone_result.stderr}",
+            _ALL_VERSIONS_ALL_MALFORMED_ERROR_FORMAT.format(name="<all entries>"),
             file=sys.stderr,
         )
         sys.exit(1)
 
-    catalog_names = _build_sorted_index(repo_dir)
-    return _build_all_versions_rows(catalog_names, sorted_triples)
+    return rows
 
 
 def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:

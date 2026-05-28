@@ -17,11 +17,14 @@ from unittest.mock import patch
 import pytest
 from packaging.version import Version
 
+import pathlib
+
 from kanon_cli.commands.list import (
     _list_tags_from_url,
     _sort_version_pairs_newest_first,
     _walk_all_versions,
 )
+from kanon_cli.core.metadata import CatalogMetadata
 
 
 # ---------------------------------------------------------------------------
@@ -363,13 +366,20 @@ class TestWalkAllVersions:
             stdout="",
             stderr="",
         )
-        repo_dir = tmp_path / "repo"
-        repo_dir.mkdir()
+        fake_xml = tmp_path / "alpha-marketplace.xml"
+        fake_xml.touch()
+        fake_metadata = CatalogMetadata(
+            name="alpha",
+            display_name="Alpha Display",
+            description="Alpha desc",
+            version="3.0.0",
+        )
 
         with (
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list._build_sorted_index", return_value=["alpha"]),
+            patch("kanon_cli.commands.list._walk_marketplace_xmls", return_value=[fake_xml]),
+            patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",
@@ -400,13 +410,20 @@ class TestWalkAllVersions:
         )
 
         clone_result = subprocess.CompletedProcess(args=["git", "clone"], returncode=0, stdout="", stderr="")
-        repo_dir = tmp_path / "repo"
-        repo_dir.mkdir()
+        fake_xml = tmp_path / "alpha-marketplace.xml"
+        fake_xml.touch()
+        fake_metadata = CatalogMetadata(
+            name="alpha",
+            display_name="Alpha Display",
+            description="Alpha desc",
+            version="1.0.0",
+        )
 
         with (
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list._build_sorted_index", return_value=["alpha"]),
+            patch("kanon_cli.commands.list._walk_marketplace_xmls", return_value=[fake_xml]),
+            patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",
@@ -529,13 +546,28 @@ class TestWalkAllVersions:
         )
 
         clone_result = subprocess.CompletedProcess(args=["git", "clone"], returncode=0, stdout="", stderr="")
-        repo_dir = tmp_path / "repo"
-        repo_dir.mkdir()
+        fake_xml_alpha = tmp_path / "alpha-marketplace.xml"
+        fake_xml_alpha.touch()
+        fake_xml_beta = tmp_path / "beta-marketplace.xml"
+        fake_xml_beta.touch()
+
+        def fake_parse(xml_path: pathlib.Path) -> CatalogMetadata:
+            name = xml_path.stem.removesuffix("-marketplace")
+            return CatalogMetadata(
+                name=name,
+                display_name=f"{name} Display",
+                description=f"{name} desc",
+                version="1.0.0",
+            )
 
         with (
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list._build_sorted_index", return_value=["alpha", "beta"]),
+            patch(
+                "kanon_cli.commands.list._walk_marketplace_xmls",
+                return_value=[fake_xml_alpha, fake_xml_beta],
+            ),
+            patch("kanon_cli.commands.list._parse_catalog_metadata", side_effect=fake_parse),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",

@@ -4,6 +4,9 @@
 
 ### Added
 
+* `kanon install` fail-fasts on unresolved `<UPPERCASE>` placeholders
+  in `.kanon`, naming each finding with its line number (DEFECT-003).
+
 * `kanon list` -- catalog discovery with tree view, all-versions mode,
   filter expressions, and output format control. See
   [docs/list-and-add.md](docs/list-and-add.md).
@@ -71,6 +74,11 @@
   is no longer shipped.
 
 ### Fixed
+
+* `kanon add` no longer writes literal `<YOUR_GIT_ORG_BASE_URL>` or
+  `<true|false>` placeholders; `GITBASE` is derived from the
+  catalog-source URL and `KANON_MARKETPLACE_INSTALL` defaults to
+  `false` (DEFECT-003).
 
 * `kanon install` now auto-derives catalog source from `.kanon` after
   `kanon add` (DEFECT-001).

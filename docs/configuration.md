@@ -78,6 +78,105 @@ CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 If the referenced variable is not set in the environment, parsing
 fails with a descriptive error.
 
+## Placeholder Validation
+
+`kanon install` scans the `.kanon` file for unresolved template
+placeholders **before** running `repo envsubst`. Any value matching
+the regex `<[A-Z_|]+>` is treated as an unfilled placeholder and
+causes an immediate hard failure.
+
+### What triggers the check
+
+The pattern `<[A-Z_|]+>` matches angle-bracket-delimited tokens
+containing only uppercase ASCII letters, underscores, and pipe
+characters. Examples that trigger the check:
+
+- `<YOUR_GIT_ORG_BASE_URL>`
+- `<TRUE_OR_FALSE>`
+- `<GITBASE|OTHER>`
+
+Values written by `kanon add` in older releases sometimes contained
+these literal strings as stand-in prompts that users were expected to
+replace before running `kanon install`.
+
+### Error format
+
+When one or more placeholders are detected, `kanon install` exits
+with a non-zero code and prints each finding to stderr:
+
+```text
+ERROR: .kanon contains unresolved placeholders
+       -- resolve each before running kanon install
+  Line 3: GITBASE=<YOUR_GIT_ORG_BASE_URL>
+  Line 7: KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+```
+
+Each line reports the line number and the full `KEY=VALUE` line as it
+appears in the `.kanon` file so the operator can locate it
+immediately.
+
+### Remediation
+
+Three paths are available, listed in decreasing order of preference:
+
+1. **Re-run `kanon add`** -- `kanon add` now auto-derives `GITBASE`
+   from the catalog-source URL and defaults
+   `KANON_MARKETPLACE_INSTALL` to `false`. Re-running `kanon add`
+   overwrites the stale placeholder lines without manual editing.
+
+2. **Set the corresponding environment variable** -- if the
+   placeholder represents a value that should come from the
+   environment, set the variable before invoking `kanon install`:
+
+   ```bash
+   export GITBASE=https://github.com/your-org
+   kanon install .kanon
+   ```
+
+3. **Hand-edit `.kanon`** -- open the file and replace each
+   placeholder with a concrete value:
+
+   ```properties
+   # Before (triggers error):
+   GITBASE=<YOUR_GIT_ORG_BASE_URL>
+
+   # After (valid):
+   GITBASE=https://github.com/your-org
+   ```
+
+### Worked example
+
+Given a `.kanon` file with the following content at lines 3 and 7:
+
+```properties
+# .kanon
+KANON_CATALOG_SOURCE=https://github.com/your-org/catalog.git@main
+GITBASE=<YOUR_GIT_ORG_BASE_URL>
+KANON_SOURCE_build_URL=${GITBASE}/build.git
+KANON_SOURCE_build_REVISION=main
+KANON_SOURCE_build_PATH=repo-specs/meta.xml
+KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+```
+
+Running `kanon install .kanon` before resolving the placeholders
+produces:
+
+```text
+ERROR: .kanon contains unresolved placeholders
+       -- resolve each before running kanon install
+  Line 3: GITBASE=<YOUR_GIT_ORG_BASE_URL>
+  Line 7: KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+```
+
+After correcting both lines:
+
+```properties
+GITBASE=https://github.com/your-org
+KANON_MARKETPLACE_INSTALL=false
+```
+
+`kanon install .kanon` proceeds normally.
+
 ## Environment Variable Reference
 
 The sections below group every environment variable by function.

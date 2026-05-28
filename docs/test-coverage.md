@@ -132,3 +132,57 @@ schema. The helper modules in
 `tests/integration/fixtures/synthetic/` replace those seeds entirely.
 Downstream Epics E42 and E48 reference only the new pytest fixtures;
 no test in the current suite imports from `test-fixtures/synthetic-fixtures/`.
+
+---
+
+## Remove command coverage
+
+### Purpose
+
+This section documents the automated test coverage for the `kanon remove` command,
+satisfying spec §4 E39. All seven behaviour rows from `test-fixtures/findings.md`
+rows 46-52 are fully covered by existing integration tests; no new test was
+required per spec §4 E39. The rows below are end-to-end asserted by the cited
+integration tests -- each test invokes the real `kanon remove` CLI via subprocess
+against a temporary `.kanon` file and asserts both the process exit code and the
+resulting file state.
+
+### Coverage mapping
+
+| findings.md row | Behaviour | Test file | Class | Line |
+|----------------:|-----------|-----------|-------|-----:|
+| 46 | remove / single | `tests/integration/test_remove_core.py` | `TestRemoveCoreHappyPath` | 112 |
+| 47 | remove / multiple | `tests/integration/test_remove_core.py` | `TestRemoveCoreErrorPaths` | 226 |
+| 48 | remove / by-canonical | `tests/integration/test_remove_core.py` | `TestRemoveCoreHappyPath` | 112 |
+| 49 | remove / by-original | `tests/integration/test_remove_core.py` | `TestRemoveCoreHappyPath` | 112 |
+| 50 | remove / force-absent | `tests/integration/test_remove_force_integration.py` | `TestRemoveForceIntegration` | 75 |
+| 51 | remove / dry-run | `tests/integration/test_remove_dry_run.py` | `TestRemoveDryRunBasic` | 89 |
+| 52 | remove / atomicity | `tests/integration/test_remove_core.py` | `TestRemoveCoreErrorPaths` | 226 |
+
+**Notes on row mapping:**
+
+- Rows 46, 48, 49 all map to `TestRemoveCoreHappyPath`. Row 46 is covered by
+  `test_source_name_input_removes_block`. Row 48 (by-canonical / entry-name form)
+  is covered by `test_entry_name_input_removes_block`, which inputs `Foo-Bar` and
+  asserts normalisation to `foo_bar`. Row 49 (by-original / source-name form) is
+  covered by `test_source_name_input_removes_block`, which inputs `foo_bar` directly.
+- Row 47 (multiple sources) is covered by `TestRemoveCoreErrorPaths`
+  via `test_multi_source_all_removed_when_all_valid`, which removes two sources in
+  one invocation.
+- Row 52 (atomicity) is covered by `TestRemoveCoreErrorPaths` via
+  `test_atomicity_file_unchanged_when_one_name_fails`, which asserts the file is
+  not written when one of multiple requested sources is absent.
+
+### Verification command
+
+```
+pytest tests/integration/test_remove_*.py -v
+```
+
+### Verification result
+
+27 passed, 0 failed (2026-05-28). All three test files collected 27 tests total:
+14 from `test_remove_core.py`, 1 from `test_remove_force_integration.py`, and
+12 from `test_remove_dry_run.py`.
+
+**Authoritative source**: spec §4 E39 (Files / Change / Verification + closure rows 46-52).

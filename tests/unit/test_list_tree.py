@@ -1168,9 +1168,6 @@ def _build_sibling_tree_fixture(
     repo_specs = tmp_path / "repo-specs"
     repo_specs.mkdir(parents=True, exist_ok=True)
 
-    include_elements = "".join(
-        f"  <include name=\"{stem}.xml\" />\n" for stem, _ in sibling_configs
-    )
     marketplace_lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         "<manifest>",
@@ -1198,9 +1195,7 @@ def _build_sibling_tree_fixture(
         ]
         for proj in projects:
             include_lines.append('  <remote name="origin" fetch="https://github.com/example" />')
-            include_lines.append(
-                f'  <project name="{proj}" remote="origin" revision="refs/heads/main" />'
-            )
+            include_lines.append(f'  <project name="{proj}" remote="origin" revision="refs/heads/main" />')
         include_lines.append("</manifest>")
         include_lines.append("")
         (tmp_path / f"{stem}.xml").write_text("\n".join(include_lines))
@@ -1249,35 +1244,33 @@ class TestTreeRendererSiblingContinuation:
             None,
         )
         assert first_sibling_line is not None, (
-            f"[shape={shape_id}] Expected a '+--' xml line for first sibling include; "
-            f"lines={lines!r}"
+            f"[shape={shape_id}] Expected a '+--' xml line for first sibling include; lines={lines!r}"
         )
 
         # AC-FUNC-002 assertion 1: non-last sibling uses '+--', not '\\--'.
         assert first_sibling_line.startswith("+--"), (
-            f"[shape={shape_id}] First sibling include must use '+--' connector; "
-            f"got: {first_sibling_line!r}"
+            f"[shape={shape_id}] First sibling include must use '+--' connector; got: {first_sibling_line!r}"
         )
 
         # Locate lines that are children of the first (non-last) sibling.
         # They must start with '|   ' (pipe + three spaces) continuation column.
-        first_sibling_child_lines = [
-            ln for ln in lines if ln.startswith("|   ")
-        ]
+        first_sibling_child_lines = [ln for ln in lines if ln.startswith("|   ")]
         assert len(first_sibling_child_lines) >= 1, (
-            f"[shape={shape_id}] Expected child lines starting with '|   ' under first "
-            f"sibling include; lines={lines!r}"
+            f"[shape={shape_id}] Expected child lines starting with '|   ' under first sibling include; lines={lines!r}"
         )
 
         # AC-FUNC-002 assertion 2: non-last child of non-last sibling uses '|   +--'.
-        first_child = first_sibling_child_lines[0]
-        assert "|   +--" in first_child, (
-            f"[shape={shape_id}] First child of first sibling must contain '|   +--'; "
-            f"got: {first_child!r}"
-        )
+        # Only applicable when the first sibling has more than one child; a single-child
+        # sibling has no non-last child so only assertion 3 applies.
+        first_sibling_child_count = len(sibling_configs[0][1])
+        if first_sibling_child_count > 1:
+            first_child = first_sibling_child_lines[0]
+            assert "|   +--" in first_child, (
+                f"[shape={shape_id}] First child of first sibling must contain '|   +--'; got: {first_child!r}"
+            )
 
         # AC-FUNC-002 assertion 3: last child of non-last sibling uses '|   \\--'.
-        last_child_of_first_sibling = first_sibling_child_lines[-1]
+        last_child_of_first_sibling = first_sibling_child_lines[first_sibling_child_count - 1]
         assert "|   \\--" in last_child_of_first_sibling, (
             f"[shape={shape_id}] Last child of first sibling must contain '|   \\--'; "
             f"got: {last_child_of_first_sibling!r}"
@@ -1289,36 +1282,33 @@ class TestTreeRendererSiblingContinuation:
             None,
         )
         assert last_sibling_line is not None, (
-            f"[shape={shape_id}] Expected a '\\--' xml line for last sibling include; "
-            f"lines={lines!r}"
+            f"[shape={shape_id}] Expected a '\\--' xml line for last sibling include; lines={lines!r}"
         )
 
         # AC-FUNC-002 assertion 4: last sibling uses '\\--'.
         assert last_sibling_line.startswith("\\--"), (
-            f"[shape={shape_id}] Last sibling include must use '\\--' connector; "
-            f"got: {last_sibling_line!r}"
+            f"[shape={shape_id}] Last sibling include must use '\\--' connector; got: {last_sibling_line!r}"
         )
 
         # Locate child lines of the last sibling.
         # They must start with '    ' (four spaces, no pipe).
-        last_sibling_child_lines = [
-            ln for ln in lines if ln.startswith("    ") and "project" in ln
-        ]
+        last_sibling_child_lines = [ln for ln in lines if ln.startswith("    ") and "project" in ln]
         assert len(last_sibling_child_lines) >= 1, (
-            f"[shape={shape_id}] Expected child lines starting with '    ' under last "
-            f"sibling include; lines={lines!r}"
+            f"[shape={shape_id}] Expected child lines starting with '    ' under last sibling include; lines={lines!r}"
         )
 
         # AC-FUNC-002 assertion 5: non-last child of last sibling uses '    +--'.
-        first_child_of_last = last_sibling_child_lines[0]
-        assert "    +--" in first_child_of_last, (
-            f"[shape={shape_id}] First child of last sibling must contain '    +--'; "
-            f"got: {first_child_of_last!r}"
-        )
+        # Only applicable when the last sibling has more than one child; a single-child
+        # sibling has no non-last child so only assertion 6 applies.
+        last_sibling_child_count = len(sibling_configs[-1][1])
+        if last_sibling_child_count > 1:
+            first_child_of_last = last_sibling_child_lines[0]
+            assert "    +--" in first_child_of_last, (
+                f"[shape={shape_id}] First child of last sibling must contain '    +--'; got: {first_child_of_last!r}"
+            )
 
         # AC-FUNC-002 assertion 6: last child of last sibling uses '    \\--'.
-        last_child_of_last = last_sibling_child_lines[-1]
+        last_child_of_last = last_sibling_child_lines[last_sibling_child_count - 1]
         assert "    \\--" in last_child_of_last, (
-            f"[shape={shape_id}] Last child of last sibling must contain '    \\--'; "
-            f"got: {last_child_of_last!r}"
+            f"[shape={shape_id}] Last child of last sibling must contain '    \\--'; got: {last_child_of_last!r}"
         )

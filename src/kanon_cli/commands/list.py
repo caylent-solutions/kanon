@@ -104,10 +104,10 @@ class VersionRow:
 
 
 # -- Tree renderer private constants --
-_TREE_PREFIX_MID = "+--"
-_TREE_PREFIX_LAST = "\\--"
-_TREE_INDENT_MID = "|  "
-_TREE_INDENT_LAST = "   "
+_TREE_CONNECTOR_INTERMEDIATE = "+--"
+_TREE_CONNECTOR_LAST = "\\--"
+_TREE_COLUMN_CONTINUATION = "|   "
+_TREE_COLUMN_BLANK = "    "
 
 # Guardrail error template (no em-dashes, no hardcoded values).
 _TREE_GUARDRAIL_ERROR = (
@@ -714,7 +714,7 @@ def _render_tree(
     transitively included XMLs -- are treated as depth-2 nodes and suppressed
     by ``max_depth=1``.
 
-    Box-drawing uses only ``+--``, ``|  ``, and ``\\--`` (ASCII-safe).
+    Box-drawing uses only ``+--``, ``|   ``, and ``\\--`` (ASCII-safe).
     No em-dash characters (U+2014) are used.
 
     The renderer does NOT clone any ``<project>`` repositories; it reads only
@@ -789,8 +789,8 @@ def _render_tree(
         for idx, inc_path in enumerate(include_paths):
             # The include node is last only if it is the last item AND there are no placeholders.
             is_last = idx == total_d1 - 1
-            inc_prefix = _TREE_PREFIX_LAST if is_last else _TREE_PREFIX_MID
-            inc_indent = _TREE_INDENT_LAST if is_last else _TREE_INDENT_MID
+            inc_prefix = _TREE_CONNECTOR_LAST if is_last else _TREE_CONNECTOR_INTERMEDIATE
+            inc_indent = _TREE_COLUMN_BLANK if is_last else _TREE_COLUMN_CONTINUATION
 
             inc_sha = _sha12_from_path(inc_path)
             lines.append(f"{inc_prefix}xml {inc_path.stem}@included ({inc_sha})")
@@ -799,7 +799,7 @@ def _render_tree(
                 _, inc_proj_list = _parse_xml_includes_and_projects(inc_path)
                 for j, (proj_name, fetch_url, revision) in enumerate(inc_proj_list):
                     is_last_proj = j == len(inc_proj_list) - 1
-                    proj_prefix = inc_indent + (_TREE_PREFIX_LAST if is_last_proj else _TREE_PREFIX_MID)
+                    proj_prefix = inc_indent + (_TREE_CONNECTOR_LAST if is_last_proj else _TREE_CONNECTOR_INTERMEDIATE)
                     proj_sha = _sha12_from_content(f"{proj_name}@{fetch_url}@{revision}")
                     proj_spec = revision if revision else "unspecified"
                     lines.append(f"{proj_prefix}project {proj_name}@{proj_spec} ({proj_sha})")
@@ -807,7 +807,7 @@ def _render_tree(
         for idx, ph_name in enumerate(include_placeholders):
             abs_idx = len(include_paths) + idx
             is_last = abs_idx == total_d1 - 1
-            ph_prefix = _TREE_PREFIX_LAST if is_last else _TREE_PREFIX_MID
+            ph_prefix = _TREE_CONNECTOR_LAST if is_last else _TREE_CONNECTOR_INTERMEDIATE
             lines.append(f"{ph_prefix}xml {ph_name}@unknown (000000000000)")
 
         # Root projects (from the root marketplace XML) at depth 2.
@@ -817,13 +817,13 @@ def _render_tree(
             if include_paths:
                 last_inc_idx = len(include_paths) - 1
                 last_inc_is_last_d1 = last_inc_idx == total_d1 - 1
-                last_inc_indent = _TREE_INDENT_LAST if last_inc_is_last_d1 else _TREE_INDENT_MID
+                last_inc_indent = _TREE_COLUMN_BLANK if last_inc_is_last_d1 else _TREE_COLUMN_CONTINUATION
             else:
                 # Only placeholders exist; use empty indent for root projects.
                 last_inc_indent = ""
             for j, (proj_name, fetch_url, revision) in enumerate(root_projects):
                 is_last_rp = j == len(root_projects) - 1
-                proj_prefix = last_inc_indent + (_TREE_PREFIX_LAST if is_last_rp else _TREE_PREFIX_MID)
+                proj_prefix = last_inc_indent + (_TREE_CONNECTOR_LAST if is_last_rp else _TREE_CONNECTOR_INTERMEDIATE)
                 proj_sha = _sha12_from_content(f"{proj_name}@{fetch_url}@{revision}")
                 proj_spec = revision if revision else "unspecified"
                 lines.append(f"{proj_prefix}project {proj_name}@{proj_spec} ({proj_sha})")
@@ -833,7 +833,7 @@ def _render_tree(
         if show_projects and root_projects:
             for j, (proj_name, fetch_url, revision) in enumerate(root_projects):
                 is_last = j == len(root_projects) - 1
-                proj_prefix = _TREE_PREFIX_LAST if is_last else _TREE_PREFIX_MID
+                proj_prefix = _TREE_CONNECTOR_LAST if is_last else _TREE_CONNECTOR_INTERMEDIATE
                 proj_sha = _sha12_from_content(f"{proj_name}@{fetch_url}@{revision}")
                 proj_spec = revision if revision else "unspecified"
                 lines.append(f"{proj_prefix}project {proj_name}@{proj_spec} ({proj_sha})")

@@ -878,3 +878,346 @@ class TestStrictLockOrphanErrorMessage:
             f"Expected {expected_phrase!r} in stderr for {orphan_count} orphan(s).\n"
             f"stderr: {stderr!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestStrictLockDefaultAutoPrune: default install auto-prunes orphaned entries
+# (DEFECT-014)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestStrictLockDefaultAutoPrune:
+    """Default install (no flags) auto-prunes orphaned lockfile entries.
+
+    DEFECT-014: when B's KANON_SOURCE_B_* triple is removed from .kanon but
+    B still exists in .kanon.lock, a subsequent 'kanon install' (no flags)
+    should exit 0, emit one INFO line per orphan ('pruned orphaned lock entry:
+    <name>'), and rewrite .kanon.lock without the orphaned entry.
+
+    Current behaviour: the install engine raises KanonHashMismatchError (exit 1)
+    because removing B's triple changes the kanon_hash and the engine treats any
+    hash mismatch as a hard error before it can reach the orphan-detection logic.
+
+    The tests in this class run 'kanon install' as a subprocess so that they
+    exercise the real CLI entry point and capture stdout/stderr + exit code.
+    KANON_ALLOW_INSECURE_REMOTES=1 is passed to permit file:// URLs used by
+    the synthetic bare repos.
+    """
+
+    def _run_kanon(
+        self,
+        args: list[str],
+        cwd: pathlib.Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run the kanon CLI as a subprocess, capturing output.
+
+        Args:
+            args: Arguments to pass to 'kanon' (e.g. ['add', 'entry-a', ...]).
+            cwd: Working directory for the subprocess.
+
+        Returns:
+            Completed subprocess result with stdout and stderr captured.
+        """
+        env = dict(os.environ)
+        env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
+        return subprocess.run(
+            [sys.executable, "-m", "kanon_cli"] + args,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(cwd),
+        )
+
+    def _kanon_add(
+        self,
+        entry_name: str,
+        catalog_source: str,
+        workspace: pathlib.Path,
+    ) -> None:
+        """Run 'kanon add <entry_name> --catalog-source <catalog_source>'.
+
+        Raises RuntimeError if the command exits non-zero.
+
+        Args:
+            entry_name: Catalog entry name to add.
+            catalog_source: Catalog source in '<url>@<ref>' form.
+            workspace: Working directory containing the .kanon file.
+        """
+        result = self._run_kanon(
+            ["add", entry_name, "--catalog-source", catalog_source],
+            cwd=workspace,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"kanon add {entry_name!r} failed (exit {result.returncode}):\n"
+                f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            )
+
+    def _kanon_install(
+        self,
+        workspace: pathlib.Path,
+        extra_args: list[str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run 'kanon install [extra_args]' and return the completed process.
+
+        Does NOT raise on non-zero exit; the caller inspects returncode.
+
+        Args:
+            workspace: Working directory containing the .kanon file.
+            extra_args: Optional additional arguments (e.g. ['--strict-lock']).
+
+        Returns:
+            Completed subprocess result.
+        """
+        args = ["install"] + (extra_args or [])
+        return self._run_kanon(args, cwd=workspace)
+
+    def _remove_source_triple(
+        self,
+        kanon_path: pathlib.Path,
+        source_name: str,
+    ) -> None:
+        """Remove the three KANON_SOURCE_<source_name>_* lines from .kanon.
+
+        Reads the file, filters out the three key lines (URL, REVISION, PATH),
+        and writes back the remainder.  Raises RuntimeError if fewer than three
+        lines are removed (guard against misconfigured test setup).
+
+        The source_name must match the token written by 'kanon add' exactly,
+        which is the derive_source_name() output (lowercase, hyphens -> underscores).
+        The prefix check is case-sensitive to match the file verbatim.
+
+        Args:
+            kanon_path: Path to the .kanon file.
+            source_name: Normalized source name token as written by kanon add
+                (e.g. 'entry_beta' for entry 'entry-beta').
+        """
+        lines = kanon_path.read_text().splitlines(keepends=True)
+        prefix = f"KANON_SOURCE_{source_name}_"
+        filtered = [ln for ln in lines if not ln.startswith(prefix)]
+        removed_count = len(lines) - len(filtered)
+        if removed_count < 3:
+            raise RuntimeError(
+                f"Expected to remove 3 KANON_SOURCE_{source_name}_* lines from "
+                f"{kanon_path}; only removed {removed_count}. "
+                f"Check that kanon add wrote all three triples for {source_name!r}."
+            )
+        kanon_path.write_text("".join(filtered))
+        kanon_path.chmod(0o600)
+
+    def test_default_install_prunes_orphan_with_info_line(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Default install prunes a single orphan, emits INFO line, exits 0.
+
+        Spec reference: spec Section 4 E34 Failing test.
+
+        DEFECT-014 root cause: removing B's triple from .kanon changes the
+        kanon_hash; the install engine raises KanonHashMismatchError (exit 1)
+        before reaching the orphan-detection logic. This test fails RED against
+        unpatched code because the process exits 1 (KanonHashMismatchError) and
+        the INFO line 'pruned orphaned lock entry:' is absent from stdout.
+
+        Setup:
+        - Create two separate bare catalog repos (A and B) via
+          _create_manifest_repo_with_tags.
+        - kanon add entry-a using A's catalog repo.
+        - kanon add entry-b using B's catalog repo.
+        - kanon install (builds .kanon.lock with both sources).
+        - Remove B's KANON_SOURCE_<b_key>_* triple from .kanon.
+        - kanon install (no flags) -- the RED assertion target.
+
+        Assertions:
+        - exit_code == 0.
+        - 'pruned orphaned lock entry:' in stdout.
+        - derived B orphan name present on the same info line.
+        - B's source name absent from the post-run .kanon.lock.
+        """
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        # Build two separate bare catalog repos with distinct entry names.
+        bare_a = _create_manifest_repo_with_tags(
+            repos_dir / "cat-a",
+            entry_names=["entry-alpha"],
+            tags=["1.0.0"],
+        )
+        bare_b = _create_manifest_repo_with_tags(
+            repos_dir / "cat-b",
+            entry_names=["entry-beta"],
+            tags=["1.0.0"],
+        )
+
+        # Derive normalized source keys (what KANON_SOURCE_<key>_* will use).
+        a_source_name = derive_source_name("entry-alpha")
+        b_source_name = derive_source_name("entry-beta")
+
+        catalog_a = f"file://{bare_a}@main"
+        catalog_b = f"file://{bare_b}@main"
+
+        # Add both sources; kanon add writes the KANON_SOURCE_* triples.
+        self._kanon_add("entry-alpha", catalog_a, workspace)
+        self._kanon_add("entry-beta", catalog_b, workspace)
+
+        # First install: creates .kanon.lock with both A and B.
+        install_result = self._kanon_install(workspace)
+        assert install_result.returncode == 0, (
+            f"Initial kanon install failed (exit {install_result.returncode}).\n"
+            f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
+        )
+
+        kanon_path = workspace / ".kanon"
+        lock_path = workspace / ".kanon.lock"
+        assert lock_path.exists(), ".kanon.lock was not created by the initial install"
+
+        # Verify both sources are in the lockfile before modification.
+        initial_lock = read_lockfile(lock_path)
+        initial_names = [s.name for s in initial_lock.sources]
+        assert b_source_name in initial_names, (
+            f"Expected {b_source_name!r} in initial lockfile sources: {initial_names!r}"
+        )
+
+        # Remove B's triple from .kanon; .kanon.lock remains unchanged.
+        self._remove_source_triple(kanon_path, b_source_name)
+
+        # Verify B's lines are gone and A's remain.
+        kanon_content = kanon_path.read_text()
+        assert f"KANON_SOURCE_{b_source_name}_URL" not in kanon_content, (
+            "B's URL line should have been removed from .kanon"
+        )
+        assert f"KANON_SOURCE_{a_source_name}_URL" in kanon_content, (
+            "A's URL line must remain in .kanon after removing B"
+        )
+
+        # Second install (no flags): the test assertion target.
+        # Against unpatched code: exits 1 with KanonHashMismatchError because
+        # removing B's triple changed the kanon_hash.
+        # Against patched code: exits 0 with INFO line and pruned lockfile.
+        second_result = self._kanon_install(workspace)
+        stdout = second_result.stdout
+
+        assert second_result.returncode == 0, (
+            f"Expected exit 0 after auto-prune; got {second_result.returncode}.\n"
+            f"stdout: {stdout!r}\nstderr: {second_result.stderr!r}"
+        )
+        assert "pruned orphaned lock entry:" in stdout, (
+            f"Expected 'pruned orphaned lock entry:' info line in stdout.\n"
+            f"stdout: {stdout!r}"
+        )
+        assert b_source_name in stdout, (
+            f"Expected orphan name {b_source_name!r} on the info line in stdout.\n"
+            f"stdout: {stdout!r}"
+        )
+
+        # Re-read the lockfile from disk after the subprocess exits.
+        post_run_lock = read_lockfile(lock_path)
+        post_run_names = [s.name for s in post_run_lock.sources]
+        assert b_source_name not in post_run_names, (
+            f"Expected {b_source_name!r} to be absent from post-run lockfile.\n"
+            f"Post-run sources: {post_run_names!r}"
+        )
+        assert a_source_name in post_run_names, (
+            f"Expected {a_source_name!r} to remain in post-run lockfile.\n"
+            f"Post-run sources: {post_run_names!r}"
+        )
+
+    @pytest.mark.parametrize("orphan_count", [1, 2, 3])
+    def test_default_install_emits_one_info_line_per_orphan(
+        self,
+        tmp_path: pathlib.Path,
+        orphan_count: int,
+    ) -> None:
+        """Default install emits exactly N INFO lines for N orphaned entries, exits 0.
+
+        Spec reference: spec Section 4 E34 Edge cases.
+
+        For each value in [1, 2, 3] orphan count:
+        - Build workspace with 1 active source + orphan_count orphan sources.
+        - Install to create the lockfile.
+        - Remove all orphan source triples from .kanon.
+        - Run kanon install (no flags).
+        - Assert exactly orphan_count occurrences of 'pruned orphaned lock entry:'.
+        - Assert exit_code == 0.
+        - Assert zero orphan source names remain in the post-run .kanon.lock.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+            orphan_count: Number of orphan sources to build and verify (1, 2, or 3).
+        """
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        # Build catalog repo for the single active source.
+        bare_active = _create_manifest_repo_with_tags(
+            repos_dir / "cat-active",
+            entry_names=["entry-active"],
+            tags=["1.0.0"],
+        )
+        active_source_name = derive_source_name("entry-active")
+        catalog_active = f"file://{bare_active}@main"
+        self._kanon_add("entry-active", catalog_active, workspace)
+
+        # Build one catalog repo per orphan source and add each.
+        orphan_source_names: list[str] = []
+        for idx in range(orphan_count):
+            entry_name = f"entry-orphan-{idx}"
+            bare_orphan = _create_manifest_repo_with_tags(
+                repos_dir / f"cat-orphan-{idx}",
+                entry_names=[entry_name],
+                tags=["1.0.0"],
+            )
+            catalog_orphan = f"file://{bare_orphan}@main"
+            self._kanon_add(entry_name, catalog_orphan, workspace)
+            orphan_source_names.append(derive_source_name(entry_name))
+
+        # First install: creates .kanon.lock with active + all orphans.
+        install_result = self._kanon_install(workspace)
+        assert install_result.returncode == 0, (
+            f"Initial install failed (exit {install_result.returncode}).\n"
+            f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
+        )
+
+        lock_path = workspace / ".kanon.lock"
+        kanon_path = workspace / ".kanon"
+        assert lock_path.exists(), ".kanon.lock was not created by initial install"
+
+        # Remove all orphan triples from .kanon; leave active source intact.
+        for orphan_name in orphan_source_names:
+            self._remove_source_triple(kanon_path, orphan_name)
+
+        # Second install (no flags): the assertion target.
+        second_result = self._kanon_install(workspace)
+        stdout = second_result.stdout
+
+        assert second_result.returncode == 0, (
+            f"Expected exit 0 with {orphan_count} orphan(s); got {second_result.returncode}.\n"
+            f"stdout: {stdout!r}\nstderr: {second_result.stderr!r}"
+        )
+
+        # Count INFO lines: each must contain the prefix.
+        info_prefix = "pruned orphaned lock entry:"
+        info_line_count = stdout.count(info_prefix)
+        assert info_line_count == orphan_count, (
+            f"Expected exactly {orphan_count} '{info_prefix}' line(s) in stdout; "
+            f"got {info_line_count}.\nstdout: {stdout!r}"
+        )
+
+        # Re-read the lockfile from disk (post-subprocess, no intermediate caching).
+        post_run_lock = read_lockfile(lock_path)
+        post_run_names = [s.name for s in post_run_lock.sources]
+
+        for orphan_name in orphan_source_names:
+            assert orphan_name not in post_run_names, (
+                f"Expected orphan {orphan_name!r} to be absent from post-run lockfile.\n"
+                f"Post-run sources: {post_run_names!r}"
+            )
+        assert active_source_name in post_run_names, (
+            f"Expected active source {active_source_name!r} to remain in post-run lockfile.\n"
+            f"Post-run sources: {post_run_names!r}"
+        )

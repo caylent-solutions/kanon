@@ -107,6 +107,8 @@
 
 * `kanon outdated` now parses `refs/tags/X.Y.Z` revisions written by `kanon add` (DEFECT-007).
 
+* `kanon why` now resolves dependency chains via catalog walk when no lockfile is present (DEFECT-008).
+
 ## v1.3.1 (2026-05-04)
 
 ### Fix

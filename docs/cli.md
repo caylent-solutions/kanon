@@ -79,3 +79,89 @@ discipline). See the `[Unreleased]` `### Fixed` section in
 [CHANGELOG.md](../CHANGELOG.md) for the changelog entry, and
 `spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4 E23
 and Section 13 D3 for the specification decision record.
+
+---
+
+## kanon why -- resolution paths
+
+`kanon why` resolves the dependency tree via one of two paths depending
+on whether a lockfile is present.
+
+### Lockfile-present path
+
+When `.kanon.lock` exists (default location: `<kanon-file>.lock`, or the
+path specified by `--lock-file` / `KANON_LOCK_FILE`), `kanon why` reads
+the resolved SHAs directly from the lockfile without making any network
+calls. The `--catalog-source` flag is not required in this path.
+
+### Live-resolve path
+
+When no `.kanon.lock` is present but a catalog source is resolvable,
+`kanon why` walks the catalog graph to resolve each source's dependency
+chain. A catalog source is resolvable when any of the following is
+provided:
+
+- `--catalog-source <git-url>@<ref>` CLI flag
+- `KANON_CATALOG_SOURCE=<git-url>@<ref>` environment variable
+
+The CLI flag takes precedence when both are set.
+
+On the live-resolve path, `kanon why` resolves each `KANON_SOURCE_*`
+entry in the `.kanon` file by calling `git ls-remote` against the
+declared URL and revision. If resolution fails for any source, the
+command exits with a non-zero code and the following error shape:
+
+```text
+ERROR: cannot resolve '<source-name>' via catalog walk: <reason>
+Remediation: Verify --catalog-source URL + revision are reachable
+and the catalog manifest is well-formed.
+```
+
+### Precondition: no catalog source and no lockfile
+
+When both conditions are true -- no `.kanon.lock` is present AND no
+catalog source is configured -- `kanon why` exits immediately with:
+
+```text
+ERROR: kanon why requires a catalog source.
+Provide one of:
+  --catalog-source <git-url>@<ref>
+  KANON_CATALOG_SOURCE=<git-url>@<ref>
+```
+
+This diagnostic is unchanged from before the live-resolve path was
+implemented. The "catalog source required when lockfile is absent"
+precondition is preserved.
+
+### Identical output format across both paths
+
+The `--format text` and `--format json` output shapes are identical
+regardless of which resolution path was used. Both paths produce the
+same chain structure:
+
+```text
+# text format (default)
+<source-name> -> <xml-manifest-path>@<sha> -> ... -> <project-name>@<sha>
+
+# json format (--format json)
+[
+  [
+    {"kind": "source", "name": "<source-name>", "ref": null, "sha": "<sha>", "url": "<url>"},
+    {"kind": "include", "name": "<manifest-name>", "ref": "<path-in-repo>", "sha": "<sha>", "url": null},
+    {"kind": "project", "name": "<project-name>", "ref": null, "sha": "<sha>", "url": "<canonical-url>"}
+  ]
+]
+```
+
+The shared `_render_text` and `_emit_json_payload` functions render both
+lockfile-present and live-resolve chains through the same code path,
+guaranteeing format consistency.
+
+### Traceability
+
+The live-resolve path was introduced as the fix for **DEFECT-008**. See
+the `[Unreleased]` `### Fixed` section in [CHANGELOG.md](../CHANGELOG.md)
+for the changelog entry, and
+`spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
+E31 for the specification decision record. For the full `kanon why` flag
+reference see [docs/outdated-and-why.md](outdated-and-why.md).

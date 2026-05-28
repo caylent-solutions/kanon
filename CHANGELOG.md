@@ -75,6 +75,10 @@
 
 ### Fixed
 
+* `kanon install` now auto-prunes orphaned lockfile entries with one INFO
+  line per orphan (`pruned orphaned lock entry: <name>`); `--strict-lock`
+  remains the opt-in error path (DEFECT-014).
+
 * `kanon list --all-versions` no longer aborts on the first malformed
   historical revision; the walk continues, emitting a stderr warning
   naming each skipped `(entry, revision)` pair (DEFECT-006).

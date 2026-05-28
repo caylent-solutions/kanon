@@ -132,6 +132,65 @@ auto-derive behaviour as one created by `kanon add`.
 | `--refresh-lock` | Rebuild the full lockfile from `.kanon`. Requires `--catalog-source` or `KANON_CATALOG_SOURCE`; the lockfile fallback is disabled on this path. |
 | `--refresh-lock-source <name>` | Rebuild the lockfile entry for a single named source. Same catalog-source requirement as `--refresh-lock`. |
 
+## Orphaned lockfile entries
+
+An orphaned lockfile entry is a `[[sources]]` row in `.kanon.lock` whose
+`name` no longer has a matching `KANON_SOURCE_<name>_URL` triple in `.kanon`.
+This happens when a source is removed from `.kanon` (for example, via
+`kanon remove`) but the lockfile has not yet been updated to reflect that
+removal.
+
+### Default behaviour: auto-prune
+
+By default, `kanon install` detects orphaned lockfile entries, removes them
+from the in-memory lockfile, and emits one INFO line per orphan:
+
+```text
+pruned orphaned lock entry: <name>
+```
+
+For example, if a source named `alpha` was removed from `.kanon` and
+`.kanon.lock` still contains its entry, running `kanon install` produces:
+
+```text
+pruned orphaned lock entry: alpha
+```
+
+The lockfile is then rewritten without the orphaned entry and installation
+continues normally. No operator intervention is required.
+
+### Opt-in error path: --strict-lock
+
+If you want `kanon install` to fail loudly instead of silently pruning
+orphaned entries, pass `--strict-lock`:
+
+```bash
+kanon install --strict-lock
+```
+
+With `--strict-lock`, the command exits non-zero and enumerates every
+orphaned source by name so you can decide intentionally. For options to
+resolve the error, see
+[docs/troubleshooting.md -- 15. Strict-lock Orphan Errors](troubleshooting.md#15-strict-lock-orphan-errors).
+
+### Worked example
+
+Suppose your `.kanon` file originally declares a source named `my-lib`, and
+`kanon add` has already been run so `.kanon.lock` contains the corresponding
+entry. You then remove the source:
+
+```bash
+kanon remove my-lib
+```
+
+The next bare `kanon install` automatically reconciles the lockfile:
+
+```text
+pruned orphaned lock entry: my-lib
+```
+
+Installation then completes with the remaining declared sources.
+
 ## See also
 
 - [docs/lockfile.md](lockfile.md) -- lockfile format and lifecycle.

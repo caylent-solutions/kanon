@@ -335,3 +335,76 @@ pytest tests/integration/test_catalog_audit_*.py tests/unit/test_catalog_audit_*
 452 passed, 0 failed (2026-05-28). All eight classes cited in the mapping table above
 contributed passing tests in this run. The test suite collected tests from 7
 integration files and the corresponding unit files.
+
+---
+
+## Validate + completion command coverage
+
+### Purpose
+
+This section documents the automated test coverage for the `kanon validate` sub-subcommands
+(`xml`, `marketplace`, `metadata`) and the `kanon completion` sub-subcommands (`bash`, `zsh`),
+satisfying spec §4 E46. All nine behaviour rows from `test-fixtures/findings.md` rows 20-28 are
+covered by existing integration tests -- each test exercises the real kanon CLI or the
+underlying Python functions directly against temporary fixtures. No surface change was
+introduced by this spec section; the existing tests already cover all 9 rows fully, so no new
+test was required per spec §4 E46.
+
+**Authoritative source**: spec §4 E46 (Files / Change / Verification + closure rows 20-28).
+
+### Coverage mapping
+
+| findings.md row | Behaviour | Test file | Class / function | Line |
+|----------------:|-----------|-----------|-----------------|-----:|
+| 20 | validate-xml / basic | `tests/integration/test_validate_xml.py` | `TestValidateXml` | 129 |
+| 21 | validate-xml / repo-root | `tests/integration/test_validate_xml.py` | `TestValidateXml` | 129 |
+| 22 | validate-marketplace / basic | `tests/integration/test_validate_marketplace.py` | `TestValidateMarketplaceFunction` | 184 |
+| 23 | validate-marketplace / repo-root | `tests/integration/test_validate_marketplace.py` | `TestValidateMarketplaceFunction` | 184 |
+| 24 | validate-metadata / basic | `tests/integration/test_validate_metadata.py` | `TestValidateMetadataCleanRepo` | 108 |
+| 25 | validate-metadata / format-json | `tests/integration/test_validate_metadata.py` | `TestValidateMetadataJsonFormat` | 218 |
+| 26 | validate-metadata / repo-root | `tests/integration/test_validate_metadata.py` | `TestValidateMetadataNoGitLsRemote` | 256 |
+| 27 | completion / bash | `tests/integration/test_completion_bash.py` | `test_static_completion_row` | 624 |
+| 28 | completion / zsh | `tests/integration/test_completion_zsh.py` | `test_static_enum_flag_row` | 512 |
+
+**Notes on row mapping:**
+
+- Rows 20 and 21 both map to `TestValidateXml`. The class exercises `validate_xml()` with
+  `tmp_path` as the repository root, covering both the basic return-code behaviour (row 20) and
+  the repo-root resolution path (row 21). Rows 20 and 21 are tested via direct Python function
+  calls rather than subprocess; the `--repo-root` CLI flag delegates to the same internal
+  `validate_xml()` function.
+- Rows 22 and 23 both map to `TestValidateMarketplaceFunction`. The class exercises
+  `validate_marketplace()` with `tmp_path` as the repository root, covering both the basic
+  return-code behaviour (row 22) and the repo-root resolution path (row 23). Same direct-call
+  pattern as the xml tests above.
+- Row 24 maps to `TestValidateMetadataCleanRepo`, which drives the full CLI via subprocess
+  (`kanon validate metadata --repo-root <path>`) against a clean synthetic fixture and asserts
+  exit 0 with zero findings output.
+- Row 25 maps to `TestValidateMetadataJsonFormat`, which exercises `--format json` and asserts
+  the output is parseable JSON with a `findings` key. Both clean-repo (exit 0) and error-repo
+  (exit 1) paths are tested.
+- Row 26 maps to `TestValidateMetadataNoGitLsRemote`, which injects a fake git binary to
+  assert that `kanon validate metadata --repo-root <path>` never issues a `git ls-remote` call.
+  This class uses the `--repo-root` flag explicitly in every invocation.
+- Row 27 maps to `test_static_completion_row` in `test_completion_bash.py`. This is a
+  module-level parametrized function (no enclosing class) that sources the live
+  `kanon completion bash` output into a real bash process and asserts COMPREPLY for every
+  static-enum row in the Section 11.2 matrix.
+- Row 28 maps to `test_static_enum_flag_row` in `test_completion_zsh.py`. This is a
+  module-level parametrized function (no enclosing class) that inspects the option-spec arrays
+  from the live `kanon completion zsh` output and asserts expected values for every
+  static-enum row in the Section 11.2 matrix.
+
+### Verification command
+
+```
+pytest tests/integration/test_validate_xml.py tests/integration/test_validate_marketplace.py tests/integration/test_validate_metadata.py tests/integration/test_completion_bash.py tests/integration/test_completion_zsh.py -v
+```
+
+### Verification result
+
+168 passed, 0 failed (2026-05-28). All nine behaviours (rows 20-28) are exercised by the
+cited classes and functions. The five test files contributed: 17 tests from
+`test_validate_xml.py`, 24 tests from `test_validate_marketplace.py`, 18 tests from
+`test_validate_metadata.py`, 55 tests from `test_completion_bash.py`, and 54 tests from
+`test_completion_zsh.py`.

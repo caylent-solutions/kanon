@@ -16,6 +16,8 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
+import textwrap
 
 import pytest
 
@@ -154,3 +156,63 @@ class TestCatalogAuditRemoteUrlSubprocess:
             f"Expected fewer errors with env var=1.\n"
             f"Without: {len(errors_no_env)} errors\nWith: {len(errors_with_env)} errors"
         )
+
+
+@pytest.mark.integration
+class TestCatalogAuditPlaceholderFetchUrl:
+    """AC-TEST-002: audit-level assertions for ${VAR} placeholder fetch URLs.
+
+    A synthetic manifest containing a <remote fetch="${GITBASE}"> must NOT produce
+    an R002 finding when GITBASE is unset. The audit exit code on account of that
+    remote alone must be 0 (no non-placeholder errors in the synthetic fixture).
+    """
+
+    def _build_placeholder_fixture(self, base: pathlib.Path) -> pathlib.Path:
+        """Create a minimal repo-specs tree under base with a ${GITBASE} remote."""
+        repo_specs = base / "repo-specs"
+        repo_specs.mkdir(parents=True)
+        manifest_xml = repo_specs / "placeholder-marketplace.xml"
+        manifest_xml.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0"?>
+                <manifest>
+                  <remote name="gitbase" fetch="${GITBASE}" />
+                  <project name="proj" remote="gitbase" path="src/proj" />
+                </manifest>
+            """),
+            encoding="utf-8",
+        )
+        return base
+
+    def test_no_r002_for_unset_gitbase_placeholder(self) -> None:
+        """Audit against a ${GITBASE} manifest with GITBASE unset must produce no R002 finding.
+
+        AC-FUNC-005 / AC-TEST-002: the audit command must not emit R002 for
+        a fetch URL that is a ${VAR} placeholder when the variable is unset.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = self._build_placeholder_fixture(pathlib.Path(tmp))
+            # Ensure GITBASE is not present in the subprocess environment.
+            env_override: dict[str, str] = {"KANON_ALLOW_INSECURE_REMOTES": ""}
+            # Explicitly unset GITBASE by not including it -- subprocess env is built
+            # from os.environ merged with extra_env in _run_kanon; remove it if present.
+            base_env = {k: v for k, v in os.environ.items() if k != "GITBASE"}
+            base_env.update(env_override)
+            result = subprocess.run(
+                [sys.executable, "-m", "kanon_cli", "catalog", "audit", str(fixture), "--check", "remote-url"],
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
+            # Match "[R002]" exactly (not "[R002-TEMPLATED]" INFO lines).
+            r002_error_lines = [line for line in result.stdout.splitlines() if "[R002]" in line]
+            assert not r002_error_lines, (
+                "Expected no [R002] ERROR lines for unset ${GITBASE} placeholder, "
+                "but got:\n"
+                + "\n".join(r002_error_lines)
+                + f"\nFull stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
+            assert result.returncode == 0, (
+                "Expected exit 0 for synthetic ${GITBASE} placeholder manifest (no errors), "
+                f"got {result.returncode}.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )

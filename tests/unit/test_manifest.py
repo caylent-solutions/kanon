@@ -443,3 +443,73 @@ class TestCollectRemoteUrlFindings:
         _write_xml(xml, _simple_manifest("origin", "ssh://git@github.com/org"))
         result = collect_remote_url_findings(tmp_path, env={})
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# TestRemoteUrlPlaceholder -- AC-TEST-001
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "fetch_url,env,expect_r002,expect_info_or_warn",
+    [
+        # Unset variable -- no R002, an INFO/WARN finding instead.
+        ("${GITBASE}", {}, False, True),
+        # Variable set to HTTPS scheme -- no R002, no INFO/WARN (resolved OK).
+        ("${GITBASE}", {"GITBASE": "https://github.com/org"}, False, False),
+        # Variable set to non-HTTPS scheme -- R002 on resolved scheme.
+        ("${GITBASE}", {"GITBASE": "http://github.com/org"}, True, False),
+        # Literal http:// -- always R002.
+        ("http://github.com/org", {}, True, False),
+        # Mixed: literal insecure scheme with placeholder host -- R002 from literal scheme.
+        ("http://${HOST}/org", {}, True, False),
+    ],
+)
+class TestRemoteUrlPlaceholder:
+    """AC-TEST-001: parametrised placeholder expansion tests for R002.
+
+    Cases:
+    - ${VAR} with VAR unset => no R002, one INFO/WARN finding (templated token).
+    - ${VAR} with VAR=https://... => no R002, zero findings.
+    - ${VAR} with VAR=http://... => R002 on resolved non-HTTPS scheme.
+    - literal http:// => R002 (no expansion needed).
+    - http://${HOST} => R002 from literal insecure scheme prefix.
+    """
+
+    def test_r002_and_info_warn_presence(
+        self,
+        tmp_path: pathlib.Path,
+        fetch_url: str,
+        env: dict[str, str],
+        expect_r002: bool,
+        expect_info_or_warn: bool,
+    ) -> None:
+        """Parametrised: check R002 and INFO/WARN presence per scenario."""
+        repo_specs = tmp_path / "repo-specs"
+        repo_specs.mkdir()
+        xml = repo_specs / "tool-marketplace.xml"
+        _write_xml(xml, _simple_manifest("origin", fetch_url))
+
+        result = collect_remote_url_findings(tmp_path, env=env)
+
+        r002_findings = [f for f in result if f.code == "R002"]
+        info_warn_findings = [f for f in result if f.kind in ("info", "warn")]
+
+        if expect_r002:
+            assert r002_findings, (
+                f"Expected an R002 finding for fetch_url={fetch_url!r} env={env!r}, but got findings: {result}"
+            )
+        else:
+            assert not r002_findings, (
+                f"Expected NO R002 finding for fetch_url={fetch_url!r} env={env!r}, but got: {r002_findings}"
+            )
+
+        if expect_info_or_warn:
+            assert info_warn_findings, (
+                f"Expected an INFO/WARN finding for fetch_url={fetch_url!r} env={env!r}, but got findings: {result}"
+            )
+        else:
+            assert not info_warn_findings, (
+                f"Expected NO INFO/WARN finding for fetch_url={fetch_url!r} env={env!r}, but got: {info_warn_findings}"
+            )

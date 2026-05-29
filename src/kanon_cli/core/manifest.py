@@ -28,6 +28,8 @@ Spec references:
 from __future__ import annotations
 
 import pathlib
+import re
+import string
 from typing import TYPE_CHECKING, NamedTuple, cast
 
 import defusedxml.ElementTree as ET
@@ -133,6 +135,58 @@ def _iter_marketplace_xml_paths(target_path: pathlib.Path) -> list[pathlib.Path]
     return sorted(repo_specs.rglob("*-marketplace.xml"))
 
 
+# Regex that matches any remaining ${VAR} or $VAR placeholder after expansion.
+_PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _expand_fetch_url(url: str, env: dict[str, str]) -> tuple[str, bool]:
+    """Expand ${VAR} placeholders in url using env.
+
+    Uses string.Template.safe_substitute so that variables absent from env are
+    left as-is. If the expanded result still contains placeholder patterns, the
+    URL is considered unresolved (templated token).
+
+    Args:
+        url: The raw fetch URL string, possibly containing ${VAR} tokens.
+        env: Environment dict to substitute from.
+
+    Returns:
+        A 2-tuple (expanded_url, has_unresolved) where:
+        - expanded_url is the URL after applying env substitutions.
+        - has_unresolved is True when at least one ${VAR} token could not be
+          resolved because its variable was absent from env.
+    """
+    expanded = string.Template(url).safe_substitute(env)
+    has_unresolved = bool(_PLACEHOLDER_RE.search(expanded))
+    return expanded, has_unresolved
+
+
+def _literal_prefix_has_insecure_scheme(url: str) -> bool:
+    """Return True when the literal (pre-placeholder) prefix of url has a non-HTTPS/SSH scheme.
+
+    This is used for mixed URLs such as ``http://${HOST}/path`` where the
+    scheme is literal and insecure even though the host is a placeholder.
+    We extract the portion of url before the first ``${`` or ``$VAR``
+    occurrence and classify its scheme.
+
+    Args:
+        url: The raw fetch URL string.
+
+    Returns:
+        True if the literal prefix carries a non-HTTPS/non-SSH scheme, meaning
+        the URL should yield R002 regardless of whether placeholders are resolved.
+    """
+    # Find where the first placeholder begins; examine only the literal prefix.
+    match = _PLACEHOLDER_RE.search(url)
+    literal_prefix = url[: match.start()] if match else url
+    if not literal_prefix:
+        return False
+    scheme = _classify_remote_url_scheme(literal_prefix)
+    # UNKNOWN / OTHER scheme on the prefix means the prefix alone cannot
+    # determine the scheme (e.g. the prefix is just "" or "${VAR}") -- not insecure.
+    return scheme in (RemoteUrlScheme.HTTP, RemoteUrlScheme.FILE)
+
+
 def collect_remote_url_findings(
     target_path: pathlib.Path,
     env: dict[str, str] | None = None,
@@ -235,8 +289,41 @@ def collect_remote_url_findings(
                 )
                 continue
 
-            # R002: non-HTTPS/SSH scheme when not opted out.
-            scheme = _classify_remote_url_scheme(fetch_url)
+            # Expand ${VAR} placeholders before the R002 scheme check.
+            # safe_substitute leaves unresolved variables in-place; if any
+            # remain after expansion the URL is a templated token.
+            #
+            # Exception: if the literal prefix before the first placeholder
+            # already carries a recognizably insecure scheme (e.g. http://${HOST})
+            # we still emit R002 -- the scheme is known to be non-HTTPS.
+            resolved_url, has_unresolved = _expand_fetch_url(fetch_url, env)
+
+            if has_unresolved and not _literal_prefix_has_insecure_scheme(fetch_url):
+                findings.append(
+                    RawFinding(
+                        kind="info",
+                        code="R002-TEMPLATED",
+                        message=(
+                            f"{xml_file}: <remote name={remote_attr!r}> has fetch URL "
+                            f"{fetch_url!r} which contains unresolved variable placeholders. "
+                            "The URL scheme cannot be validated until the placeholders are "
+                            "substituted at runtime."
+                        ),
+                        remediation=(
+                            f"Ensure all variables referenced in the fetch URL "
+                            f"({fetch_url!r}) are set in the environment at audit time, "
+                            "or change the URL to a fully-resolved HTTPS or SSH address."
+                        ),
+                    )
+                )
+                continue
+
+            # R002: non-HTTPS/SSH scheme when not opted out (checked against the
+            # resolved URL so that a ${VAR} that expands to https:// passes, and
+            # a mixed http://${HOST} URL uses the literal scheme from fetch_url
+            # when resolved_url still has placeholders).
+            url_for_scheme_check = fetch_url if has_unresolved else resolved_url
+            scheme = _classify_remote_url_scheme(url_for_scheme_check)
             is_secure = scheme in (
                 RemoteUrlScheme.HTTPS,
                 RemoteUrlScheme.SSH_GIT_AT,

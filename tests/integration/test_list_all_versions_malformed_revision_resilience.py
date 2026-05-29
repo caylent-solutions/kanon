@@ -10,6 +10,11 @@ These tests assert the FIXED contract and are RED against unfixed code:
 - stdout does NOT contain any row referencing the malformed revision
 - stderr contains a warning line naming the malformed (entry, revision) pair
 
+TestAllVersionsNameDerivation asserts the name-derivation contract:
+- revisions lacking <catalog-metadata><name> are listed using the directory name
+- genuinely unparseable (non-well-formed XML) revisions are skipped with warning
+- explicit <name> takes precedence over the derived directory name
+
 Autouse fixtures from tests/integration/conftest.py are inherited:
 - _mock_resolve_ref_to_sha
 - _mock_check_sha_reachable
@@ -69,6 +74,11 @@ _MALFORMED_XML_NO_NAME_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
+# Genuinely non-well-formed XML -- the parser raises XMLParseError (not just a
+# missing-name validation error). This template triggers the skip-with-warning
+# path regardless of any name-derivation logic.
+_UNPARSEABLE_XML_CONTENT = "<<not valid xml at all>>"
+
 
 # ---------------------------------------------------------------------------
 # Low-level git helpers
@@ -84,11 +94,7 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"git {args!r} failed in {cwd!r}:\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
+        raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -128,13 +134,13 @@ def _build_three_tag_repo_middle_malformed(
     tmp_path: pathlib.Path,
     entry_name: str,
 ) -> pathlib.Path:
-    """Build a bare git repo with 3 per-commit tags; the middle tag (2.0.0) is malformed.
+    """Build a bare git repo with 3 per-commit tags; the middle tag (2.0.0) is unparseable.
 
     Each tag corresponds to a distinct commit so that cloning at a specific
     tag yields the XML state as of that commit.
 
     - Tag 1.0.0: well-formed XML with <name>{entry_name}</name> present.
-    - Tag 2.0.0: malformed XML with <name> element omitted.
+    - Tag 2.0.0: genuinely non-well-formed XML (parser raises XMLParseError).
     - Tag 3.0.0: well-formed XML with <name>{entry_name}</name> present.
 
     Args:
@@ -157,8 +163,10 @@ def _build_three_tag_repo_middle_malformed(
     _write_xml(repo_specs, entry_name, "1.0.0", _WELL_FORMED_XML_TEMPLATE)
     _commit_and_tag(work_dir, "1.0.0", "release 1.0.0")
 
-    _write_xml(repo_specs, entry_name, "2.0.0", _MALFORMED_XML_NO_NAME_TEMPLATE)
-    _commit_and_tag(work_dir, "2.0.0", "release 2.0.0 -- malformed")
+    entry_dir = repo_specs / entry_name
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    (entry_dir / f"{entry_name}-marketplace.xml").write_text(_UNPARSEABLE_XML_CONTENT)
+    _commit_and_tag(work_dir, "2.0.0", "release 2.0.0 -- unparseable XML")
 
     _write_xml(repo_specs, entry_name, "3.0.0", _WELL_FORMED_XML_TEMPLATE)
     _commit_and_tag(work_dir, "3.0.0", "release 3.0.0")
@@ -171,11 +179,11 @@ def _build_three_tag_repo_latest_malformed(
     tmp_path: pathlib.Path,
     entry_name: str,
 ) -> pathlib.Path:
-    """Build a bare git repo with 3 per-commit tags; the latest tag (3.0.0) is malformed.
+    """Build a bare git repo with 3 per-commit tags; the latest tag (3.0.0) is unparseable.
 
     - Tag 1.0.0: well-formed XML with <name>{entry_name}</name> present.
     - Tag 2.0.0: well-formed XML with <name>{entry_name}</name> present.
-    - Tag 3.0.0: malformed XML with <name> element omitted.
+    - Tag 3.0.0: genuinely non-well-formed XML (parser raises XMLParseError).
 
     Args:
         tmp_path: Temporary directory root.
@@ -200,8 +208,86 @@ def _build_three_tag_repo_latest_malformed(
     _write_xml(repo_specs, entry_name, "2.0.0", _WELL_FORMED_XML_TEMPLATE)
     _commit_and_tag(work_dir, "2.0.0", "release 2.0.0")
 
-    _write_xml(repo_specs, entry_name, "3.0.0", _MALFORMED_XML_NO_NAME_TEMPLATE)
-    _commit_and_tag(work_dir, "3.0.0", "release 3.0.0 -- malformed")
+    entry_dir = repo_specs / entry_name
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    (entry_dir / f"{entry_name}-marketplace.xml").write_text(_UNPARSEABLE_XML_CONTENT)
+    _commit_and_tag(work_dir, "3.0.0", "release 3.0.0 -- unparseable XML")
+
+    bare_dir = tmp_path / "bare.git"
+    return _clone_as_bare(work_dir, bare_dir)
+
+
+def _build_three_tag_repo_all_no_name(
+    tmp_path: pathlib.Path,
+    entry_name: str,
+) -> pathlib.Path:
+    """Build a bare git repo with 3 tags; every tag lacks <catalog-metadata><name>.
+
+    The directory convention ``repo-specs/<entry_name>/<entry_name>-marketplace.xml``
+    makes the name derivable even though no <name> element is present.
+
+    - Tag 1.0.0: well-formed XML structure, <name> element absent.
+    - Tag 2.0.0: well-formed XML structure, <name> element absent.
+    - Tag 3.0.0: well-formed XML structure, <name> element absent.
+
+    Args:
+        tmp_path: Temporary directory root.
+        entry_name: Directory name used in repo-specs/<entry_name>/; this is
+            the name that should be derived by the fixed implementation.
+
+    Returns:
+        Path to the bare git repository (file:// accessible).
+    """
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    _init_git_work_dir(work_dir)
+
+    (work_dir / "README.md").write_text("manifest repo\n")
+    _git(["add", "README.md"], cwd=work_dir)
+    _git(["commit", "-m", "init"], cwd=work_dir)
+
+    repo_specs = work_dir / "repo-specs"
+    for tag_version in ("1.0.0", "2.0.0", "3.0.0"):
+        _write_xml(repo_specs, entry_name, tag_version, _MALFORMED_XML_NO_NAME_TEMPLATE)
+        _commit_and_tag(work_dir, tag_version, f"release {tag_version}")
+
+    bare_dir = tmp_path / "bare.git"
+    return _clone_as_bare(work_dir, bare_dir)
+
+
+def _build_two_tag_repo_one_unparseable(
+    tmp_path: pathlib.Path,
+    entry_name: str,
+) -> pathlib.Path:
+    """Build a bare git repo with 2 tags; tag 1.0.0 is valid, tag 2.0.0 is unparseable XML.
+
+    - Tag 1.0.0: well-formed XML with <name>{entry_name}</name> present.
+    - Tag 2.0.0: genuinely non-well-formed XML (parser raises XMLParseError).
+
+    Args:
+        tmp_path: Temporary directory root.
+        entry_name: Catalog entry name for the parseable revision.
+
+    Returns:
+        Path to the bare git repository (file:// accessible).
+    """
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    _init_git_work_dir(work_dir)
+
+    (work_dir / "README.md").write_text("manifest repo\n")
+    _git(["add", "README.md"], cwd=work_dir)
+    _git(["commit", "-m", "init"], cwd=work_dir)
+
+    repo_specs = work_dir / "repo-specs"
+
+    _write_xml(repo_specs, entry_name, "1.0.0", _WELL_FORMED_XML_TEMPLATE)
+    _commit_and_tag(work_dir, "1.0.0", "release 1.0.0")
+
+    entry_dir = repo_specs / entry_name
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    (entry_dir / f"{entry_name}-marketplace.xml").write_text(_UNPARSEABLE_XML_CONTENT)
+    _commit_and_tag(work_dir, "2.0.0", "release 2.0.0 -- unparseable XML")
 
     bare_dir = tmp_path / "bare.git"
     return _clone_as_bare(work_dir, bare_dir)
@@ -254,12 +340,14 @@ def _run_list_all_versions(
 
 @pytest.mark.integration
 class TestAllVersionsResilience:
-    """DEFECT-006: `kanon list --all-versions` must tolerate malformed historical revisions.
+    """DEFECT-006: `kanon list --all-versions` must tolerate genuinely unparseable revisions.
 
-    Both tests assert the fixed (desired) contract. Against unfixed code both
-    tests FAIL because _walk_all_versions raises CatalogMetadataParseError and
-    the CLI exits 1 (malformed-latest case) or emits no warning and includes
-    the malformed revision in stdout (middle-malformed case).
+    A revision is considered malformed only when its XML is non-well-formed
+    (the parser raises XMLParseError). Missing <name> is no longer malformed;
+    the name is derived from the directory convention instead.
+
+    Both tests assert the fixed (desired) contract. They use genuinely
+    unparseable XML (not just missing-name XML) for the malformed revision.
     """
 
     @pytest.mark.parametrize("parseable_tag", ["1.0.0", "3.0.0"])
@@ -268,10 +356,10 @@ class TestAllVersionsResilience:
         tmp_path: pathlib.Path,
         parseable_tag: str,
     ) -> None:
-        """Walk continues past the malformed middle revision (2.0.0).
+        """Walk continues past the genuinely unparseable middle revision (2.0.0).
 
-        Three-tag repo: 1.0.0 (well-formed), 2.0.0 (malformed -- <name>
-        missing), 3.0.0 (well-formed).
+        Three-tag repo: 1.0.0 (well-formed), 2.0.0 (non-well-formed XML),
+        3.0.0 (well-formed).
 
         Expected fixed behaviour:
         - exit 0
@@ -285,21 +373,16 @@ class TestAllVersionsResilience:
         result = _run_list_all_versions(bare_repo)
 
         assert result.returncode == 0, (
-            f"Expected exit 0 but got {result.returncode}.\n"
-            f"stdout: {result.stdout!r}\n"
-            f"stderr: {result.stderr!r}"
+            f"Expected exit 0 but got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert f"{entry_name}@{parseable_tag}" in result.stdout, (
-            f"Expected stdout to contain '{entry_name}@{parseable_tag}'.\n"
-            f"stdout: {result.stdout!r}"
+            f"Expected stdout to contain '{entry_name}@{parseable_tag}'.\nstdout: {result.stdout!r}"
         )
         assert f"{entry_name}@2.0.0" not in result.stdout, (
-            f"Expected stdout to NOT contain '{entry_name}@2.0.0' (malformed).\n"
-            f"stdout: {result.stdout!r}"
+            f"Expected stdout to NOT contain '{entry_name}@2.0.0' (malformed).\nstdout: {result.stdout!r}"
         )
         assert "2.0.0" in result.stderr, (
-            f"Expected stderr to contain a warning naming the malformed revision '2.0.0'.\n"
-            f"stderr: {result.stderr!r}"
+            f"Expected stderr to contain a warning naming the malformed revision '2.0.0'.\nstderr: {result.stderr!r}"
         )
 
     @pytest.mark.parametrize("parseable_tag", ["1.0.0", "2.0.0"])
@@ -308,10 +391,10 @@ class TestAllVersionsResilience:
         tmp_path: pathlib.Path,
         parseable_tag: str,
     ) -> None:
-        """Walk continues even when the latest revision (3.0.0) is malformed.
+        """Walk continues even when the latest revision (3.0.0) is unparseable.
 
         Three-tag repo: 1.0.0 (well-formed), 2.0.0 (well-formed), 3.0.0
-        (malformed -- <name> missing).
+        (non-well-formed XML).
 
         Expected fixed behaviour:
         - exit 0
@@ -325,19 +408,92 @@ class TestAllVersionsResilience:
         result = _run_list_all_versions(bare_repo)
 
         assert result.returncode == 0, (
-            f"Expected exit 0 but got {result.returncode}.\n"
-            f"stdout: {result.stdout!r}\n"
-            f"stderr: {result.stderr!r}"
+            f"Expected exit 0 but got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert f"{entry_name}@{parseable_tag}" in result.stdout, (
-            f"Expected stdout to contain '{entry_name}@{parseable_tag}'.\n"
-            f"stdout: {result.stdout!r}"
+            f"Expected stdout to contain '{entry_name}@{parseable_tag}'.\nstdout: {result.stdout!r}"
         )
         assert f"{entry_name}@3.0.0" not in result.stdout, (
-            f"Expected stdout to NOT contain '{entry_name}@3.0.0' (malformed).\n"
-            f"stdout: {result.stdout!r}"
+            f"Expected stdout to NOT contain '{entry_name}@3.0.0' (malformed).\nstdout: {result.stdout!r}"
         )
         assert "3.0.0" in result.stderr, (
-            f"Expected stderr to contain a warning naming the malformed revision '3.0.0'.\n"
-            f"stderr: {result.stderr!r}"
+            f"Expected stderr to contain a warning naming the malformed revision '3.0.0'.\nstderr: {result.stderr!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: name derivation from directory convention (AC-FUNC-001 through AC-FUNC-004)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestAllVersionsNameDerivation:
+    """Name-derivation contract for kanon list --all-versions (E49-F4-S1-T1).
+
+    AC-FUNC-001: revisions without <catalog-metadata><name> are listed using
+    the directory-convention name (xml_path.parent.name under repo-specs/).
+
+    AC-FUNC-003/AC-FUNC-004: genuinely unparseable (non-well-formed XML)
+    revisions are still skipped with the existing stderr warning.
+    """
+
+    @pytest.mark.parametrize("expected_version", ["1.0.0", "2.0.0", "3.0.0"])
+    def test_lists_revisions_without_name_element_using_derived_name(
+        self,
+        tmp_path: pathlib.Path,
+        expected_version: str,
+    ) -> None:
+        """Three tags, none carrying <catalog-metadata><name>; derived name used.
+
+        The directory convention places the XML at
+        repo-specs/<entry_name>/<entry_name>-marketplace.xml, making the entry
+        name derivable even when the XML omits <name>.
+
+        Expected fixed behaviour:
+        - exit 0
+        - stdout contains a row for every version (1.0.0, 2.0.0, 3.0.0)
+        - each row uses the directory-derived entry name, NOT a sentinel value
+        """
+        entry_name = "derived-name-entry"
+        bare_repo = _build_three_tag_repo_all_no_name(tmp_path, entry_name)
+
+        result = _run_list_all_versions(bare_repo)
+
+        assert result.returncode == 0, (
+            f"Expected exit 0 but got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert f"{entry_name}@{expected_version}" in result.stdout, (
+            f"Expected stdout to contain '{entry_name}@{expected_version}'.\nstdout: {result.stdout!r}"
+        )
+
+    def test_unparseable_revision_skipped_with_warning(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """A genuinely non-well-formed XML revision is skipped with a stderr warning.
+
+        Two-tag repo: 1.0.0 (well-formed with <name>), 2.0.0 (broken XML).
+
+        Expected fixed behaviour:
+        - exit 0 (one revision is parseable)
+        - stdout contains the row for 1.0.0
+        - stdout does NOT contain a row for 2.0.0
+        - stderr contains a warning referencing 2.0.0
+        """
+        entry_name = "parseable-entry"
+        bare_repo = _build_two_tag_repo_one_unparseable(tmp_path, entry_name)
+
+        result = _run_list_all_versions(bare_repo)
+
+        assert result.returncode == 0, (
+            f"Expected exit 0 but got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert f"{entry_name}@1.0.0" in result.stdout, (
+            f"Expected stdout to contain '{entry_name}@1.0.0'.\nstdout: {result.stdout!r}"
+        )
+        assert f"{entry_name}@2.0.0" not in result.stdout, (
+            f"Expected stdout to NOT contain '{entry_name}@2.0.0' (unparseable).\nstdout: {result.stdout!r}"
+        )
+        assert "2.0.0" in result.stderr, (
+            f"Expected stderr to contain a warning referencing '2.0.0'.\nstderr: {result.stderr!r}"
         )

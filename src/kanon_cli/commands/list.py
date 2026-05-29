@@ -288,6 +288,45 @@ def _build_all_versions_rows(
     return rows
 
 
+def _derive_entry_name_from_xml_path(xml_path: pathlib.Path) -> str:
+    """Derive the catalog entry name from the marketplace XML file path.
+
+    The directory convention places marketplace XML files at::
+
+        repo-specs/<entry_name>/<entry_name>-marketplace.xml
+
+    so ``xml_path.parent.name`` is the entry name. This is the same logic
+    used throughout the live ``kanon list`` path when walking ``repo-specs/``.
+
+    Args:
+        xml_path: Path to a ``*-marketplace.xml`` file inside ``repo-specs/``.
+
+    Returns:
+        The entry name string derived from the parent directory name.
+    """
+    return xml_path.parent.name
+
+
+def _is_xml_well_formed(xml_path: pathlib.Path) -> bool:
+    """Return True when xml_path contains structurally valid (well-formed) XML.
+
+    Uses :func:`defusedxml.ElementTree.parse` to attempt a parse. Returns
+    False when the parser raises :class:`xml.etree.ElementTree.ParseError`,
+    which indicates genuinely non-well-formed XML.
+
+    Args:
+        xml_path: Path to the file to check.
+
+    Returns:
+        True when the file parses without error; False otherwise.
+    """
+    try:
+        ET.parse(xml_path)
+        return True
+    except ET.ParseError:
+        return False
+
+
 def _walk_all_versions(
     catalog_source: str,
     limit: int,
@@ -380,14 +419,20 @@ def _walk_all_versions(
                 metadata = _parse_catalog_metadata(xml_path)
                 version_names.append(metadata.name)
             except CatalogMetadataParseError as exc:
-                print(
-                    _ALL_VERSIONS_PARSE_WARNING_FORMAT.format(
-                        entry=xml_path.stem.removesuffix("-marketplace"),
-                        revision=version_str,
-                        reason=str(exc),
-                    ),
-                    file=sys.stderr,
-                )
+                if _is_xml_well_formed(xml_path):
+                    # XML is structurally valid but lacks <name>; derive from
+                    # the directory convention (repo-specs/<name>/<name>-marketplace.xml).
+                    version_names.append(_derive_entry_name_from_xml_path(xml_path))
+                else:
+                    # Genuinely non-well-formed XML -- skip with warning.
+                    print(
+                        _ALL_VERSIONS_PARSE_WARNING_FORMAT.format(
+                            entry=xml_path.stem.removesuffix("-marketplace"),
+                            revision=version_str,
+                            reason=str(exc),
+                        ),
+                        file=sys.stderr,
+                    )
 
         if not version_names:
             # No parseable entries at this version -- skip it entirely.

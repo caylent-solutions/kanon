@@ -462,3 +462,103 @@ class TestLimitNoLimitMutualExclusion:
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
         assert "--limit" in proc.stderr or "--no-limit" in proc.stderr or "mutually exclusive" in proc.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# Test: explicit <name> takes precedence over derived directory name
+# (AC-FUNC-004, AC-FUNC-005 -- E49-F4-S1-T1 derived-name parity)
+# ---------------------------------------------------------------------------
+
+
+# Marketplace XML where <name> differs from the directory name.  The directory
+# containing this file is named after dir_name, but the XML declares a
+# different explicit name.  The fixed implementation MUST use the explicit name.
+_EXPLICIT_NAME_OVERRIDE_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata>
+        <name>{explicit_name}</name>
+        <display-name>{explicit_name} Display</display-name>
+        <description>Parity test entry.</description>
+        <version>{version}</version>
+        <type>plugin</type>
+        <owner-name>Parity Tester</owner-name>
+        <owner-email>parity@example.com</owner-email>
+        <keywords>parity, test</keywords>
+      </catalog-metadata>
+    </manifest>
+""")
+
+
+def _build_repo_explicit_name_differs_from_dir(
+    tmp_path: pathlib.Path,
+    dir_name: str,
+    explicit_name: str,
+    version: str,
+) -> pathlib.Path:
+    """Build a bare repo where the XML <name> differs from the containing directory name.
+
+    The marketplace XML lives at repo-specs/<dir_name>/<dir_name>-marketplace.xml
+    but declares <name>{explicit_name}</name>.  The fixed implementation must
+    prefer the explicit name over the derived directory name.
+
+    Args:
+        tmp_path: Temporary directory root.
+        dir_name: Name of the directory under repo-specs/ (the derivable name).
+        explicit_name: Value placed in <catalog-metadata><name> (should win).
+        version: Version string for the single tagged commit.
+
+    Returns:
+        Path to the bare git repository (file:// accessible).
+    """
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    _init_git_work_dir(work_dir)
+
+    (work_dir / "README.md").write_text("manifest repo\n")
+    _git(["add", "README.md"], cwd=work_dir)
+    _git(["commit", "-m", "init"], cwd=work_dir)
+
+    entry_dir = work_dir / "repo-specs" / dir_name
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    xml_path = entry_dir / f"{dir_name}-marketplace.xml"
+    xml_path.write_text(_EXPLICIT_NAME_OVERRIDE_TEMPLATE.format(explicit_name=explicit_name, version=version))
+    _commit_and_tag(work_dir, version, f"release {version}")
+
+    bare_dir = tmp_path / "bare.git"
+    return _clone_as_bare(work_dir, bare_dir)
+
+
+@pytest.mark.integration
+class TestAllVersionsDerivedNameParity:
+    """AC-FUNC-004, AC-FUNC-005: explicit <name> takes precedence over directory name.
+
+    When a revision carries both a derivable directory name AND an explicit
+    <catalog-metadata><name>, the explicit name wins.  This test acts as a
+    parity / regression guard: if the implementation were changed so that
+    the derived name always wins, this test would fail.
+    """
+
+    def test_explicit_name_used_when_present(self, tmp_path: pathlib.Path) -> None:
+        """Revision with explicit <name> is listed under that name, not the dir name.
+
+        The directory is named 'dir-name-entry' but the XML declares
+        <name>explicit-name-entry</name>.  The output row must use
+        'explicit-name-entry@1.0.0', not 'dir-name-entry@1.0.0'.
+        """
+        dir_name = "dir-name-entry"
+        explicit_name = "explicit-name-entry"
+        version = "1.0.0"
+        bare_repo = _build_repo_explicit_name_differs_from_dir(tmp_path, dir_name, explicit_name, version)
+
+        proc = _kanon_list_all_versions(bare_repo, extra_args=["--no-limit"])
+
+        assert proc.returncode == 0, (
+            f"Expected exit 0 but got {proc.returncode}.\nstdout: {proc.stdout!r}\nstderr: {proc.stderr!r}"
+        )
+        assert f"{explicit_name}@{version}" in proc.stdout, (
+            f"Expected stdout to contain '{explicit_name}@{version}' (explicit name wins).\nstdout: {proc.stdout!r}"
+        )
+        assert f"{dir_name}@{version}" not in proc.stdout, (
+            f"Expected stdout NOT to contain '{dir_name}@{version}' (dir name must NOT win).\nstdout: {proc.stdout!r}"
+        )

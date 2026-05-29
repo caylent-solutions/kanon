@@ -1275,9 +1275,17 @@ def doctor_command(
     # --prune-cache) are active, skip all workspace-dependent checks and return
     # 0 immediately. Mixed invocations (cache flag + any subcheck flag) fall
     # through to the full workspace-dependent path below.
+    #
+    # active_flag_names uses `value is True` (not just `if value`) to exclude
+    # non-boolean attributes injected by argparse set_defaults(): catalog_source
+    # is set to the _UNSET sentinel object (truthy but not True) and func is
+    # set to run_doctor (a callable, also truthy but not True). Using `if value`
+    # caused those attributes to be included in active_flag_names, which
+    # prevented the subset check from firing and caused _check_kanon_hash to
+    # be reached even when only cache flags were active (DEFECT-013).
     if not isinstance(args, argparse.Namespace):
         raise DoctorArgsTypeError(type(args))
-    active_flag_names = {name for name, value in vars(args).items() if value}
+    active_flag_names = {name for name, value in vars(args).items() if value is True}
     if active_flag_names and active_flag_names.issubset(WORKSPACE_FREE_FLAGS):
         return 0
 

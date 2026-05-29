@@ -1,16 +1,24 @@
 """Integration test: `kanon doctor --refresh-completion-cache --prune-cache` combined.
 
-COMBINED-MODE (E44 row 77): invoking `kanon doctor` with both cache flags AND in
-a valid workspace context must produce BOTH groups of output simultaneously:
+COMBINED-MODE (E44 row 77): invoking `kanon doctor` with both cache flags must
+produce cache-action output for both operations and exit 0.
 
-- Per-subcheck `[ok] <name>` lines on stdout (E33's contract -- DEFECT-012 fix).
-- Cache-action `INFO: ...` lines on stderr (E27's contract -- DEFECT-013 fix).
+After the E49-F5 fix, the WORKSPACE_FREE_FLAGS short-circuit fires correctly
+when only cache flags are active. The `active_flag_names` computation now uses
+`value is True` (boolean strict equality) rather than `if value` (truthiness)
+to exclude non-flag attributes injected by argparse set_defaults() -- specifically
+`catalog_source=_UNSET` (a truthy sentinel) and `func=run_doctor` (a callable).
+As a result, when only `--refresh-completion-cache` and `--prune-cache` are
+active, the active_flag_names set is exactly `{"refresh_completion_cache",
+"prune_cache"}`, which IS a subset of WORKSPACE_FREE_FLAGS, so the
+short-circuit fires and workspace subchecks are skipped.
 
-When invoked via subprocess the argparse layer always sets `catalog_source` to the
-`_UNSET` sentinel (a truthy `object()`), which is NOT in WORKSPACE_FREE_FLAGS.
-Therefore `active_flag_names` is NOT a subset of WORKSPACE_FREE_FLAGS and the
-workspace-free short-circuit does NOT fire -- both cache actions and all workspace
-subchecks execute in the same invocation.
+This test was updated from its original E44 form: the original asserted that
+per-subcheck `[ok] <name>` lines appeared on stdout alongside cache-action
+output. That assertion relied on `catalog_source=_UNSET` being truthy and
+preventing the short-circuit -- i.e., it depended on the DEFECT-013 bug to
+make both paths run simultaneously. After E49-F5 fixes the bug, only cache ops
+run when only cache flags are active; workspace subchecks are skipped.
 
 Autouse fixtures from tests/integration/conftest.py (spec sec 3.2) are inherited
 automatically: _mock_resolve_ref_to_sha, _mock_check_sha_reachable,
@@ -26,7 +34,6 @@ from __future__ import annotations
 import datetime
 import os
 import pathlib
-import re
 import subprocess
 import sys
 
@@ -40,27 +47,18 @@ from tests.integration.test_add_core import (
 
 # ---------------------------------------------------------------------------
 # Module-level constants -- per CLAUDE.md "ALL CODE MUST BE DYNAMIC AND
-# INPUT-DRIVEN"; subcheck names and output substrings live here, not inside
-# the test body.
+# INPUT-DRIVEN"; output substrings live here, not inside the test body.
 # ---------------------------------------------------------------------------
 
-# Subcheck names as emitted by `[ok] <name>` per the E33 structured-output
-# contract (DOCTOR_SUBCHECK_* constants in commands/doctor.py).
-EXPECTED_SUBCHECK_NAMES: list[str] = [
-    "kanon_hash consistency",
-    "no orphaned lock entries",
-    "no branch drift",
-]
-
 # Substrings that must appear in combined (stdout + stderr) output per the
-# E27 cache-action contract.  `_print_finding` emits `INFO: {message}` to
+# E27 cache-action contract. `_print_finding` emits `INFO: {message}` to
 # stderr; we match the stable message prefix rather than the full message.
 EXPECTED_CACHE_ACTION_SUBSTRINGS: list[str] = [
     "Completion cache refreshed:",
     "Cache pruned:",
 ]
 
-# Number of days used to create "old" (expired) cache files.  Must exceed
+# Number of days used to create "old" (expired) cache files. Must exceed
 # KANON_CACHE_PRUNE_AGE_DAYS (default 30) so the prune subcheck removes them.
 _OLD_DAYS: int = 35
 
@@ -89,75 +87,39 @@ def _set_atime_old(path: pathlib.Path) -> None:
 
 @pytest.mark.integration
 class TestDoctorCombinedFlags:
-    """kanon doctor combined-mode: cache flags + workspace subchecks run together.
+    """kanon doctor combined-mode: both cache flags produce cache-op output.
 
     When `kanon doctor --refresh-completion-cache --prune-cache` is invoked via
-    subprocess in a valid workspace, BOTH cache-action output (stderr) AND
-    per-subcheck status lines (stdout) must be emitted in the same invocation.
+    subprocess, both cache-action output lines must be emitted and the command
+    must exit 0. After the E49-F5 fix, the WORKSPACE_FREE_FLAGS short-circuit
+    fires when only cache flags are active (whether or not a workspace is
+    present), so workspace subchecks are skipped.
     """
 
-    def test_combined_flags_run_all_subchecks_plus_cache_actions(
+    def test_combined_flags_run_all_cache_actions(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Combined cache flags + workspace subchecks produce both output groups.
+        """Combined cache flags produce both cache-op output lines and exit 0.
 
         Steps:
-        1. Create a synthetic catalog bare repo with a `widget` entry tagged 1.0.0
-           (via _create_manifest_repo_with_tags per spec section 3.1).
-        2. Run `kanon add widget --catalog-source <file-url>` to write .kanon.
-        3. Run `kanon install` to write .kanon.lock.
-        4. Create a KANON_CACHE_DIR with a completion-cache subdir containing one
-           old (expired) file, plus one old top-level file.
-        5. Run `kanon doctor --refresh-completion-cache --prune-cache` in the
-           workspace with KANON_CACHE_DIR set.
-        6. Assert exit code is 0 (all subchecks pass, all cache actions succeed).
-        7. For each name in EXPECTED_SUBCHECK_NAMES, assert stdout contains a
-           line matching `[ok] <name>` (E33's structured Finding contract).
-        8. For each substring in EXPECTED_CACHE_ACTION_SUBSTRINGS, assert the
-           combined output (stdout + stderr) contains the substring (E27's contract).
+        1. Create a KANON_CACHE_DIR with a completion-cache subdir containing
+           one old (expired) file, plus one old top-level file.
+        2. Run `kanon doctor --refresh-completion-cache --prune-cache` from
+           an empty directory with KANON_CACHE_DIR set.
+        3. Assert exit code is 0 (both cache actions succeed).
+        4. For each substring in EXPECTED_CACHE_ACTION_SUBSTRINGS, assert the
+           combined output (stdout + stderr) contains the substring.
+
+        Note: workspace subchecks (`[ok] <name>` lines) are NOT expected
+        because the WORKSPACE_FREE_FLAGS short-circuit fires when only cache
+        flags are active. Workspace subchecks only run when a workspace-requiring
+        flag (e.g. --strict-drift) is combined with the cache flags.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        # -- Step 1: synthetic catalog repo --
-        bare = _create_manifest_repo_with_tags(
-            tmp_path / "catalog",
-            entry_names=["widget"],
-            tags=["1.0.0"],
-        )
-        catalog_source = f"file://{bare}@main"
-
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-
-        # -- Step 2: kanon add --
-        add_result = _run_kanon(
-            ["add", "widget", "--catalog-source", catalog_source],
-            cwd=workspace,
-        )
-        assert add_result.returncode == 0, (
-            f"kanon add failed (expected exit 0, got {add_result.returncode}).\n"
-            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
-        )
-
-        # -- Step 3: kanon install (reads [catalog].source from .kanon file) --
-        env_no_catalog = dict(os.environ)
-        env_no_catalog.pop("KANON_CATALOG_SOURCE", None)
-
-        install_result = subprocess.run(
-            [sys.executable, "-m", "kanon_cli", "install"],
-            capture_output=True,
-            text=True,
-            env=env_no_catalog,
-            cwd=str(workspace),
-        )
-        assert install_result.returncode == 0, (
-            f"kanon install failed (expected exit 0, got {install_result.returncode}).\n"
-            f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
-        )
-
-        # -- Step 4: create cache dir with expired content --
+        # -- Step 1: create cache dir with expired content --
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
 
@@ -174,9 +136,10 @@ class TestDoctorCombinedFlags:
         old_top.write_bytes(b"o" * 128)
         _set_atime_old(old_top)
 
-        # -- Step 5: kanon doctor --refresh-completion-cache --prune-cache --
-        env_with_cache = dict(env_no_catalog)
+        # -- Step 2: kanon doctor --refresh-completion-cache --prune-cache --
+        env_with_cache = dict(os.environ)
         env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
+        env_with_cache.pop("KANON_CATALOG_SOURCE", None)
 
         doctor_result = subprocess.run(
             [
@@ -190,34 +153,159 @@ class TestDoctorCombinedFlags:
             capture_output=True,
             text=True,
             env=env_with_cache,
-            cwd=str(workspace),
+            cwd=str(tmp_path),
         )
 
-        # -- Step 6: exit code must be 0 --
+        combined_output = doctor_result.stdout + doctor_result.stderr
+
+        # -- Step 3: exit code must be 0 --
         assert doctor_result.returncode == 0, (
             f"kanon doctor combined-flags failed (expected exit 0, got "
             f"{doctor_result.returncode}).\n"
             f"stdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
         )
 
-        stdout_lines = doctor_result.stdout.splitlines()
-        combined_output = doctor_result.stdout + doctor_result.stderr
-
-        # -- Step 7: per-subcheck `[ok] <name>` lines on stdout (E33 contract) --
-        for subcheck_name in EXPECTED_SUBCHECK_NAMES:
-            pattern = re.compile(r"^\[ok\] " + re.escape(subcheck_name) + r"$")
-            matching_lines = [line for line in stdout_lines if pattern.match(line)]
-            assert len(matching_lines) >= 1, (
-                f"Expected at least one stdout line matching "
-                f"`[ok] {subcheck_name}` but found none.\n"
-                f"Full stdout:\n{doctor_result.stdout!r}\n"
-                f"Full stderr:\n{doctor_result.stderr!r}"
-            )
-
-        # -- Step 8: cache-action substrings in combined output (E27 contract) --
+        # -- Step 4: cache-action substrings in combined output (E27 contract) --
         for expected_substring in EXPECTED_CACHE_ACTION_SUBSTRINGS:
             assert expected_substring in combined_output, (
                 f"Expected cache-action output containing '{expected_substring}' "
                 f"but it was not found in combined output.\n"
                 f"stdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
             )
+
+    def test_combined_flags_workspace_workspace_requiring_flag_still_checks(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Combining cache flags with --strict-drift requires a workspace.
+
+        When --refresh-completion-cache or --prune-cache is combined with a
+        workspace-requiring flag (--strict-drift), the WORKSPACE_FREE_FLAGS
+        short-circuit does NOT fire because strict_drift=True is not in
+        WORKSPACE_FREE_FLAGS. Running in an empty cwd (no .kanon) must produce
+        a non-zero exit and a "no kanon workspace" error.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory with no .kanon file.
+        """
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(mode=KANON_CACHE_DIR_MODE)
+
+        env_with_cache = dict(os.environ)
+        env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
+        env_with_cache.pop("KANON_CATALOG_SOURCE", None)
+
+        doctor_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "doctor",
+                "--refresh-completion-cache",
+                "--strict-drift",
+            ],
+            capture_output=True,
+            text=True,
+            env=env_with_cache,
+            cwd=str(tmp_path),
+        )
+
+        assert doctor_result.returncode == 1, (
+            f"Expected exit 1 when combining cache flag with --strict-drift in "
+            f"empty cwd; got {doctor_result.returncode}.\n"
+            f"stdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
+        )
+        assert "no kanon workspace" in doctor_result.stderr, (
+            f"Expected 'no kanon workspace' error in stderr when workspace-requiring "
+            f"flag is active; got:\nstderr: {doctor_result.stderr!r}"
+        )
+
+    def test_combined_flags_with_workspace_requiring_flag_in_workspace_runs_subchecks(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Cache flag + --strict-drift in a valid workspace runs workspace subchecks.
+
+        When a cache flag is combined with --strict-drift and a valid workspace
+        is present, the short-circuit does NOT fire and workspace subchecks run.
+        Assertions verify exit 0 (all subchecks pass) and cache-op output.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory.
+        """
+        # Create a synthetic catalog repo and workspace.
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "catalog",
+            entry_names=["widget"],
+            tags=["1.0.0"],
+        )
+        catalog_source = f"file://{bare}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        add_result = _run_kanon(
+            ["add", "widget", "--catalog-source", catalog_source],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (expected exit 0, got {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+
+        env_no_catalog = dict(os.environ)
+        env_no_catalog.pop("KANON_CATALOG_SOURCE", None)
+
+        install_result = subprocess.run(
+            [sys.executable, "-m", "kanon_cli", "install"],
+            capture_output=True,
+            text=True,
+            env=env_no_catalog,
+            cwd=str(workspace),
+        )
+        assert install_result.returncode == 0, (
+            f"kanon install failed (expected exit 0, got {install_result.returncode}).\n"
+            f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
+        )
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        completion_cache = cache_dir / "completion-cache"
+        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        comp_file = completion_cache / "comp.json"
+        comp_file.write_bytes(b"c" * 64)
+        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        old_dt = now - datetime.timedelta(days=_OLD_DAYS)
+        mtime = comp_file.stat().st_mtime
+        os.utime(str(comp_file), (old_dt.timestamp(), mtime))
+
+        env_with_cache = dict(env_no_catalog)
+        env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
+
+        doctor_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "doctor",
+                "--refresh-completion-cache",
+                "--strict-drift",
+            ],
+            capture_output=True,
+            text=True,
+            env=env_with_cache,
+            cwd=str(workspace),
+        )
+
+        assert doctor_result.returncode == 0, (
+            f"Expected exit 0 for cache flag + --strict-drift in valid workspace; "
+            f"got {doctor_result.returncode}.\n"
+            f"stdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
+        )
+        assert "Completion cache refreshed:" in (doctor_result.stdout + doctor_result.stderr), (
+            f"Expected 'Completion cache refreshed:' in output; "
+            f"got:\nstdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
+        )
+        assert "kanon_hash consistency" in doctor_result.stdout, (
+            f"Expected 'kanon_hash consistency' workspace subcheck in stdout; got:\nstdout: {doctor_result.stdout!r}"
+        )

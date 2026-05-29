@@ -10,6 +10,14 @@ the unfixed feat branch HEAD.
 Autouse fixtures from tests/integration/conftest.py (spec sec 3.2) are
 inherited automatically: _mock_resolve_ref_to_sha, _mock_check_sha_reachable,
 _auto_create_manifest_on_walk, _default_allow_insecure_remotes.
+
+This file is tightened from a hand-built Namespace that omitted CLI-injected
+sentinel attributes (catalog_source=_UNSET, func=run_doctor) to a
+full-fidelity Namespace produced by the real argparse parser. The earlier
+version passed even against the unfixed code because the missing attributes
+prevented active_flag_names from including non-cache truthy values. The
+tightened version fails against the unfixed code because catalog_source=_UNSET
+is truthy and prevents the WORKSPACE_FREE_FLAGS subset check from firing.
 """
 
 from __future__ import annotations
@@ -20,7 +28,11 @@ import typing
 
 import pytest
 
-from kanon_cli.commands.doctor import DoctorArgsTypeError, run_doctor
+from kanon_cli.commands.doctor import (
+    DoctorArgsTypeError,
+    register,
+    run_doctor,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -29,12 +41,12 @@ from kanon_cli.commands.doctor import DoctorArgsTypeError, run_doctor
 
 _CACHE_FLAG_PARAMS = [
     pytest.param(
-        {"refresh_completion_cache": True, "prune_cache": False},
+        "--refresh-completion-cache",
         "Completion cache refreshed:",
         id="refresh_completion_cache",
     ),
     pytest.param(
-        {"prune_cache": True, "refresh_completion_cache": False},
+        "--prune-cache",
         "Cache pruned:",
         id="prune_cache",
     ),
@@ -46,29 +58,32 @@ _CACHE_FLAG_PARAMS = [
 # ---------------------------------------------------------------------------
 
 
-def _build_args(**overrides: object) -> argparse.Namespace:
-    """Build a minimal argparse.Namespace for doctor_command.
+def _parse_doctor_args(*cli_args: str) -> argparse.Namespace:
+    """Parse 'kanon doctor' CLI args through the real argparse doctor parser.
 
-    Fills every flag that doctor_command reads with a safe default and then
-    applies the caller-supplied overrides.
+    Uses the real register() function to build the doctor subparser, then
+    parses the given cli_args. The resulting Namespace includes all attributes
+    that argparse injects, including the _UNSET sentinel for catalog_source
+    and the func callable for the registered subcommand. This mirrors the
+    actual Namespace that reaches doctor_command during real CLI dispatch.
+
+    This approach replaces the hand-built _build_args() helper that used a
+    minimal Namespace omitting CLI-injected sentinel attributes (catalog_source,
+    func). The old approach allowed the WORKSPACE_FREE_FLAGS subset check to
+    succeed even against unfixed code because the missing attributes meant
+    active_flag_names only contained the cache flag names.
 
     Args:
-        **overrides: Attribute values that override the defaults.
+        *cli_args: CLI argument strings to parse, e.g. '--refresh-completion-cache'.
 
     Returns:
-        A Namespace instance ready to pass to run_doctor.
+        An argparse.Namespace with the full attribute set produced by the real
+        doctor parser, ready to pass to run_doctor.
     """
-    defaults: dict[str, object] = {
-        "kanon_file": None,
-        "lock_file": None,
-        "strict_drift": False,
-        "no_color": False,
-        "refresh_completion_cache": False,
-        "prune_cache": False,
-        "catalog_source": None,
-    }
-    defaults.update(overrides)
-    return argparse.Namespace(**defaults)
+    top_parser = argparse.ArgumentParser(prog="kanon")
+    subparsers = top_parser.add_subparsers(dest="subcommand")
+    register(subparsers)
+    return top_parser.parse_args(["doctor", *cli_args])
 
 
 # ---------------------------------------------------------------------------
@@ -86,27 +101,30 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
     and not raise the "no kanon workspace" diagnostic.
     """
 
-    @pytest.mark.parametrize("flag_kwargs,expected_message", _CACHE_FLAG_PARAMS)
+    @pytest.mark.parametrize("flag,expected_message", _CACHE_FLAG_PARAMS)
     def test_refresh_completion_cache_succeeds_in_empty_cwd(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
-        flag_kwargs: dict[str, object],
+        flag: str,
         expected_message: str,
     ) -> None:
         """Cache flag exits 0 and emits info-line in an empty cwd (no .kanon).
 
         Parameterised over --refresh-completion-cache and --prune-cache.
-        _print_finding emits 'INFO: {finding.message}' to stderr; assertions
-        check for the message substring (e.g. 'Completion cache refreshed:'
-        or 'Cache pruned:') rather than the internal finding.code field value.
+        Dispatches through the real doctor parser so the Namespace includes
+        CLI-injected sentinel attributes (catalog_source=_UNSET, func=run_doctor)
+        that the WORKSPACE_FREE_FLAGS short-circuit must handle correctly.
+        _print_finding emits the message to stderr; assertions check for the
+        message substring (e.g. 'Completion cache refreshed:' or 'Cache pruned:')
+        in combined stdout+stderr.
 
         Args:
             tmp_path: Pytest-provided temporary directory (no .kanon present).
             monkeypatch: Pytest monkeypatch fixture for env and cwd isolation.
             capsys: Pytest capture fixture to inspect stdout and stderr.
-            flag_kwargs: Dict of flag keyword arguments for _build_args.
+            flag: CLI flag string, e.g. '--refresh-completion-cache'.
             expected_message: Substring of the info-line message emitted by
                 _print_finding that must appear in combined output.
         """
@@ -116,7 +134,7 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
 
-        args = _build_args(**flag_kwargs)
+        args = _parse_doctor_args(flag)
         exit_code = run_doctor(args)
 
         captured = capsys.readouterr()
@@ -134,28 +152,29 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
             f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
         )
 
-    @pytest.mark.parametrize("flag_kwargs,expected_message", _CACHE_FLAG_PARAMS)
+    @pytest.mark.parametrize("flag,expected_message", _CACHE_FLAG_PARAMS)
     def test_prune_cache_succeeds_in_empty_cwd(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
-        flag_kwargs: dict[str, object],
+        flag: str,
         expected_message: str,
     ) -> None:
         """Cache flag exits 0 and does not emit workspace diagnostic (no .kanon).
 
         Mirrors test_refresh_completion_cache_succeeds_in_empty_cwd to provide
         an independently-named test method per AC-FUNC-001 while sharing the
-        same parametrize coverage. _print_finding emits 'INFO: {finding.message}'
-        to stderr; assertions check for the message substring rather than the
-        internal finding.code field value.
+        same parametrize coverage. Uses real parser dispatch so CLI-injected
+        sentinel attributes are present in the Namespace. _print_finding emits
+        the message to stderr; assertions check for the message substring in
+        combined output.
 
         Args:
             tmp_path: Pytest-provided temporary directory (no .kanon present).
             monkeypatch: Pytest monkeypatch fixture for env and cwd isolation.
             capsys: Pytest capture fixture to inspect stdout and stderr.
-            flag_kwargs: Dict of flag keyword arguments for _build_args.
+            flag: CLI flag string, e.g. '--prune-cache'.
             expected_message: Substring of the info-line message emitted by
                 _print_finding that must appear in combined output.
         """
@@ -165,7 +184,7 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
 
-        args = _build_args(**flag_kwargs)
+        args = _parse_doctor_args(flag)
         exit_code = run_doctor(args)
 
         captured = capsys.readouterr()

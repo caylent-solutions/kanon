@@ -4,6 +4,13 @@
 
 ### Added
 
+* `kanon add --marketplace-install` / `--no-marketplace-install` flag
+  controls the `KANON_MARKETPLACE_INSTALL` header value written to the
+  `.kanon` file. Precedence: flag > `KANON_MARKETPLACE_INSTALL`
+  environment variable > default `false`. Both flags are mutually
+  exclusive. When neither flag is passed, the environment variable is
+  read; when the variable is also absent, `false` is written (gap 6).
+
 * `kanon install` fail-fasts on unresolved `<UPPERCASE>` placeholders
   in `.kanon`, naming each finding with its line number (DEFECT-003).
 
@@ -121,6 +128,41 @@
 * `kanon why` now resolves dependency chains via catalog walk when no lockfile is present (DEFECT-008).
 
 * `kanon why` now resolves top-level `[[sources]]` entries in the lockfile-present path (DEFECT-009).
+
+* `kanon why <git-url>` and `kanon why <xml-manifest-path>` now resolve
+  correctly on the no-lockfile live-resolve path. Previously the
+  live-resolve tree omitted project and include children so
+  `_match_by_url` and `_match_by_xml_path` found no nodes; the live
+  tree is now built with the full project + include chain mirroring the
+  lockfile-present path (gap 1).
+
+* `kanon list --all-versions` now derives the catalog entry name from
+  the marketplace XML directory convention (`repo-specs/<name>/`) when
+  no explicit `<catalog-metadata><name>` element is present on a
+  historical revision. Previously every revision lacking `<name>` was
+  reported malformed and the command exited non-zero with empty output;
+  name derivation is now consistent with the live `--detail` path (gap 3).
+
+* `kanon catalog audit` no longer emits a spurious `R002` ERROR for
+  `<remote fetch>` values that are `${VAR}` placeholder URLs. When a
+  placeholder expands via the provided environment, the resolved URL is
+  scheme-checked normally. When a placeholder variable is absent from
+  the environment, an informational `R002-TEMPLATED` finding is emitted
+  instead of an ERROR; a literal non-HTTPS scheme (e.g. `http://`) in
+  the prefix before the placeholder still triggers `R002` (gap 4a).
+
+* `kanon catalog audit` `T001` now filters peeled `^{}` refs before
+  PEP 440 parsing, preventing false-positive findings for annotated-tag
+  dereference entries. Only genuinely non-canonical tag names (whose
+  last path component does not parse as a PEP 440 version) are flagged (gap 4b).
+
+**Note -- `kanon install --refresh-lock-source` exact-pin contract:**
+When the named source's `.kanon` revision is an exact PEP 440 pin
+(e.g. `==1.2.3`), `--refresh-lock-source` re-resolves that revision
+deterministically and the locked SHA is unchanged -- an exact pin is a
+pin. Only range specifiers (e.g. `>=1.0.0,<2.0.0`) and floating
+branch refs advance to a newer SHA on refresh. This behavior is
+test-locked; there is no code change (gap 5).
 
 ## v1.3.1 (2026-05-04)
 

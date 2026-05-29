@@ -157,14 +157,42 @@ The shared `_render_text` and `_emit_json_payload` functions render both
 lockfile-present and live-resolve chains through the same code path,
 guaranteeing format consistency.
 
+### Argument types: `<git-url>` and `<xml-manifest-path>`
+
+On the live-resolve path, `kanon why` accepts three distinct argument
+forms. All three are evaluated before deciding; the command errors if
+two or more forms match simultaneously (ambiguity).
+
+- **Project repo URL** (`<git-url>`) -- a full Git URL such as
+  `https://github.com/org/project.git` or `git@github.com:org/project`.
+  The argument is canonicalized and matched against every project node's
+  canonical URL in the resolved tree.
+
+- **XML-manifest path** (`<xml-manifest-path>`) -- an exact
+  `path_in_repo` string such as `repo-specs/mylib/mylib-marketplace.xml`.
+  The argument is matched by string equality against every include node's
+  `ref` field in the resolved tree.
+
+- **Source name** -- the `KANON_SOURCE_<name>` key (or its
+  `derive_source_name`-normalized form). Matched against the top-level
+  source nodes.
+
+On the no-lockfile live-resolve path (no `.kanon.lock` present), the
+tree is built by cloning the catalog source and walking each manifest
+XML, populating the full project + include chain. URL and XML-path
+lookups therefore find the same nodes as the lockfile-present path,
+producing identical chain output for both forms.
+
 ### Traceability
 
 The live-resolve path was introduced as the fix for **DEFECT-008**. See
 the `[Unreleased]` `### Fixed` section in [CHANGELOG.md](../CHANGELOG.md)
 for the changelog entry, and
 `spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
-E31 for the specification decision record. For the full `kanon why` flag
-reference see [docs/outdated-and-why.md](outdated-and-why.md).
+E31 for the specification decision record. URL and XML-path argument
+support on the live-resolve path was confirmed and test-locked as part of
+the E49 gap-closure (gap 1). For the full `kanon why` flag reference see
+[docs/outdated-and-why.md](outdated-and-why.md).
 
 ---
 
@@ -236,10 +264,121 @@ are present. This preserves the pre-DEFECT-012 failure-path semantics: a
 non-zero exit is the authoritative signal for CI gates and scripted
 consumers.
 
+### Cache-flag workspace independence
+
+The `--refresh-completion-cache` and `--prune-cache` flags operate on
+the global `KANON_CACHE_DIR` and do NOT require a `.kanon` workspace to
+be present in the current directory. When either flag is the only active
+flag, `kanon doctor` completes the cache operation and exits without
+running workspace-dependent subchecks (hash consistency, orphan
+detection, branch drift).
+
+This means the following invocations work from any directory, including
+directories that contain no `.kanon` file:
+
+```bash
+# Invalidate the completion cache globally
+kanon doctor --refresh-completion-cache
+
+# Prune stale cache files by last-access time
+kanon doctor --prune-cache
+```
+
+If additional workspace-dependent flags (e.g. a subcheck flag) are
+supplied alongside a cache flag, workspace discovery is NOT bypassed --
+all requested subchecks run as normal.
+
 ### Traceability
 
 The per-subcheck output format was introduced as the fix for **DEFECT-012**.
-See the `[Unreleased]` `### Fixed` section in [CHANGELOG.md](../CHANGELOG.md)
+Cache-flag workspace independence was introduced as the fix for
+**DEFECT-013** and confirmed for the E49 gap-closure (gap 2). See the
+`[Unreleased]` `### Fixed` section in [CHANGELOG.md](../CHANGELOG.md)
 for the changelog entry, and
 `spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
 E33 for the specification decision record.
+
+---
+
+## kanon add -- marketplace-install flag
+
+`kanon add` accepts `--marketplace-install` and `--no-marketplace-install`
+flags that control the `KANON_MARKETPLACE_INSTALL` value written to the
+`.kanon` header when creating or updating the file.
+
+### Precedence
+
+The value is resolved with the following precedence (highest to lowest):
+
+1. **CLI flag** -- `--marketplace-install` forces `true`;
+   `--no-marketplace-install` forces `false`. The two flags are mutually
+   exclusive (passing both is a usage error).
+2. **Environment variable** -- `KANON_MARKETPLACE_INSTALL` is read when
+   no flag is passed.
+3. **Default** -- `false` is used when neither the flag nor the
+   environment variable is set.
+
+### Usage examples
+
+```bash
+# Force marketplace install enabled -- writes KANON_MARKETPLACE_INSTALL=true
+kanon add myentry@1.0.0 --marketplace-install
+
+# Force marketplace install disabled -- writes KANON_MARKETPLACE_INSTALL=false
+kanon add myentry@1.0.0 --no-marketplace-install
+
+# Use environment variable (KANON_MARKETPLACE_INSTALL=true)
+KANON_MARKETPLACE_INSTALL=true kanon add myentry@1.0.0
+
+# Default: writes KANON_MARKETPLACE_INSTALL=false
+kanon add myentry@1.0.0
+```
+
+### Traceability
+
+The `--marketplace-install` / `--no-marketplace-install` flag pair was
+added as part of the E49 gap-closure (gap 6). See the `[Unreleased]`
+`### Added` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
+entry. For the full `kanon add` flag reference see
+[docs/list-and-add.md](list-and-add.md).
+
+---
+
+## kanon install -- refresh-lock-source exact-pin contract
+
+`kanon install --refresh-lock-source <name>` re-resolves exactly one
+named source's full dependency chain while preserving all other
+sources' lockfile entries verbatim.
+
+### Exact-pin vs range-spec semantics
+
+The resolved SHA after `--refresh-lock-source` depends on the source's
+revision specifier in `.kanon`:
+
+- **Exact pin** -- a `.kanon` revision that is an exact PEP 440 version
+  (e.g. `==1.2.3`, or a bare tag such as `1.2.3`) always resolves to
+  the same SHA. The locked SHA is unchanged after `--refresh-lock-source`
+  because the exact pin constrains resolution to a single tag. This is
+  correct dependency-manager semantics: an exact pin is a pin.
+
+- **Range specifier** -- a `.kanon` revision that is a PEP 440 range or
+  compatible-release specifier (e.g. `>=1.0.0,<2.0.0`, `~=1.2`) resolves
+  to the highest tag in the repo that satisfies the constraint at the time
+  of the refresh. The locked SHA advances when a newer satisfying tag
+  exists.
+
+- **Floating branch ref** -- a `.kanon` revision that names a branch
+  (e.g. `main`) resolves to the current branch tip. The locked SHA
+  advances when the branch has moved since the last install.
+
+This behavior is test-locked. There is no mechanism to "force" an
+exact pin to advance -- use a range specifier or a branch ref if the
+source needs to follow new releases automatically.
+
+### Traceability
+
+The exact-pin vs range-spec contract was clarified and test-locked as
+part of the E49 gap-closure (gap 5; operator decision recorded in the
+spec Section 13 D3). See the `[Unreleased]` `### Fixed` section in
+[CHANGELOG.md](../CHANGELOG.md) for the gap-5 contract note. For the
+full `kanon install` flag reference see [docs/lockfile.md](lockfile.md).

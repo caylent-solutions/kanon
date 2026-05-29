@@ -140,7 +140,32 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    parser.set_defaults(func=run_add)
+    marketplace_group = parser.add_mutually_exclusive_group()
+    marketplace_group.add_argument(
+        "--marketplace-install",
+        dest="marketplace_install",
+        action="store_true",
+        default=None,
+        help=(
+            "Write KANON_MARKETPLACE_INSTALL=true in the .kanon header.\n"
+            "Takes precedence over the KANON_MARKETPLACE_INSTALL environment\n"
+            "variable. Only applied when the .kanon file is created (not on\n"
+            "append). Mutually exclusive with --no-marketplace-install."
+        ),
+    )
+    marketplace_group.add_argument(
+        "--no-marketplace-install",
+        dest="marketplace_install",
+        action="store_false",
+        help=(
+            "Write KANON_MARKETPLACE_INSTALL=false in the .kanon header.\n"
+            "Takes precedence over the KANON_MARKETPLACE_INSTALL environment\n"
+            "variable. Only applied when the .kanon file is created (not on\n"
+            "append). Mutually exclusive with --marketplace-install."
+        ),
+    )
+
+    parser.set_defaults(func=run_add, marketplace_install=None)
 
 
 # ---------------------------------------------------------------------------
@@ -821,7 +846,14 @@ def run_add(args: argparse.Namespace) -> int:
     except CatalogSourceURLDerivationError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    marketplace_install = os.environ.get("KANON_MARKETPLACE_INSTALL", "false").strip()
+    # Resolve KANON_MARKETPLACE_INSTALL with precedence: flag > env > default.
+    # args.marketplace_install is None when no flag was passed, True for
+    # --marketplace-install, and False for --no-marketplace-install.
+    flag_value: bool | None = getattr(args, "marketplace_install", None)
+    if flag_value is not None:
+        marketplace_install = "true" if flag_value else "false"
+    else:
+        marketplace_install = os.environ.get("KANON_MARKETPLACE_INSTALL", "false").strip()
 
     # Pre-flight: within-request collision detection (before any catalog work).
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]

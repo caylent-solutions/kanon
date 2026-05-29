@@ -128,6 +128,14 @@ under --force). Makes no on-disk change. Exits 0. Collision
 detection pre-flight still runs, so within-request and
 against-existing collisions are reported before a diff is
 shown (unless --force is also passed).]"
+  "--marketplace-install[Write KANON_MARKETPLACE_INSTALL\=true in the .kanon header.
+Takes precedence over the KANON_MARKETPLACE_INSTALL environment
+variable. Only applied when the .kanon file is created (not on
+append). Mutually exclusive with --no-marketplace-install.]"
+  "--no-marketplace-install[Write KANON_MARKETPLACE_INSTALL\=false in the .kanon header.
+Takes precedence over the KANON_MARKETPLACE_INSTALL environment
+variable. Only applied when the .kanon file is created (not on
+append). Mutually exclusive with --marketplace-install.]"
   "(*):One or more catalog entry names, optionally suffixed with \'\@\<spec\>\':"
 )
 

@@ -5,7 +5,7 @@ _shtab_kanon_catalog_subparsers=('audit')
 _shtab_kanon_validate_subparsers=('xml' 'marketplace' 'metadata')
 
 _shtab_kanon_option_strings=('-h' '--help' '--version' '--quiet' '--verbose' '--no-color')
-_shtab_kanon_add_option_strings=('-h' '--help' '--catalog-source' '--kanon-file' '--force' '--dry-run')
+_shtab_kanon_add_option_strings=('-h' '--help' '--catalog-source' '--kanon-file' '--force' '--dry-run' '--marketplace-install' '--no-marketplace-install')
 _shtab_kanon_bootstrap_option_strings=('-h' '--help' '--output-dir' '--catalog-source')
 _shtab_kanon_catalog_option_strings=('-h' '--help')
 _shtab_kanon_catalog_audit_option_strings=('-h' '--help' '--check' '--format' '--strict')
@@ -54,6 +54,8 @@ _shtab_kanon_add__h_nargs=0
 _shtab_kanon_add___help_nargs=0
 _shtab_kanon_add___force_nargs=0
 _shtab_kanon_add___dry_run_nargs=0
+_shtab_kanon_add___marketplace_install_nargs=0
+_shtab_kanon_add___no_marketplace_install_nargs=0
 _shtab_kanon_bootstrap__h_nargs=0
 _shtab_kanon_bootstrap___help_nargs=0
 _shtab_kanon_catalog_pos_0_nargs=A...

@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +46,9 @@ test-functional: ## Run functional tests only
 
 test-scenarios: ## Run end-to-end scenario tests (mirrors docs/integration-testing.md)
 	uv run pytest -m scenario
+
+test-operator-path: ## Run operator-path scenario tests (E49 subprocess path tests -- fast lane for tests/scenarios/test_why_url_path.py etc.)
+	uv run pytest -m scenario tests/scenarios/test_why_url_path.py tests/scenarios/test_doctor_cache.py tests/scenarios/test_rls_exact_vs_range.py
 
 test-cov: ## Run tests with coverage report
 	uv run pytest --cov=kanon_cli --cov-report=term-missing

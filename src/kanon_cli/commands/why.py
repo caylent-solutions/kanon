@@ -30,8 +30,12 @@ import argparse
 import json
 import os
 import pathlib
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
+
+import defusedxml.ElementTree as ET
 
 from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
@@ -50,9 +54,11 @@ from kanon_cli.constants import (
 )
 from kanon_cli.utils.levenshtein import levenshtein_distance
 from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.install import _resolve_ref_to_sha
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
+from kanon_cli.core.manifest import walk_includes_collecting_remotes
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
@@ -270,6 +276,258 @@ class LiveResolveError(Exception):
         )
 
 
+def _include_tree_to_chain_nodes(
+    include_tree: IncludeTree,
+    source_sha: str,
+    source_url: str,
+) -> list[ChainNode]:
+    """Convert an ``IncludeTree`` to a flat list of include ``ChainNode`` roots.
+
+    Each node in the tree becomes an ``include`` ChainNode. Children are attached
+    recursively so the resulting nodes mirror the ``_build_tree_from_lockfile``
+    structure.  The ``sha`` of each include node is set to ``source_sha`` because
+    the live-resolve path does not have per-include commit SHAs (those require a
+    full ``repo sync``).
+
+    Only the direct children of the root ``IncludeTree`` node are returned (the
+    root itself represents the manifest XML entry point, not an include).
+
+    Args:
+        include_tree: Root ``IncludeTree`` from ``_walk_includes``.
+        source_sha: The resolved SHA of the owning source, used as a
+            placeholder SHA for all include nodes on the live-resolve path.
+        source_url: The URL of the source repo, stored on each include node.
+
+    Returns:
+        A list of ``ChainNode(kind='include')`` objects representing the
+        direct include children of the manifest root, with nested children
+        attached recursively.
+    """
+
+    def _convert(node: IncludeTree) -> ChainNode:
+        inc_node = ChainNode(
+            kind="include",
+            name=str(node.path),
+            ref=str(node.path),
+            sha=source_sha,
+            url=None,
+        )
+        for child in node.includes:
+            inc_node.children.append(_convert(child))
+        return inc_node
+
+    return [_convert(child) for child in include_tree.includes]
+
+
+def _build_project_nodes_from_xml(
+    manifest_xml_path: pathlib.Path,
+    manifest_repo: pathlib.Path,
+    source_sha: str,
+    source_name: str,
+) -> list[ChainNode]:
+    """Parse ``<project>`` elements from a manifest XML and return project ``ChainNode`` objects.
+
+    Resolves the project URL by looking up each project's ``remote`` attribute
+    in the remote-name -> fetch-URL mapping collected by
+    ``walk_includes_collecting_remotes``.  Only ``<project>`` elements whose
+    remote can be resolved to a fetch URL are included; unresolvable remotes
+    are silently skipped (they would produce R001 audit findings, which are a
+    separate validation concern).
+
+    The ``sha`` of each project node is set to ``source_sha`` because the
+    live-resolve path does not run ``repo sync`` and therefore has no
+    per-project commit SHAs.
+
+    Args:
+        manifest_xml_path: Absolute path to the root manifest XML file.
+        manifest_repo: Absolute path to the root of the manifest repository.
+        source_sha: The resolved SHA of the owning source, used as a
+            placeholder SHA for all project nodes on the live-resolve path.
+        source_name: The KANON_SOURCE_<name> key, used for error context.
+
+    Returns:
+        A list of ``ChainNode(kind='project')`` objects, one per resolvable
+        ``<project>`` element found in the manifest and its reachable includes.
+
+    Raises:
+        LiveResolveError: If the manifest XML cannot be parsed.
+    """
+    try:
+        remote_map = walk_includes_collecting_remotes(manifest_xml_path, manifest_repo)
+        tree = ET.parse(str(manifest_xml_path))
+        root = tree.getroot()
+    except Exception as exc:
+        raise LiveResolveError(
+            source_name,
+            f"failed to parse manifest XML at {manifest_xml_path}: {exc}",
+        ) from exc
+
+    if root is None:
+        return []
+
+    project_nodes: list[ChainNode] = []
+    for project_el in root.iter("project"):
+        remote_attr = project_el.get("remote")
+        project_name = project_el.get("name", "")
+        if not remote_attr or not project_name:
+            # Skip projects with no remote attribute or empty name -- these
+            # cannot be resolved to a canonical URL without a <default> lookup.
+            continue
+
+        fetch_url = remote_map.get(remote_attr)
+        if fetch_url is None:
+            # Remote is unresolvable; skip rather than hard-fail so that
+            # valid projects in the same manifest still produce chain nodes.
+            # The audit command (kanon catalog audit) surfaces R001 for these.
+            continue
+
+        raw_url = f"{fetch_url.rstrip('/')}/{project_name}"
+        try:
+            canonical = canonicalize_repo_url(raw_url)
+        except ValueError:
+            # URL fails canonicalization (e.g. has query string); skip.
+            continue
+
+        project_nodes.append(
+            ChainNode(
+                kind="project",
+                name=project_name,
+                ref=None,
+                sha=source_sha,
+                url=raw_url,
+                canonical_url=canonical,
+            )
+        )
+
+    return project_nodes
+
+
+def _clone_source_repo(
+    url: str,
+    revision: str,
+    source_name: str,
+    dest: pathlib.Path,
+) -> None:
+    """Clone a source repo at a specific revision into ``dest``.
+
+    Uses ``git clone --depth 1 --branch <revision>`` with the last path
+    component of ``revision`` stripped of the ``refs/tags/`` or
+    ``refs/heads/`` prefix so that git receives a plain branch-or-tag name.
+
+    Args:
+        url: The git remote URL of the source repo.
+        revision: The revision spec string from the .kanon file (e.g.
+            ``"refs/tags/1.0.0"`` or ``"main"``).
+        source_name: The source name, used only in ``LiveResolveError`` messages.
+        dest: The directory to clone into.
+
+    Raises:
+        LiveResolveError: If ``git clone`` exits non-zero.
+    """
+    # Strip canonical ref prefixes so git receives a plain name.
+    branch_or_tag = revision
+    for prefix in ("refs/tags/", "refs/heads/"):
+        if revision.startswith(prefix):
+            branch_or_tag = revision[len(prefix) :]
+            break
+
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", branch_or_tag, url, str(dest)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise LiveResolveError(
+            source_name,
+            f"git clone failed for {url}@{revision}: {result.stderr.strip()}",
+        )
+
+
+def _populate_source_children_from_manifest(
+    source_node: ChainNode,
+    source_url: str,
+    revision: str,
+    manifest_path: str,
+    source_sha: str,
+    source_name: str,
+    tmp_base: pathlib.Path,
+) -> None:
+    """Clone the source repo and attach include/project children to ``source_node``.
+
+    Clones the source repo at the stored revision, walks the manifest XML at
+    ``manifest_path`` for ``<include>`` chains and ``<project>`` elements, and
+    appends the resulting ``ChainNode`` children to ``source_node``.
+
+    This mirrors the lockfile-path child-building logic in
+    ``_build_tree_from_lockfile`` (~215-240) so that ``_match_by_url`` and
+    ``_match_by_xml_path`` find real nodes in the live-resolve tree.
+
+    Args:
+        source_node: The ``ChainNode(kind='source')`` to attach children to.
+        source_url: The git URL of the source (manifest) repo.
+        revision: The revision spec from the .kanon file.
+        manifest_path: Repo-relative path to the manifest XML (e.g.
+            ``"repo-specs/foo-marketplace.xml"``).
+        source_sha: The resolved SHA of this source, used as placeholder SHA
+            for include and project nodes on the live-resolve path.
+        source_name: The KANON_SOURCE_<name> key, used in error messages.
+        tmp_base: A temporary directory path under which the clone is placed.
+
+    Raises:
+        LiveResolveError: If cloning fails or if the manifest XML cannot be
+            parsed.
+    """
+    clone_dest = tmp_base / source_name
+    _clone_source_repo(
+        url=source_url,
+        revision=revision,
+        source_name=source_name,
+        dest=clone_dest,
+    )
+
+    manifest_xml_path = clone_dest / manifest_path
+    if not manifest_xml_path.exists():
+        raise LiveResolveError(
+            source_name,
+            f"manifest XML not found in cloned repo at path {manifest_path!r}. "
+            "Verify KANON_SOURCE_{name}_PATH is correct.",
+        )
+
+    try:
+        include_tree = _walk_includes(manifest_xml_path, clone_dest)
+    except Exception as exc:
+        raise LiveResolveError(
+            source_name,
+            f"failed to walk <include> chain in {manifest_path}: {exc}",
+        ) from exc
+
+    include_roots = _include_tree_to_chain_nodes(include_tree, source_sha, source_url)
+    project_nodes = _build_project_nodes_from_xml(manifest_xml_path, clone_dest, source_sha, source_name)
+
+    # Attach children mirroring _build_tree_from_lockfile (~215-240):
+    # includes as direct children of the source; projects under every leaf
+    # include, or directly under the source when no includes are present.
+    if include_roots:
+        for inc_node in include_roots:
+            source_node.children.append(inc_node)
+        leaf_includes = _collect_leaf_include_nodes(include_roots)
+        for leaf in leaf_includes:
+            for proj_node in project_nodes:
+                leaf.children.append(
+                    ChainNode(
+                        kind="project",
+                        name=proj_node.name,
+                        ref=proj_node.ref,
+                        sha=proj_node.sha,
+                        url=proj_node.url,
+                        canonical_url=proj_node.canonical_url,
+                    )
+                )
+    else:
+        for proj_node in project_nodes:
+            source_node.children.append(proj_node)
+
+
 def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> ResolvedTree:
     """Resolve the dependency tree live from the .kanon file.
 
@@ -281,10 +539,11 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
       - Enforces the remote URL security policy.
       - Resolves the declared revision to a concrete commit SHA via git ls-remote.
       - Builds a ChainNode(kind='source') for the source.
-
-    The resulting tree has one source node per .kanon entry, with no include or
-    project children. This is sufficient for the three-category argument matcher
-    (source name, XML path, project URL) to locate top-level sources by name.
+      - Clones the source repo and walks its manifest XML to populate the
+        source node's project and include children, mirroring the tree
+        structure built by _build_tree_from_lockfile (~215-240) for the
+        lockfile path. This makes _match_by_url and _match_by_xml_path
+        traverse real nodes on the live-resolve path.
 
     Args:
         kanon_file: Path to the .kanon configuration file.
@@ -293,11 +552,13 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
             caller's precondition API (catalog source required on live path).
 
     Returns:
-        A ResolvedTree with one source ChainNode per .kanon source entry.
+        A ResolvedTree with one source ChainNode per .kanon source entry,
+        each with its include and project children populated.
 
     Raises:
         LiveResolveError: If ref-to-SHA resolution fails for any source entry,
-            or if the remote URL policy rejects a source URL.
+            if the remote URL policy rejects a source URL, if git clone fails,
+            or if the manifest XML cannot be parsed.
         ValueError: From parse_kanonenv when the .kanon file is malformed or
             missing required source variables.
     """
@@ -305,35 +566,49 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
     kanonenv = parse_kanonenv(kanon_file)
     source_nodes: list[ChainNode] = []
 
-    for source_name in kanonenv["KANON_SOURCES"]:
-        source_data = kanonenv["sources"][source_name]
-        url: str = source_data["url"]
-        revision: str = source_data["revision"]
+    with tempfile.TemporaryDirectory(prefix="kanon-why-live-") as _tmp_dir:
+        tmp_base = pathlib.Path(_tmp_dir)
 
-        try:
-            _enforce_remote_url_policy(
-                url=url,
-                allow_insecure=allow_insecure,
-                remote_name=source_name,
-                source_path=source_name,
-            )
-        except Exception as exc:
-            raise LiveResolveError(source_name, str(exc)) from exc
+        for source_name in kanonenv["KANON_SOURCES"]:
+            source_data = kanonenv["sources"][source_name]
+            url: str = source_data["url"]
+            revision: str = source_data["revision"]
+            manifest_path: str = source_data["path"]
 
-        try:
-            ref_resolution = _resolve_ref_to_sha(url, revision)
-        except ValueError as exc:
-            raise LiveResolveError(source_name, str(exc)) from exc
+            try:
+                _enforce_remote_url_policy(
+                    url=url,
+                    allow_insecure=allow_insecure,
+                    remote_name=source_name,
+                    source_path=source_name,
+                )
+            except Exception as exc:
+                raise LiveResolveError(source_name, str(exc)) from exc
 
-        source_nodes.append(
-            ChainNode(
+            try:
+                ref_resolution = _resolve_ref_to_sha(url, revision)
+            except ValueError as exc:
+                raise LiveResolveError(source_name, str(exc)) from exc
+
+            source_node = ChainNode(
                 kind="source",
                 name=source_name,
                 ref=None,
                 sha=ref_resolution.sha,
                 url=url,
             )
-        )
+
+            _populate_source_children_from_manifest(
+                source_node=source_node,
+                source_url=url,
+                revision=revision,
+                manifest_path=manifest_path,
+                source_sha=ref_resolution.sha,
+                source_name=source_name,
+                tmp_base=tmp_base,
+            )
+
+            source_nodes.append(source_node)
 
     return ResolvedTree(sources=source_nodes)
 

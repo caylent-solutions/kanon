@@ -41,10 +41,106 @@ from __future__ import annotations
 import pathlib
 import subprocess
 import sys
+import textwrap
 
 import pytest
 
-from tests.integration.test_add_core import _create_manifest_repo_with_tags
+from tests.integration.test_add_core import (
+    _create_manifest_repo_with_tags,
+    _git,
+    _init_git_work_dir,
+    _clone_as_bare,
+)
+
+
+# ---------------------------------------------------------------------------
+# Rich catalog builder for URL/path live-resolve tests
+# ---------------------------------------------------------------------------
+
+_RICH_XML_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata>
+        <name>{name}</name>
+        <display-name>{name} Display</display-name>
+        <description>Integration test entry for {name}.</description>
+        <version>1.0.0</version>
+        <type>plugin</type>
+        <owner-name>Integration Tester</owner-name>
+        <owner-email>integration@example.com</owner-email>
+        <keywords>integration, test</keywords>
+      </catalog-metadata>
+      <remote name="origin" fetch="{project_fetch_url}" />
+      <project remote="origin" name="{project_name}" path="{project_name}" />
+      <include name="repo-specs/extra-{name}.xml" />
+    </manifest>
+""")
+
+_EXTRA_XML_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+    </manifest>
+""")
+
+
+def _create_catalog_with_project_and_include(
+    base: pathlib.Path,
+    entry_name: str,
+    project_name: str,
+    project_fetch_url: str,
+    tags: list[str],
+) -> pathlib.Path:
+    """Create a bare catalog repo whose marketplace XML contains a project and an include.
+
+    The generated XML at ``repo-specs/<entry_name>-marketplace.xml`` contains:
+      - A ``<catalog-metadata>`` block so ``kanon add`` can locate the entry.
+      - A ``<remote name="origin" fetch="<project_fetch_url>">`` element.
+      - A ``<project remote="origin" name="<project_name>">`` element, yielding
+        the project URL ``<project_fetch_url>/<project_name>``.
+      - An ``<include name="repo-specs/extra-<entry_name>.xml">`` element
+        pointing to a sibling minimal XML file.
+
+    Both the project URL and the include path are deterministic from the caller's
+    arguments, which are also returned so tests can assert on them.
+
+    Args:
+        base: Parent directory under which work and bare dirs are created.
+        entry_name: The catalog entry name (e.g. ``"gamma"``).
+        project_name: The project name used as the ``<project name="...">``
+            attribute and as the URL path suffix.
+        project_fetch_url: The fetch URL base for the ``<remote>`` element
+            (e.g. ``"https://github.com/testorg"``).  The full project URL
+            is ``<project_fetch_url>/<project_name>``.
+        tags: PEP 440-valid annotated tag names applied to the initial commit.
+
+    Returns:
+        The absolute path to the bare repo directory.
+    """
+    work_dir = base / "rich-manifest-work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _init_git_work_dir(work_dir)
+
+    repo_specs_dir = work_dir / "repo-specs"
+    repo_specs_dir.mkdir()
+
+    xml_content = _RICH_XML_TEMPLATE.format(
+        name=entry_name,
+        project_fetch_url=project_fetch_url,
+        project_name=project_name,
+    )
+    (repo_specs_dir / f"{entry_name}-marketplace.xml").write_text(xml_content)
+
+    extra_xml_path = repo_specs_dir / f"extra-{entry_name}.xml"
+    extra_xml_path.write_text(_EXTRA_XML_TEMPLATE)
+
+    _git(["add", "."], cwd=work_dir)
+    _git(["commit", "-m", f"Add rich marketplace entry {entry_name}"], cwd=work_dir)
+
+    for tag in tags:
+        _git(["tag", "-a", tag, "-m", f"Release {tag}"], cwd=work_dir)
+
+    bare_dir = _clone_as_bare(work_dir, base / "rich-manifest-bare.git")
+    return bare_dir.resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -421,8 +517,7 @@ class TestByUrlLiveResolve:
         # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
-            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), "
-            f"but found it at {lock_file}"
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
         # -- Act: kanon why (live-resolve dispatcher path) --
@@ -455,8 +550,7 @@ class TestByUrlLiveResolve:
         # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
-            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\n"
-            f"stdout: {why_result.stdout!r}"
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
 
 
@@ -532,8 +626,7 @@ class TestByPathLiveResolve:
         # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
-            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), "
-            f"but found it at {lock_file}"
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
         # -- Act: kanon why (live-resolve dispatcher path) --
@@ -567,6 +660,240 @@ class TestByPathLiveResolve:
         # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
-            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\n"
-            f"stdout: {why_result.stdout!r}"
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: live-resolve path -- by project URL -- no .kanon.lock present
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestWhyLiveResolveByUrl:
+    """``kanon why <project-url>`` resolves on the live path without a lockfile.
+
+    The catalog repo contains a marketplace XML with a ``<remote>`` and
+    ``<project>`` element.  After ``kanon add`` (no install), the lockfile is
+    absent so ``kanon why <project-url>`` must exercise the live-resolve
+    dispatcher and find the project node via ``_match_by_url``.
+
+    This class directly tests findings row 68: url-based matching on the
+    live-resolve path.
+    """
+
+    def test_why_by_url_resolves_without_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """``kanon why <project-url>`` exits 0 with chain when no .kanon.lock is present.
+
+        Flow:
+          1. Build a synthetic catalog with entry ``gamma`` whose marketplace XML
+             contains a ``<project remote="origin" name="myproject">`` element and
+             ``<remote name="origin" fetch="https://github.com/testorg">``.
+          2. Run ``kanon add gamma --catalog-source <url>`` (no install, no lockfile).
+          3. Assert ``.kanon.lock`` is absent (live-resolve path confirmed).
+          4. Run ``kanon why https://github.com/testorg/myproject --catalog-source <url>``.
+          5. Assert exit code is 0.
+          6. Assert ``GAMMA`` (the derived source name) appears in stdout (chain
+             rooted at the correct source).
+          7. Assert the stub diagnostic is absent.
+
+        Assertions 5 and 6 fail today because ``_live_resolve_tree`` builds
+        only source nodes with no project children, so ``_match_by_url`` finds
+        no project node and the not-found path is taken (exit 1).
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        entry_name = "gamma"
+        project_name = "myproject"
+        project_fetch_url = "https://github.com/testorg"
+        project_url = f"{project_fetch_url}/{project_name}"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            project_fetch_url=project_fetch_url,
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        # -- Act: kanon add (no install, so no lockfile written) --
+        add_result = _run_kanon(
+            [
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
+        lock_file = workspace / ".kanon.lock"
+        assert not lock_file.exists(), (
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
+        )
+
+        # -- Act: kanon why <project-url> (live-resolve dispatcher path) --
+        why_result = _run_kanon(
+            [
+                "why",
+                project_url,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+
+        # -- Assert: exits 0 --
+        assert why_result.returncode == 0, (
+            f"Expected exit 0 from 'kanon why {project_url}' (live-resolve, by project URL), "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        # -- Assert: derived source name appears in stdout (chain names the owning entry) --
+        assert entry_name in why_result.stdout, (
+            f"Expected source name {entry_name!r} in stdout "
+            f"(chain must be rooted at the source that declares the project), "
+            f"but got: {why_result.stdout!r}"
+        )
+
+        # -- Assert: stub diagnostic absent --
+        stub_diagnostic = "Live-resolution is not yet implemented"
+        assert stub_diagnostic not in why_result.stdout, (
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: live-resolve path -- by include XML path -- no .kanon.lock present
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestWhyLiveResolveByXmlPath:
+    """``kanon why <include-xml-path>`` resolves on the live path without a lockfile.
+
+    The catalog repo contains a marketplace XML with an ``<include>`` element
+    pointing to a sibling XML file.  After ``kanon add`` (no install), the
+    lockfile is absent so ``kanon why <xml-path>`` must exercise the live-resolve
+    dispatcher and find the include node via ``_match_by_xml_path``.
+
+    This class directly tests findings row 69: xml-path-based matching on the
+    live-resolve path.
+    """
+
+    def test_why_by_xml_path_resolves_without_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """``kanon why <include-xml-path>`` exits 0 with chain when no .kanon.lock is present.
+
+        Flow:
+          1. Build a synthetic catalog with entry ``delta`` whose marketplace XML
+             contains ``<include name="repo-specs/extra-delta.xml">`` and a sibling
+             ``repo-specs/extra-delta.xml`` file.
+          2. Run ``kanon add delta --catalog-source <url>`` (no install, no lockfile).
+          3. Assert ``.kanon.lock`` is absent (live-resolve path confirmed).
+          4. Run ``kanon why repo-specs/extra-delta.xml --catalog-source <url>``.
+          5. Assert exit code is 0.
+          6. Assert ``DELTA`` (the derived source name) appears in stdout (chain is
+             rooted at the source that owns the include).
+          7. Assert the stub diagnostic is absent.
+
+        Assertions 5 and 6 fail today because ``_live_resolve_tree`` builds
+        only source nodes with no include children, so ``_match_by_xml_path``
+        finds no include node and the not-found path is taken (exit 1).
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        entry_name = "delta"
+        include_xml_path = f"repo-specs/extra-{entry_name}.xml"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name="deltaproject",
+            project_fetch_url="https://github.com/testorg",
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        # -- Act: kanon add (no install, so no lockfile written) --
+        add_result = _run_kanon(
+            [
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
+        lock_file = workspace / ".kanon.lock"
+        assert not lock_file.exists(), (
+            f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
+        )
+
+        # -- Act: kanon why <include-xml-path> (live-resolve dispatcher path) --
+        why_result = _run_kanon(
+            [
+                "why",
+                include_xml_path,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+
+        # -- Assert: exits 0 --
+        assert why_result.returncode == 0, (
+            f"Expected exit 0 from 'kanon why {include_xml_path}' "
+            f"(live-resolve, by include XML path), "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        # -- Assert: derived source name appears in stdout (chain names the owning entry) --
+        assert entry_name in why_result.stdout, (
+            f"Expected source name {entry_name!r} in stdout "
+            f"(chain must be rooted at the source that owns the include), "
+            f"but got: {why_result.stdout!r}"
+        )
+
+        # -- Assert: stub diagnostic absent --
+        stub_diagnostic = "Live-resolution is not yet implemented"
+        assert stub_diagnostic not in why_result.stdout, (
+            f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )

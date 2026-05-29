@@ -425,3 +425,124 @@ class TestWhyFormatJsonIntegration:
             "This is a regression: _chain_to_node_dicts must use node.canonical_url for project nodes."
         )
         assert project_node["url"] != raw_url, f"url field must not be the raw SCP form {raw_url!r}"
+
+
+# ---------------------------------------------------------------------------
+# JSON parity test for url match on live-resolve path (no lockfile)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestWhyJsonLiveResolveUrlMatch:
+    """JSON parity: ``kanon why <project-url> --format json`` on the live-resolve path.
+
+    After ``kanon add <entry> --catalog-source <synthetic>`` (no install, no lockfile),
+    ``kanon why <project-url> --format json`` should exit 0 and emit a valid JSON
+    array where the first chain starts with the source entry name.
+
+    This is the json-parity assertion for E49-F1 (findings row 68, url match on
+    live-resolve path).
+    """
+
+    def test_json_url_match_on_live_path(self, tmp_path: pathlib.Path) -> None:
+        """``kanon why <project-url> --format json`` exits 0 on live-resolve path.
+
+        Flow:
+          1. Build a synthetic catalog with entry ``epsilon`` whose marketplace XML
+             contains a ``<project remote="origin" name="liveproject">`` element and
+             ``<remote name="origin" fetch="https://github.com/livetestorg">``.
+          2. Run ``kanon add epsilon --catalog-source <url>`` (no install, no lockfile).
+          3. Assert ``.kanon.lock`` is absent (live-resolve path confirmed).
+          4. Run ``kanon why https://github.com/livetestorg/liveproject
+             --format json --catalog-source <url>``.
+          5. Assert exit code 0.
+          6. Assert JSON is a list.
+          7. Assert the first chain's first node has ``kind == "source"`` and
+             ``name`` contains the derived source name ``EPSILON``.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from tests.integration.test_why_live_resolve import _create_catalog_with_project_and_include
+
+        entry_name = "epsilon"
+        project_name = "liveproject"
+        project_fetch_url = "https://github.com/livetestorg"
+        project_url = f"{project_fetch_url}/{project_name}"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            project_fetch_url=project_fetch_url,
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        lock_file = workspace / ".kanon.lock"
+        assert not lock_file.exists(), f"Expected .kanon.lock to be absent but found it at {lock_file}"
+
+        why_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "why",
+                project_url,
+                "--format",
+                "json",
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+
+        assert why_result.returncode == 0, (
+            f"Expected exit 0 from 'kanon why {project_url} --format json' "
+            f"(live-resolve, url match), got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        import json as _json
+
+        parsed = _json.loads(why_result.stdout)
+        assert isinstance(parsed, list), (
+            f"Expected JSON list from --format json, got {type(parsed).__name__}: {parsed!r}"
+        )
+        assert len(parsed) >= 1, "Expected at least one chain in JSON output, got empty list"
+
+        source_node = parsed[0][0]
+        assert source_node["kind"] == "source", f"Expected first node kind='source', got {source_node['kind']!r}"
+        assert source_node["name"] == entry_name, f"Expected source name {entry_name!r}, got {source_node['name']!r}"

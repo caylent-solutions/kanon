@@ -9,6 +9,12 @@ AC-CYCLE-001: End-to-end cycle:
   - Exit 0 (warnings only, no errors).
   - Exactly two WARN findings: for v1.0.0 and release-2024.
   - Zero findings for 1.0.0 (PEP 440) and subpackage/2.0.0 (monorepo PEP 440).
+
+AC-TEST-001 (gap 4b): TestT001PeeledRefs exercises peeled-ref filtering.
+  - Repo contains annotated tags (which produce ^{} peeled lines in git ls-remote output)
+    plus lightweight malformed tags.
+  - T001 fires for malformed tags and NOT for peeled refs.
+  - Peeled refs do not duplicate or mask findings.
 """
 
 from __future__ import annotations
@@ -247,3 +253,152 @@ class TestCatalogAuditTagFormatSubprocess:
         assert "T001" not in result.stdout, (
             f"Expected no T001 code when --check metadata is used.\nstdout: {result.stdout}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Annotated-tag fixture (produces peeled ^{} refs in git ls-remote output)
+# ---------------------------------------------------------------------------
+
+
+def _create_fixture_git_repo_with_annotated_tags(
+    base: pathlib.Path,
+    annotated_tags: list[str],
+    lightweight_tags: list[str],
+) -> pathlib.Path:
+    """Create a fixture git repo containing both annotated and lightweight tags.
+
+    Annotated tags produce a peeled ``^{}`` line in ``git ls-remote --tags``
+    output in addition to the tag-object line.  Lightweight tags produce a
+    single line.  The repo has a ``repo-specs/`` directory so it is a valid
+    audit target.
+
+    Args:
+        base: Parent directory under which the repo directory is created.
+        annotated_tags: Tag names to create as annotated tags (``git tag -a``).
+        lightweight_tags: Tag names to create as lightweight tags (``git tag``).
+
+    Returns:
+        Absolute path to the created git repo directory.
+    """
+    repo_dir = base / "fixture-repo-annotated"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    _init_git_work_dir(repo_dir)
+
+    repo_specs = repo_dir / "repo-specs"
+    repo_specs.mkdir()
+
+    xml_content = """\
+<?xml version="1.0"?>
+<manifest>
+  <catalog-metadata>
+    <name>fixture-tool</name>
+    <display-name>Fixture Tool</display-name>
+    <description>Fixture tool for peeled-ref integration test.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture</keywords>
+  </catalog-metadata>
+</manifest>
+"""
+    (repo_specs / "fixture-marketplace.xml").write_text(xml_content, encoding="utf-8")
+
+    _git(["add", "."], cwd=repo_dir)
+    _git(["-c", "core.hooksPath=/dev/null", "commit", "-m", "initial commit"], cwd=repo_dir)
+
+    for tag in annotated_tags:
+        _git(["tag", "-a", tag, "-m", f"annotated tag {tag}"], cwd=repo_dir)
+
+    for tag in lightweight_tags:
+        _git(["tag", tag], cwd=repo_dir)
+
+    return repo_dir
+
+
+# ---------------------------------------------------------------------------
+# TestT001PeeledRefs (AC-TEST-001, gap 4b)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestT001PeeledRefs:
+    """T001 filters peeled ^{} refs and fires on malformed tags (gap 4b).
+
+    AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004, AC-TEST-001.
+    """
+
+    def test_t001_ignores_peeled_refs_and_fires_on_malformed(self, tmp_path: pathlib.Path) -> None:
+        """T001 fires for malformed tags and ignores peeled ^{} ref lines.
+
+        Tag set: v1.0.0 (annotated -- non-canonical, peeled ref produced),
+                 1.0 (annotated -- canonical PEP 440, peeled ref produced),
+                 badtag (lightweight -- malformed, no peeled ref).
+
+        Expected: exactly two T001 WARN findings: one for 'v1.0.0' and one for
+        'badtag'. The peeled refs for v1.0.0 and 1.0 must not produce extra
+        findings. AC-FUNC-002, AC-FUNC-003, AC-TEST-001.
+        """
+        repo = _create_fixture_git_repo_with_annotated_tags(
+            tmp_path,
+            annotated_tags=["v1.0.0", "1.0"],
+            lightweight_tags=["badtag"],
+        )
+        result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
+        assert result.returncode == 0, (
+            f"Expected exit 0 (warnings only), got {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        warn_lines = [line for line in result.stdout.splitlines() if line.startswith("WARN:")]
+        assert len(warn_lines) == 2, (
+            f"Expected exactly 2 WARN findings (v1.0.0, badtag); peeled refs must not produce "
+            f"extra findings. Got {len(warn_lines)} WARNs:\n{result.stdout}"
+        )
+        messages = " ".join(warn_lines)
+        assert "v1.0.0" in messages, f"Expected T001 finding for 'v1.0.0' in WARN lines.\nstdout: {result.stdout}"
+        assert "badtag" in messages, f"Expected T001 finding for 'badtag' in WARN lines.\nstdout: {result.stdout}"
+        # Peeled ref suffix must NOT appear in any finding -- it was filtered before parsing.
+        assert "^{}" not in result.stdout, (
+            f"Peeled ref '^{{}}' must not appear in any T001 finding.\nstdout: {result.stdout}"
+        )
+
+    def test_t001_only_peeled_refs_no_malformed_yields_zero_findings(self, tmp_path: pathlib.Path) -> None:
+        """A tag set with only annotated PEP 440 tags yields 0 T001 findings.
+
+        Annotated PEP 440 tags produce peeled ^{} lines in ls-remote output.
+        Those peeled lines must be filtered and must not generate T001 findings.
+        AC-FUNC-004, AC-FUNC-003.
+        """
+        repo = _create_fixture_git_repo_with_annotated_tags(
+            tmp_path,
+            annotated_tags=["1.0.0", "2.0.0"],
+            lightweight_tags=[],
+        )
+        result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
+        assert result.returncode == 0, (
+            f"Expected exit 0 for all-PEP-440 annotated tags, got {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert result.stdout.strip() == "", (
+            f"Expected empty stdout (0 findings) for annotated PEP 440 tags.\nstdout: {result.stdout}"
+        )
+
+    def test_t001_annotated_non_pep440_fires_once_not_twice(self, tmp_path: pathlib.Path) -> None:
+        """An annotated non-PEP-440 tag produces exactly one T001 finding (not two).
+
+        Without peeled-ref filtering, an annotated tag v1.0.0 would produce two
+        T001 findings: one for 'v1.0.0' and one for 'v1.0.0^{}'. After the fix,
+        only one finding appears. AC-FUNC-003.
+        """
+        repo = _create_fixture_git_repo_with_annotated_tags(
+            tmp_path,
+            annotated_tags=["v1.0.0"],
+            lightweight_tags=[],
+        )
+        result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
+        warn_lines = [line for line in result.stdout.splitlines() if line.startswith("WARN:")]
+        assert len(warn_lines) == 1, (
+            f"Annotated non-PEP-440 tag must produce exactly one T001 finding (not two via "
+            f"duplicate peeled ref). Got {len(warn_lines)} WARNs:\n{result.stdout}"
+        )
+        assert "v1.0.0" in warn_lines[0], f"Expected 'v1.0.0' in the single T001 WARN finding.\nstdout: {result.stdout}"

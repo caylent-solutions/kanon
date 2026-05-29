@@ -731,6 +731,12 @@ def _check_tag_format(
         ref = ref.strip()
         if not ref.startswith("refs/tags/"):
             continue
+        # Peeled refs end in ^{} and represent the dereferenced commit for
+        # annotated tags.  Filtering them before parsing prevents false-positive
+        # T001 findings (the ^{} suffix is not a valid version string) and
+        # prevents duplicate findings for the underlying tag name.
+        if ref.endswith("^{}"):
+            continue
         tag_name = ref[len("refs/tags/") :]
         if not tag_name:
             continue

@@ -9,13 +9,16 @@ parametrize across:
   - Monorepo-prefixed non-PEP-440 tag (subpackage/v1.0.0): one WARN finding.
   - Empty tag list: zero findings.
   - 60 non-PEP-440 tags with cap of 50: 50 WARN + 1 summary WARN.
+  - Peeled ^{} ref lines filtered before parsing (gap 4b, AC-TEST-002).
 
 AC-TEST-001: Parametrized unit tests with a callable stub for git ls-remote --tags.
 AC-FUNC-001 through AC-FUNC-009.
+AC-TEST-002 (gap 4b): Parser-level peeled-ref filtering and annotated vs lightweight tags.
 """
 
 from __future__ import annotations
 
+import collections.abc
 import pathlib
 
 import pytest
@@ -538,3 +541,168 @@ class TestConstantLocation:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT as limit
 
         assert limit == 50, f"Expected default 50, got {limit}"
+
+
+# ---------------------------------------------------------------------------
+# Peeled-ref filtering helpers (gap 4b, AC-TEST-002)
+# ---------------------------------------------------------------------------
+
+
+def _make_ls_remote_stub_with_peeled(
+    tags: list[str],
+    peeled_tags: list[str],
+) -> collections.abc.Callable[[pathlib.Path], str]:
+    """Build a stub that includes both regular tag lines and peeled ^{} lines.
+
+    This simulates the output of ``git ls-remote --tags`` when the remote has
+    annotated tags.  For each tag in ``peeled_tags``, an extra line ending in
+    ``^{}`` is appended after the tag-object line.
+
+    Args:
+        tags: All tag names to include as regular ``refs/tags/<name>`` lines.
+        peeled_tags: Subset of ``tags`` for which an additional ``^{}`` peeled
+            line is appended (simulating annotated tags).
+
+    Returns:
+        A callable stub suitable for injection into ``_check_tag_format``.
+    """
+
+    def _stub(target_path: pathlib.Path) -> str:
+        sha = "a" * 40
+        sha2 = "b" * 40
+        lines: list[str] = []
+        for tag in tags:
+            lines.append(f"{sha}\trefs/tags/{tag}")
+            if tag in peeled_tags:
+                lines.append(f"{sha2}\trefs/tags/{tag}^{{}}")
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    return _stub
+
+
+# ---------------------------------------------------------------------------
+# TestPeeledRefFiltering (gap 4b, AC-TEST-002)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPeeledRefFiltering:
+    """_check_tag_format filters peeled ^{} ref lines before parsing (gap 4b, AC-TEST-002).
+
+    AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004.
+    """
+
+    def test_peeled_ref_line_does_not_produce_finding(self, tmp_path: pathlib.Path) -> None:
+        """A peeled ^{} line for a valid PEP 440 annotated tag produces no T001 finding.
+
+        When git ls-remote includes '1.0.0^{}', that line must be filtered before
+        parsing so the ^{} suffix never reaches the version parser. AC-FUNC-003.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(tags=["1.0.0"], peeled_tags=["1.0.0"])
+        findings = _check_tag_format(tmp_path, stub)
+        assert findings == [], f"Peeled ref for valid PEP 440 tag must produce no findings. Got: {findings}"
+
+    def test_annotated_non_pep440_tag_produces_exactly_one_finding(self, tmp_path: pathlib.Path) -> None:
+        """An annotated non-PEP-440 tag produces exactly one T001 finding (not two).
+
+        Without peeled-ref filtering, the parser sees both 'v1.0.0' and 'v1.0.0^{}'
+        and produces two T001 findings. With the fix, only 'v1.0.0' is parsed and
+        one T001 finding is emitted. AC-FUNC-002, AC-FUNC-003.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(tags=["v1.0.0"], peeled_tags=["v1.0.0"])
+        findings = _check_tag_format(tmp_path, stub)
+        assert len(findings) == 1, (
+            f"Annotated non-PEP-440 tag must produce exactly one T001 finding "
+            f"(not two via peeled-ref duplication). Got {len(findings)}: {findings}"
+        )
+        assert findings[0].code == "T001"
+        assert "v1.0.0" in findings[0].message
+
+    def test_mixed_peeled_and_malformed_tags(self, tmp_path: pathlib.Path) -> None:
+        """Mixed set: v1.0.0 (annotated), 1.0 (annotated, valid), badtag (lightweight, malformed).
+
+        Expected: exactly two T001 findings for v1.0.0 and badtag.
+        Peeled refs for v1.0.0 and 1.0 must not produce extra findings.
+        AC-FUNC-002, AC-FUNC-003, AC-TEST-001.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(
+            tags=["v1.0.0", "1.0", "badtag"],
+            peeled_tags=["v1.0.0", "1.0"],
+        )
+        findings = _check_tag_format(tmp_path, stub)
+        t001_findings = [f for f in findings if f.code == "T001"]
+        assert len(t001_findings) == 2, (
+            f"Expected exactly 2 T001 findings (v1.0.0, badtag). "
+            f"Peeled refs must not add extra findings. Got {len(t001_findings)}: {t001_findings}"
+        )
+        messages = " ".join(f.message for f in t001_findings)
+        assert "v1.0.0" in messages, f"Expected T001 for 'v1.0.0' in findings: {t001_findings}"
+        assert "badtag" in messages, f"Expected T001 for 'badtag' in findings: {t001_findings}"
+
+    def test_only_peeled_pep440_refs_yields_zero_findings(self, tmp_path: pathlib.Path) -> None:
+        """A tag set where all tags are PEP 440 and all have peeled refs yields zero findings.
+
+        AC-FUNC-004: annotated and lightweight tags are both handled.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(
+            tags=["1.0.0", "2.0.0", "3.0.0"],
+            peeled_tags=["1.0.0", "2.0.0", "3.0.0"],
+        )
+        findings = _check_tag_format(tmp_path, stub)
+        assert findings == [], f"All-PEP-440 annotated tags must produce zero findings. Got: {findings}"
+
+    @pytest.mark.parametrize(
+        "tag",
+        ["v1.0.0", "release-2024", "latest", "badtag", "my-pkg"],
+    )
+    def test_peeled_ref_suffix_never_appears_in_findings(self, tmp_path: pathlib.Path, tag: str) -> None:
+        """The ^{} suffix must not appear in any T001 finding message after filtering.
+
+        AC-FUNC-003: peeled refs do not produce findings.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(tags=[tag], peeled_tags=[tag])
+        findings = _check_tag_format(tmp_path, stub)
+        for finding in findings:
+            assert "^{}" not in finding.message, (
+                f"Peeled ref suffix '^{{}}' must not appear in any T001 finding message. Finding: {finding.message!r}"
+            )
+
+    def test_lightweight_malformed_tag_still_fires(self, tmp_path: pathlib.Path) -> None:
+        """A lightweight (non-annotated) malformed tag still produces a T001 finding.
+
+        Lightweight tags have no peeled ref line. The fix must not suppress
+        findings for legitimate malformed lightweight tags. AC-FUNC-002.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        # badtag is lightweight: no entry in peeled_tags
+        stub = _make_ls_remote_stub_with_peeled(tags=["badtag"], peeled_tags=[])
+        findings = _check_tag_format(tmp_path, stub)
+        assert len(findings) == 1, f"Lightweight malformed tag must still produce one T001 finding. Got: {findings}"
+        assert findings[0].code == "T001"
+        assert "badtag" in findings[0].message
+
+    def test_annotated_pep440_lightweight_malformed_combination(self, tmp_path: pathlib.Path) -> None:
+        """Annotated PEP 440 tag (no finding) plus lightweight malformed tag (one finding).
+
+        AC-FUNC-002, AC-FUNC-004.
+        """
+        from kanon_cli.commands.catalog import _check_tag_format
+
+        stub = _make_ls_remote_stub_with_peeled(
+            tags=["1.0.0", "release-candidate"],
+            peeled_tags=["1.0.0"],
+        )
+        findings = _check_tag_format(tmp_path, stub)
+        assert len(findings) == 1, f"Expected exactly one T001 finding for 'release-candidate'. Got: {findings}"
+        assert "release-candidate" in findings[0].message

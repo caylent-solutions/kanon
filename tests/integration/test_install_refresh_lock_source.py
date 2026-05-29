@@ -648,3 +648,150 @@ class TestRefreshLockSourceCounters:
         assert "projects refreshed" not in stdout, (
             f"Counter line must not appear when workspace has zero sources; got stdout={stdout!r}"
         )
+
+
+# ===========================================================================
+# AC-FUNC-003 (E49-F6-S1-T1): both-direction assertions -- exact stays, range advances
+# ===========================================================================
+
+
+@pytest.mark.integration
+class TestRefreshLockSourceExactVsRange:
+    """AC-FUNC-003 (E49-F6-S1-T1): both-direction refresh-lock-source semantics.
+
+    Fast inner-loop coverage for Section 13 D3:
+    - A range-spec source (``>=1.0.0``) resolves to a new SHA when a higher
+      tag is published and --refresh-lock-source is run (range advances).
+    - An exact-pin source (``==1.0.0``) stays at its original SHA after
+      --refresh-lock-source even when a higher tag is published (pin stays).
+    """
+
+    def test_range_spec_source_advances_on_refresh(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Range-spec (>=1.0.0) resolved SHA changes after a new tag + --refresh-lock-source.
+
+        Builds two fixture repos: ``rangesrc`` (range spec ``>=1.0.0``) and
+        ``exactsrc`` (exact pin ``==1.0.0``).  After a tag bump to 1.1.0, runs
+        --refresh-lock-source rangesrc and asserts:
+        - rangesrc SHA advanced to the 1.1.0 commit (range resolved to newest tag).
+        - exactsrc SHA is unchanged (was the preserved, non-target source).
+        """
+        fixture_dir = tmp_path / "fixture"
+        fixture_dir.mkdir()
+        rangesrc_repo, rangesrc_sha_v1 = _build_fixture_repo(fixture_dir, "rangesrc")
+        exactsrc_repo, exactsrc_sha_v1 = _build_fixture_repo(fixture_dir, "exactsrc")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        kanon_path = _write_two_source_kanon(
+            project_dir,
+            str(rangesrc_repo),
+            str(exactsrc_repo),
+            alpha_revision=">=1.0.0",
+            beta_revision="==1.0.0",
+        )
+
+        # Baseline install using range spec -- resolves to 1.0.0 (only tag available).
+        _run_install_with_real_sources(kanon_path)
+
+        lock_path = project_dir / ".kanon.lock"
+        assert lock_path.exists(), "baseline install must write a lockfile"
+        lf_baseline = read_lockfile(lock_path)
+
+        rangesrc_baseline = next(e for e in lf_baseline.sources if e.name == "alpha")
+        exactsrc_baseline = next(e for e in lf_baseline.sources if e.name == "beta")
+        assert rangesrc_baseline.resolved_sha == rangesrc_sha_v1, (
+            f"Baseline rangesrc SHA mismatch: expected {rangesrc_sha_v1!r}, got {rangesrc_baseline.resolved_sha!r}"
+        )
+        assert exactsrc_baseline.resolved_sha == exactsrc_sha_v1
+
+        # Publish 1.1.0 on both repos.
+        rangesrc_sha_v2 = _add_tag(rangesrc_repo, "1.1.0")
+        _add_tag(exactsrc_repo, "1.1.0")
+
+        # Run --refresh-lock-source alpha (the range-spec source).
+        # The .kanon still has >=1.0.0 for alpha -- no spec change needed.
+        _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
+
+        lf_after = read_lockfile(lock_path)
+        rangesrc_after = next(e for e in lf_after.sources if e.name == "alpha")
+        exactsrc_after = next(e for e in lf_after.sources if e.name == "beta")
+
+        # Range-spec source must have advanced to the new 1.1.0 SHA.
+        assert rangesrc_after.resolved_sha != rangesrc_sha_v1, (
+            f"ERROR: range-spec source 'alpha' (>=1.0.0) did NOT advance SHA after "
+            f"--refresh-lock-source + new tag 1.1.0. "
+            f"SHA before: {rangesrc_sha_v1!r}, SHA after: {rangesrc_after.resolved_sha!r}"
+        )
+        assert rangesrc_after.resolved_sha == rangesrc_sha_v2, (
+            f"ERROR: rangesrc SHA after refresh is {rangesrc_after.resolved_sha!r}; "
+            f"expected {rangesrc_sha_v2!r} (the 1.1.0 tag commit SHA)"
+        )
+
+        # Exact-pin source was the preserved (non-target) source -- its SHA must be unchanged.
+        assert exactsrc_after.resolved_sha == exactsrc_sha_v1, (
+            f"ERROR: exactsrc (non-target, preserved) SHA changed unexpectedly: "
+            f"before={exactsrc_sha_v1!r}, after={exactsrc_after.resolved_sha!r}"
+        )
+
+    def test_exact_pin_source_stays_on_refresh(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Exact-pin (==1.0.0) resolved SHA is unchanged after --refresh-lock-source.
+
+        Documents Section 13 D3: an exact pin is a pin.  The resolver maps
+        ``==1.0.0`` deterministically to the 1.0.0 tag commit SHA regardless of
+        whether higher tags have been published.
+
+        Builds two fixture repos: ``exactsrc`` (exact pin ``==1.0.0``) and
+        ``other`` (range ``>=1.0.0``).  Publishes tag 1.1.0 on both.  Runs
+        --refresh-lock-source exactsrc (the exact-pin source) and asserts its
+        SHA is unchanged.
+        """
+        fixture_dir = tmp_path / "fixture"
+        fixture_dir.mkdir()
+        exactsrc_repo, exactsrc_sha_v1 = _build_fixture_repo(fixture_dir, "exactsrc")
+        other_repo, _ = _build_fixture_repo(fixture_dir, "other")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        kanon_path = _write_two_source_kanon(
+            project_dir,
+            str(exactsrc_repo),
+            str(other_repo),
+            alpha_revision="==1.0.0",
+            beta_revision=">=1.0.0",
+        )
+
+        # Baseline install.
+        _run_install_with_real_sources(kanon_path)
+
+        lock_path = project_dir / ".kanon.lock"
+        assert lock_path.exists(), "baseline install must write a lockfile"
+        lf_baseline = read_lockfile(lock_path)
+
+        exactsrc_baseline = next(e for e in lf_baseline.sources if e.name == "alpha")
+        assert exactsrc_baseline.resolved_sha == exactsrc_sha_v1, (
+            f"Baseline exactsrc SHA mismatch: expected {exactsrc_sha_v1!r}, got {exactsrc_baseline.resolved_sha!r}"
+        )
+
+        # Publish 1.1.0 on both repos.
+        _add_tag(exactsrc_repo, "1.1.0")
+        _add_tag(other_repo, "1.1.0")
+
+        # Run --refresh-lock-source alpha (the exact-pin source).
+        # The .kanon still has ==1.0.0 for alpha.
+        _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
+
+        lf_after = read_lockfile(lock_path)
+        exactsrc_after = next(e for e in lf_after.sources if e.name == "alpha")
+
+        # Exact-pin source must stay at the original SHA.
+        assert exactsrc_after.resolved_sha == exactsrc_sha_v1, (
+            f"ERROR: exact-pin source 'alpha' (==1.0.0) changed SHA after "
+            f"--refresh-lock-source -- a pin must stay pinned. "
+            f"SHA before: {exactsrc_sha_v1!r}, SHA after: {exactsrc_after.resolved_sha!r}"
+        )

@@ -402,3 +402,80 @@ class TestT001PeeledRefs:
             f"duplicate peeled ref). Got {len(warn_lines)} WARNs:\n{result.stdout}"
         )
         assert "v1.0.0" in warn_lines[0], f"Expected 'v1.0.0' in the single T001 WARN finding.\nstdout: {result.stdout}"
+
+
+# ---------------------------------------------------------------------------
+# TestT001MalformedTagFixture (AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004)
+# Spec Goal G2: fixture with {v1.0.0, 1.0, BADTAG, v1.0.0^{}} proves T001 fires
+# on genuinely-malformed tags and ignores peeled refs.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestT001MalformedTagFixture:
+    """T001 fires on genuinely-malformed tags and ignores peeled ^{} refs (spec Goal G2).
+
+    Fixture tag set: v1.0.0 (annotated, non-canonical -- T001 fires),
+                     1.0 (annotated, canonical PEP 440 -- no T001),
+                     BADTAG (lightweight, non-PEP-440 -- T001 fires).
+    The annotated tags produce peeled v1.0.0^{} and 1.0^{} lines in
+    git ls-remote output; those peeled refs must be ignored by T001.
+
+    AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004, E52-F2, spec Goal G2.
+    """
+
+    def test_t001_fires_on_both_malformed_tags(self, tmp_path: pathlib.Path) -> None:
+        """T001 fires for v1.0.0 and BADTAG from the spec Goal G2 fixture.
+
+        Tag set mirrors spec Goal G2: {v1.0.0, 1.0, BADTAG, v1.0.0^{}}.
+        The peeled ref v1.0.0^{} is produced automatically by git for the
+        annotated v1.0.0 tag.
+
+        Expected: exactly two T001 WARN findings: one for 'v1.0.0' and one for
+        'BADTAG'. The PEP 440 tag '1.0' and the peeled refs produce no findings.
+
+        AC-FUNC-001, AC-FUNC-002.
+        """
+        repo = _create_fixture_git_repo_with_annotated_tags(
+            tmp_path,
+            annotated_tags=["v1.0.0", "1.0"],
+            lightweight_tags=["BADTAG"],
+        )
+        result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
+        assert result.returncode == 0, (
+            f"Expected exit 0 (warnings only), got {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        warn_lines = [line for line in result.stdout.splitlines() if line.startswith("WARN:")]
+        assert len(warn_lines) == 2, (
+            f"AC-FUNC-001/G2: expected exactly 2 WARN findings (v1.0.0, BADTAG); "
+            f"peeled refs and PEP 440 tags must produce no findings. "
+            f"Got {len(warn_lines)} WARNs:\n{result.stdout}"
+        )
+        messages = " ".join(warn_lines)
+        assert "v1.0.0" in messages, (
+            f"AC-FUNC-002: expected T001 finding for 'v1.0.0' in WARN lines.\nstdout: {result.stdout}"
+        )
+        assert "BADTAG" in messages, (
+            f"AC-FUNC-002: expected T001 finding for 'BADTAG' in WARN lines.\nstdout: {result.stdout}"
+        )
+
+    def test_t001_ignores_peeled_refs_in_goal_g2_fixture(self, tmp_path: pathlib.Path) -> None:
+        """No T001 finding message contains '^{}' from the spec Goal G2 fixture.
+
+        The annotated tag v1.0.0 produces a 'v1.0.0^{}' peeled line in
+        git ls-remote output. That line must be filtered before T001 inspection
+        so no finding message contains '^{}'.
+
+        AC-FUNC-002: peeled-refs-ignored assertion.
+        """
+        repo = _create_fixture_git_repo_with_annotated_tags(
+            tmp_path,
+            annotated_tags=["v1.0.0", "1.0"],
+            lightweight_tags=["BADTAG"],
+        )
+        result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
+        assert "^{}" not in result.stdout, (
+            f"AC-FUNC-002: peeled ref '^{{}}' must not appear in any T001 finding "
+            f"(peeled refs must be filtered before T001 inspection).\nstdout: {result.stdout}"
+        )

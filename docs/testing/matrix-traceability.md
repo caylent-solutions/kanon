@@ -1,7 +1,7 @@
 # Matrix-to-Test Traceability
 
 This document maps every scenario row (1-85) from
-`test-fixtures/findings-rerun-2026-05-29.md` to the automated test(s) that
+`test-fixtures/findings-rerun-2026-05-30.md` to the automated test(s) that
 cover it. Each row carries an explicit "covered by" citation naming the
 automated test node (file + class/function) that exercises the scenario.
 
@@ -10,20 +10,20 @@ The mechanical completeness guard for this document lives in
 E50-F2-S1-T2). That guard enforces that every row in the findings matrix has a
 citation in this table and that every cited test node is collectable via pytest.
 
-**Result key (2026-05-29 run):** PASS / FAIL.
-**Coverage note:** 2026-05-29 FAIL rows that represent product gaps closed by
-E49 operator-path tests are cited against those tests. Rows that remained FAIL
-in the 2026-05-29 run due to acknowledged product gaps (DEFECT-013, outstanding
-TRIAGE items) are cited against the E49 tests that exercise the same feature
+**Result key (2026-05-30 run):** PASS / FAIL.
+**Coverage note:** 2026-05-30 FAIL rows that represent product gaps closed by
+E49/E51 operator-path tests are cited against those tests. Rows that remained
+FAIL in the 2026-05-30 run due to acknowledged product gaps (outstanding TRIAGE
+items) are cited against the E49/E51/E52 tests that exercise the same feature
 surface at the integration level and confirm the gap.
 
 ---
 
 ## Scenario Traceability Table
 
-| # | Scenario | Type | 2026-05-29 Result | Covered By |
+| # | Scenario | Type | 2026-05-30 Result | Covered By |
 |---|----------|------|--------------------|------------|
-| 1 | per-entry / builders-plugins | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
+| 1 | per-entry / builders-plugins | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true`, `tests/scenarios/test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout::test_marketplace_registered_for_direct_checkout_entry` |
 | 2 | per-entry / history | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
 | 3 | per-entry / immutable-audit-trail | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
 | 4 | per-entry / security-code-review | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
@@ -56,7 +56,7 @@ surface at the integration level and confirm the gap.
 | 31 | catalog-audit / check-metadata | coverage | PASS | `tests/integration/test_catalog_audit_metadata.py::TestCatalogAuditMetadataSubprocess::test_exit_code_1_on_broken_fixture`, `tests/integration/test_catalog_audit_metadata.py::TestCatalogAuditMetadataSubprocess::test_missing_required_field_error_in_output` |
 | 32 | catalog-audit / check-remote-url | coverage | FAIL | `tests/integration/test_catalog_audit_remote_url.py::TestCatalogAuditPlaceholderFetchUrl::test_no_r002_for_unset_gitbase_placeholder`, `tests/integration/test_catalog_audit_remote_url.py::TestCatalogAuditRemoteUrlSubprocess::test_exit_code_1_on_broken_fixture_without_env` |
 | 33 | catalog-audit / check-source-name-derivation | coverage | PASS | `tests/integration/test_catalog_audit_source_name.py::TestCatalogAuditSourceNameSubprocess::test_exit_code_0_on_warnings_only_fixture`, `tests/integration/test_catalog_audit_source_name.py::TestCatalogAuditSourceNameSubprocess::test_at_least_one_warn_prefix_in_output` |
-| 34 | catalog-audit / check-tag-format | coverage | FAIL | `tests/integration/test_catalog_audit_tag_format.py::TestT001PeeledRefs::test_t001_ignores_peeled_refs_and_fires_on_malformed`, `tests/integration/test_catalog_audit_tag_format.py::TestT001PeeledRefs::test_t001_only_peeled_refs_no_malformed_yields_zero_findings` |
+| 34 | catalog-audit / check-tag-format | coverage | FAIL | `tests/integration/test_catalog_audit_tag_format.py::TestT001PeeledRefs::test_t001_ignores_peeled_refs_and_fires_on_malformed`, `tests/integration/test_catalog_audit_tag_format.py::TestT001PeeledRefs::test_t001_only_peeled_refs_no_malformed_yields_zero_findings`, `tests/integration/test_catalog_audit_tag_format.py::TestT001MalformedTagFixture::test_t001_fires_on_both_malformed_tags`, `tests/integration/test_catalog_audit_tag_format.py::TestT001MalformedTagFixture::test_t001_ignores_peeled_refs_in_goal_g2_fixture` |
 | 35 | catalog-audit / format-json | coverage | FAIL | `tests/integration/test_catalog_audit_framework.py::TestCatalogAuditSubprocessEmpty::test_exit_0_json_format_empty_findings`, `tests/integration/test_catalog_audit_framework.py::TestCatalogAuditSubprocessEmpty::test_json_output_is_parseable` |
 | 36 | catalog-audit / strict-warn-promotion | coverage | PASS | `tests/integration/test_catalog_audit_strict.py::TestCatalogAuditStrictSubprocess::test_exit_code_0_without_strict_warnings_only`, `tests/integration/test_catalog_audit_strict.py::TestCatalogAuditStrictSubprocess::test_exit_code_1_with_strict_warnings_only` |
 | 37 | add / single | coverage | PASS | `tests/integration/test_add_core.py::TestAddCoreCreateWithHeader::test_exit_0_on_happy_path`, `tests/integration/test_add_core.py::TestAddCoreCreateWithHeader::test_file_contains_triple_lines` |
@@ -90,8 +90,8 @@ surface at the integration level and confirm the gap.
 | 65 | outdated / fail-on-upgrade-fail | coverage | FAIL | `tests/integration/test_outdated_fail_on_upgrade.py::TestOutdatedFailOnUpgradeFlag::test_with_flag_exits_one_when_upgrade_available`, `tests/integration/test_outdated_fail_on_upgrade.py::TestFailOnUpgradeFail::test_exit_one_when_upgrade_available` |
 | 66 | outdated / custom-paths | coverage | PASS | `tests/integration/test_outdated.py::TestOutdatedCoreTableOutput::test_missing_kanon_file_exits_nonzero`, `tests/integration/test_outdated_format_json.py::TestOutdatedFormatJson::test_env_var_kanon_outdated_format_json` |
 | 67 | why / by-name | coverage | PASS | `tests/integration/test_why_chain_walker.py::TestWhyChainWalkerIntegration::test_single_chain_via_subprocess`, `tests/integration/test_why_live_resolve.py::TestWhyLiveResolve::test_why_succeeds_with_no_lockfile_when_catalog_source_provided` |
-| 68 | why / by-url | coverage | FAIL | `tests/integration/test_why_live_resolve.py::TestByUrlLiveResolve::test_resolve_by_url_in_live_mode`, `tests/integration/test_why_live_resolve.py::TestWhyLiveResolveByUrl::test_why_by_url_resolves_without_lockfile` |
-| 69 | why / by-path | coverage | FAIL | `tests/integration/test_why_live_resolve.py::TestByPathLiveResolve::test_resolve_by_xml_path_in_live_mode`, `tests/integration/test_why_live_resolve.py::TestWhyLiveResolveByXmlPath::test_why_by_xml_path_resolves_without_lockfile` |
+| 68 | why / by-url | coverage | FAIL | `tests/integration/test_why_live_resolve.py::TestByUrlLiveResolve::test_resolve_by_url_in_live_mode`, `tests/integration/test_why_live_resolve.py::TestWhyLiveResolveByUrl::test_why_by_url_resolves_without_lockfile`, `tests/scenarios/test_why_url_path.py::TestWhyUrlPathOperatorPath::test_why_url_exits_zero_no_lockfile` |
+| 69 | why / by-path | coverage | FAIL | `tests/integration/test_why_live_resolve.py::TestByPathLiveResolve::test_resolve_by_xml_path_in_live_mode`, `tests/integration/test_why_live_resolve.py::TestWhyLiveResolveByXmlPath::test_why_by_xml_path_resolves_without_lockfile`, `tests/scenarios/test_why_url_path.py::TestWhyUrlPathOperatorPath::test_why_xml_path_exits_zero_no_lockfile` |
 | 70 | why / format-json | coverage | PASS | `tests/integration/test_why_format_json.py::TestWhyFormatJsonIntegration::test_json_output_is_well_formed`, `tests/integration/test_why_format_json.py::TestWhyFormatJsonIntegration::test_exit_code_zero_on_success` |
 | 71 | why / lockfile-absent | coverage | PASS | `tests/integration/test_why_live_resolve.py::TestWhyLiveResolve::test_why_succeeds_with_no_lockfile_when_catalog_source_provided` |
 | 72 | why / lockfile-present | coverage | PASS | `tests/integration/test_why_live_resolve.py::TestWhyLockfilePresent::test_why_finds_top_level_source_after_install` |
@@ -102,7 +102,7 @@ surface at the integration level and confirm the gap.
 | 77 | doctor / combined | coverage | FAIL | `tests/integration/test_doctor_cache_flags.py::TestDoctorCombinedFlags::test_combined_flags_run_all_cache_actions`, `tests/integration/test_doctor_cache_flags.py::TestDoctorCombinedFlags::test_combined_flags_workspace_workspace_requiring_flag_still_checks` |
 | 78 | scenarios / install-then-clean-roundtrip | journey | PASS | `tests/integration/test_marketplace_lifecycle.py::TestInstallUninstallOrchestration::test_install_orchestration_calls_register_and_install`, `tests/integration/test_marketplace_lifecycle.py::TestInstallUninstallOrchestration::test_uninstall_orchestration_calls_uninstall_and_remove` |
 | 79 | scenarios / add-multi-then-remove-one | journey | PASS | `tests/integration/test_add_core.py::TestAddCoreMultipleEntries::test_two_entries_in_argument_order`, `tests/integration/test_remove_core.py::TestRemoveCoreHappyPath::test_source_name_input_removes_block` |
-| 80 | scenarios / upgrade-via-refresh-lock-source | journey | FAIL | `tests/scenarios/test_rls_exact_vs_range.py::TestRlsExactVsRange::test_range_spec_advances_on_refresh`, `tests/scenarios/test_rls_exact_vs_range.py::TestRlsExactVsRange::test_exact_tag_pin_stays_on_refresh` |
+| 80 | scenarios / upgrade-via-refresh-lock-source | journey | FAIL | `tests/scenarios/test_rls_exact_vs_range.py::TestRlsExactVsRange::test_range_spec_advances_on_refresh`, `tests/scenarios/test_rls_exact_vs_range.py::TestRlsExactVsRange::test_exact_tag_pin_stays_on_refresh`, `tests/scenarios/test_lockfile_lifecycle.py::TestRefreshRegression::test_refresh_lock_source_advances_over_existing_checkout` |
 | 81 | scenarios / install-detect-orphan | journey | PASS | `tests/integration/test_install_strict.py::TestStrictLockDefaultAutoPrune::test_default_install_prunes_orphan_with_info_line`, `tests/integration/test_install_strict.py::TestStrictLockOrphanErrorMessage::test_error_names_each_orphan_source_and_remediation` |
 | 82 | scenarios / install-detect-drift | journey | PASS | `tests/integration/test_synthetic_drift_fixture.py::test_drift_manifest_xml_includes_remote_and_default_so_repo_init_accepts_it`, `tests/integration/test_doctor_consistency.py::TestDoctorBranchDrift::test_drift_without_strict_exits_zero` |
 | 83 | scenarios / lockfile-replay-pinned-sha | journey | PASS | `tests/integration/test_install_lockfile_replay.py::TestLockfileReplay::test_second_install_uses_pinned_sha_not_newer_tag`, `tests/integration/test_install_lockfile_replay.py::TestLockfileReplay::test_second_install_lockfile_unchanged` |
@@ -111,13 +111,15 @@ surface at the integration level and confirm the gap.
 
 ---
 
-## Notes on 2026-05-29 FAIL Rows
+## Notes on 2026-05-30 FAIL Rows
 
-**Rows 1-6 (per-entry / lifecycle):** `KANON_MARKETPLACE_INSTALL` defaults
-to `false`; the add command writes `marketplace_install = false` so marketplace
-registration is skipped in step 5. The E49 tests in
-`tests/integration/test_add_marketplace_flag.py` directly exercise and document
-this default and the `--marketplace-install` override flag that corrects it.
+**Row 1 (per-entry / builders-plugins):** `--marketplace-install` writes true,
+but builders-plugins uses a direct `path=` checkout with no `<linkfile>`, so
+`_process_manifest_linkfiles` registers nothing. DEFECT-004 fix only covered
+linkfile-pattern entries. E49 tests in
+`tests/integration/test_add_marketplace_flag.py` document the flag behaviour.
+E51-F3 test `test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout`
+covers the direct-checkout registration gap (spec BUG-3).
 
 **Row 10 (list / tree):** kanon emits ASCII `--` tree connectors; the runbook
 expected Unicode box-drawing characters. Product behaviour is correct. The E49
@@ -141,7 +143,10 @@ covers the placeholder-allowlisting fix.
 **Row 34 (catalog-audit / check-tag-format):** peeled-ref tags (`^{}` suffix)
 were being counted twice; no malformed non-PEP-440 tags remain in the live
 catalog. E49 tests in `test_catalog_audit_tag_format.py::TestT001PeeledRefs`
-confirm correct peeled-ref deduplication.
+confirm correct peeled-ref deduplication. E52-F2 tests in
+`test_catalog_audit_tag_format.py::TestT001MalformedTagFixture` verify T001
+fires on genuinely-malformed tags (spec Goal G2 fixture: v1.0.0, 1.0, BADTAG,
+v1.0.0^{}) and ignores peeled refs.
 
 **Row 35 (catalog-audit / format-json):** exit-1 due to real R002 errors on
 `${GITBASE}` URLs; README states "Exit 0". Not a product regression -- prior
@@ -157,7 +162,9 @@ JSON-output tests.
 XML-path-based matching were unimplemented in the original product. E49 tests in
 `test_why_live_resolve.py` (`TestByUrlLiveResolve`, `TestByPathLiveResolve`,
 `TestWhyLiveResolveByUrl`, `TestWhyLiveResolveByXmlPath`) exercise and cover
-the implemented fix.
+the implemented fix. E51-F2 operator-path tests in
+`tests/scenarios/test_why_url_path.py::TestWhyUrlPathOperatorPath` verify the
+fix holds at the subprocess level (spec BUG-2).
 
 **Rows 75-77 (doctor / cache flags):** DEFECT-013 -- `--refresh-completion-cache`
 and `--prune-cache` required a `.kanon` workspace even though `--help` describes
@@ -170,4 +177,6 @@ them as workspace-independent. E49 tests in
 deterministic; `--refresh-lock-source` re-resolves the same exact tag. E49
 tests in `test_rls_exact_vs_range.py` explicitly document and assert this
 behaviour (`test_exact_tag_pin_stays_on_refresh` and
-`test_range_spec_advances_on_refresh`).
+`test_range_spec_advances_on_refresh`). E52-F1 tests in
+`tests/scenarios/test_lockfile_lifecycle.py::TestRefreshRegression` verify the
+refresh-lock-source lifecycle end-to-end against a local fixture repo.

@@ -1,8 +1,8 @@
-"""Guard test: matrix-traceability completeness for findings-rerun-2026-05-29.
+"""Guard test: matrix-traceability completeness for findings-rerun-2026-05-30.
 
 Mechanically asserts that ``docs/testing/matrix-traceability.md`` cites a
 named, collectable test for every scenario row in
-``test-fixtures/findings-rerun-2026-05-29.md``. A future FAIL row cannot
+``test-fixtures/findings-rerun-2026-05-30.md``. A future FAIL row cannot
 exist without a mapped test -- this is the guardrail that would have caught
 the Section 1.3 gaps (spec Section 4 EPIC E50 / E50-F2).
 
@@ -14,6 +14,11 @@ The guard:
 3. Asserts every matrix row has at least one citation (or a documented
    manual-only annotation).
 4. Asserts every cited test node is collectable via pytest collection.
+
+Note: the 2026-05-30 matrix uses grouped rows (e.g. ``| 20-26 |``) for
+bulk-PASS ranges; the row parser only matches individually-numbered rows.
+The parsed row count for 2026-05-30 is 55 (rows 20-26 and 37-59 are
+grouped and excluded from the numeric scan).
 
 Paths are resolved at runtime from the repository root -- no hard-coded
 absolute paths.
@@ -59,7 +64,7 @@ def _project_root() -> Path:
 def _resolve_matrix_path(project_root: Path) -> Path:
     """Resolve the findings-rerun matrix path from the project root.
 
-    The matrix lives at ``test-fixtures/findings-rerun-2026-05-29.md``
+    The matrix lives at ``test-fixtures/findings-rerun-2026-05-30.md``
     relative to the workspace root (parent of the kanon repo). The workspace
     root is determined by probing the following candidates in order:
 
@@ -79,7 +84,7 @@ def _resolve_matrix_path(project_root: Path) -> Path:
     """
     import os
 
-    matrix_filename = "findings-rerun-2026-05-29.md"
+    matrix_filename = "findings-rerun-2026-05-30.md"
     candidates: list[Path] = []
 
     workspace_env = os.environ.get("DEVBENCH_WORKSPACE_ROOT")
@@ -104,7 +109,7 @@ def _resolve_matrix_path(project_root: Path) -> Path:
         + ", ".join(str(c.resolve()) for c in candidates)
         + ". "
         "Ensure the matrix file exists at "
-        "<workspace-root>/test-fixtures/findings-rerun-2026-05-29.md. "
+        "<workspace-root>/test-fixtures/findings-rerun-2026-05-30.md. "
         "Set DEVBENCH_WORKSPACE_ROOT or place the kanon repo one level below "
         "the workspace root."
     )
@@ -156,9 +161,11 @@ _DOC_ROW_PATTERN = re.compile(
 # Sentinel token used when a row is acknowledged as manual-only (no automated test).
 _MANUAL_ONLY_ANNOTATION = "manual-only"
 
-# Spec-anchored row count for the 2026-05-29 findings-rerun matrix (spec Section 4 EPIC E50).
-# This is the number of scenarios covered in findings-rerun-2026-05-29.md.
-_EXPECTED_MATRIX_ROW_COUNT = 85
+# Spec-anchored row count for the 2026-05-30 findings-rerun matrix (spec Section 4 EPIC E52).
+# The 2026-05-30 matrix uses grouped rows (| 20-26 |, | 37-45 |, | 46-52 |, | 53-59 |) for
+# bulk-PASS ranges; those lines do not match the single-number pattern. Only individually-
+# numbered rows are counted: 55 parsed rows from the 85-scenario matrix.
+_EXPECTED_MATRIX_ROW_COUNT = 55
 
 # Pattern to extract test node IDs from backtick-quoted citations, e.g.
 # `tests/integration/test_foo.py::TestBar::test_baz`
@@ -169,13 +176,15 @@ def _parse_matrix_rows(matrix_text: str) -> list[tuple[int, str]]:
     """Extract (row_number, scenario_name) pairs from the findings-rerun matrix.
 
     Parses every table row that starts with a leading pipe and a row number.
-    Header and separator rows are excluded.
+    Header and separator rows are excluded. Grouped rows (e.g. ``| 20-26 |``)
+    do not match the single-number pattern and are excluded from the result.
 
     Args:
-        matrix_text: Full text of findings-rerun-2026-05-29.md.
+        matrix_text: Full text of findings-rerun-2026-05-30.md.
 
     Returns:
-        Sorted list of (row_number, scenario_name) tuples for all 85 scenario rows.
+        Sorted list of (row_number, scenario_name) tuples for individually-
+        numbered scenario rows (55 rows for the 2026-05-30 matrix).
 
     Raises:
         ValueError: When no scenario rows are found (indicates a parse failure
@@ -390,21 +399,24 @@ def test_matrix_row_count_matches_expected(
 ) -> None:
     """The findings-rerun matrix must contain exactly the expected scenario-row count.
 
-    The 2026-05-29 re-run covers 85 scenarios (spec Section 4 EPIC E50).
+    The 2026-05-30 re-run covers 85 scenarios total (spec Section 4 EPIC E52),
+    but 30 of those are expressed as grouped range rows (| 20-26 |, | 37-45 |,
+    | 46-52 |, | 53-59 |) which the single-number parser does not match. The
+    expected individually-numbered row count is 55.
     Catches accidental truncation of the matrix or a format change that
     causes the parser to miss rows.
 
-    Spec reference: E50-F2-S1-T2 AC-FUNC-002.
+    Spec reference: E50-F2-S1-T2 AC-FUNC-002, E52-F2-S1-T1 AC-DOC-003.
     """
-    # Spec-anchored count for the 2026-05-29 findings-rerun matrix.
+    # Spec-anchored count for the 2026-05-30 findings-rerun matrix (individually-numbered rows).
     expected_count = _EXPECTED_MATRIX_ROW_COUNT
     actual_count = len(matrix_rows)
     assert actual_count == expected_count, (
-        f"ERROR: Expected {expected_count} scenario rows in the findings-rerun "
-        f"matrix but parsed {actual_count}. "
+        f"ERROR: Expected {expected_count} individually-numbered scenario rows in "
+        f"the findings-rerun matrix but parsed {actual_count}. "
         "Either the matrix file has been truncated, rows have been added/removed, "
         "or the row-pattern parser failed to match all rows. "
-        "Inspect findings-rerun-2026-05-29.md and confirm the row count."
+        "Inspect findings-rerun-2026-05-30.md and confirm the row count."
     )
 
 

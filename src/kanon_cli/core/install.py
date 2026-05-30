@@ -61,6 +61,7 @@ from typing import NamedTuple, cast
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 import kanon_cli.repo as _repo
+from kanon_cli.repo.git_command import GitCommandError
 from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
@@ -616,6 +617,88 @@ class UnresolvedPlaceholderError(InstallError):
             "  Remediation: replace all placeholder tokens with real values before "
             "running kanon install. See docs/configuration.md for details."
         )
+
+
+class RefreshRepoInitError(InstallError):
+    """Raised when repo re-init fails on the --refresh-lock[-source] path.
+
+    On the refresh path, kanon re-runs ``repo init`` with the new manifest revision
+    to advance the source manifest checkout to the moved branch tip. If this
+    re-init fails for any reason (e.g., a residual git state issue after restoring
+    the manifests working tree), the raw exception is caught here and re-raised
+    with the offending source name and a remediation hint so the operator receives
+    a structured diagnostic instead of a raw traceback.
+
+    Args:
+        source_name: The KANON_SOURCE_<name> key of the source that failed.
+        cause: The underlying exception that caused the failure.
+    """
+
+    def __init__(self, source_name: str, cause: BaseException) -> None:
+        self.source_name = source_name
+        self.cause = cause
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: refresh failed for source '{self.source_name}': "
+            f"{self.cause}\n"
+            "  Remediation: remove the source's .kanon-data directory entry and "
+            "re-run 'kanon install --refresh-lock'."
+        )
+
+
+def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
+    """Reset the .repo/manifests working tree to a clean state before re-init.
+
+    kanon's ``repo envsubst`` step rewrites manifest XML files in-place (via
+    ``minidom.toprettyxml``) and creates ``.bak`` sibling files, leaving the
+    ``.repo/manifests`` git working tree dirty. When ``repo init`` is re-run
+    with a new revision on the same branch, git refuses to checkout the new
+    commit if the new commit changes ``manifest.xml`` and the working tree copy
+    is already modified ("Your local changes to the following files would be
+    overwritten by checkout"). The refused checkout leaves HEAD pointing to the
+    deleted ``default`` branch ref, causing the subsequent
+    ``git rev-list ^HEAD <sha>`` to raise an unhandled ``GitCommandError``
+    ("fatal: bad revision '^HEAD'").
+
+    This function restores all tracked files to their HEAD state and removes
+    untracked ``.bak`` files from ``.repo/manifests``, so the subsequent
+    ``repo init`` can checkout the new revision cleanly.
+
+    The function is a no-op when ``.repo/manifests`` does not exist (first
+    install has not yet run).
+
+    Args:
+        source_dir: Path to ``.kanon-data/sources/<name>/``. The manifests
+            working tree is at ``source_dir / ".repo" / "manifests"``.
+
+    Raises:
+        OSError: If the ``git checkout -- .`` or ``.bak`` cleanup fails due
+            to a file-system error. The exception message names the path and
+            the underlying OS error.
+    """
+    manifests_dir = source_dir / ".repo" / "manifests"
+    if not manifests_dir.is_dir():
+        return
+
+    # Restore all tracked files to HEAD state.  ``git checkout -- .`` discards
+    # local modifications to tracked files; it does NOT affect untracked files.
+    result = subprocess.run(
+        ["git", "checkout", "--", "."],
+        cwd=str(manifests_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OSError(
+            f"_reset_manifests_working_tree: git checkout -- . failed in {manifests_dir!r}: {result.stderr!r}"
+        )
+
+    # Remove .bak files created by envsubst (untracked; git checkout leaves them).
+    for bak_file in manifests_dir.rglob("*.bak"):
+        bak_file.unlink()
 
 
 def _detect_canonical_url_conflicts(
@@ -2101,13 +2184,43 @@ def _run_install(
             )
 
         print(f"  repo init ({source_data['path']})...")
-        run_repo_init(
-            source_dir,
-            source_data["url"],
-            resolved_revision,
-            source_data["path"],
-            repo_rev,
-        )
+        # On the refresh path, reset the .repo/manifests working tree before
+        # re-init. kanon's own repo envsubst step (from the previous install)
+        # dirtied the working tree by rewriting manifest XML files and leaving
+        # .bak sibling files. If the new manifest commit also changes manifest.xml,
+        # git refuses the checkout ("local changes would be overwritten"), leaves
+        # HEAD pointing to the deleted 'default' branch ref, and the subsequent
+        # rev-list ^HEAD <sha> raises an unhandled GitCommandError. Resetting the
+        # working tree to HEAD state before re-init lets git checkout the new
+        # manifest commit cleanly. (AC-FUNC-001)
+        if install_state in (InstallState.REFRESH_LOCK, InstallState.REFRESH_LOCK_SOURCE):
+            # On the refresh path, reset the .repo/manifests working tree before
+            # re-init, then wrap repo init so that any git-level failure
+            # (including the GitCommandError from rev-list ^HEAD on a deleted branch ref)
+            # is caught and re-raised as a handled kanon ERROR: with the offending source
+            # name and a remediation hint, never as a raw traceback. (AC-FUNC-001, AC-FUNC-002)
+            try:
+                _reset_manifests_working_tree(source_dir)
+            except OSError as exc:
+                raise RefreshRepoInitError(source_name=name, cause=exc) from exc
+            try:
+                run_repo_init(
+                    source_dir,
+                    source_data["url"],
+                    resolved_revision,
+                    source_data["path"],
+                    repo_rev,
+                )
+            except GitCommandError as exc:
+                raise RefreshRepoInitError(source_name=name, cause=exc) from exc
+        else:
+            run_repo_init(
+                source_dir,
+                source_data["url"],
+                resolved_revision,
+                source_data["path"],
+                repo_rev,
+            )
         print("  repo envsubst...")
         run_repo_envsubst(source_dir, env_vars)
         print("  repo sync...")

@@ -2,6 +2,7 @@
 
 import argparse
 import pathlib
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,10 +11,12 @@ from kanon_cli.commands.install import _run
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     _RefResolution,
+    _reset_manifests_working_tree,
     aggregate_symlinks,
     create_source_dirs,
     install,
     prepare_marketplace_dir,
+    RefreshRepoInitError,
     run_repo_envsubst,
     run_repo_init,
     run_repo_sync,
@@ -454,3 +457,146 @@ class TestInstallSubparserHelp:
         register(subparsers)
         install_parser = subparsers.choices["install"]
         assert install_parser.add_help is True, "install subparser must have add_help=True so '-h' is accepted"
+
+
+@pytest.mark.unit
+class TestResetManifestsWorkingTree:
+    """Unit tests for _reset_manifests_working_tree (BUG-1 fix helper).
+
+    Covers the helper that restores the .repo/manifests working tree to a
+    clean state before repo re-init on the --refresh-lock[-source] path.
+    AC-TEST-003.
+    """
+
+    def _init_git_repo(self, path: pathlib.Path) -> None:
+        """Initialise a bare-minimum git repo at path with a tracked file."""
+        path.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=path, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True, capture_output=True)
+        (path / "manifest.xml").write_text("<manifest/>\n")
+        subprocess.run(["git", "add", "manifest.xml"], cwd=path, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
+
+    def test_noop_when_manifests_dir_absent(self, tmp_path: pathlib.Path) -> None:
+        """_reset_manifests_working_tree is a no-op when .repo/manifests does not exist.
+
+        This covers the first-install path where no prior envsubst has run.
+        """
+        source_dir = tmp_path / ".kanon-data" / "sources" / "SRC"
+        source_dir.mkdir(parents=True)
+        # Should not raise even though .repo/manifests is absent.
+        _reset_manifests_working_tree(source_dir)
+
+    def test_restores_modified_tracked_file(self, tmp_path: pathlib.Path) -> None:
+        """Modified tracked files are restored to their HEAD state.
+
+        Simulates the envsubst step that rewrites manifest.xml: after reset,
+        manifest.xml is back to its committed content.
+        """
+        manifests_dir = tmp_path / ".repo" / "manifests"
+        self._init_git_repo(manifests_dir)
+
+        # Simulate envsubst rewriting manifest.xml.
+        (manifests_dir / "manifest.xml").write_text("<manifest><!-- envsubst was here --></manifest>\n")
+        status_before = subprocess.run(
+            ["git", "status", "--short"], cwd=manifests_dir, capture_output=True, text=True
+        ).stdout.strip()
+        assert "manifest.xml" in status_before, "manifest.xml should be dirty before reset"
+
+        source_dir = tmp_path
+        _reset_manifests_working_tree(source_dir)
+
+        # manifest.xml should be restored to its committed content.
+        restored = (manifests_dir / "manifest.xml").read_text()
+        assert restored == "<manifest/>\n", (
+            f"Expected manifest.xml to be restored to '<manifest/>\\n', got {restored!r}"
+        )
+        status_after = subprocess.run(
+            ["git", "status", "--short"], cwd=manifests_dir, capture_output=True, text=True
+        ).stdout.strip()
+        assert "manifest.xml" not in status_after, (
+            f"manifest.xml should be clean after reset, got git status: {status_after!r}"
+        )
+
+    def test_removes_bak_files(self, tmp_path: pathlib.Path) -> None:
+        """Untracked .bak files created by envsubst are removed.
+
+        envsubst creates <manifest>.bak sibling files on the first substitution
+        run.  These files are untracked in the git working tree; git checkout --
+        leaves them untouched, so _reset_manifests_working_tree must remove them
+        explicitly.
+        """
+        manifests_dir = tmp_path / ".repo" / "manifests"
+        self._init_git_repo(manifests_dir)
+
+        bak = manifests_dir / "manifest.xml.bak"
+        bak.write_text("<manifest/>\n")
+        assert bak.exists(), "manifest.xml.bak should exist before reset"
+
+        source_dir = tmp_path
+        _reset_manifests_working_tree(source_dir)
+
+        assert not bak.exists(), ".bak file should be removed by _reset_manifests_working_tree"
+
+    def test_raises_oserror_when_git_checkout_fails(self, tmp_path: pathlib.Path) -> None:
+        """OSError is raised when git checkout -- . fails.
+
+        Uses a non-git directory to simulate the failure so the assertion is
+        deterministic without requiring a mock.
+        """
+        # Create a .repo/manifests dir that is NOT a git repo so git checkout fails.
+        manifests_dir = tmp_path / ".repo" / "manifests"
+        manifests_dir.mkdir(parents=True)
+        (manifests_dir / "manifest.xml").write_text("<manifest/>\n")
+        # No git init -- git checkout will exit non-zero.
+
+        source_dir = tmp_path
+        with pytest.raises(OSError, match="_reset_manifests_working_tree"):
+            _reset_manifests_working_tree(source_dir)
+
+
+@pytest.mark.unit
+class TestRefreshRepoInitError:
+    """Unit tests for RefreshRepoInitError (BUG-1 fix handled error class).
+
+    Covers the error's string representation: source name included, cause
+    string included, remediation line present.  AC-TEST-003.
+    """
+
+    def test_str_contains_source_name(self) -> None:
+        """The error string includes the offending source name."""
+        cause = RuntimeError("bad revision '^HEAD'")
+        err = RefreshRepoInitError(source_name="MY_SOURCE", cause=cause)
+        assert "MY_SOURCE" in str(err), f"Expected source name in error string, got: {str(err)!r}"
+
+    def test_str_contains_cause(self) -> None:
+        """The error string includes the cause's text."""
+        cause = RuntimeError("bad revision '^HEAD'")
+        err = RefreshRepoInitError(source_name="SRC", cause=cause)
+        assert "bad revision" in str(err), f"Expected cause text in error string, got: {str(err)!r}"
+
+    def test_str_starts_with_error_prefix(self) -> None:
+        """The error string starts with 'ERROR:' per the kanon error shape."""
+        cause = ValueError("something went wrong")
+        err = RefreshRepoInitError(source_name="SRC", cause=cause)
+        assert str(err).startswith("ERROR:"), f"Expected 'ERROR:' prefix in error string, got: {str(err)!r}"
+
+    def test_str_contains_remediation(self) -> None:
+        """The error string contains a remediation hint."""
+        cause = ValueError("something went wrong")
+        err = RefreshRepoInitError(source_name="SRC", cause=cause)
+        assert "Remediation" in str(err) or "remediation" in str(err).lower(), (
+            f"Expected remediation hint in error string, got: {str(err)!r}"
+        )
+
+    def test_is_install_error_subclass(self) -> None:
+        """RefreshRepoInitError is a subclass of InstallError for unified CLI handling."""
+        from kanon_cli.core.install import InstallError
+
+        cause = ValueError("x")
+        err = RefreshRepoInitError(source_name="SRC", cause=cause)
+        assert isinstance(err, InstallError), (
+            "RefreshRepoInitError must be an InstallError subclass so the CLI "
+            "catches it and prints a structured ERROR: message"
+        )

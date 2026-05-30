@@ -943,3 +943,64 @@ cloned; only the Claude Code plugin registration step is skipped.
 - [docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md) -- marketplace setup and configuration
 - [docs/configuration.md](configuration.md)
 - [docs/exit-codes.md](exit-codes.md)
+
+---
+
+## 19. Direct-Checkout Marketplace Not Registered After Install
+
+### Symptom
+
+`kanon install` exits 0 and clones source repositories, but
+`claude plugin marketplace list` shows no entry for a source that carries
+a `.claude-plugin/marketplace.json` file and has no `<linkfile>` element
+in the manifest XML (a "direct-checkout" source). This occurred prior to
+the E51-F3-S1-T1 fix (BUG-3) because the marketplace registration loop
+only discovered marketplace roots via the linkfile path; sources without a
+linkfile were silently skipped.
+
+### Affected Configuration
+
+A source is a direct-checkout source when both of the following are true:
+
+- The source's manifest XML contains no `<linkfile>` element pointing at
+  a marketplace directory (or the source has no manifest XML at all).
+- The cloned source directory contains `.claude-plugin/marketplace.json`
+  at its root.
+
+### Expected Behaviour After Fix (E51-F3-S1-T1)
+
+With the BUG-3 fix, `kanon install` checks each cloned source directory
+for `.claude-plugin/marketplace.json` regardless of whether a linkfile is
+present. When the file is found, the source directory root is passed to:
+
+```text
+claude plugin marketplace add <absolute-path-to-source-root>
+```
+
+After install completes, `claude plugin marketplace list` shows one
+registered entry for every source that ships `.claude-plugin/marketplace.json`,
+including direct-checkout sources.
+
+### Preconditions
+
+- `KANON_MARKETPLACE_INSTALL=true` (or the `--marketplace-install` flag).
+- The `claude` binary is available on `$PATH`.
+
+### Remediation (if still missing after upgrade)
+
+If upgrading kanon does not resolve the missing registration, re-run
+install to trigger registration:
+
+```bash
+KANON_MARKETPLACE_INSTALL=true kanon install \
+  --catalog-source https://example.com/org/manifest-repo.git@main
+```
+
+This re-runs the full registration loop including the direct-checkout
+discovery path.
+
+### See also
+
+- [docs/cli.md](cli.md) -- `kanon install -- direct-checkout marketplace registration (BUG-3)` section
+- [docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md) -- marketplace setup and configuration
+- [docs/configuration.md](configuration.md)

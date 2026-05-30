@@ -129,12 +129,35 @@
 
 * `kanon why` now resolves top-level `[[sources]]` entries in the lockfile-present path (DEFECT-009).
 
+* `kanon install --refresh-lock` and `kanon install --refresh-lock-source`
+  no longer crash when the workspace is already installed (all sources
+  previously cloned). Previously, the `repo envsubst` step left the
+  `.repo/manifests` working tree dirty (modified XML files and `.bak`
+  sibling files); when `repo init` was re-run with the new revision, git
+  refused to check out the new manifest commit over the modified working
+  tree, leaving HEAD pointing to a deleted branch ref and causing an
+  unhandled `GitCommandError`. The fix resets the `.repo/manifests`
+  working tree to a clean HEAD state (restoring tracked files and removing
+  `.bak` files) before re-running `repo init`, and wraps `repo init`
+  failures in a structured `RefreshRepoInitError` that names the offending
+  source and provides a remediation hint instead of a raw traceback
+  (BUG-1, E51-F1-S1-T1).
+
 * `kanon why <git-url>` and `kanon why <xml-manifest-path>` now resolve
   correctly on the no-lockfile live-resolve path. Previously the
   live-resolve tree omitted project and include children so
   `_match_by_url` and `_match_by_xml_path` found no nodes; the live
   tree is now built with the full project + include chain mirroring the
-  lockfile-present path (gap 1).
+  lockfile-present path (BUG-2, E51-F2-S1-T1).
+
+* `kanon install` now registers the Claude marketplace for direct-checkout
+  entries that carry a `.claude-plugin/marketplace.json` file but no
+  `<linkfile>` in the source manifest. Previously only manifest-driven
+  entries were discovered by the marketplace registration loop; direct-
+  checkout sources were silently skipped. The registration loop now
+  checks each cloned source directory for `.claude-plugin/marketplace.json`
+  regardless of whether a linkfile is present
+  (BUG-3, E51-F3-S1-T1).
 
 * `kanon list --all-versions` now derives the catalog entry name from
   the marketplace XML directory convention (`repo-specs/<name>/`) when

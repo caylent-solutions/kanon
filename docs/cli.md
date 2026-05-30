@@ -191,7 +191,11 @@ for the changelog entry, and
 `spec/defect-resolution-and-fixture-automation-2026-06/spec.md` Section 4
 E31 for the specification decision record. URL and XML-path argument
 support on the live-resolve path was confirmed and test-locked as part of
-the E49 gap-closure (gap 1). For the full `kanon why` flag reference see
+the E49 gap-closure (gap 1). The E51-F2-S1-T1 fix (BUG-2) corrected a
+regression where `<git-url>` and `<xml-manifest-path>` arguments were not
+matched on the live-resolve path because project and include children were
+omitted from the resolved tree; the live tree is now built with the full
+project + include chain. For the full `kanon why` flag reference see
 [docs/outdated-and-why.md](outdated-and-why.md).
 
 ---
@@ -382,3 +386,100 @@ part of the E49 gap-closure (gap 5; operator decision recorded in the
 spec Section 13 D3). See the `[Unreleased]` `### Fixed` section in
 [CHANGELOG.md](../CHANGELOG.md) for the gap-5 contract note. For the
 full `kanon install` flag reference see [docs/lockfile.md](lockfile.md).
+
+---
+
+## kanon install -- refresh-lock on an existing checkout (BUG-1)
+
+`kanon install --refresh-lock` and `kanon install --refresh-lock-source <name>`
+now succeed when the workspace is already installed (all sources already
+cloned). Prior to the E51-F1-S1-T1 fix, the `repo envsubst` step left the
+`.repo/manifests` working tree dirty (modified XML files and `.bak` sibling
+files created by envsubst). When `repo init` was re-run with the new revision,
+git refused to check out the updated manifest commit over the modified working
+tree, leaving HEAD pointing to a deleted branch ref and raising an unhandled
+`GitCommandError` instead of completing the refresh.
+
+### Behaviour after fix
+
+- Before re-running `repo init`, the `.repo/manifests` working tree is reset
+  to a clean HEAD state: tracked files are restored via `git checkout -- .`
+  and untracked `.bak` files are removed.
+- `repo init` is then re-run with the new revision; if it fails, the error is
+  caught and re-raised as a structured `RefreshRepoInitError` that names the
+  offending source and provides a remediation hint, rather than a raw traceback.
+- Both `--refresh-lock` (full re-resolve) and `--refresh-lock-source <name>`
+  (single-source re-resolve) apply this reset-and-reinit logic identically.
+
+### Usage examples
+
+```bash
+# Re-resolve all lock entries on an already-installed workspace -- no error
+kanon install --refresh-lock \
+  --catalog-source https://github.com/my-org/manifest-repo.git@main
+
+# Re-resolve one source on an already-installed workspace -- no error
+kanon install --refresh-lock-source mylib \
+  --catalog-source https://github.com/my-org/manifest-repo.git@main
+```
+
+### Traceability
+
+This fix was introduced in E51-F1-S1-T1 (BUG-1). See the `[Unreleased]`
+`### Fixed` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
+entry. For the full `--refresh-lock` / `--refresh-lock-source` flag
+reference see [docs/lockfile.md](lockfile.md).
+
+---
+
+## kanon install -- direct-checkout marketplace registration (BUG-3)
+
+`kanon install` with `KANON_MARKETPLACE_INSTALL=true` now registers the
+Claude marketplace for direct-checkout source entries that carry a
+`.claude-plugin/marketplace.json` file but no `<linkfile>` element in the
+source manifest XML.
+
+### Behaviour before the fix
+
+Before E51-F3-S1-T1, the marketplace registration loop only discovered
+marketplace roots via the linkfile path: it scanned each source's manifest
+XML for `<linkfile>` elements pointing at marketplace directories under
+`CLAUDE_MARKETPLACES_DIR`. Sources that were cloned directly (no linkfile
+in their manifest, or no manifest at all) were not inspected for
+`.claude-plugin/marketplace.json`, so their marketplace was silently
+skipped.
+
+### Behaviour after fix
+
+After the fix, the registration loop checks each cloned source directory
+for `.claude-plugin/marketplace.json` regardless of whether a linkfile is
+present. When the file is found, the source's root directory is passed to
+`claude plugin marketplace add` exactly as it would be for a manifest-
+driven entry.
+
+The visible effect: `claude plugin marketplace list` now shows one
+registered entry for every cloned source that ships `.claude-plugin/marketplace.json`,
+including sources installed via direct checkout.
+
+### Preconditions
+
+- `KANON_MARKETPLACE_INSTALL=true` (or the `--marketplace-install` flag
+  passed to the command).
+- The `claude` binary is available on `$PATH`; if absent, `kanon install`
+  fails fast with a non-zero exit and an actionable error.
+
+### Usage example
+
+```bash
+# Direct-checkout source with .claude-plugin/marketplace.json will be
+# registered automatically -- no additional flags required
+KANON_MARKETPLACE_INSTALL=true kanon install \
+  --catalog-source https://github.com/my-org/manifest-repo.git@main
+```
+
+### Traceability
+
+This fix was introduced in E51-F3-S1-T1 (BUG-3). See the `[Unreleased]`
+`### Fixed` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
+entry. For the full marketplace configuration reference see
+[docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md).

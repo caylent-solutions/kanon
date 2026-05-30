@@ -292,6 +292,74 @@ class TestInstallLifecycle:
         mock_sync.assert_called_once()
         mock_install.assert_called_once_with(mp_dir)
 
+    def test_register_direct_checkout_marketplaces_called_when_marketplace_install(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """BUG-3 fix: install() calls register_direct_checkout_marketplaces for each
+        source when KANON_MARKETPLACE_INSTALL=true, so that direct-checkout entries
+        carrying .claude-plugin/marketplace.json are registered even when no
+        <linkfile> element is present in the manifest XML.
+        """
+        mp_dir = tmp_path / ".claude-mp"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "REPO_REV=v2.0.0\n"
+            "GITBASE=https://example.com/\n"
+            f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install.install_marketplace_plugins"),
+            patch("kanon_cli.core.install.register_direct_checkout_marketplaces") as mock_reg,
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+
+        assert mock_reg.called, (
+            "register_direct_checkout_marketplaces must be called when KANON_MARKETPLACE_INSTALL=true"
+        )
+        call_args = mock_reg.call_args
+        assert call_args is not None
+        # Third positional arg must be the marketplace_dir path.
+        passed_marketplace_dir = call_args[0][2]
+        assert str(passed_marketplace_dir) == str(mp_dir), (
+            f"register_direct_checkout_marketplaces must be called with marketplace_dir={mp_dir!r}, "
+            f"got {passed_marketplace_dir!r}"
+        )
+
+    def test_register_direct_checkout_marketplaces_not_called_without_flag(self, tmp_path: pathlib.Path) -> None:
+        """Without KANON_MARKETPLACE_INSTALL=true, register_direct_checkout_marketplaces
+        must NOT be called (AC-FUNC-003: default false registers nothing).
+        """
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install.register_direct_checkout_marketplaces") as mock_reg,
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+
+        assert not mock_reg.called, (
+            "register_direct_checkout_marketplaces must NOT be called when KANON_MARKETPLACE_INSTALL is false/absent"
+        )
+
     def test_api_calls_in_correct_sequence(self, tmp_path: pathlib.Path) -> None:
         """init, envsubst, and sync must be called in order for each source."""
         kanonenv = tmp_path / ".kanon"

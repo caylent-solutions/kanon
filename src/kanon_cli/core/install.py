@@ -88,7 +88,7 @@ from kanon_cli.core.include_walker import (
     _canonicalize_include_path,
     _walk_includes,
 )
-from kanon_cli.core.marketplace import install_marketplace_plugins
+from kanon_cli.core.marketplace import install_marketplace_plugins, register_direct_checkout_marketplaces
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
@@ -2245,6 +2245,13 @@ def _run_install(
         # when the repo tool's linkfile step did not run (spec Section 4 E35).
         if marketplace_install:
             _process_manifest_linkfiles(manifest_xml_path, source_dir)
+            # Also register direct-checkout entries that carry a
+            # .claude-plugin/marketplace.json but have NO <linkfile> element
+            # (BUG-3: builders-plugins pattern). For each such project, a
+            # symlink from CLAUDE_MARKETPLACES_DIR/<name> to the project
+            # checkout dir is created so install_marketplace_plugins can find it.
+            marketplace_dir = pathlib.Path(marketplace_dir_str)
+            register_direct_checkout_marketplaces(manifest_xml_path, source_dir, marketplace_dir)
         include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
         # resolved_entries[-1] is the SourceEntry appended for this source
         # in the resolution branches above. Populate its includes list with

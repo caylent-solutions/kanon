@@ -25,6 +25,7 @@ from kanon_cli.core.marketplace import (
     install_plugin,
     locate_claude_binary,
     read_marketplace_name,
+    register_direct_checkout_marketplaces,
     register_marketplace,
     remove_marketplace,
     uninstall_marketplace_plugins,
@@ -388,3 +389,238 @@ class TestUninstallMarketplacePlugins:
         ):
             with pytest.raises(SystemExit):
                 uninstall_marketplace_plugins(tmp_path / "marketplaces")
+
+
+def _write_manifest_xml(
+    parent: pathlib.Path,
+    project_path: str,
+    *,
+    has_linkfile: bool = False,
+    filename: str = "default.xml",
+    marketplace_dir: pathlib.Path | None = None,
+) -> pathlib.Path:
+    """Write a minimal manifest XML for unit testing register_direct_checkout_marketplaces.
+
+    Args:
+        parent: Directory to write the XML into.
+        project_path: The ``path`` attribute for the ``<project>`` element.
+        has_linkfile: If True, add a ``<linkfile>`` child to the project.
+        filename: Output filename.
+        marketplace_dir: Required when has_linkfile is True to produce a valid dest.
+
+    Returns:
+        Path to the written XML file.
+    """
+    if has_linkfile and marketplace_dir is not None:
+        project_xml = (
+            f'  <project name="{project_path}" path="{project_path}">\n'
+            f'    <linkfile src="." dest="{marketplace_dir}/{project_path}" />\n'
+            "  </project>\n"
+        )
+    else:
+        project_xml = f'  <project name="{project_path}" path="{project_path}" />\n'
+    xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n{project_xml}</manifest>\n'
+    out = parent / filename
+    out.write_text(xml)
+    return out
+
+
+def _create_project_with_marketplace_json(
+    source_dir: pathlib.Path,
+    project_path: str,
+    name: str,
+) -> pathlib.Path:
+    """Create a project checkout directory with .claude-plugin/marketplace.json.
+
+    Args:
+        source_dir: Root source directory (project is created at source_dir/project_path).
+        project_path: Relative path for the project checkout.
+        name: Marketplace name to write in marketplace.json.
+
+    Returns:
+        Path to the project directory.
+    """
+    project_dir = source_dir / project_path
+    claude_plugin = project_dir / ".claude-plugin"
+    claude_plugin.mkdir(parents=True, exist_ok=True)
+    manifest = {"name": name, "plugins": [{"name": name}]}
+    (claude_plugin / "marketplace.json").write_text(json.dumps(manifest))
+    return project_dir
+
+
+@pytest.mark.unit
+class TestRegisterDirectCheckoutMarketplaces:
+    """Tests for register_direct_checkout_marketplaces (BUG-3 fix).
+
+    Verifies both the new direct-checkout registration path and the
+    linkfile-pattern no-regression (AC-TEST-003).
+    """
+
+    def test_creates_symlink_for_project_with_marketplace_json(self, tmp_path: pathlib.Path) -> None:
+        """A project with .claude-plugin/marketplace.json and no <linkfile> gets a symlink."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "my-plugin", "my-plugin")
+        manifest_xml = _write_manifest_xml(tmp_path, "my-plugin")
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        link = marketplace_dir / "my-plugin"
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert (link / ".claude-plugin" / "marketplace.json").is_file()
+
+    def test_skips_project_without_marketplace_json(self, tmp_path: pathlib.Path) -> None:
+        """A project without .claude-plugin/marketplace.json is silently skipped."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        plain_dir = source_dir / "plain-pkg"
+        plain_dir.mkdir(parents=True)
+        (plain_dir / "README.md").write_text("# plain\n")
+
+        manifest_xml = _write_manifest_xml(tmp_path, "plain-pkg")
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        assert list(marketplace_dir.iterdir()) == [], (
+            "Expected empty marketplace dir for project without marketplace.json"
+        )
+
+    def test_skips_project_with_linkfile(self, tmp_path: pathlib.Path) -> None:
+        """A project that already has a <linkfile> is skipped (handled by linkfile path).
+
+        No-regression test: linkfile-pattern entries are not double-registered.
+        """
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "linked-plugin", "linked-plugin")
+        manifest_xml = _write_manifest_xml(
+            tmp_path,
+            "linked-plugin",
+            has_linkfile=True,
+            marketplace_dir=marketplace_dir,
+        )
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        assert list(marketplace_dir.iterdir()) == [], (
+            "Expected linkfile-pattern project to be skipped by register_direct_checkout_marketplaces"
+        )
+
+    def test_absent_manifest_xml_is_noop(self, tmp_path: pathlib.Path) -> None:
+        """If the manifest XML file does not exist, the function returns silently."""
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+        absent_xml = tmp_path / "absent.xml"
+
+        register_direct_checkout_marketplaces(absent_xml, tmp_path / "source", marketplace_dir)
+
+        assert list(marketplace_dir.iterdir()) == []
+
+    def test_idempotent_second_call_does_not_error(self, tmp_path: pathlib.Path) -> None:
+        """Calling register_direct_checkout_marketplaces twice is safe (idempotent)."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "idem-plugin", "idem-plugin")
+        manifest_xml = _write_manifest_xml(tmp_path, "idem-plugin")
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        link = marketplace_dir / "idem-plugin"
+        assert link.is_symlink(), "Expected symlink to still be present after second call"
+
+    @pytest.mark.parametrize(
+        "project_path,marketplace_name",
+        [
+            (".packages/builders-plugins", "builders-plugins"),
+            (".packages/history", "history"),
+            ("direct-pkg", "direct-pkg"),
+        ],
+    )
+    def test_parametrized_project_paths(
+        self,
+        tmp_path: pathlib.Path,
+        project_path: str,
+        marketplace_name: str,
+    ) -> None:
+        """Symlinks are created correctly for various project path shapes."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, project_path, marketplace_name)
+        manifest_xml = _write_manifest_xml(tmp_path, project_path)
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        link = marketplace_dir / marketplace_name
+        assert link.is_symlink(), f"Expected symlink at {link} for project {project_path!r}"
+        assert (link / ".claude-plugin" / "marketplace.json").is_file()
+
+    def test_mixed_projects_only_registers_direct_checkout_ones(self, tmp_path: pathlib.Path) -> None:
+        """When a manifest has both linkfile and non-linkfile projects, only
+        the non-linkfile projects with marketplace.json are registered.
+
+        This is the combined regression guard for AC-FUNC-003 at the unit level.
+        """
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        # Project with linkfile -- should NOT be registered by this function.
+        _create_project_with_marketplace_json(source_dir, "linked", "linked")
+        # Project without linkfile but with marketplace.json -- SHOULD be registered.
+        _create_project_with_marketplace_json(source_dir, "direct", "direct")
+        # Project without linkfile and without marketplace.json -- NOT registered.
+        plain_dir = source_dir / "plain"
+        plain_dir.mkdir(parents=True)
+
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest>\n"
+            f'  <project name="linked" path="linked">\n'
+            f'    <linkfile src="." dest="{marketplace_dir}/linked" />\n'
+            "  </project>\n"
+            '  <project name="direct" path="direct" />\n'
+            '  <project name="plain" path="plain" />\n'
+            "</manifest>\n"
+        )
+        manifest_xml = tmp_path / "mixed.xml"
+        manifest_xml.write_text(xml)
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        entries = {p.name for p in marketplace_dir.iterdir()}
+        assert entries == {"direct"}, f"Expected only 'direct' in marketplace_dir but got: {entries}"
+
+    def test_raises_value_error_when_marketplace_json_missing_name_field(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace.json that exists but lacks 'name' raises ValueError with context.
+
+        AC-FUNC-004: registration failure surfaces as a handled error, not a raw traceback.
+        """
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        # Create a project with a marketplace.json that has NO 'name' field.
+        project_dir = source_dir / "bad-plugin"
+        claude_plugin_dir = project_dir / ".claude-plugin"
+        claude_plugin_dir.mkdir(parents=True)
+        (claude_plugin_dir / "marketplace.json").write_text(json.dumps({"plugins": [{"name": "some-plugin"}]}))
+
+        manifest_xml = _write_manifest_xml(tmp_path, "bad-plugin")
+
+        with pytest.raises(ValueError, match="bad-plugin") as exc_info:
+            register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        error_msg = str(exc_info.value)
+        assert "name" in error_msg, f"ValueError message should mention the missing 'name' field; got: {error_msg!r}"
+        assert "Remediation" in error_msg, f"ValueError message should include a remediation hint; got: {error_msg!r}"

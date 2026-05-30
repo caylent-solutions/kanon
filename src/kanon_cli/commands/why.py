@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 
 import defusedxml.ElementTree as ET
 
+from kanon_cli.repo.subcmds.envsubst import _UNRESOLVED_PATTERN
 from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_KANON_FILE_DEFAULT,
@@ -319,20 +320,96 @@ def _include_tree_to_chain_nodes(
     return [_convert(child) for child in include_tree.includes]
 
 
+def _substitute_fetch_url(
+    fetch_url: str,
+    globals_map: dict[str, str],
+    source_name: str,
+    kanon_file: pathlib.Path,
+) -> str:
+    """Substitute ``${VAR}`` placeholders in a remote ``fetch`` URL.
+
+    Applies the ``.kanon`` globals to any ``${VAR}`` placeholder in
+    ``fetch_url`` using ``os.path.expandvars`` -- the same primitive
+    ``repo envsubst`` / ``envsubst.py::resolve_variable`` uses.  Variables are
+    set into a copy of the process environment for the duration of the call and
+    then immediately restored, so the substitution does not mutate the global
+    process state.
+
+    If any ``${VAR}`` placeholder survives after substitution (i.e. the
+    variable was not declared in the ``.kanon`` globals), the function
+    raises ``LiveResolveError`` with an actionable message naming the missing
+    variable and the ``.kanon`` file path.
+
+    A ``fetch_url`` with no ``${...}`` patterns is returned unchanged without
+    touching ``os.environ``.
+
+    Args:
+        fetch_url: The raw remote ``fetch`` attribute value from the manifest
+            XML (may contain ``${VAR}`` placeholders).
+        globals_map: The ``.kanon`` globals dict from ``parse_kanonenv``
+            (``kanonenv["globals"]``).
+        source_name: The KANON_SOURCE name, used in error messages.
+        kanon_file: Path to the ``.kanon`` file, used in error messages.
+
+    Returns:
+        The ``fetch_url`` with all ``${VAR}`` placeholders replaced by their
+        values from ``globals_map``.
+
+    Raises:
+        LiveResolveError: If a ``${VAR}`` placeholder has no matching global
+            in ``globals_map``, naming the missing variable and ``.kanon`` path.
+    """
+    if "${" not in fetch_url:
+        return fetch_url
+
+    # Temporarily inject globals into os.environ so os.path.expandvars resolves
+    # ${VAR} patterns.  Save and restore any keys we overwrite so the process
+    # environment is unchanged after this call.
+    overwritten: dict[str, str | None] = {}
+    for key, value in globals_map.items():
+        overwritten[key] = os.environ.get(key)
+        os.environ[key] = value
+
+    try:
+        substituted = os.path.expandvars(fetch_url)
+    finally:
+        for key, original in overwritten.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+
+    unresolved = _UNRESOLVED_PATTERN.findall(substituted)
+    if unresolved:
+        missing_var = unresolved[0]
+        raise LiveResolveError(
+            source_name,
+            f"remote fetch URL {fetch_url!r} references ${{{missing_var}}} "
+            f"but {missing_var!r} is not declared in {kanon_file}. "
+            f"Add {missing_var}=<value> to {kanon_file} or use a concrete fetch URL.",
+        )
+
+    return substituted
+
+
 def _build_project_nodes_from_xml(
     manifest_xml_path: pathlib.Path,
     manifest_repo: pathlib.Path,
     source_sha: str,
     source_name: str,
+    globals_map: dict[str, str] | None = None,
+    kanon_file: pathlib.Path | None = None,
 ) -> list[ChainNode]:
     """Parse ``<project>`` elements from a manifest XML and return project ``ChainNode`` objects.
 
     Resolves the project URL by looking up each project's ``remote`` attribute
     in the remote-name -> fetch-URL mapping collected by
-    ``walk_includes_collecting_remotes``.  Only ``<project>`` elements whose
-    remote can be resolved to a fetch URL are included; unresolvable remotes
-    are silently skipped (they would produce R001 audit findings, which are a
-    separate validation concern).
+    ``walk_includes_collecting_remotes``.  Remote ``fetch`` values that contain
+    ``${VAR}`` placeholders are substituted from ``globals_map`` via
+    ``_substitute_fetch_url`` before canonicalization.  Only ``<project>``
+    elements whose remote resolves to a concrete, canonicalizable fetch URL are
+    included; remotes with no entry in the remote map are skipped (they produce
+    R001 audit findings -- a separate validation concern).
 
     The ``sha`` of each project node is set to ``source_sha`` because the
     live-resolve path does not run ``repo sync`` and therefore has no
@@ -344,14 +421,26 @@ def _build_project_nodes_from_xml(
         source_sha: The resolved SHA of the owning source, used as a
             placeholder SHA for all project nodes on the live-resolve path.
         source_name: The KANON_SOURCE_<name> key, used for error context.
+        globals_map: The ``.kanon`` globals dict from ``parse_kanonenv``
+            (``kanonenv["globals"]``).  When supplied, ``${VAR}`` placeholders
+            in remote ``fetch`` URLs are resolved from this map.  Omit (or pass
+            ``None``) to skip placeholder substitution (legacy / non-live-resolve
+            callers).
+        kanon_file: Path to the ``.kanon`` file, forwarded to
+            ``_substitute_fetch_url`` for actionable error messages.  Required
+            when ``globals_map`` is supplied.
 
     Returns:
         A list of ``ChainNode(kind='project')`` objects, one per resolvable
         ``<project>`` element found in the manifest and its reachable includes.
 
     Raises:
-        LiveResolveError: If the manifest XML cannot be parsed.
+        LiveResolveError: If the manifest XML cannot be parsed, or if a
+            ``${VAR}`` placeholder in a remote ``fetch`` has no matching global.
     """
+    resolved_globals: dict[str, str] = globals_map if globals_map is not None else {}
+    resolved_kanon_file: pathlib.Path = kanon_file if kanon_file is not None else pathlib.Path(".kanon")
+
     try:
         remote_map = walk_includes_collecting_remotes(manifest_xml_path, manifest_repo)
         tree = ET.parse(str(manifest_xml_path))
@@ -374,18 +463,28 @@ def _build_project_nodes_from_xml(
             # cannot be resolved to a canonical URL without a <default> lookup.
             continue
 
-        fetch_url = remote_map.get(remote_attr)
-        if fetch_url is None:
+        raw_fetch = remote_map.get(remote_attr)
+        if raw_fetch is None:
             # Remote is unresolvable; skip rather than hard-fail so that
             # valid projects in the same manifest still produce chain nodes.
             # The audit command (kanon catalog audit) surfaces R001 for these.
             continue
 
+        # Substitute ${VAR} placeholders (e.g. ${GITBASE}) from .kanon globals
+        # before canonicalization.  Fails fast when a placeholder has no match.
+        fetch_url = _substitute_fetch_url(
+            raw_fetch,
+            resolved_globals,
+            source_name,
+            resolved_kanon_file,
+        )
+
         raw_url = f"{fetch_url.rstrip('/')}/{project_name}"
         try:
             canonical = canonicalize_repo_url(raw_url)
         except ValueError:
-            # URL fails canonicalization (e.g. has query string); skip.
+            # URL is genuinely unresolvable after substitution (e.g. non-URL
+            # value in fetch that is not a ${VAR} placeholder); skip.
             continue
 
         project_nodes.append(
@@ -451,6 +550,8 @@ def _populate_source_children_from_manifest(
     source_sha: str,
     source_name: str,
     tmp_base: pathlib.Path,
+    globals_map: dict[str, str] | None = None,
+    kanon_file: pathlib.Path | None = None,
 ) -> None:
     """Clone the source repo and attach include/project children to ``source_node``.
 
@@ -472,10 +573,15 @@ def _populate_source_children_from_manifest(
             for include and project nodes on the live-resolve path.
         source_name: The KANON_SOURCE_<name> key, used in error messages.
         tmp_base: A temporary directory path under which the clone is placed.
+        globals_map: The ``.kanon`` globals dict from ``parse_kanonenv``
+            (``kanonenv["globals"]``).  Forwarded to ``_build_project_nodes_from_xml``
+            so that ``${VAR}`` placeholders in remote ``fetch`` URLs are
+            resolved.  Pass ``None`` to skip placeholder substitution.
+        kanon_file: Path to the ``.kanon`` file forwarded for error messages.
 
     Raises:
         LiveResolveError: If cloning fails or if the manifest XML cannot be
-            parsed.
+            parsed, or if a ``${VAR}`` placeholder has no matching global.
     """
     clone_dest = tmp_base / source_name
     _clone_source_repo(
@@ -502,7 +608,14 @@ def _populate_source_children_from_manifest(
         ) from exc
 
     include_roots = _include_tree_to_chain_nodes(include_tree, source_sha, source_url)
-    project_nodes = _build_project_nodes_from_xml(manifest_xml_path, clone_dest, source_sha, source_name)
+    project_nodes = _build_project_nodes_from_xml(
+        manifest_xml_path,
+        clone_dest,
+        source_sha,
+        source_name,
+        globals_map=globals_map,
+        kanon_file=kanon_file,
+    )
 
     # Attach children mirroring _build_tree_from_lockfile (~215-240):
     # includes as direct children of the source; projects under every leaf
@@ -570,6 +683,7 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
         )
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
     kanonenv = parse_kanonenv(kanon_file)
+    globals_map: dict[str, str] = kanonenv.get("globals", {})
     source_nodes: list[ChainNode] = []
 
     with tempfile.TemporaryDirectory(prefix="kanon-why-live-") as _tmp_dir:
@@ -599,7 +713,7 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
             source_node = ChainNode(
                 kind="source",
                 name=source_name,
-                ref=None,
+                ref=manifest_path,
                 sha=ref_resolution.sha,
                 url=url,
             )
@@ -612,6 +726,8 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
                 source_sha=ref_resolution.sha,
                 source_name=source_name,
                 tmp_base=tmp_base,
+                globals_map=globals_map,
+                kanon_file=kanon_file,
             )
 
             source_nodes.append(source_node)
@@ -736,18 +852,24 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
 
 
 def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
-    """Match the argument against project nodes by canonicalized URL.
+    """Match the argument against project and source nodes by canonicalized URL.
 
     Attempts to canonicalize the argument. If canonicalization fails (argument is
     not a valid URL), returns an empty list -- no match in this category.
+
+    Matches:
+    - ``project`` nodes: ``node.canonical_url == canonicalize_repo_url(argument)``.
+    - ``source`` nodes: ``canonicalize_repo_url(node.url) == target_canonical``
+      when the source carries a URL (live-resolve path sets ``source.url`` to the
+      git remote URL of the manifest repo).
 
     Args:
         tree: The fully resolved dependency tree.
         argument: The raw argument string from the CLI.
 
     Returns:
-        List of project ChainNode objects whose canonical_url equals
-        canonicalize_repo_url(argument). Empty when no match or when
+        List of ChainNode objects (project or source) whose canonical URL equals
+        ``canonicalize_repo_url(argument)``.  Empty when no match or when
         canonicalization raises ValueError.
     """
     try:
@@ -756,6 +878,16 @@ def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
         return []
 
     matches: list[ChainNode] = []
+
+    # Check top-level source nodes by their URL.
+    for source_node in tree.sources:
+        if source_node.url is not None:
+            try:
+                source_canonical = canonicalize_repo_url(source_node.url)
+            except ValueError:
+                source_canonical = None
+            if source_canonical == target_canonical:
+                matches.append(source_node)
 
     def _collect_projects(node: ChainNode) -> None:
         if node.kind == "project" and node.canonical_url == target_canonical:
@@ -770,17 +902,28 @@ def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
 
 
 def _match_by_xml_path(tree: ResolvedTree, argument: str) -> list[ChainNode]:
-    """Match the argument against include nodes by exact path_in_repo string equality.
+    """Match the argument against include and source nodes by XML path equality.
+
+    Matches:
+    - ``include`` nodes: ``node.ref == argument`` (the ``path_in_repo`` value).
+    - ``source`` nodes: ``node.ref == argument`` when the source carries a root
+      manifest path in ``ref`` (set on the live-resolve path to
+      ``KANON_SOURCE_<name>_PATH``).
 
     Args:
         tree: The fully resolved dependency tree.
         argument: The raw argument string from the CLI.
 
     Returns:
-        List of include ChainNode objects whose ref (path_in_repo) exactly equals
-        the argument. Empty when no match.
+        List of ChainNode objects (include or source) whose ``ref`` exactly equals
+        the argument.  Empty when no match.
     """
     matches: list[ChainNode] = []
+
+    # Check top-level source nodes by their root manifest path (ref).
+    for source_node in tree.sources:
+        if source_node.ref is not None and source_node.ref == argument:
+            matches.append(source_node)
 
     def _collect_includes(node: ChainNode) -> None:
         if node.kind == "include" and node.ref == argument:
@@ -860,11 +1003,19 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
     # (a) URL category
     url_nodes = _match_by_url(tree, argument)
     for node in url_nodes:
-        assert node.canonical_url is not None, (
-            f"project node {node.name!r} matched by URL but has no canonical_url (internal invariant)"
+        if node.kind == "source":
+            # Source nodes matched by URL use the raw source URL as the label.
+            url_label = node.url or argument
+        else:
+            assert node.canonical_url is not None, (
+                f"project node {node.name!r} matched by URL but has no canonical_url (internal invariant)"
+            )
+            url_label = node.canonical_url
+        hits.append(
+            _MatchHit(
+                category="url", label=f"{'source' if node.kind == 'source' else 'project'} URL '{url_label}'", node=node
+            )
         )
-        url_label = node.canonical_url
-        hits.append(_MatchHit(category="url", label=f"project URL '{url_label}'", node=node))
 
     # (b) XML path category
     xml_nodes = _match_by_xml_path(tree, argument)
@@ -1282,8 +1433,8 @@ def run(args: argparse.Namespace) -> int:
     hit = _resolve_match(tree, args.target)
 
     # -- Walk all chains from the matched node --
-    if hit.category == "url":
-        # URL match: target_canonical is stored on the node
+    if hit.category == "url" and hit.node.kind == "project":
+        # Project URL match: target_canonical is stored on the project node.
         target_canonical = hit.node.canonical_url
         if target_canonical is None:
             print(
@@ -1293,7 +1444,7 @@ def run(args: argparse.Namespace) -> int:
             sys.exit(1)
         chains = _walk_chains(tree, target_canonical)
     else:
-        # XML path or source name match: walk from the matched node itself
+        # XML path, source name, or source-URL match: walk from the matched node itself.
         chains = _walk_chains_from_node(tree, hit.node)
 
     if not chains:

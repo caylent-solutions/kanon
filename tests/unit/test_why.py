@@ -26,10 +26,14 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.why import (
+    _build_project_nodes_from_xml,
     _build_tree_from_lockfile,
     _collect_leaf_include_nodes,
     _include_entry_to_node,
     _live_resolve_tree,
+    _match_by_url,
+    _match_by_xml_path,
+    _substitute_fetch_url,
     _walk_chains,
     _render_text,
     run,
@@ -1023,3 +1027,387 @@ class TestWhySubparserHelp:
         register(subparsers)
         why_parser = subparsers.choices["why"]
         assert why_parser.add_help is True, "why subparser must have add_help=True so '-h' is accepted"
+
+
+# ---------------------------------------------------------------------------
+# Tests for _substitute_fetch_url
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSubstituteFetchUrl:
+    """Unit tests for ``_substitute_fetch_url`` placeholder substitution helper.
+
+    Covers: substitution via globals_map, passthrough for concrete URLs,
+    and fail-fast on unresolved placeholders (AC-9).
+    """
+
+    def test_concrete_url_returned_unchanged(self) -> None:
+        """A URL with no ``${...}`` patterns is returned without modification."""
+        url = "https://github.com/org"
+        result = _substitute_fetch_url(
+            url,
+            globals_map={"GITBASE": "file:///tmp/pkgs"},
+            source_name="SRC",
+            kanon_file=pathlib.Path(".kanon"),
+        )
+        assert result == url
+
+    def test_placeholder_substituted_from_globals(self) -> None:
+        """``${GITBASE}`` is replaced by the GITBASE value in globals_map."""
+        result = _substitute_fetch_url(
+            "${GITBASE}",
+            globals_map={"GITBASE": "file:///tmp/pkgs"},
+            source_name="SRC",
+            kanon_file=pathlib.Path(".kanon"),
+        )
+        assert result == "file:///tmp/pkgs"
+
+    def test_placeholder_in_composite_url_substituted(self) -> None:
+        """``${GITBASE}/subdir`` resolves to the substituted value with the suffix."""
+        result = _substitute_fetch_url(
+            "${GITBASE}/org",
+            globals_map={"GITBASE": "https://github.com"},
+            source_name="SRC",
+            kanon_file=pathlib.Path(".kanon"),
+        )
+        assert result == "https://github.com/org"
+
+    def test_unresolved_placeholder_raises_live_resolve_error(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """A ``${VAR}`` placeholder with no matching global raises LiveResolveError.
+
+        The error message names the missing variable and the .kanon file path
+        (AC-9: fail fast on missing global).
+        """
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text("KANON_SOURCE_SRC_URL=file:///fake\n")
+
+        with pytest.raises(LiveResolveError) as exc_info:
+            _substitute_fetch_url(
+                "${MISSING_VAR}",
+                globals_map={},
+                source_name="SRC",
+                kanon_file=kanon_file,
+            )
+
+        err_msg = str(exc_info.value)
+        assert "MISSING_VAR" in err_msg, f"Error must name the missing variable; got: {err_msg!r}"
+        assert str(kanon_file) in err_msg, f"Error must name the .kanon path; got: {err_msg!r}"
+
+    def test_env_not_mutated_after_substitution(self) -> None:
+        """Process environment is unchanged after _substitute_fetch_url returns.
+
+        Verifies that the temporary env injection does not leak into os.environ.
+        """
+        import os
+
+        key = "KANON_TEST_GITBASE_GUARD_9812"
+        assert key not in os.environ, f"Test prereq failed: {key!r} already in env"
+
+        _substitute_fetch_url(
+            f"${{{key}}}",
+            globals_map={key: "file:///tmp/guard"},
+            source_name="SRC",
+            kanon_file=pathlib.Path(".kanon"),
+        )
+
+        # After the call, the key must be gone from the environment.
+        assert key not in os.environ, f"_substitute_fetch_url leaked {key!r} into os.environ after returning"
+
+    def test_env_not_mutated_when_error_raised(self) -> None:
+        """Process environment is restored even when a LiveResolveError is raised."""
+        import os
+
+        key = "KANON_TEST_PRESENT_KEY_7433"
+        sentinel = "original_value"
+        os.environ[key] = sentinel
+
+        try:
+            with pytest.raises(LiveResolveError):
+                _substitute_fetch_url(
+                    "${UNRESOLVED_X}",
+                    globals_map={key: "overwritten"},
+                    source_name="SRC",
+                    kanon_file=pathlib.Path(".kanon"),
+                )
+
+            assert os.environ.get(key) == sentinel, (
+                f"_substitute_fetch_url did not restore {key!r} to {sentinel!r} "
+                f"after raising LiveResolveError; got {os.environ.get(key)!r}"
+            )
+        finally:
+            os.environ.pop(key, None)
+
+
+# ---------------------------------------------------------------------------
+# Tests for _build_project_nodes_from_xml with ${VAR} placeholder fetch URLs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildProjectNodesFromXmlPlaceholder:
+    """Unit tests for ``_build_project_nodes_from_xml`` with placeholder remote fetch.
+
+    Covers:
+    - NON-EMPTY result for a ``${GITBASE}`` remote when GITBASE is supplied (AC-8).
+    - EMPTY result (skip) for a remote that is genuinely unresolvable after
+      substitution (the URL survives substitution but fails canonicalization) (AC-8).
+    - Fail-fast on ``${VAR}`` with no matching global (AC-9).
+    """
+
+    def _write_manifest_xml(
+        self,
+        parent: pathlib.Path,
+        remote_fetch: str,
+        project_name: str = "myproject",
+        remote_name: str = "origin",
+    ) -> pathlib.Path:
+        """Write a minimal manifest XML to a temp directory and return its path."""
+        xml_content = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest>\n"
+            f'  <remote name="{remote_name}" fetch="{remote_fetch}" />\n'
+            f'  <project remote="{remote_name}" name="{project_name}" path="{project_name}" />\n'
+            "</manifest>\n"
+        )
+        xml_path = parent / "default.xml"
+        xml_path.write_text(xml_content)
+        return xml_path
+
+    def test_returns_non_empty_for_placeholder_when_gitbase_supplied(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """_build_project_nodes_from_xml returns a non-empty list for a ``${GITBASE}``
+        remote when GITBASE is declared in globals_map.
+
+        The returned ChainNode must have kind='project' and a canonical_url that
+        incorporates the substituted GITBASE value (AC-8).
+        """
+        pkgs_dir = tmp_path / "pkgs"
+        pkgs_dir.mkdir()
+        manifest_repo = tmp_path / "repo"
+        manifest_repo.mkdir()
+
+        xml_path = self._write_manifest_xml(manifest_repo, remote_fetch="${GITBASE}")
+
+        nodes = _build_project_nodes_from_xml(
+            manifest_xml_path=xml_path,
+            manifest_repo=manifest_repo,
+            source_sha="a" * 40,
+            source_name="SRC",
+            globals_map={"GITBASE": pkgs_dir.as_uri()},
+            kanon_file=tmp_path / ".kanon",
+        )
+
+        assert len(nodes) == 1, f"Expected 1 project node, got {len(nodes)}: {nodes}"
+        node = nodes[0]
+        assert node.kind == "project"
+        assert node.name == "myproject"
+        assert node.canonical_url is not None
+        assert pkgs_dir.name in node.url or pkgs_dir.as_uri() in node.url
+
+    def test_returns_empty_for_genuinely_unresolvable_remote_after_substitution(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """_build_project_nodes_from_xml returns an empty list when the remote fetch
+        resolves to a non-URL value that canonicalize_repo_url cannot handle.
+
+        This covers the ``except ValueError: continue`` branch that skips projects
+        whose resolved fetch URL is syntactically invalid (AC-8: EMPTY for
+        genuinely unresolvable).
+        """
+        manifest_repo = tmp_path / "repo"
+        manifest_repo.mkdir()
+
+        # Fetch URL that is not a valid git URL after substitution.
+        xml_path = self._write_manifest_xml(manifest_repo, remote_fetch="not-a-valid-url::??")
+
+        nodes = _build_project_nodes_from_xml(
+            manifest_xml_path=xml_path,
+            manifest_repo=manifest_repo,
+            source_sha="a" * 40,
+            source_name="SRC",
+            globals_map={},
+            kanon_file=tmp_path / ".kanon",
+        )
+
+        assert nodes == [], f"Expected empty list for unresolvable remote, got {nodes}"
+
+    def test_raises_live_resolve_error_when_placeholder_has_no_matching_global(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """_build_project_nodes_from_xml raises LiveResolveError when a ``${VAR}``
+        placeholder has no matching entry in globals_map.
+
+        The error message must name the missing variable and the .kanon file
+        path (AC-9).
+        """
+        manifest_repo = tmp_path / "repo"
+        manifest_repo.mkdir()
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text("KANON_SOURCE_SRC_URL=file:///fake\n")
+
+        xml_path = self._write_manifest_xml(manifest_repo, remote_fetch="${UNDECLARED_VAR}")
+
+        with pytest.raises(LiveResolveError) as exc_info:
+            _build_project_nodes_from_xml(
+                manifest_xml_path=xml_path,
+                manifest_repo=manifest_repo,
+                source_sha="a" * 40,
+                source_name="SRC",
+                globals_map={},
+                kanon_file=kanon_file,
+            )
+
+        err_msg = str(exc_info.value)
+        assert "UNDECLARED_VAR" in err_msg, f"Error must name the missing variable; got: {err_msg!r}"
+        assert str(kanon_file) in err_msg, f"Error must name the .kanon path; got: {err_msg!r}"
+
+
+# ---------------------------------------------------------------------------
+# Tests for _match_by_url source-node matching (AC-3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMatchByUrlSourceNode:
+    """Unit tests for ``_match_by_url`` source-node URL matching.
+
+    Covers: source node matched by its URL; project nodes still matched
+    as before; no match when URL differs.
+    """
+
+    def test_source_node_matched_by_url(self) -> None:
+        """_match_by_url returns the source node when the argument matches source.url."""
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref=None,
+            sha="a" * 40,
+            url="https://github.com/org/catalog",
+        )
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_url(tree, "https://github.com/org/catalog")
+
+        assert len(result) == 1
+        assert result[0] is source
+
+    def test_source_node_not_matched_when_url_differs(self) -> None:
+        """_match_by_url returns an empty list when the argument URL differs from source.url."""
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref=None,
+            sha="a" * 40,
+            url="https://github.com/org/catalog",
+        )
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_url(tree, "https://github.com/org/other")
+
+        assert result == []
+
+    def test_project_node_still_matched_by_url(self) -> None:
+        """_match_by_url still matches project nodes correctly after source-node support added."""
+        from kanon_cli.core.url import canonicalize_repo_url
+
+        project_url = "https://github.com/org/myproject"
+        canonical = canonicalize_repo_url(project_url)
+        project = ChainNode(
+            kind="project",
+            name="myproject",
+            ref=None,
+            sha="b" * 40,
+            url=project_url,
+            canonical_url=canonical,
+        )
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref=None,
+            sha="a" * 40,
+            url="https://github.com/org/catalog",
+        )
+        source.children.append(project)
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_url(tree, project_url)
+
+        assert len(result) == 1
+        assert result[0] is project
+
+
+# ---------------------------------------------------------------------------
+# Tests for _match_by_xml_path source root-manifest matching (AC-2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMatchByXmlPathSourceNode:
+    """Unit tests for ``_match_by_xml_path`` source root-manifest path matching.
+
+    Covers: source node matched by its root manifest path (``node.ref``);
+    include nodes still matched; no match when path differs.
+    """
+
+    def test_source_node_matched_by_manifest_path(self) -> None:
+        """_match_by_xml_path returns the source node when ``node.ref`` matches the argument."""
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref="repo-specs/mysource-marketplace.xml",
+            sha="a" * 40,
+            url="https://github.com/org/catalog",
+        )
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_xml_path(tree, "repo-specs/mysource-marketplace.xml")
+
+        assert len(result) == 1
+        assert result[0] is source
+
+    def test_source_node_not_matched_when_path_differs(self) -> None:
+        """_match_by_xml_path returns an empty list when the argument path differs."""
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref="repo-specs/mysource-marketplace.xml",
+            sha="a" * 40,
+            url="https://github.com/org/catalog",
+        )
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_xml_path(tree, "repo-specs/other.xml")
+
+        assert result == []
+
+    def test_include_node_still_matched(self) -> None:
+        """_match_by_xml_path still matches include nodes correctly."""
+        source = ChainNode(
+            kind="source",
+            name="mysource",
+            ref=None,
+            sha="a" * 40,
+            url=None,
+        )
+        include = ChainNode(
+            kind="include",
+            name="inc",
+            ref="repo-specs/extra.xml",
+            sha="b" * 40,
+            url=None,
+        )
+        source.children.append(include)
+        tree = ResolvedTree(sources=[source])
+
+        result = _match_by_xml_path(tree, "repo-specs/extra.xml")
+
+        assert len(result) == 1
+        assert result[0] is include

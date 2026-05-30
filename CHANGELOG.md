@@ -82,6 +82,23 @@
 
 ### Fixed
 
+* `kanon why <project-url>` / `<root-manifest-path>` / `<source-url>` now
+  exit 0 on the live-resolve path (no lockfile) when the manifest's
+  `<remote>` element uses a `${VAR}` placeholder fetch URL. The
+  placeholder is resolved from the `.kanon` globals via `os.path.expandvars`
+  before URL canonicalization, so project nodes are populated (BUG-2,
+  E53-F1-S1-T1). A `${VAR}` with no matching global fails fast with an
+  actionable error naming the missing variable and the `.kanon` path.
+
+* `kanon why <source-url>` (the `KANON_SOURCE_<name>_URL` value) now
+  exits 0 on the live-resolve path; `_match_by_url` matches source nodes
+  by URL in addition to project nodes (AC-3, E53-F1-S1-T1).
+
+* `kanon why <root-manifest-path>` (the `KANON_SOURCE_<name>_PATH` value)
+  now exits 0 on the live-resolve path; `_match_by_xml_path` matches source
+  nodes by root manifest path in addition to transitive include nodes
+  (AC-2, E53-F1-S1-T1).
+
 * `kanon install` now verifies each claude marketplace is registered via
   `claude plugin marketplace add` per source; install errors fast if `claude`
   is unavailable while `KANON_MARKETPLACE_INSTALL=true` (DEFECT-004).

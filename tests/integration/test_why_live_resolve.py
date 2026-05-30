@@ -26,6 +26,12 @@ This module contains:
   source from the synthetic catalog, exercising the same chain format as
   ``test_why_ambiguous.py::TestWhyXmlPathOnlyMatch`` for the live path.
 
+- ``TestLiveResolveTreePlaceholder``: asserts that ``_live_resolve_tree`` populates
+  project nodes when the manifest's ``<remote fetch="${GITBASE}">`` uses a
+  placeholder, with GITBASE resolved from the ``.kanon`` globals.  Also asserts
+  that source-URL and source root-manifest-path resolve via ``_match_by_url`` and
+  ``_match_by_xml_path`` (BUG-2 fix coverage, E53-F1-S1-T1).
+
 Both ``TestByUrlLiveResolve`` and ``TestByPathLiveResolve`` share the module-scope
 synthetic catalog fixture with ``TestWhyLiveResolve`` (via ``_live_catalog``).
 
@@ -1180,3 +1186,352 @@ class TestLiveResolveTreeStructure:
 
         with pytest.raises(ValueError, match="catalog_source"):
             _live_resolve_tree(kanon_file, "")
+
+
+# ---------------------------------------------------------------------------
+# Test: in-process -- _live_resolve_tree populates projects from ${VAR} fetch
+# ---------------------------------------------------------------------------
+
+
+_PLACEHOLDER_MANIFEST_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata>
+        <name>{entry_name}</name>
+        <display-name>{entry_name} Display</display-name>
+        <description>Placeholder fetch fixture for {entry_name}.</description>
+        <version>1.0.0</version>
+        <type>plugin</type>
+        <owner-name>Integration Tester</owner-name>
+        <owner-email>integration@example.com</owner-email>
+        <keywords>integration, placeholder</keywords>
+      </catalog-metadata>
+      <remote name="pkgs" fetch="${{GITBASE}}" />
+      <project remote="pkgs" name="{project_name}" path="{project_name}" />
+    </manifest>
+""")
+
+
+def _create_catalog_with_placeholder_fetch(
+    base: pathlib.Path,
+    entry_name: str,
+    project_name: str,
+    tags: list[str],
+) -> pathlib.Path:
+    """Create a bare catalog repo whose marketplace XML uses ``${GITBASE}`` as the fetch URL.
+
+    The generated XML at ``repo-specs/<entry_name>-marketplace.xml`` contains:
+      - A ``<catalog-metadata>`` block so ``kanon add`` can locate the entry.
+      - A ``<remote name="pkgs" fetch="${GITBASE}">`` element.
+      - A ``<project remote="pkgs" name="<project_name>">`` element.
+
+    The ``${GITBASE}`` placeholder must be resolved from the ``.kanon`` globals
+    at why-time to produce the full project URL.
+
+    Args:
+        base: Parent directory under which work and bare dirs are created.
+        entry_name: The catalog entry name.
+        project_name: The ``<project name="...">`` attribute.
+        tags: Annotated tag names applied to the initial commit.
+
+    Returns:
+        The absolute path to the bare repo directory.
+    """
+    work_dir = base / "placeholder-work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _init_git_work_dir(work_dir)
+
+    repo_specs_dir = work_dir / "repo-specs"
+    repo_specs_dir.mkdir()
+
+    xml_content = _PLACEHOLDER_MANIFEST_TEMPLATE.format(
+        entry_name=entry_name,
+        project_name=project_name,
+    )
+    (repo_specs_dir / f"{entry_name}-marketplace.xml").write_text(xml_content)
+
+    _git(["add", "."], work_dir)
+    _git(["commit", "-m", f"Add {entry_name} with placeholder fetch"], work_dir)
+
+    for tag in tags:
+        _git(["tag", "-a", tag, "-m", f"Release {tag}"], work_dir)
+
+    bare_dir = _clone_as_bare(work_dir, base / "placeholder-bare.git")
+    return bare_dir.resolve()
+
+
+@pytest.mark.integration
+class TestLiveResolveTreePlaceholder:
+    """In-process coverage for BUG-2 fix: ``${GITBASE}`` placeholder substitution.
+
+    Verifies that ``_live_resolve_tree`` populates project nodes when the
+    manifest's ``<remote fetch="${GITBASE}">`` uses a placeholder, with GITBASE
+    resolved from the ``.kanon`` globals.
+
+    Also verifies that ``_match_by_url`` matches source nodes by URL and
+    ``_match_by_xml_path`` matches source nodes by root manifest path.
+
+    The autouse ``_default_allow_insecure_remotes`` fixture sets
+    ``KANON_ALLOW_INSECURE_REMOTES=1`` so the ``file://`` source URL passes the
+    security policy check.
+
+    ``kanon_cli.commands.why._resolve_ref_to_sha`` is patched to avoid real
+    git network calls.
+    """
+
+    @staticmethod
+    def _collect_all(node) -> list:
+        """Collect a node and all its descendants via depth-first traversal."""
+        result = [node]
+        for child in node.children:
+            result.extend(TestLiveResolveTreePlaceholder._collect_all(child))
+        return result
+
+    def test_project_nodes_populated_for_placeholder_fetch(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``_live_resolve_tree`` returns project children when ``${GITBASE}`` is used.
+
+        Flow:
+          1. Build a catalog bare repo whose marketplace XML uses
+             ``<remote fetch="${GITBASE}">``.
+          2. Run ``kanon add`` (writes ``.kanon`` with GITBASE derived from the
+             catalog URL).
+          3. Override GITBASE in ``.kanon`` to a ``file://`` pkgs directory so
+             the substituted project URL is ``file://<pkgs>/<project-name>``.
+          4. Call ``_live_resolve_tree`` with ``_resolve_ref_to_sha`` patched.
+          5. Assert the source node has at least one project child.
+          6. Assert the project child URL contains the GITBASE value.
+
+        This test fails against pre-BUG-2-fix code where the placeholder is not
+        substituted and ``_build_project_nodes_from_xml`` silently drops the project.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree
+
+        entry_name = "phtest"
+        project_name = "ph-project"
+        pkgs_dir = tmp_path / "pkgs"
+        pkgs_dir.mkdir()
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_placeholder_fetch(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+
+        # Override GITBASE to point at pkgs_dir so substitution yields a
+        # concrete project URL: file://<pkgs_dir>/<project_name>
+        text = kanon_file.read_text()
+        new_lines = []
+        replaced = False
+        for line in text.splitlines():
+            if line.startswith("GITBASE="):
+                new_lines.append(f"GITBASE={pkgs_dir.as_uri()}")
+                replaced = True
+            else:
+                new_lines.append(line)
+        if not replaced:
+            new_lines.insert(0, f"GITBASE={pkgs_dir.as_uri()}")
+        kanon_file.write_text("\n".join(new_lines) + "\n")
+
+        mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
+        with patch(
+            "kanon_cli.commands.why._resolve_ref_to_sha",
+            return_value=mock_resolution,
+        ):
+            tree = _live_resolve_tree(kanon_file, catalog_source_url)
+
+        assert len(tree.sources) == 1
+        source_node = tree.sources[0]
+        all_nodes = self._collect_all(source_node)
+        project_nodes = [n for n in all_nodes if n.kind == "project"]
+
+        assert len(project_nodes) > 0, (
+            f"Expected project children in live-resolve tree for ${{{entry_name}}} "
+            f"placeholder fetch, but got none. Children: {source_node.children!r}. "
+            f"This indicates _build_project_nodes_from_xml is not substituting "
+            f"${{GITBASE}} from the .kanon globals (BUG-2 regression)."
+        )
+
+        proj = project_nodes[0]
+        assert proj.url is not None
+        assert pkgs_dir.as_uri() in proj.url, (
+            f"Expected project URL to contain GITBASE={pkgs_dir.as_uri()!r} after substitution, but got {proj.url!r}"
+        )
+
+    def test_source_node_carries_manifest_path_in_ref(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``_live_resolve_tree`` sets source node ``ref`` to the root manifest path.
+
+        After the BUG-2 fix, source nodes on the live-resolve path carry
+        ``ref=<KANON_SOURCE_<name>_PATH>`` so ``_match_by_xml_path`` can match
+        the source by its root manifest path (AC-2).
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree
+
+        entry_name = "phsrc"
+        project_name = "ph-src-project"
+        manifest_rel_path = f"repo-specs/{entry_name}-marketplace.xml"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            project_fetch_url="https://github.com/testorg",
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+
+        mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
+        with patch(
+            "kanon_cli.commands.why._resolve_ref_to_sha",
+            return_value=mock_resolution,
+        ):
+            tree = _live_resolve_tree(kanon_file, catalog_source_url)
+
+        assert len(tree.sources) == 1
+        source_node = tree.sources[0]
+
+        assert source_node.ref == manifest_rel_path, (
+            f"Expected source node ref == {manifest_rel_path!r} (root manifest path), "
+            f"but got {source_node.ref!r}. _match_by_xml_path uses node.ref to match "
+            f"the source by its root manifest path (AC-2)."
+        )
+
+    def test_source_node_url_matchable(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``_match_by_url`` matches the source node when the argument is the source URL.
+
+        After the BUG-2 fix, ``_match_by_url`` checks source nodes (not just
+        project nodes), so ``kanon why <source-url>`` resolves to the source
+        chain (AC-3).
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree, _match_by_url
+
+        entry_name = "phurl"
+        project_name = "ph-url-project"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            project_fetch_url="https://github.com/testorg",
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+
+        mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
+        with patch(
+            "kanon_cli.commands.why._resolve_ref_to_sha",
+            return_value=mock_resolution,
+        ):
+            tree = _live_resolve_tree(kanon_file, catalog_source_url)
+
+        assert len(tree.sources) == 1
+        source_node = tree.sources[0]
+        source_url = source_node.url
+
+        assert source_url is not None, "Source node must carry a URL for _match_by_url to match"
+
+        matches = _match_by_url(tree, source_url)
+
+        assert len(matches) == 1, (
+            f"Expected _match_by_url to return 1 match for source URL {source_url!r}, "
+            f"but got {len(matches)} matches. _match_by_url must check source nodes "
+            f"as well as project nodes (AC-3)."
+        )
+        assert matches[0] is source_node

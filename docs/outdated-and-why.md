@@ -226,17 +226,42 @@ The single positional argument is matched in the following precedence:
 | Shape | Example |
 | ----- | ------- |
 | Project URL | `https://example.com/org/manifest-repo.git` |
+| Source URL | `https://example.com/org/catalog-repo.git` |
+| Root manifest path | `repo-specs/package-a-marketplace.xml` |
 | Transitive XML manifest path | `repo-specs/network/remote.xml` |
 | Entry name | `package-a` |
 | Source name | `package_a` |
 
 Notes:
 
-- Project URLs are canonicalized via `canonicalize_repo_url` before
-  matching, so `http://` vs `https://` and trailing `.git` differences
+- Project URLs and source URLs are canonicalized via `canonicalize_repo_url`
+  before matching, so `http://` vs `https://` and trailing `.git` differences
   are normalized.
 - Both the entry-name form (`package-a`) and the normalized source-name
   form (`package_a`) are accepted for top-level sources.
+- **Source URL** -- the git URL of the manifest repo itself (i.e.
+  `KANON_SOURCE_<name>_URL`) -- resolves to the owning source chain.
+- **Root manifest path** -- the `KANON_SOURCE_<name>_PATH` value (e.g.
+  `repo-specs/package-a-marketplace.xml`) -- resolves to the owning source
+  on the live-resolve path.
+
+### why -- Placeholder fetch URLs on the live-resolve path
+
+When no `.kanon.lock` is present (`kanon why` operates in live-resolve mode),
+the manifest XML may declare a remote fetch URL using a `${VAR}` placeholder,
+for example `<remote name="pkgs" fetch="${GITBASE}">`.  `kanon why` resolves
+these placeholders from the `.kanon` globals (the non-source, non-special
+`KEY=VALUE` pairs written by `kanon add`, such as `GITBASE=https://github.com/org`).
+
+This substitution uses `os.path.expandvars` -- the same primitive that
+`kanon repo envsubst` uses -- applied before URL canonicalization.
+
+If a `${VAR}` placeholder is declared in the manifest but the matching
+variable is absent from the `.kanon` globals, `kanon why` exits with an
+actionable error naming the missing variable and the `.kanon` file path.
+
+Using a concrete `fetch` URL (no placeholder) remains fully supported -- the
+substitution step is skipped for fetch values that contain no `${...}` patterns.
 
 ### why -- Chain walking
 

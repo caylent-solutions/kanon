@@ -1,9 +1,10 @@
-"""Operator-path scenario tests for ``kanon why`` url/path live-resolve (E49-F1).
+"""Operator-path scenario tests for ``kanon why`` url/path live-resolve (E51-F2).
 
 These are subprocess (real CLI) tests asserting that ``kanon why <project-url>``
 and ``kanon why <include-xml-path>`` exit 0 against a synthetic catalog with no
-lockfile present.  They exercise the full operator path to close findings rows 68
-and 69 from the 2026-05-29 manual re-run.
+lockfile present, and that an unknown URL exits 1 with a handled error message.
+They exercise the full operator path to close findings rows 68 and 69 from the
+2026-05-30 manual re-run.
 
 All subprocess calls use the same Python interpreter via ``sys.executable -m kanon_cli``
 to match the installed CLI behaviour.
@@ -58,6 +59,77 @@ def _run_kanon_scenario(
 
 
 # ---------------------------------------------------------------------------
+# Shared fixture builder
+# ---------------------------------------------------------------------------
+
+
+def _build_catalog_and_workspace(
+    tmp_path: pathlib.Path,
+    entry_name: str,
+    project_name: str,
+    project_fetch_url: str,
+    catalog_subdir: str = "catalog",
+) -> tuple[str, pathlib.Path, pathlib.Path]:
+    """Build a synthetic catalog bare repo and a fresh workspace with a .kanon file.
+
+    Creates a bare catalog repo containing entry ``entry_name`` whose marketplace
+    XML has a ``<project>`` at ``<project_fetch_url>/<project_name>`` and an
+    ``<include name="repo-specs/extra-<entry_name>.xml">`` element.  Runs
+    ``kanon add <entry_name>`` to write the .kanon file without creating a lockfile.
+
+    Args:
+        tmp_path: pytest per-test temp directory.
+        entry_name: The catalog entry name (e.g. ``"zeta"``).
+        project_name: The project name suffix for the ``<project>`` element.
+        project_fetch_url: The fetch URL base for the ``<remote>`` element.
+        catalog_subdir: Subdirectory name under tmp_path for the catalog bare repo.
+
+    Returns:
+        A three-tuple of (catalog_source_url, workspace, kanon_file).
+
+    Raises:
+        AssertionError: If ``kanon add`` fails or unexpectedly creates a lockfile.
+    """
+    catalog_dir = tmp_path / catalog_subdir
+    bare_repo = _create_catalog_with_project_and_include(
+        catalog_dir,
+        entry_name=entry_name,
+        project_name=project_name,
+        project_fetch_url=project_fetch_url,
+        tags=["1.0.0"],
+    )
+    catalog_source_url = f"file://{bare_repo}@main"
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    kanon_file = workspace / ".kanon"
+
+    add_result = _run_kanon_scenario(
+        [
+            "add",
+            entry_name,
+            "--catalog-source",
+            catalog_source_url,
+            "--kanon-file",
+            str(kanon_file),
+        ],
+        cwd=workspace,
+    )
+    assert add_result.returncode == 0, (
+        f"kanon add failed (exit {add_result.returncode}).\n"
+        f"stdout: {add_result.stdout!r}\n"
+        f"stderr: {add_result.stderr!r}"
+    )
+
+    lock_file = workspace / ".kanon.lock"
+    assert not lock_file.exists(), (
+        f"Expected .kanon.lock absent after 'kanon add' (no install), but found it at {lock_file}"
+    )
+
+    return catalog_source_url, workspace, kanon_file
+
+
+# ---------------------------------------------------------------------------
 # Subprocess operator-path tests
 # ---------------------------------------------------------------------------
 
@@ -69,6 +141,9 @@ class TestWhyUrlPathOperatorPath:
     Each test creates a fresh synthetic catalog bare repo, runs ``kanon add``
     (no install, no lockfile), and then asserts that ``kanon why <url>`` or
     ``kanon why <xml-path>`` exits 0 with the source name in stdout.
+
+    The negative test verifies that an unknown URL exits 1 with the handled
+    "not found in resolved tree" message (not a traceback).
     """
 
     def test_why_url_exits_zero_no_lockfile(self, tmp_path: pathlib.Path) -> None:
@@ -80,7 +155,7 @@ class TestWhyUrlPathOperatorPath:
           2. ``kanon add zeta --catalog-source <url>`` (no install, no lockfile).
           3. ``kanon why https://github.com/oporg/zeta-project --catalog-source <url>``.
           4. Assert exit 0.
-          5. Assert ``ZETA`` (derived source name) appears in stdout.
+          5. Assert ``zeta`` (source entry name) appears in stdout.
 
         Args:
             tmp_path: pytest per-test temp directory.
@@ -90,40 +165,11 @@ class TestWhyUrlPathOperatorPath:
         project_fetch_url = "https://github.com/oporg"
         project_url = f"{project_fetch_url}/{project_name}"
 
-        catalog_dir = tmp_path / "catalog"
-        bare_repo = _create_catalog_with_project_and_include(
-            catalog_dir,
+        catalog_source_url, workspace, kanon_file = _build_catalog_and_workspace(
+            tmp_path,
             entry_name=entry_name,
             project_name=project_name,
             project_fetch_url=project_fetch_url,
-            tags=["1.0.0"],
-        )
-        catalog_source_url = f"file://{bare_repo}@main"
-
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        kanon_file = workspace / ".kanon"
-
-        add_result = _run_kanon_scenario(
-            [
-                "add",
-                entry_name,
-                "--catalog-source",
-                catalog_source_url,
-                "--kanon-file",
-                str(kanon_file),
-            ],
-            cwd=workspace,
-        )
-        assert add_result.returncode == 0, (
-            f"kanon add failed (exit {add_result.returncode}).\n"
-            f"stdout: {add_result.stdout!r}\n"
-            f"stderr: {add_result.stderr!r}"
-        )
-
-        lock_file = workspace / ".kanon.lock"
-        assert not lock_file.exists(), (
-            f"Expected .kanon.lock absent after 'kanon add' (no install), but found it at {lock_file}"
         )
 
         why_result = _run_kanon_scenario(
@@ -156,7 +202,7 @@ class TestWhyUrlPathOperatorPath:
           2. ``kanon add eta --catalog-source <url>`` (no install, no lockfile).
           3. ``kanon why repo-specs/extra-eta.xml --catalog-source <url>``.
           4. Assert exit 0.
-          5. Assert ``ETA`` (derived source name) appears in stdout.
+          5. Assert ``eta`` (source entry name) appears in stdout.
 
         Args:
             tmp_path: pytest per-test temp directory.
@@ -164,40 +210,11 @@ class TestWhyUrlPathOperatorPath:
         entry_name = "eta"
         include_xml_path = f"repo-specs/extra-{entry_name}.xml"
 
-        catalog_dir = tmp_path / "catalog"
-        bare_repo = _create_catalog_with_project_and_include(
-            catalog_dir,
+        catalog_source_url, workspace, kanon_file = _build_catalog_and_workspace(
+            tmp_path,
             entry_name=entry_name,
             project_name="eta-project",
             project_fetch_url="https://github.com/oporg",
-            tags=["1.0.0"],
-        )
-        catalog_source_url = f"file://{bare_repo}@main"
-
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        kanon_file = workspace / ".kanon"
-
-        add_result = _run_kanon_scenario(
-            [
-                "add",
-                entry_name,
-                "--catalog-source",
-                catalog_source_url,
-                "--kanon-file",
-                str(kanon_file),
-            ],
-            cwd=workspace,
-        )
-        assert add_result.returncode == 0, (
-            f"kanon add failed (exit {add_result.returncode}).\n"
-            f"stdout: {add_result.stdout!r}\n"
-            f"stderr: {add_result.stderr!r}"
-        )
-
-        lock_file = workspace / ".kanon.lock"
-        assert not lock_file.exists(), (
-            f"Expected .kanon.lock absent after 'kanon add' (no install), but found it at {lock_file}"
         )
 
         why_result = _run_kanon_scenario(
@@ -220,3 +237,58 @@ class TestWhyUrlPathOperatorPath:
         )
 
         assert entry_name in why_result.stdout, f"Expected {entry_name!r} in stdout but got: {why_result.stdout!r}"
+
+    def test_why_unknown_url_exits_one_no_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """``kanon why <unknown-url>`` exits 1 with "not found in resolved tree" message.
+
+        Flow:
+          1. Build a synthetic catalog with entry ``theta`` (project URL resolvable).
+          2. ``kanon add theta --catalog-source <url>`` (no install, no lockfile).
+          3. ``kanon why https://github.com/unknown-org/no-such-project --catalog-source <url>``.
+          4. Assert exit 1.
+          5. Assert "not found in resolved tree" appears in stderr.
+          6. Assert no Python traceback appears in stderr (handled error, not a crash).
+
+        The miss path on the live-resolve path must produce the same handled error
+        as on the lockfile path -- no raw traceback, no silent success.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        entry_name = "theta"
+        unknown_url = "https://github.com/unknown-org/no-such-project"
+
+        catalog_source_url, workspace, kanon_file = _build_catalog_and_workspace(
+            tmp_path,
+            entry_name=entry_name,
+            project_name="theta-project",
+            project_fetch_url="https://github.com/oporg",
+        )
+
+        why_result = _run_kanon_scenario(
+            [
+                "why",
+                unknown_url,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+
+        assert why_result.returncode == 1, (
+            f"Expected exit 1 from 'kanon why {unknown_url}' (unknown URL), "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+
+        assert "not found in resolved tree" in why_result.stderr, (
+            f"Expected 'not found in resolved tree' in stderr for unknown URL, but got stderr: {why_result.stderr!r}"
+        )
+
+        assert "Traceback" not in why_result.stderr, (
+            f"Expected a handled error message (no traceback), "
+            f"but a Python traceback appeared in stderr: {why_result.stderr!r}"
+        )

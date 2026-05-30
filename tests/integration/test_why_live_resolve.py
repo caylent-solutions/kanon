@@ -42,8 +42,11 @@ import pathlib
 import subprocess
 import sys
 import textwrap
+from unittest.mock import patch
 
 import pytest
+
+from kanon_cli.core.install import _RefResolution
 
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
@@ -897,3 +900,283 @@ class TestWhyLiveResolveByXmlPath:
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test: in-process -- _live_resolve_tree populates project + include children
+# ---------------------------------------------------------------------------
+
+
+_MOCK_SHA = "b" * 40
+_MOCK_REF = "refs/heads/main"
+
+
+@pytest.mark.integration
+class TestLiveResolveTreeStructure:
+    """In-process coverage asserting ``_live_resolve_tree`` populates children.
+
+    These tests call ``_live_resolve_tree`` directly (not via subprocess) to
+    verify the internal tree structure: each source node must carry project
+    child nodes and include child nodes after the BUG-2 fix landed in
+    E49-F1-S1-T1.  This guards against regressions where ``_live_resolve_tree``
+    is refactored to stop populating children, which would silently break
+    ``_match_by_url`` and ``_match_by_xml_path`` without the subprocess tests
+    catching it immediately.
+
+    The autouse ``_default_allow_insecure_remotes`` fixture (from
+    ``tests/integration/conftest.py``) sets ``KANON_ALLOW_INSECURE_REMOTES=1``
+    so the ``file://`` source URL passes the security policy check.
+
+    ``kanon_cli.commands.why._resolve_ref_to_sha`` is patched locally because
+    ``why.py`` imports it by direct reference (distinct from the install-module
+    attribute patched by the conftest autouse fixture).
+    """
+
+    @staticmethod
+    def _collect_all(node) -> list:
+        """Collect a node and all its descendants via depth-first traversal.
+
+        Args:
+            node: A ``ChainNode`` instance with a ``children`` attribute.
+
+        Returns:
+            A flat list containing ``node`` and all descendant nodes.
+        """
+        result = [node]
+        for child in node.children:
+            result.extend(TestLiveResolveTreeStructure._collect_all(child))
+        return result
+
+    def test_live_resolve_tree_has_project_children(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``_live_resolve_tree`` returns a tree with project children under the source node.
+
+        Flow:
+          1. Build a synthetic catalog bare repo with entry ``kappa`` whose marketplace
+             XML declares a ``<project remote="origin" name="kappa-proj">`` and a
+             ``<remote name="origin" fetch="https://github.com/testorg">``.
+          2. Run ``kanon add kappa --catalog-source <file-url>`` to write the .kanon file.
+          3. Call ``_live_resolve_tree(kanon_file, catalog_source_url)`` directly with
+             ``_resolve_ref_to_sha`` patched to return a deterministic mock SHA.
+          4. Assert the returned tree has exactly one source node.
+          5. Assert the source node has at least one child with ``kind == "project"``.
+          6. Assert the project child has a non-empty ``url`` attribute.
+
+        Assertions 5 and 6 would fail against pre-E49-F1 code where
+        ``_live_resolve_tree`` returned source nodes with no children.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree
+
+        entry_name = "kappa"
+        project_name = "kappa-proj"
+        project_fetch_url = "https://github.com/testorg"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=project_name,
+            project_fetch_url=project_fetch_url,
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        # Write the .kanon file via kanon add subprocess (so the format is canonical).
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        # Patch _resolve_ref_to_sha in the why module's namespace so the
+        # in-process call does not attempt a real git ls-remote.
+        mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
+        with patch(
+            "kanon_cli.commands.why._resolve_ref_to_sha",
+            return_value=mock_resolution,
+        ):
+            tree = _live_resolve_tree(kanon_file, catalog_source_url)
+
+        # -- Assert: exactly one source node --
+        assert len(tree.sources) == 1, (
+            f"Expected 1 source node in live-resolve tree, got {len(tree.sources)}. "
+            f"Source names: {[s.name for s in tree.sources]}"
+        )
+
+        source_node = tree.sources[0]
+
+        # -- Assert: source node has children (project or include) --
+        assert len(source_node.children) > 0, (
+            f"Expected source node {source_node.name!r} to have project/include children "
+            f"after _live_resolve_tree, but children list is empty. "
+            f"This indicates _live_resolve_tree is not populating children -- BUG-2 regression."
+        )
+
+        all_nodes = self._collect_all(source_node)
+        project_nodes = [n for n in all_nodes if n.kind == "project"]
+        include_nodes = [n for n in all_nodes if n.kind == "include"]
+
+        # -- Assert: at least one project node is present somewhere in the subtree --
+        assert len(project_nodes) > 0, (
+            f"Expected at least one project ChainNode under source {source_node.name!r}, "
+            f"but found none. Children: {source_node.children!r}. "
+            f"_match_by_url requires project nodes to resolve URL arguments."
+        )
+
+        # -- Assert: project node has a non-empty url --
+        for proj in project_nodes:
+            assert proj.url, (
+                f"Project node {proj.name!r} has empty url; _match_by_url canonicalizes this url to find matches."
+            )
+
+        # -- Assert: at least one include node is present (the XML has one <include>) --
+        assert len(include_nodes) > 0, (
+            f"Expected at least one include ChainNode under source {source_node.name!r}, "
+            f"but found none. Children: {source_node.children!r}. "
+            f"_match_by_xml_path requires include nodes to resolve XML-path arguments."
+        )
+
+    def test_live_resolve_tree_has_include_children_with_ref(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Include children from ``_live_resolve_tree`` carry non-empty ``ref`` values.
+
+        The ``ref`` field on an include ``ChainNode`` is the XML manifest path
+        that ``_match_by_xml_path`` matches against.  If ``ref`` is empty or
+        ``None``, then ``kanon why <xml-path>`` would never find the include
+        node even if the tree is populated.
+
+        Flow:
+          1. Build a synthetic catalog bare repo with entry ``nu`` whose
+             marketplace XML contains ``<include name="repo-specs/extra-nu.xml">``.
+          2. Run ``kanon add nu`` (writes .kanon, no lockfile).
+          3. Call ``_live_resolve_tree`` directly.
+          4. Assert at least one include node has a non-empty ``ref`` matching
+             ``"repo-specs/extra-nu.xml"``.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree
+
+        entry_name = "nu"
+        include_xml_path = f"repo-specs/extra-{entry_name}.xml"
+
+        catalog_dir = tmp_path / "catalog"
+        bare_repo = _create_catalog_with_project_and_include(
+            catalog_dir,
+            entry_name=entry_name,
+            project_name=f"{entry_name}-proj",
+            project_fetch_url="https://github.com/testorg",
+            tags=["1.0.0"],
+        )
+        catalog_source_url = f"file://{bare_repo}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "kanon_cli",
+                "add",
+                entry_name,
+                "--catalog-source",
+                catalog_source_url,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(workspace),
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (exit {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\n"
+            f"stderr: {add_result.stderr!r}"
+        )
+
+        mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
+        with patch(
+            "kanon_cli.commands.why._resolve_ref_to_sha",
+            return_value=mock_resolution,
+        ):
+            tree = _live_resolve_tree(kanon_file, catalog_source_url)
+
+        assert len(tree.sources) == 1, f"Expected 1 source node, got {len(tree.sources)}"
+        source_node = tree.sources[0]
+
+        all_nodes = self._collect_all(source_node)
+        include_refs = [n.ref for n in all_nodes if n.kind == "include" and n.ref]
+
+        assert include_xml_path in include_refs, (
+            f"Expected include ref {include_xml_path!r} in tree but found include refs: {include_refs!r}. "
+            f"_match_by_xml_path matches against ChainNode.ref; missing ref means xml-path 'why' "
+            f"queries always return 'not found'."
+        )
+
+    def test_live_resolve_tree_raises_value_error_on_empty_catalog_source(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """``_live_resolve_tree`` raises ``ValueError`` immediately when ``catalog_source`` is empty.
+
+        The function signature requires a non-empty catalog source string
+        (documented as '<git-url>@<ref>' format).  An empty string indicates
+        a caller bug -- the CLI enforces non-empty before calling (line ~1259),
+        so an empty string reaching this function means the precondition was
+        violated.  Failing fast with a clear ``ValueError`` is more actionable
+        than allowing the function to proceed and surface a confusing
+        ``LiveResolveError`` about a network URL that was never intended to be
+        used.
+
+        Flow:
+          1. Write a valid .kanon file with one source entry.
+          2. Call ``_live_resolve_tree(kanon_file, '')`` directly.
+          3. Assert ``ValueError`` is raised (not ``LiveResolveError`` or any
+             other exception).
+          4. Assert the error message names ``catalog_source``.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+        """
+        from kanon_cli.commands.why import _live_resolve_tree
+
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(
+            "KANON_SOURCE_foo_URL=file:///irrelevant/path\n"
+            "KANON_SOURCE_foo_REVISION=main\n"
+            "KANON_SOURCE_foo_PATH=marketplace.xml\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="catalog_source"):
+            _live_resolve_tree(kanon_file, "")

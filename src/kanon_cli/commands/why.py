@@ -562,6 +562,12 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
         ValueError: From parse_kanonenv when the .kanon file is malformed or
             missing required source variables.
     """
+    if not catalog_source:
+        raise ValueError(
+            "catalog_source must be a non-empty '<git-url>@<ref>' string; "
+            "received an empty value. "
+            "The caller must verify --catalog-source is present before invoking _live_resolve_tree."
+        )
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
     kanonenv = parse_kanonenv(kanon_file)
     source_nodes: list[ChainNode] = []

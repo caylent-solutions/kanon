@@ -607,21 +607,46 @@ class TestResetManifestsWorkingTree:
 
         assert not bak.exists(), ".bak file should be removed by _reset_manifests_working_tree"
 
-    def test_raises_oserror_when_git_checkout_fails(self, tmp_path: pathlib.Path) -> None:
-        """OSError is raised when git checkout -- . fails.
+    def test_noop_when_manifests_dir_not_a_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """_reset_manifests_working_tree is a no-op when .repo/manifests exists but is not a git repo.
 
-        Uses a non-git directory to simulate the failure so the assertion is
-        deterministic without requiring a mock.
+        Integration tests create a plain directory in place of a real repo; the function
+        must return without raising and must not alter the directory contents.
+        AC-1, AC-3 (non-git no-op guard).
         """
-        # Create a .repo/manifests dir that is NOT a git repo so git checkout fails.
         manifests_dir = tmp_path / ".repo" / "manifests"
         manifests_dir.mkdir(parents=True)
-        (manifests_dir / "manifest.xml").write_text("<manifest/>\n")
-        # No git init -- git checkout will exit non-zero.
+        sentinel = manifests_dir / "manifest.xml"
+        sentinel.write_text("<manifest/>\n")
+        # No .git entry -- not a git working tree.
 
         source_dir = tmp_path
-        with pytest.raises(OSError, match="_reset_manifests_working_tree"):
-            _reset_manifests_working_tree(source_dir)
+        # Must not raise; directory contents must be unchanged.
+        _reset_manifests_working_tree(source_dir)
+
+        assert sentinel.exists(), "manifest.xml should be untouched when directory is not a git repo"
+        assert sentinel.read_text() == "<manifest/>\n", (
+            "manifest.xml should be unmodified when directory is not a git repo"
+        )
+
+    def test_raises_oserror_when_git_checkout_fails_on_valid_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """OSError is raised when git checkout fails on a valid git working tree.
+
+        Verifies the no-op guard does not swallow a real reset failure on a real git repo.
+        AC-4.
+        """
+        manifests_dir = tmp_path / ".repo" / "manifests"
+        self._init_git_repo(manifests_dir)
+
+        # Simulate a failed git checkout on a valid git repo by patching subprocess.run.
+        failed_result = MagicMock()
+        failed_result.returncode = 1
+        failed_result.stderr = "simulated git checkout failure"
+
+        with patch("kanon_cli.core.install.subprocess.run", return_value=failed_result):
+            source_dir = tmp_path
+            with pytest.raises(OSError, match="_reset_manifests_working_tree"):
+                _reset_manifests_working_tree(source_dir)
 
 
 @pytest.mark.unit

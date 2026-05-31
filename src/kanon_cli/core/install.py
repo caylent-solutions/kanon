@@ -667,7 +667,9 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
     ``repo init`` can checkout the new revision cleanly.
 
     The function is a no-op when ``.repo/manifests`` does not exist (first
-    install has not yet run).
+    install has not yet run) or when the directory exists but is not a git
+    working tree (integration tests use a plain directory in place of a real
+    repo; there is nothing to reset in that case).
 
     Args:
         source_dir: Path to ``.kanon-data/sources/<name>/``. The manifests
@@ -675,11 +677,18 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
 
     Raises:
         OSError: If the ``git checkout -- .`` or ``.bak`` cleanup fails due
-            to a file-system error. The exception message names the path and
-            the underlying OS error.
+            to a file-system error on a valid git working tree. The exception
+            message names the path and the underlying OS error.
     """
     manifests_dir = source_dir / ".repo" / "manifests"
     if not manifests_dir.is_dir():
+        return
+
+    # Detect whether manifests_dir is a git working tree by checking for the
+    # presence of a .git entry (file or directory).  This check must not
+    # raise and must not write to stderr on the no-op path; a plain directory
+    # check is the safest cross-platform approach that reuses no new helpers.
+    if not (manifests_dir / ".git").exists():
         return
 
     # Restore all tracked files to HEAD state.  ``git checkout -- .`` discards

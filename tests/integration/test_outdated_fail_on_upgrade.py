@@ -741,9 +741,7 @@ class TestFailOnUpgradeFail:
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
         # 3-tag fixture: 1.0.0 (oldest, pinned), 1.1.0, 1.2.0 (two upgrades available)
-        project_bare = _create_project_repo_with_tags(
-            project_base, "epsilon", ["1.0.0", "1.1.0", "1.2.0"]
-        )
+        project_bare = _create_project_repo_with_tags(project_base, "epsilon", ["1.0.0", "1.1.0", "1.2.0"])
         project_url = f"file://{project_bare}"
 
         manifest_base = tmp_path / "manifest-repos"
@@ -806,6 +804,5 @@ class TestFailOnUpgradeFail:
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert "outdated source(s) found" in result.stderr, (
-            f"Expected 'outdated source(s) found' in stderr.\n"
-            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            f"Expected 'outdated source(s) found' in stderr.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )

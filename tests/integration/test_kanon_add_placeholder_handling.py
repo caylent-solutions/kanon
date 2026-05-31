@@ -124,14 +124,11 @@ class TestKanonAddNoPlaceholders:
             cwd=workspace,
         )
         assert result.returncode == 0, (
-            f"kanon add exited {result.returncode} (expected 0).\n"
-            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+            f"kanon add exited {result.returncode} (expected 0).\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
 
         kanon_file = workspace / ".kanon"
-        assert kanon_file.exists(), (
-            f".kanon file was not created at {kanon_file}."
-        )
+        assert kanon_file.exists(), f".kanon file was not created at {kanon_file}."
         content = kanon_file.read_text()
 
         assert "<YOUR_GIT_ORG_BASE_URL>" not in content, (
@@ -147,9 +144,7 @@ class TestKanonAddNoPlaceholders:
         )
 
         expected_gitbase = _derive_expected_gitbase(catalog_source)
-        gitbase_lines = [
-            line for line in content.splitlines() if line.startswith("GITBASE=")
-        ]
+        gitbase_lines = [line for line in content.splitlines() if line.startswith("GITBASE=")]
         assert gitbase_lines, (
             "No GITBASE= line found in .kanon. "
             f"Expected a line starting with 'GITBASE={expected_gitbase}'.\n"

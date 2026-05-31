@@ -84,8 +84,7 @@ def makefile_lines(project_root: Path) -> list[str]:
     makefile_path = project_root / "Makefile"
     if not makefile_path.is_file():
         raise FileNotFoundError(
-            f"ERROR: Makefile not found at {makefile_path}. "
-            "Ensure a Makefile exists at the project root."
+            f"ERROR: Makefile not found at {makefile_path}. Ensure a Makefile exists at the project root."
         )
     return makefile_path.read_text(encoding="utf-8").splitlines()
 
@@ -164,9 +163,7 @@ def test_ci_workflow_triggers_on_pull_request(workflow_data: dict) -> None:
 
 
 @pytest.mark.functional
-def test_ci_workflow_invokes_scenario_tests(
-    workflow_data: dict, makefile_lines: list[str]
-) -> None:
+def test_ci_workflow_invokes_scenario_tests(workflow_data: dict, makefile_lines: list[str]) -> None:
     """A CI job must invoke make test-scenarios or make test-operator-path.
 
     This is the primary guard: it fails if the scenario-tests job is removed,
@@ -262,11 +259,7 @@ def test_ci_scenario_tests_job_uses_shell_bash(workflow_data: dict) -> None:
         if not isinstance(job, dict):
             continue
         run_commands = _job_run_commands(job)
-        job_invokes_scenario = any(
-            target in cmd.strip()
-            for cmd in run_commands
-            for target in operator_path_targets
-        )
+        job_invokes_scenario = any(target in cmd.strip() for cmd in run_commands for target in operator_path_targets)
         if not job_invokes_scenario:
             continue
         # This job runs operator-path/scenario tests -- check every run: step.

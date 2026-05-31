@@ -93,11 +93,7 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"git {args!r} failed in {cwd!r}:\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
+        raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -242,19 +238,12 @@ class TestListSyntheticCatalogVariants:
         result = _run_kanon(["list", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
+            f"Expected exit 0; got {result.returncode}.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
         lines = result.stdout.strip().splitlines()
-        assert len(lines) == 6, (
-            f"Expected exactly 6 output lines; got {len(lines)}.\n  lines: {lines!r}"
-        )
-        assert lines == sorted(lines), (
-            f"Expected lexicographic sort; got: {lines!r}"
-        )
-        assert lines == sorted(_SIX_ENTRY_NAMES), (
-            f"Expected sorted entry names; got: {lines!r}"
-        )
+        assert len(lines) == 6, f"Expected exactly 6 output lines; got {len(lines)}.\n  lines: {lines!r}"
+        assert lines == sorted(lines), f"Expected lexicographic sort; got: {lines!r}"
+        assert lines == sorted(_SIX_ENTRY_NAMES), f"Expected sorted entry names; got: {lines!r}"
 
     def test_format_json_emits_six_entry_array(
         self,
@@ -267,16 +256,10 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(["list", "--format", "json", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list), (
-            f"Expected JSON array; got type {type(parsed).__name__}."
-        )
-        assert len(parsed) == 6, (
-            f"Expected 6-element JSON array; got {len(parsed)} elements."
-        )
+        assert isinstance(parsed, list), f"Expected JSON array; got type {type(parsed).__name__}."
+        assert len(parsed) == 6, f"Expected 6-element JSON array; got {len(parsed)} elements."
 
     def test_detail_emits_six_entries_with_detail_fields(
         self,
@@ -289,26 +272,19 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(["list", "--detail", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         # Name-header lines are non-indented, non-empty lines.
-        header_lines = [
-            ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")
-        ]
+        header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
         assert len(header_lines) == 6, (
-            f"Expected 6 name-header lines in --detail output; got {len(header_lines)}.\n"
-            f"  headers: {header_lines!r}"
+            f"Expected 6 name-header lines in --detail output; got {len(header_lines)}.\n  headers: {header_lines!r}"
         )
         assert sorted(header_lines) == sorted(_SIX_ENTRY_NAMES), (
-            f"Header names do not match expected entry names.\n"
-            f"  headers: {header_lines!r}"
+            f"Header names do not match expected entry names.\n  headers: {header_lines!r}"
         )
         # Each detail record has 4 indented field lines: display-name, description, version, type.
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
         assert len(indented_lines) == 6 * 4, (
-            f"Expected {6 * 4} indented field lines (6 entries x 4 fields); "
-            f"got {len(indented_lines)}."
+            f"Expected {6 * 4} indented field lines (6 entries x 4 fields); got {len(indented_lines)}."
         )
 
     def test_tree_emits_root_with_six_children(
@@ -323,19 +299,12 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(["list", "--tree", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 6, (
-            f"Expected 6 tree root lines (one per entry); got {len(lines)}.\n"
-            f"  lines: {lines!r}"
-        )
+        assert len(lines) == 6, f"Expected 6 tree root lines (one per entry); got {len(lines)}.\n  lines: {lines!r}"
         # Every line must begin with 'entry ' (the tree root-node prefix).
         for line in lines:
-            assert line.startswith("entry "), (
-                f"Expected tree root line to start with 'entry '; got: {line!r}"
-            )
+            assert line.startswith("entry "), f"Expected tree root line to start with 'entry '; got: {line!r}"
 
     def test_tree_max_depth_1_truncates_below_root(
         self,
@@ -348,18 +317,11 @@ class TestListSyntheticCatalogVariants:
         Covers findings.md row 11.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(
-            ["list", "--tree", "--max-depth", "1", "--catalog-source", catalog_source]
-        )
+        result = _run_kanon(["list", "--tree", "--max-depth", "1", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 6, (
-            f"Expected 6 root lines with --max-depth 1; got {len(lines)}.\n"
-            f"  lines: {lines!r}"
-        )
+        assert len(lines) == 6, f"Expected 6 root lines with --max-depth 1; got {len(lines)}.\n  lines: {lines!r}"
         # With max-depth 1, no project-level (+--) or continuation (|  ) lines appear.
         for line in lines:
             assert not line.startswith("+--") and not line.startswith("|"), (
@@ -375,22 +337,14 @@ class TestListSyntheticCatalogVariants:
         Covers findings.md row 16.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(
-            ["list", "--regex", "^alpha", "--catalog-source", catalog_source]
-        )
+        result = _run_kanon(["list", "--regex", "^alpha", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
         # alpha-core and alpha-utils start with 'alpha' in their name field.
-        assert len(lines) == 2, (
-            f"Expected 2 entries matching '^alpha'; got {len(lines)}.\n  lines: {lines!r}"
-        )
+        assert len(lines) == 2, f"Expected 2 entries matching '^alpha'; got {len(lines)}.\n  lines: {lines!r}"
         for name in lines:
-            assert name.startswith("alpha"), (
-                f"Entry {name!r} does not start with 'alpha' -- regex filter leaked."
-            )
+            assert name.startswith("alpha"), f"Entry {name!r} does not start with 'alpha' -- regex filter leaked."
 
     def test_match_fields_filter_matches_subset(
         self,
@@ -414,18 +368,11 @@ class TestListSyntheticCatalogVariants:
             ]
         )
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
-        assert len(lines) == 2, (
-            f"Expected 2 entries with 'alpha' in name field; got {len(lines)}.\n"
-            f"  lines: {lines!r}"
-        )
+        assert len(lines) == 2, f"Expected 2 entries with 'alpha' in name field; got {len(lines)}.\n  lines: {lines!r}"
         for name in lines:
-            assert "alpha" in name, (
-                f"Entry {name!r} does not contain 'alpha' -- match-fields filter leaked."
-            )
+            assert "alpha" in name, f"Entry {name!r} does not contain 'alpha' -- match-fields filter leaked."
 
     def test_positional_substring_filter_matches_subset(
         self,
@@ -439,17 +386,12 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(["list", "beta", "--catalog-source", catalog_source])
 
-        assert result.returncode == 0, (
-            f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
         assert len(lines) == 1, (
-            f"Expected exactly 1 entry matching substring 'beta'; got {len(lines)}.\n"
-            f"  lines: {lines!r}"
+            f"Expected exactly 1 entry matching substring 'beta'; got {len(lines)}.\n  lines: {lines!r}"
         )
-        assert lines[0] == "beta-svc", (
-            f"Expected 'beta-svc'; got {lines[0]!r}."
-        )
+        assert lines[0] == "beta-svc", f"Expected 'beta-svc'; got {lines[0]!r}."
 
     def test_format_json_tree_mutex_errors(
         self,
@@ -474,9 +416,7 @@ class TestListSyntheticCatalogVariants:
             ]
         )
 
-        assert result.returncode != 0, (
-            f"Expected non-zero exit for --format json --tree; got {result.returncode}."
-        )
+        assert result.returncode != 0, f"Expected non-zero exit for --format json --tree; got {result.returncode}."
         assert "--format json and --tree are mutually exclusive" in result.stderr, (
             f"Expected mutex-error substring in stderr; got: {result.stderr!r}"
         )

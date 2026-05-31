@@ -314,9 +314,7 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
             )
         )
 
-        src_file = (
-            pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
-        )
+        src_file = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
         src_file.parent.mkdir(parents=True, exist_ok=True)
         src_file.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
 
@@ -476,8 +474,7 @@ class TestCleanMarketplaceTrue:
             add_names_in_order.append(marketplace_data["name"])
 
         assert len(add_names_in_order) >= 1, (
-            f"AC-FUNC-004: expected at least one marketplace name from add calls, "
-            f"but add_argvs={add_argvs!r}"
+            f"AC-FUNC-004: expected at least one marketplace name from add calls, but add_argvs={add_argvs!r}"
         )
 
         with (

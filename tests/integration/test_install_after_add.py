@@ -161,8 +161,7 @@ class TestInstallAfterAdd:
         env.pop("KANON_CATALOG_SOURCE", None)
 
         install_result = subprocess.run(
-            [sys.executable, "-m", "kanon_cli", "install",
-             "--catalog-source", override_catalog_source],
+            [sys.executable, "-m", "kanon_cli", "install", "--catalog-source", override_catalog_source],
             capture_output=True,
             text=True,
             env=env,

@@ -564,19 +564,13 @@ class TestAddCustomKanonFile:
         )
         assert kanon_file.exists(), "Expected custom.kanon to be created at the --kanon-file path"
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_URL=" in content, (
-            f"Expected source URL line in custom.kanon; got:\n{content}"
-        )
+        assert "KANON_SOURCE_entry_a_URL=" in content, f"Expected source URL line in custom.kanon; got:\n{content}"
         assert "KANON_SOURCE_entry_a_REVISION=" in content, (
             f"Expected source REVISION line in custom.kanon; got:\n{content}"
         )
-        assert "KANON_SOURCE_entry_a_PATH=" in content, (
-            f"Expected source PATH line in custom.kanon; got:\n{content}"
-        )
+        assert "KANON_SOURCE_entry_a_PATH=" in content, f"Expected source PATH line in custom.kanon; got:\n{content}"
         default_kanon = workspace / ".kanon"
-        assert not default_kanon.exists(), (
-            "Default .kanon must NOT be created when --kanon-file overrides it"
-        )
+        assert not default_kanon.exists(), "Default .kanon must NOT be created when --kanon-file overrides it"
 
 
 @pytest.mark.integration
@@ -613,15 +607,9 @@ class TestAddEnvKanonFilePrecedence:
         )
         assert flag_path.exists(), "Expected flag.kanon to be created at the --kanon-file path"
         content = flag_path.read_text()
-        assert "KANON_SOURCE_entry_b_URL=" in content, (
-            f"Expected source URL line in flag.kanon; got:\n{content}"
-        )
+        assert "KANON_SOURCE_entry_b_URL=" in content, f"Expected source URL line in flag.kanon; got:\n{content}"
         assert "KANON_SOURCE_entry_b_REVISION=" in content, (
             f"Expected source REVISION line in flag.kanon; got:\n{content}"
         )
-        assert "KANON_SOURCE_entry_b_PATH=" in content, (
-            f"Expected source PATH line in flag.kanon; got:\n{content}"
-        )
-        assert not env_path.exists(), (
-            "env.kanon must NOT be written when --kanon-file flag overrides KANON_KANON_FILE"
-        )
+        assert "KANON_SOURCE_entry_b_PATH=" in content, f"Expected source PATH line in flag.kanon; got:\n{content}"
+        assert not env_path.exists(), "env.kanon must NOT be written when --kanon-file flag overrides KANON_KANON_FILE"

@@ -571,6 +571,7 @@ class TestPinRetention:
         kanon_data = project / ".kanon-data"
         if kanon_data.exists():
             import shutil
+
             shutil.rmtree(str(kanon_data))
 
         r2 = _run_install(project, catalog_uri)
@@ -624,8 +625,6 @@ class TestPinRetention:
         # Build a content repo + manifest repo.
         content_bare_dir = fixtures / "content"
         content_bare_dir.mkdir()
-        content_fetch_url = content_bare_dir.as_uri() + "/"
-
         make_bare_repo_with_tags(content_bare_dir, "branchref-content", ["1.0.0"])
 
         manifest_bare, _ = _build_manifest_repo_with_tags(
@@ -644,8 +643,7 @@ class TestPinRetention:
         # Initial install: records branch tip SHA.
         r1 = _run_install(project, catalog_uri)
         assert r1.returncode == 0, (
-            f"Initial kanon install failed (exit {r1.returncode}):"
-            f"\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
+            f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
         lock_path = project / ".kanon.lock"
         assert lock_path.exists(), ".kanon.lock not created after initial install"
@@ -669,12 +667,12 @@ class TestPinRetention:
         kanon_data = project / ".kanon-data"
         if kanon_data.exists():
             import shutil
+
             shutil.rmtree(str(kanon_data))
 
         r2 = _run_install(project, catalog_uri)
         assert r2.returncode == 0, (
-            f"Fresh plain install failed (exit {r2.returncode}):"
-            f"\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
+            f"Fresh plain install failed (exit {r2.returncode}):\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
         replayed_sha = _resolved_sha_from_lock(lock_path, "BRANCHREF")
         replayed_content = lock_path.read_bytes()
@@ -733,9 +731,7 @@ class TestRefreshRegression:
         project = tmp_path / "project"
         project.mkdir()
 
-        _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(
-            fixtures / "src", "SRC"
-        )
+        _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
         catalog_bare = _build_catalog_bare(fixtures / "catalog")
         catalog_uri = f"{catalog_bare.as_uri()}@main"
 
@@ -744,8 +740,7 @@ class TestRefreshRegression:
         # Step 4: initial install.
         r1 = _run_install(project, catalog_uri)
         assert r1.returncode == 0, (
-            f"Initial kanon install failed (exit {r1.returncode}):"
-            f"\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
+            f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
         lock_path = project / ".kanon.lock"
         assert lock_path.exists(), ".kanon.lock not created after initial install"
@@ -755,9 +750,7 @@ class TestRefreshRegression:
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
-        assert sha_new_tip != sha_before, (
-            "Fixture setup error: new tip SHA must differ from the initial SHA"
-        )
+        assert sha_new_tip != sha_before, "Fixture setup error: new tip SHA must differ from the initial SHA"
 
         # Step 6: refresh-lock over the existing .kanon-data.
         # Before the fix: exits 1 with unhandled GitCommandError.
@@ -793,9 +786,7 @@ class TestRefreshRegression:
         project = tmp_path / "project"
         project.mkdir()
 
-        _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(
-            fixtures / "src", "SRC"
-        )
+        _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
         catalog_bare = _build_catalog_bare(fixtures / "catalog")
         catalog_uri = f"{catalog_bare.as_uri()}@main"
 
@@ -804,8 +795,7 @@ class TestRefreshRegression:
         # Initial install.
         r1 = _run_install(project, catalog_uri)
         assert r1.returncode == 0, (
-            f"Initial kanon install failed (exit {r1.returncode}):"
-            f"\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
+            f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
         lock_path = project / ".kanon.lock"
         assert lock_path.exists(), ".kanon.lock not created after initial install"
@@ -815,9 +805,7 @@ class TestRefreshRegression:
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
-        assert sha_new_tip != sha_before, (
-            "Fixture setup error: new tip SHA must differ from the initial SHA"
-        )
+        assert sha_new_tip != sha_before, "Fixture setup error: new tip SHA must differ from the initial SHA"
 
         # Refresh-lock-source over the existing .kanon-data.
         # Before the fix: exits 1 with unhandled GitCommandError.

@@ -79,10 +79,7 @@ class TestScanKanonenvForUnresolvedPlaceholders:
 
     def test_detects_single_placeholder_on_correct_line(self, tmp_path: pathlib.Path) -> None:
         kanon = tmp_path / ".kanon"
-        kanon.write_text(
-            "GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
-        )
+        kanon.write_text("GITBASE=<YOUR_GIT_ORG_BASE_URL>\nKANON_MARKETPLACE_INSTALL=false\n")
         result = _scan_kanonenv_for_unresolved_placeholders(kanon)
         assert len(result) == 1, f"Expected 1 finding, got {len(result)}: {result}"
         line_number, token = result[0]
@@ -91,10 +88,7 @@ class TestScanKanonenvForUnresolvedPlaceholders:
 
     def test_detects_multiple_placeholders_across_lines(self, tmp_path: pathlib.Path) -> None:
         kanon = tmp_path / ".kanon"
-        kanon.write_text(
-            "GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
-            "KANON_EXTRA=<ANOTHER_PLACEHOLDER>\n"
-        )
+        kanon.write_text("GITBASE=<YOUR_GIT_ORG_BASE_URL>\nKANON_EXTRA=<ANOTHER_PLACEHOLDER>\n")
         result = _scan_kanonenv_for_unresolved_placeholders(kanon)
         assert len(result) == 2, f"Expected 2 findings, got {len(result)}: {result}"
         assert result[0] == (1, "<YOUR_GIT_ORG_BASE_URL>"), f"Unexpected first finding: {result[0]}"
@@ -102,19 +96,13 @@ class TestScanKanonenvForUnresolvedPlaceholders:
 
     def test_skips_comment_lines(self, tmp_path: pathlib.Path) -> None:
         kanon = tmp_path / ".kanon"
-        kanon.write_text(
-            "# GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
-            "GITBASE=https://github.com/my-org\n"
-        )
+        kanon.write_text("# GITBASE=<YOUR_GIT_ORG_BASE_URL>\nGITBASE=https://github.com/my-org\n")
         result = _scan_kanonenv_for_unresolved_placeholders(kanon)
         assert result == [], f"Comment lines should be skipped, got: {result}"
 
     def test_skips_lines_without_equals(self, tmp_path: pathlib.Path) -> None:
         kanon = tmp_path / ".kanon"
-        kanon.write_text(
-            "[catalog]\n"
-            "GITBASE=https://github.com/my-org\n"
-        )
+        kanon.write_text("[catalog]\nGITBASE=https://github.com/my-org\n")
         result = _scan_kanonenv_for_unresolved_placeholders(kanon)
         assert result == [], f"Lines without '=' should be skipped, got: {result}"
 
@@ -165,7 +153,6 @@ class TestUnresolvedPlaceholderError:
 
     def test_is_subclass_of_install_error(self) -> None:
         from kanon_cli.core.install import InstallError
+
         exc = UnresolvedPlaceholderError(line_number=1, placeholder="<X>")
-        assert isinstance(exc, InstallError), (
-            "UnresolvedPlaceholderError must be a subclass of InstallError"
-        )
+        assert isinstance(exc, InstallError), "UnresolvedPlaceholderError must be a subclass of InstallError"

@@ -91,13 +91,9 @@ def _resolve_matrix_path(project_root: Path) -> Path:
     if workspace_env:
         # DEVBENCH_WORKSPACE_ROOT is the devbench workspace; test-fixtures
         # lives one level above it at the rpm-migration root.
-        candidates.append(
-            Path(workspace_env).resolve().parent / "test-fixtures" / matrix_filename
-        )
+        candidates.append(Path(workspace_env).resolve().parent / "test-fixtures" / matrix_filename)
     # Layout-derived: workspace root is one level above the kanon project root.
-    candidates.append(
-        project_root.parent / "test-fixtures" / matrix_filename
-    )
+    candidates.append(project_root.parent / "test-fixtures" / matrix_filename)
 
     for candidate in candidates:
         resolved = candidate.resolve()
@@ -105,9 +101,7 @@ def _resolve_matrix_path(project_root: Path) -> Path:
             return resolved
 
     raise FileNotFoundError(
-        "ERROR: findings-rerun matrix not found. Searched: "
-        + ", ".join(str(c.resolve()) for c in candidates)
-        + ". "
+        "ERROR: findings-rerun matrix not found. Searched: " + ", ".join(str(c.resolve()) for c in candidates) + ". "
         "Ensure the matrix file exists at "
         "<workspace-root>/test-fixtures/findings-rerun-2026-05-30.md. "
         "Set DEVBENCH_WORKSPACE_ROOT or place the kanon repo one level below "
@@ -147,9 +141,7 @@ def _resolve_traceability_doc(project_root: Path) -> Path:
 
 # Pattern for scenario rows in the findings-rerun matrix.
 # Matches lines like: | 1 | per-entry / builders-plugins | lifecycle | FAIL | ...
-_MATRIX_ROW_PATTERN = re.compile(
-    r"^\|\s*(?P<num>\d+)\s*\|\s*(?P<scenario>[^|]+?)\s*\|\s*(?P<type>[^|]+?)\s*\|"
-)
+_MATRIX_ROW_PATTERN = re.compile(r"^\|\s*(?P<num>\d+)\s*\|\s*(?P<scenario>[^|]+?)\s*\|\s*(?P<type>[^|]+?)\s*\|")
 
 # Pattern for traceability doc rows.
 # Matches lines like: | 1 | ... | ... | ... | `tests/...::TestX::test_y`, `...` |
@@ -358,14 +350,10 @@ def test_every_findings_row_has_a_mapped_existing_test(
     for row_num, scenario_name in matrix_rows:
         citations = doc_citations.get(row_num)
         if citations is None:
-            uncited_rows.append(
-                f"Row {row_num} ({scenario_name!r}): no entry in traceability doc"
-            )
+            uncited_rows.append(f"Row {row_num} ({scenario_name!r}): no entry in traceability doc")
             continue
         if not citations:
-            uncited_rows.append(
-                f"Row {row_num} ({scenario_name!r}): 'Covered By' cell is blank"
-            )
+            uncited_rows.append(f"Row {row_num} ({scenario_name!r}): 'Covered By' cell is blank")
             continue
         # Accept manual-only annotation as a valid coverage declaration.
         if any(_MANUAL_ONLY_ANNOTATION in c for c in citations):
@@ -375,8 +363,7 @@ def test_every_findings_row_has_a_mapped_existing_test(
             collectable, diagnostic = _is_collectable(node_id, project_root)
             if not collectable:
                 dangling_citations.append(
-                    f"Row {row_num} ({scenario_name!r}): citation "
-                    f"{node_id!r} is not collectable -- {diagnostic}"
+                    f"Row {row_num} ({scenario_name!r}): citation {node_id!r} is not collectable -- {diagnostic}"
                 )
 
     if uncited_rows or dangling_citations:

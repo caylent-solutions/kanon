@@ -134,9 +134,7 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
             )
         )
 
-        src_file = (
-            pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
-        )
+        src_file = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
         src_file.parent.mkdir(parents=True, exist_ok=True)
         src_file.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
 
@@ -331,10 +329,7 @@ class TestFullLifecycleSynthetic:
             # ------------------------------------------------------------------
             # Step 2c: assert no <...> placeholder survives in .kanon (E28)
             # ------------------------------------------------------------------
-            assert kanon_path.exists(), (
-                f"E28: .kanon was not created at {kanon_path} "
-                f"after 'kanon add {entry_name}'."
-            )
+            assert kanon_path.exists(), f"E28: .kanon was not created at {kanon_path} after 'kanon add {entry_name}'."
             _assert_no_placeholder_in_kanon(kanon_path, entry_name)
 
             # ------------------------------------------------------------------

@@ -1454,12 +1454,25 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
+    # -- Extract the matched token from hit.label for the match annotation --
+    # hit.label has the form: '<category description> '<token>''
+    # e.g. "project URL 'https://github.com/org/baz'" or "XML manifest path 'repo-specs/bar.xml'"
+    # The token is enclosed in the first and last single-quote in the label.
+    first_quote = hit.label.index("'")
+    last_quote = hit.label.rindex("'")
+    matched_token = hit.label[first_quote + 1 : last_quote]
+
     # -- Render and emit output --
     if args.format == KANON_WHY_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 
-        _emit_json_payload(_build_why_payload(chains), sort_keys=False, indent=KANON_WHY_JSON_INDENT)
+        why_payload = {
+            "matched": {"category": hit.category, "token": matched_token},
+            "chains": _build_why_payload(chains),
+        }
+        _emit_json_payload(why_payload, sort_keys=False, indent=KANON_WHY_JSON_INDENT)
     else:
+        print(f"matched {hit.category} '{matched_token}'")
         lines = _render_text(chains)
         for line in lines:
             print(line)

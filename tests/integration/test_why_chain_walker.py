@@ -196,7 +196,12 @@ class TestWhyChainWalkerIntegration:
         )
 
     def test_single_chain_via_subprocess(self, why_fixture: dict) -> None:
-        """kanon why <project-url> prints exactly one chain line (AC-TEST-002, AC-TEST-003)."""
+        """kanon why <project-url> prints annotation line + one chain line (AC-TEST-002, AC-TEST-003).
+
+        After the match-annotation enhancement the output is two non-empty lines:
+          Line 1: matched <category> '<token>'
+          Line 2: <chain>
+        """
         result = self._run_why(why_fixture)
 
         assert result.returncode == 0, (
@@ -204,16 +209,24 @@ class TestWhyChainWalkerIntegration:
         )
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 1, f"Expected exactly 1 output line, got {len(lines)}: {lines!r}"
+        assert len(lines) == 2, f"Expected 2 output lines (annotation + chain), got {len(lines)}: {lines!r}"
+        assert lines[0].startswith("matched "), (
+            f"First line must be the match annotation starting with 'matched ', got: {lines[0]!r}"
+        )
 
     def test_chain_contains_source_name(self, why_fixture: dict) -> None:
-        """Output chain must start with the top-level source name (AC-FUNC-002)."""
+        """Output chain line (second line) must start with the top-level source name (AC-FUNC-002).
+
+        The first output line is the match annotation; the second is the chain.
+        """
         result = self._run_why(why_fixture)
 
         assert result.returncode == 0
-        line = result.stdout.strip()
-        assert line.startswith(why_fixture["source_name"]), (
-            f"Chain line must start with source name {why_fixture['source_name']!r}, got: {line!r}"
+        lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+        assert len(lines) >= 2, f"Expected annotation + chain line, got: {lines!r}"
+        chain_line = lines[1]
+        assert chain_line.startswith(why_fixture["source_name"]), (
+            f"Chain line must start with source name {why_fixture['source_name']!r}, got: {chain_line!r}"
         )
 
     def test_chain_contains_project_sha(self, why_fixture: dict) -> None:
@@ -252,7 +265,12 @@ class TestWhyChainWalkerIntegration:
         assert absent_url in result.stderr, f"stderr must name the missing URL, got: {result.stderr!r}"
 
     def test_scp_url_canonicalization_matches(self, why_fixture: dict) -> None:
-        """SCP shorthand git@github.com:org/baz.git matches the https:// project URL (AC-FUNC-003)."""
+        """SCP shorthand git@github.com:org/baz.git matches the https:// project URL (AC-FUNC-003).
+
+        After the match-annotation enhancement the output is two non-empty lines:
+          Line 1: matched <category> '<token>'
+          Line 2: <chain>
+        """
         scp_url = "git@github.com:org/baz.git"
         result = self._run_why(why_fixture, url=scp_url)
 
@@ -260,7 +278,8 @@ class TestWhyChainWalkerIntegration:
             f"kanon why with SCP URL must exit 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 1
+        assert len(lines) == 2, f"Expected annotation + chain line, got {len(lines)}: {lines!r}"
+        assert lines[0].startswith("matched "), f"First line must be the match annotation, got: {lines[0]!r}"
 
     def test_full_ac_cycle_001(self, why_fixture: dict) -> None:
         """AC-CYCLE-001: full cycle -- build fixture, invoke kanon why, assert output shape.
@@ -269,8 +288,9 @@ class TestWhyChainWalkerIntegration:
         sha=ccc...) and project baz (sha=bbb...) in its lockfile entry.
         .kanon references FOO. .kanon.lock pins every node.
         Invoke: kanon why <baz-url>.
-        Assert: stdout contains exactly one line with the full include-node segment:
-          FOO -> repo-specs/bar.xml@<include-sha> -> baz@<project-sha>
+        Assert: stdout contains exactly two non-empty lines:
+          Line 1: match annotation (e.g. "matched url '<canonical-url>'")
+          Line 2: the full include-node chain FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         with exit code 0.
         """
         result = self._run_why(why_fixture)
@@ -278,27 +298,34 @@ class TestWhyChainWalkerIntegration:
         assert result.returncode == 0, f"Exit code must be 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 1, f"Expected exactly 1 chain line, got: {lines!r}"
+        assert len(lines) == 2, f"Expected annotation + chain line (2 lines), got: {lines!r}"
 
-        line = lines[0]
+        # Line 0 is the match annotation
+        annotation_line = lines[0]
+        assert annotation_line.startswith("matched "), (
+            f"First line must be the match annotation, got: {annotation_line!r}"
+        )
+
+        # Line 1 is the chain
+        chain_line = lines[1]
 
         # Source at start
-        assert line.startswith(_SOURCE_NAME), f"Chain must start with '{_SOURCE_NAME}', got: {line!r}"
+        assert chain_line.startswith(_SOURCE_NAME), f"Chain must start with '{_SOURCE_NAME}', got: {chain_line!r}"
 
         # Include node segment: <include-path>@<include-sha>
         expected_include_segment = f"{_INCLUDE_PATH}@{why_fixture['include_sha']}"
-        assert expected_include_segment in line, (
-            f"Chain line must contain include-node segment '{expected_include_segment}', got: {line!r}"
+        assert expected_include_segment in chain_line, (
+            f"Chain line must contain include-node segment '{expected_include_segment}', got: {chain_line!r}"
         )
 
         # Project name with its SHA at end
         expected_project_segment = f"{_PROJECT_NAME}@{_PROJECT_SHA}"
-        assert line.endswith(expected_project_segment), (
-            f"Chain must end with '{expected_project_segment}', got: {line!r}"
+        assert chain_line.endswith(expected_project_segment), (
+            f"Chain must end with '{expected_project_segment}', got: {chain_line!r}"
         )
 
         # Full chain shape: FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         expected_chain = (
             f"{_SOURCE_NAME} -> {_INCLUDE_PATH}@{why_fixture['include_sha']} -> {_PROJECT_NAME}@{_PROJECT_SHA}"
         )
-        assert line == expected_chain, f"Full chain must be '{expected_chain}', got: {line!r}"
+        assert chain_line == expected_chain, f"Full chain must be '{expected_chain}', got: {chain_line!r}"

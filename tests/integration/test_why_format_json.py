@@ -192,26 +192,31 @@ class TestWhyFormatJsonIntegration:
     """End-to-end integration tests for 'kanon why --format json' via subprocess."""
 
     def test_json_output_is_well_formed(self, why_json_fixture: dict) -> None:
-        """Output from --format json is parseable by json.loads (AC-FUNC-001)."""
+        """Output from --format json is parseable by json.loads and is a dict (AC-FUNC-001).
+
+        The new JSON shape is {"matched": {"category": ..., "token": ...}, "chains": [...]}.
+        """
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0, f"Expected exit 0, got {result.returncode}. stderr: {result.stderr}"
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list), f"Expected list from json.loads, got {type(parsed).__name__}: {parsed!r}"
+        assert isinstance(parsed, dict), f"Expected dict from json.loads, got {type(parsed).__name__}: {parsed!r}"
+        assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
+        assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
 
     def test_json_array_length_one(self, why_json_fixture: dict) -> None:
-        """JSON output is a top-level array with one chain for a single-chain tree (AC-FUNC-001)."""
+        """JSON output chains array has one chain for a single-chain tree (AC-FUNC-001)."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
+        assert isinstance(parsed, dict)
+        assert len(parsed["chains"]) == 1
 
     def test_chain_length_three_source_include_project(self, why_json_fixture: dict) -> None:
         """The single chain has exactly 3 nodes: source, include, project (AC-CYCLE-001)."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        chain = parsed[0]
+        chain = parsed["chains"][0]
         assert len(chain) == 3
 
     def test_node_zero_is_source(self, why_json_fixture: dict) -> None:
@@ -219,28 +224,28 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        assert parsed[0][0]["kind"] == "source"
+        assert parsed["chains"][0][0]["kind"] == "source"
 
     def test_node_one_is_include(self, why_json_fixture: dict) -> None:
         """node[1].kind == 'include' (AC-CYCLE-001, AC-FUNC-004)."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        assert parsed[0][1]["kind"] == "include"
+        assert parsed["chains"][0][1]["kind"] == "include"
 
     def test_node_two_is_project(self, why_json_fixture: dict) -> None:
         """node[2].kind == 'project' (AC-CYCLE-001, AC-FUNC-004)."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        assert parsed[0][2]["kind"] == "project"
+        assert parsed["chains"][0][2]["kind"] == "project"
 
     def test_all_nodes_have_exactly_five_keys(self, why_json_fixture: dict) -> None:
         """Every node object has exactly 5 keys: kind, name, ref, sha, url (AC-FUNC-003)."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        for chain in parsed:
+        for chain in parsed["chains"]:
             for node in chain:
                 assert set(node.keys()) == {"kind", "name", "ref", "sha", "url"}, (
                     f"Node keys mismatch: {set(node.keys())}"
@@ -251,7 +256,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        source_node = parsed[0][0]
+        source_node = parsed["chains"][0][0]
         assert source_node["sha"] == _SOURCE_SHA
 
     def test_include_sha_matches_lockfile(self, why_json_fixture: dict) -> None:
@@ -259,7 +264,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        include_node = parsed[0][1]
+        include_node = parsed["chains"][0][1]
         assert include_node["sha"] == why_json_fixture["include_sha"]
 
     def test_project_sha_matches_lockfile(self, why_json_fixture: dict) -> None:
@@ -267,7 +272,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        project_node = parsed[0][2]
+        project_node = parsed["chains"][0][2]
         assert project_node["sha"] == why_json_fixture["project_sha"]
 
     def test_all_shas_are_40_chars(self, why_json_fixture: dict) -> None:
@@ -275,7 +280,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        for chain in parsed:
+        for chain in parsed["chains"]:
             for node in chain:
                 assert len(node["sha"]) == 40, f"SHA not 40 chars: {node['sha']!r}"
 
@@ -284,7 +289,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        project_node = parsed[0][2]
+        project_node = parsed["chains"][0][2]
         expected_canonical = canonicalize_repo_url(why_json_fixture["project_url"])
         assert project_node["url"] == expected_canonical
 
@@ -293,7 +298,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        include_node = parsed[0][1]
+        include_node = parsed["chains"][0][1]
         assert include_node["url"] is None
 
     def test_include_ref_is_path_in_repo(self, why_json_fixture: dict) -> None:
@@ -301,7 +306,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        include_node = parsed[0][1]
+        include_node = parsed["chains"][0][1]
         assert include_node["ref"] == why_json_fixture["include_path"]
 
     def test_source_ref_is_null(self, why_json_fixture: dict) -> None:
@@ -309,7 +314,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        source_node = parsed[0][0]
+        source_node = parsed["chains"][0][0]
         assert source_node["ref"] is None
 
     def test_project_ref_is_null(self, why_json_fixture: dict) -> None:
@@ -317,7 +322,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        project_node = parsed[0][2]
+        project_node = parsed["chains"][0][2]
         assert project_node["ref"] is None
 
     def test_source_name_matches_lockfile(self, why_json_fixture: dict) -> None:
@@ -325,7 +330,7 @@ class TestWhyFormatJsonIntegration:
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
         parsed = json.loads(result.stdout)
-        source_node = parsed[0][0]
+        source_node = parsed["chains"][0][0]
         assert source_node["name"] == why_json_fixture["source_name"]
 
     def test_exit_code_zero_on_success(self, why_json_fixture: dict) -> None:
@@ -419,7 +424,8 @@ class TestWhyFormatJsonIntegration:
         assert result.returncode == 0, f"Expected exit 0. stderr: {result.stderr}"
 
         parsed = json.loads(result.stdout)
-        project_node = parsed[0][-1]
+        assert isinstance(parsed, dict), f"Expected dict from --format json, got {type(parsed).__name__}"
+        project_node = parsed["chains"][0][-1]
         assert project_node["url"] == expected_canonical, (
             f"Expected canonical URL {expected_canonical!r}, got {project_node['url']!r}. "
             "This is a regression: _chain_to_node_dicts must use node.canonical_url for project nodes."
@@ -538,11 +544,12 @@ class TestWhyJsonLiveResolveUrlMatch:
         import json as _json
 
         parsed = _json.loads(why_result.stdout)
-        assert isinstance(parsed, list), (
-            f"Expected JSON list from --format json, got {type(parsed).__name__}: {parsed!r}"
+        assert isinstance(parsed, dict), (
+            f"Expected JSON dict from --format json, got {type(parsed).__name__}: {parsed!r}"
         )
-        assert len(parsed) >= 1, "Expected at least one chain in JSON output, got empty list"
+        assert "chains" in parsed, f"Expected 'chains' key in JSON output, got: {list(parsed.keys())}"
+        assert len(parsed["chains"]) >= 1, "Expected at least one chain in JSON output, got empty list"
 
-        source_node = parsed[0][0]
+        source_node = parsed["chains"][0][0]
         assert source_node["kind"] == "source", f"Expected first node kind='source', got {source_node['kind']!r}"
         assert source_node["name"] == entry_name, f"Expected source name {entry_name!r}, got {source_node['name']!r}"

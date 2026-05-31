@@ -263,17 +263,41 @@ actionable error naming the missing variable and the `.kanon` file path.
 Using a concrete `fetch` URL (no placeholder) remains fully supported -- the
 substitution step is skipped for fetch values that contain no `${...}` patterns.
 
+### why -- Match annotation
+
+Before printing any chain, `kanon why` emits a one-line annotation
+confirming the matched category and the queried token:
+
+```text
+matched url 'https://example.com/org/manifest-repo.git'
+```
+
+The annotation form differs by query type:
+
+| Query form | Annotation example |
+| ---------- | ------------------ |
+| Project URL | `matched url 'https://example.com/org/proj.git'` |
+| Source URL | `matched url 'https://example.com/org/catalog.git'` |
+| Root manifest path | `matched xml_path 'repo-specs/package-a-marketplace.xml'` |
+| Transitive XML path | `matched xml_path 'repo-specs/network/remote.xml'` |
+| Source name | `matched source_name 'package_a'` |
+
+The annotation is emitted on the first output line. The chain line(s)
+follow unchanged. The annotation is omitted on error paths (miss,
+ambiguity).
+
 ### why -- Chain walking
 
 For every matching node, `kanon why` prints all resolution chains that
-lead to it. A chain walks the `<include>` graph from a top-level source
-entry down to the requested node:
+lead to it after the match annotation. A chain walks the `<include>`
+graph from a top-level source entry down to the requested node:
 
 ```text
 $ kanon why https://example.com/org/manifest-repo.git \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 
+matched url 'https://example.com/org/manifest-repo.git'
 package-a -> repo-specs/base.xml@a1b2c3d4e5f6 \
     -> repo-specs/network/remote.xml@b2c3d4e5f6a1 \
     -> https://example.com/org/manifest-repo.git@c3d4e5f6a1b2
@@ -367,44 +391,70 @@ See [docs/configuration.md](configuration.md) for details.
 
 ### why -- Output format: --format json
 
-With `--format json`, each chain is an array of node objects. The
-top-level result is an array of chains:
+With `--format json`, the output is a top-level JSON object with two
+keys: `matched` (the match annotation) and `chains` (the chain data).
 
 ```json
-[
-  [
-    {
-      "kind": "source",
-      "name": "package-a",
-      "ref": ">=1.0.0",
-      "sha": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-      "url": "https://example.com/org/manifest-repo.git"
-    },
-    {
-      "kind": "xml",
-      "name": "repo-specs/base.xml",
-      "ref": "main",
-      "sha": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
-      "url": "https://example.com/org/manifest-repo.git"
-    },
-    {
-      "kind": "project",
-      "name": "remote-lib",
-      "ref": "==1.2.3",
-      "sha": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-      "url": "https://example.com/org/manifest-repo.git"
-    }
+{
+  "matched": {
+    "category": "url",
+    "token": "https://example.com/org/manifest-repo.git"
+  },
+  "chains": [
+    [
+      {
+        "kind": "source",
+        "name": "package-a",
+        "ref": null,
+        "sha": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "url": "https://example.com/org/catalog-repo.git"
+      },
+      {
+        "kind": "include",
+        "name": "repo-specs/base.xml",
+        "ref": "repo-specs/base.xml",
+        "sha": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+        "url": null
+      },
+      {
+        "kind": "project",
+        "name": "remote-lib",
+        "ref": null,
+        "sha": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+        "url": "https://example.com/org/manifest-repo.git"
+      }
+    ]
   ]
-]
+}
 ```
 
-Node `kind` values:
+`matched` object fields:
+
+| Field | Description |
+| ----- | ----------- |
+| `category` | One of `url`, `xml_path`, `source_name`. |
+| `token` | The exact matched token (URL, XML path, or source name). |
+
+`matched.category` values by query form:
+
+| Query form | `category` value |
+| ---------- | ---------------- |
+| Project or source URL | `url` |
+| Root or transitive XML manifest path | `xml_path` |
+| Source name | `source_name` |
+
+Node `kind` values in `chains`:
 
 | Value | Description |
 | ----- | ----------- |
 | `source` | A top-level `KANON_SOURCE_<name>_*` entry from `.kanon`. |
-| `xml` | A transitive `<include>` XML manifest file. |
+| `include` | A transitive `<include>` XML manifest file. |
 | `project` | A `<project>` package repo entry in an XML manifest. |
+
+Each node has exactly five fields: `kind`, `name`, `ref`, `sha`, `url`.
+`ref` is the XML path for include nodes and `null` for source and
+project nodes. `url` is the canonical HTTPS URL for project and source
+nodes and `null` for include nodes.
 
 JSON indentation defaults to 2 spaces. Configure via
 `KANON_WHY_JSON_INDENT` (see

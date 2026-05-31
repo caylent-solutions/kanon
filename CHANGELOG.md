@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+* `kanon why` now surfaces the matched category and queried token on the
+  first output line for every query form (URL, XML manifest path, source
+  name). Example: `matched url 'https://example.com/org/proj.git'`.
+  The chain line(s) that follow are byte-unchanged. This closes the
+  `command-coverage/why/by-path` (#69) and `by-url` (#68) operator-path
+  findings.
+
+* `kanon why --format json` output shape changed from a bare chains
+  array to a top-level object `{"matched": {"category", "token"},
+  "chains": [...]}`. The `chains` array content is unchanged. The
+  `matched` object carries the category (`url`, `xml_path`, or
+  `source_name`) and the exact queried token.
+
 ### Added
 
 * `kanon add --marketplace-install` / `--no-marketplace-install` flag

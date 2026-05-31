@@ -479,7 +479,8 @@ class TestFormatEnvVarAndCliOverride:
         """KANON_WHY_FORMAT=json with no --format flag produces JSON stdout via run().
 
         Omits --format from the parsed args (env-var path), builds a lockfile tree,
-        and asserts that run() emits parseable JSON.
+        and asserts that run() emits parseable JSON with the new shape:
+        {"matched": {"category": ..., "token": ...}, "chains": [...]}.
         """
         project_url = "https://github.com/org/baz"
         project_sha = "b" * 40
@@ -511,8 +512,10 @@ class TestFormatEnvVarAndCliOverride:
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
+        assert isinstance(parsed, dict), f"Expected dict, got {type(parsed).__name__}: {parsed!r}"
+        assert "matched" in parsed, f"Expected 'matched' key, got keys: {list(parsed.keys())}"
+        assert "chains" in parsed, f"Expected 'chains' key, got keys: {list(parsed.keys())}"
+        assert len(parsed["chains"]) == 1
 
     def test_env_var_text_cli_json_run_produces_json_output(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
@@ -520,7 +523,8 @@ class TestFormatEnvVarAndCliOverride:
         """CLI --format json wins over KANON_WHY_FORMAT=text and produces JSON stdout.
 
         Passes --format json explicitly while env var is 'text'. Verifies run()
-        emits parseable JSON (CLI flag takes precedence).
+        emits parseable JSON with the new shape (CLI flag takes precedence):
+        {"matched": {"category": ..., "token": ...}, "chains": [...]}.
         """
         project_url = "https://github.com/org/baz"
         project_sha = "b" * 40
@@ -553,7 +557,9 @@ class TestFormatEnvVarAndCliOverride:
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
-        assert isinstance(parsed, list)
+        assert isinstance(parsed, dict), f"Expected dict, got {type(parsed).__name__}: {parsed!r}"
+        assert "matched" in parsed, f"Expected 'matched' key, got keys: {list(parsed.keys())}"
+        assert "chains" in parsed, f"Expected 'chains' key, got keys: {list(parsed.keys())}"
 
     def test_format_text_default_produces_text_output(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
@@ -744,7 +750,11 @@ class TestRunJsonOutput:
     """Tests for run() JSON output via lockfile-backed tree."""
 
     def test_run_json_single_chain_three_nodes(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
-        """run() with --format json for a source->include->project chain emits correct shape."""
+        """run() with --format json emits dict with 'matched' + 'chains'; chain length 3.
+
+        The new JSON shape is {"matched": {"category": ..., "token": ...}, "chains": [...]}.
+        The chains array contains the same node dicts as before.
+        """
         from kanon_cli.core.lockfile import IncludeEntry
 
         project_url = "https://github.com/org/baz"
@@ -780,9 +790,22 @@ class TestRunJsonOutput:
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
 
-        # AC-CYCLE-001: array length 1, chain length 3
-        assert len(parsed) == 1
-        chain = parsed[0]
+        # Top-level shape: dict with 'matched' and 'chains'
+        assert isinstance(parsed, dict), f"Expected dict, got {type(parsed).__name__}: {parsed!r}"
+        assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
+        assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
+
+        # matched field
+        assert parsed["matched"]["category"] == "url", (
+            f"Expected category 'url', got: {parsed['matched']['category']!r}"
+        )
+        assert project_url in parsed["matched"]["token"], (
+            f"Expected project URL in token, got: {parsed['matched']['token']!r}"
+        )
+
+        # AC-CYCLE-001: chains array length 1, chain length 3
+        assert len(parsed["chains"]) == 1
+        chain = parsed["chains"][0]
         assert len(chain) == 3
 
         # node[0] is source
@@ -807,7 +830,7 @@ class TestRunJsonOutput:
             assert set(node.keys()) == {"kind", "name", "ref", "sha", "url"}
 
     def test_run_json_sha_is_full_40_chars(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
-        """run() JSON output has 40-char SHA on every node (AC-FUNC-006)."""
+        """run() JSON output has 40-char SHA on every node in chains (AC-FUNC-006)."""
         project_url = "https://github.com/org/baz"
         project_sha = "b" * 40
 
@@ -830,12 +853,13 @@ class TestRunJsonOutput:
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
-        for chain in parsed:
+        assert isinstance(parsed, dict), f"Expected dict from run() JSON mode, got {type(parsed).__name__}"
+        for chain in parsed["chains"]:
             for node in chain:
                 assert len(node["sha"]) == 40
 
     def test_run_json_url_field_is_canonical(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
-        """run() JSON output url field carries the canonicalized URL."""
+        """run() JSON output url field in chains carries the canonicalized URL."""
         from kanon_cli.core.url import canonicalize_repo_url
 
         project_url = "https://github.com/org/baz"
@@ -861,9 +885,10 @@ class TestRunJsonOutput:
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
+        assert isinstance(parsed, dict), f"Expected dict from run() JSON mode, got {type(parsed).__name__}"
 
-        # Project node url field must equal the canonical form
-        project_node = parsed[0][-1]
+        # Project node url field must equal the canonical form (accessed via chains)
+        project_node = parsed["chains"][0][-1]
         assert project_node["url"] == expected_canonical
 
     def test_argparse_choices_reject_invalid_format(self, tmp_path: pathlib.Path) -> None:

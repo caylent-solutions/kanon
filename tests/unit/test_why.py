@@ -1129,25 +1129,25 @@ class TestSubstituteFetchUrl:
         """Process environment is restored even when a LiveResolveError is raised."""
         import os
 
-        key = "KANON_TEST_PRESENT_KEY_7433"
+        env_var_name = "KANON_TEST_PRESENT_VAR"
         sentinel = "original_value"
-        os.environ[key] = sentinel
+        os.environ[env_var_name] = sentinel
 
         try:
             with pytest.raises(LiveResolveError):
                 _substitute_fetch_url(
                     "${UNRESOLVED_X}",
-                    globals_map={key: "overwritten"},
+                    globals_map={env_var_name: "overwritten"},
                     source_name="SRC",
                     kanon_file=pathlib.Path(".kanon"),
                 )
 
-            assert os.environ.get(key) == sentinel, (
-                f"_substitute_fetch_url did not restore {key!r} to {sentinel!r} "
-                f"after raising LiveResolveError; got {os.environ.get(key)!r}"
+            assert os.environ.get(env_var_name) == sentinel, (
+                f"_substitute_fetch_url did not restore {env_var_name!r} to {sentinel!r} "
+                f"after raising LiveResolveError; got {os.environ.get(env_var_name)!r}"
             )
         finally:
-            os.environ.pop(key, None)
+            os.environ.pop(env_var_name, None)
 
 
 # ---------------------------------------------------------------------------

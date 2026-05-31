@@ -501,3 +501,45 @@ class TestDeriveSourceName:
         derive_source_name("foo.bar")
         captured = capsys.readouterr()
         assert "WARNING" in captured.err
+
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            "https://github.com/org/repo",
+            "/path/to/manifest.xml",
+            "repo-specs/myentry-marketplace.xml",
+        ],
+    )
+    def test_warn_false_emits_no_warning(self, input_name: str, capsys: pytest.CaptureFixture[str]) -> None:
+        """derive_source_name(x, warn=False) emits no stderr warning for out-of-set input."""
+        derive_source_name(input_name, warn=False)
+        captured = capsys.readouterr()
+        assert "outside the recommended set" not in captured.err
+        assert "WARNING" not in captured.err
+
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            "https://github.com/org/repo",
+            "/path/to/manifest.xml",
+        ],
+    )
+    def test_warn_true_emits_warning_for_out_of_set(self, input_name: str, capsys: pytest.CaptureFixture[str]) -> None:
+        """derive_source_name(x) (default warn=True) emits a WARNING for out-of-set chars."""
+        derive_source_name(input_name, warn=True)
+        captured = capsys.readouterr()
+        assert "outside the recommended set" in captured.err
+
+    @pytest.mark.parametrize(
+        "input_name",
+        [
+            "https://github.com/org/repo",
+            "/path/to/manifest.xml",
+            "My.Special-Name",
+        ],
+    )
+    def test_normalized_return_value_identical_regardless_of_warn(self, input_name: str) -> None:
+        """Suppressing the warning does not change the normalized return value."""
+        result_warn_true = derive_source_name(input_name, warn=True)
+        result_warn_false = derive_source_name(input_name, warn=False)
+        assert result_warn_true == result_warn_false

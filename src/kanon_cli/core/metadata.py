@@ -379,7 +379,7 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
     return issues
 
 
-def derive_source_name(entry_name: str) -> str:
+def derive_source_name(entry_name: str, *, warn: bool = True) -> str:
     """Normalise ``<catalog-metadata><name>`` to a ``KANON_SOURCE_<name>_*`` token.
 
     Applies soft-spot rule 2 from ``spec/kanon-list-add-lock-features-spec.md``
@@ -392,23 +392,36 @@ def derive_source_name(entry_name: str) -> str:
     and idempotent: ``derive_source_name(derive_source_name(x))`` equals
     ``derive_source_name(x)`` for every legal input.
 
-    If the input contains any character outside the set ``[a-zA-Z0-9_-]``, a
-    single-line warning is emitted to stderr noting that the entry name
-    contains characters outside the recommended set and the normalised form
-    may not survive shell quoting cleanly. The transformation is still applied
-    and the result is returned. Empty strings produce empty strings; the empty
-    string is not considered outside the recommended set and emits no warning.
+    If the input contains any character outside the set ``[a-zA-Z0-9_-]`` and
+    ``warn`` is ``True`` (the default), a single-line warning is emitted to
+    stderr noting that the entry name contains characters outside the recommended
+    set and the normalised form may not survive shell quoting cleanly. The
+    transformation is still applied and the result is returned. Empty strings
+    produce empty strings; the empty string is not considered outside the
+    recommended set and emits no warning.
+
+    Pass ``warn=False`` when calling from query paths (e.g. ``kanon why``) where
+    the argument is a URL or file path rather than a catalog entry name being
+    authored; the normalisation is still performed but no spurious warning is
+    printed for the user's query argument.
 
     Downstream consumers: ``kanon add``, ``kanon remove``, ``kanon why``,
     ``kanon install --refresh-lock-source``.
 
     Args:
-        entry_name: The raw ``<name>`` value from a ``<catalog-metadata>`` block.
+        entry_name: The raw ``<name>`` value from a ``<catalog-metadata>`` block,
+            or a query argument (URL, path) when called from ``kanon why``.
+        warn: When ``True`` (default), emit a stderr WARNING if ``entry_name``
+            contains characters outside ``[a-zA-Z0-9_-]``. Authoring paths
+            (``kanon add``, ``kanon remove``, ``kanon install
+            --refresh-lock-source``) keep the default. Query paths (``kanon
+            why``) pass ``False`` to suppress spurious warnings on URL/path
+            arguments.
 
     Returns:
         The lowercased, hyphen-to-underscore-converted source name token.
     """
-    if entry_name and not RECOMMENDED_CHAR_RE.fullmatch(entry_name):
+    if warn and entry_name and not RECOMMENDED_CHAR_RE.fullmatch(entry_name):
         print(
             f"WARNING: entry name {entry_name!r} contains characters outside the "
             "recommended set [a-zA-Z0-9_-]; the normalised form may not survive "

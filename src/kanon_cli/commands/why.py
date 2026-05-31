@@ -952,7 +952,7 @@ def _match_by_source_name(tree: ResolvedTree, argument: str) -> list[ChainNode]:
         List of source ChainNode objects whose normalized name equals the normalized
         argument. Empty when no match.
     """
-    normalized_arg = derive_source_name(argument)
+    normalized_arg = derive_source_name(argument, warn=False)
     return [source for source in tree.sources if derive_source_name(source.name) == normalized_arg]
 
 

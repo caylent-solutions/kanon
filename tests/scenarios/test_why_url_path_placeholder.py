@@ -435,3 +435,47 @@ class TestWhyUrlPathPlaceholder:
             f"[{variant}] Expected a handled error (no traceback), "
             f"but a Python traceback appeared in stderr: {why_result.stderr!r}"
         )
+
+    def test_t_url_no_spurious_warning_in_stderr(
+        self,
+        tmp_path: pathlib.Path,
+        variant: str,
+    ) -> None:
+        """T-URL no-warning: ``kanon why <project-url>`` stderr contains no 'outside the recommended set' line.
+
+        When ``kanon why`` is given a URL as an argument, the URL contains
+        characters outside [a-zA-Z0-9_-] (slashes, colons, dots). Before the
+        fix, ``_match_by_source_name`` called ``derive_source_name(url)`` with
+        the default ``warn=True``, printing a spurious warning even on success.
+        After the fix, ``warn=False`` is passed for the query path, so no
+        warning appears.
+
+        Args:
+            tmp_path: pytest per-test temp directory.
+            variant: Fixture variant identifier.
+        """
+        ctx = _build_placeholder_fixture(tmp_path, variant)
+        project_url = ctx["project_url"]
+
+        why_result = _run_why(
+            [
+                "why",
+                project_url,
+                "--catalog-source",
+                ctx["catalog_source_url"],
+                "--kanon-file",
+                str(ctx["kanon_file"]),
+            ],
+            cwd=ctx["workspace"],
+        )
+
+        assert why_result.returncode == 0, (
+            f"[{variant}] Expected exit 0 from 'kanon why {project_url}', "
+            f"got {why_result.returncode}.\n"
+            f"stdout: {why_result.stdout!r}\n"
+            f"stderr: {why_result.stderr!r}"
+        )
+        assert "outside the recommended set" not in why_result.stderr, (
+            f"[{variant}] Spurious 'outside the recommended set' warning found in stderr "
+            f"for 'kanon why {project_url}'. stderr: {why_result.stderr!r}"
+        )

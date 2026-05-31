@@ -949,6 +949,12 @@ class TestLiveResolveTree:
 
         AC-FIX-003: Parametrized over different source names, URLs and SHAs.
         Node kind must be 'source', SHA and URL must match the resolved values.
+
+        _resolve_ref_to_sha and _clone_source_repo are patched at their use
+        site in kanon_cli.commands.why so no real network access occurs.
+        _populate_source_children_from_manifest is patched as the manifest-walk
+        boundary; the source-node structure is asserted from the mocked SHA and
+        URL values set before that call.
         """
         from kanon_cli.core.install import _RefResolution
 
@@ -962,6 +968,8 @@ class TestLiveResolveTree:
                 "kanon_cli.commands.why._resolve_ref_to_sha",
                 return_value=_RefResolution(sha=sha, resolved_ref="main"),
             ),
+            patch("kanon_cli.commands.why._clone_source_repo"),
+            patch("kanon_cli.commands.why._populate_source_children_from_manifest"),
         ):
             tree = _live_resolve_tree(kanon_file, "file:///fake/catalog@HEAD")
 

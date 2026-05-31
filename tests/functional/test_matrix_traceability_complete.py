@@ -302,6 +302,31 @@ def project_root() -> Path:
     return _project_root()
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _require_matrix(project_root: Path) -> None:
+    """Skip the entire module when the external findings-rerun matrix is absent.
+
+    This guard makes the module CI-portable: it is a dev-environment
+    completeness guard that requires the external ``test-fixtures/`` directory
+    which is not part of the kanon repo and is absent in CI. When the matrix
+    file cannot be resolved at any of the probed candidate paths,
+    ``pytest.skip`` is called so every test in the module skips cleanly with a
+    reason that names the searched path.
+
+    The matrix path is resolved via the module's existing ``_resolve_matrix_path``
+    helper -- the path is NOT hard-coded here. When the matrix IS present the
+    guard returns normally and all tests run against the real file.
+
+    Args:
+        project_root: Absolute path to the kanon project root (provided by the
+            ``project_root`` fixture).
+    """
+    try:
+        _resolve_matrix_path(project_root)
+    except FileNotFoundError as exc:
+        pytest.skip(f"external test-fixtures matrix not present (dev-only guard); {exc}")
+
+
 @pytest.fixture(scope="module")
 def matrix_rows(project_root: Path) -> list[tuple[int, str]]:
     """Parse and return the sorted scenario rows from the findings-rerun matrix."""

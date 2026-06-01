@@ -39,6 +39,6 @@ def find_kanonenv(start_dir: Path | None = None) -> Path:
     msg = (
         f"No {KANONENV_FILENAME} file found in {start_dir or Path.cwd()} "
         f"or any parent directory.\n"
-        f"Run 'kanon bootstrap kanon' to create one, or pass an explicit path."
+        f"Run 'kanon add <entry> --catalog-source <source>' to create one, or pass an explicit path."
     )
     raise FileNotFoundError(msg)

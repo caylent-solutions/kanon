@@ -74,12 +74,14 @@ _VALID_SOURCE = SourceEntry(
 def _make_lockfile(**kwargs) -> Lockfile:
     """Return a minimal valid Lockfile dataclass with optional field overrides."""
     defaults = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": "2026-01-01T00:00:00Z",
         "generator": "kanon-cli/1.4.0",
         "kanon_hash": _VALID_KANON_HASH,
         "catalog": _VALID_CATALOG,
         "sources": [],
+        "marketplace_registered": False,
+        "marketplace_dir": "",
     }
     defaults.update(kwargs)
     return Lockfile(**defaults)
@@ -164,12 +166,14 @@ class TestDataclassConstruction:
 
     def test_lockfile_construction(self):
         lf = _make_lockfile()
-        assert lf.schema_version == 1
+        assert lf.schema_version == 2
         assert lf.generated_at == "2026-01-01T00:00:00Z"
         assert lf.generator == "kanon-cli/1.4.0"
         assert lf.kanon_hash == _VALID_KANON_HASH
         assert isinstance(lf.catalog, CatalogBlock)
         assert lf.sources == []
+        assert lf.marketplace_registered is False
+        assert lf.marketplace_dir == ""
 
     def test_catalog_block_construction(self):
         cb = _VALID_CATALOG
@@ -609,7 +613,7 @@ class TestSchemaVersionValidation:
     from backward-incompatible reads (schema_version < current).
     """
 
-    @pytest.mark.parametrize("future_version", [2, 99, 100])
+    @pytest.mark.parametrize("future_version", [3, 99, 100])
     def test_forward_incompatible_schema_raises_lockfile_schema_error(self, future_version, tmp_path):
         """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError."""
         toml_content = _minimal_toml(schema_version=future_version)
@@ -633,13 +637,23 @@ class TestSchemaVersionValidation:
         assert f"v{old_version}" in err_msg
         assert "kanon bug" in err_msg
 
-    def test_schema_version_1_accepted(self, tmp_path):
-        """schema_version == 1 is the only supported version and is accepted."""
+    def test_schema_version_2_accepted(self, tmp_path):
+        """schema_version == 2 is the current supported version and is accepted."""
+        toml_content = _minimal_toml(schema_version=2)
+        p = tmp_path / "kanon.lock"
+        p.write_text(toml_content)
+        lf = read_lockfile(p)
+        assert lf.schema_version == 2
+
+    def test_schema_version_1_migrated_to_2(self, tmp_path):
+        """schema_version == 1 is transparently migrated to v2 with default marketplace fields."""
         toml_content = _minimal_toml(schema_version=1)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         lf = read_lockfile(p)
-        assert lf.schema_version == 1
+        assert lf.schema_version == 2
+        assert lf.marketplace_registered is False
+        assert lf.marketplace_dir == ""
 
     def test_forward_incompat_schema_error_message_format(self, tmp_path):
         """LockfileSchemaError message for forward-incompatible reads matches spec text."""
@@ -702,7 +716,7 @@ class TestWriteLockfileUnit:
         write_lockfile(lf, p)
         with open(p, "rb") as f:
             data = tomllib.load(f)
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == 2
 
     def test_write_then_read_roundtrip(self, tmp_path):
         """write_lockfile followed by read_lockfile round-trips the Lockfile object."""
@@ -711,3 +725,74 @@ class TestWriteLockfileUnit:
         write_lockfile(lf, p)
         lf2 = read_lockfile(p)
         assert lf == lf2
+
+
+# ---------------------------------------------------------------------------
+# AC-7: marketplace_registered and marketplace_dir fields (schema v2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMarketplaceFields:
+    """AC-7: Lockfile schema v2 marketplace_registered and marketplace_dir fields."""
+
+    def test_marketplace_registered_defaults_false(self):
+        """Lockfile.marketplace_registered defaults to False when not supplied."""
+        lf = _make_lockfile()
+        assert lf.marketplace_registered is False
+
+    def test_marketplace_dir_defaults_empty_string(self):
+        """Lockfile.marketplace_dir defaults to empty string when not supplied."""
+        lf = _make_lockfile()
+        assert lf.marketplace_dir == ""
+
+    def test_marketplace_registered_true_roundtrip(self, tmp_path):
+        """marketplace_registered=True and marketplace_dir are preserved by write/read roundtrip."""
+        lf = _make_lockfile(marketplace_registered=True, marketplace_dir="/path/to/mp")
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        lf2 = read_lockfile(p)
+        assert lf2.marketplace_registered is True
+        assert lf2.marketplace_dir == "/path/to/mp"
+
+    def test_marketplace_registered_false_roundtrip(self, tmp_path):
+        """marketplace_registered=False roundtrips correctly."""
+        lf = _make_lockfile(marketplace_registered=False, marketplace_dir="")
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        lf2 = read_lockfile(p)
+        assert lf2.marketplace_registered is False
+        assert lf2.marketplace_dir == ""
+
+    def test_v1_lockfile_migration_adds_marketplace_fields(self, tmp_path):
+        """A v1 lockfile (no marketplace fields) is migrated to v2 with defaults."""
+        v1_toml = _minimal_toml(schema_version=1)
+        p = tmp_path / "kanon.lock"
+        p.write_text(v1_toml)
+        lf = read_lockfile(p)
+        assert lf.schema_version == 2
+        assert lf.marketplace_registered is False
+        assert lf.marketplace_dir == ""
+
+    def test_marketplace_dir_written_to_toml(self, tmp_path):
+        """write_lockfile writes marketplace_dir to the TOML file."""
+        import tomllib
+
+        lf = _make_lockfile(marketplace_registered=True, marketplace_dir="/home/user/.claude/marketplaces")
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        with open(p, "rb") as f:
+            data = tomllib.load(f)
+        assert data["marketplace_registered"] is True
+        assert data["marketplace_dir"] == "/home/user/.claude/marketplaces"
+
+    def test_marketplace_registered_written_to_toml_as_false(self, tmp_path):
+        """write_lockfile writes marketplace_registered=false to the TOML file when not registered."""
+        import tomllib
+
+        lf = _make_lockfile(marketplace_registered=False)
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        with open(p, "rb") as f:
+            data = tomllib.load(f)
+        assert data["marketplace_registered"] is False

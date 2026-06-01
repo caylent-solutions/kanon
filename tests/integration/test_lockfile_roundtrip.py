@@ -88,12 +88,14 @@ def _build_deep_lockfile() -> Lockfile:
         )
 
     return Lockfile(
-        schema_version=1,
+        schema_version=2,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/1.4.0",
         kanon_hash=_KANON_HASH,
         catalog=catalog,
         sources=sources,
+        marketplace_registered=False,
+        marketplace_dir="",
     )
 
 
@@ -120,7 +122,7 @@ class TestLockfileRoundtrip:
         write_lockfile(lf, lock_path)
         with open(lock_path, "rb") as f:
             data = tomllib.load(f)
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == 2
         assert len(data["sources"]) == 2
 
     def test_roundtrip_preserves_nested_includes(self, tmp_path):
@@ -189,7 +191,7 @@ class TestLockfileRoundtrip:
         stripped_content = "\n".join(stripped_lines)
 
         # The stripped content must contain the key structural markers
-        assert "schema_version = 1" in stripped_content
+        assert "schema_version = 2" in stripped_content
         assert 'generator = "kanon-cli/1.4.0"' in stripped_content
         assert "[catalog]" in stripped_content
         assert "[[sources]]" in stripped_content

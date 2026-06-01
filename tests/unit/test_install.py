@@ -693,3 +693,88 @@ class TestRefreshRepoInitError:
             "RefreshRepoInitError must be an InstallError subclass so the CLI "
             "catches it and prints a structured ERROR: message"
         )
+
+
+# ---------------------------------------------------------------------------
+# AC-7: install writes marketplace_registered to lockfile
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInstallMarketplaceLockfileState:
+    """AC-7: install records marketplace_registered in the lockfile."""
+
+    _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
+    _FAKE_REF_RESOLUTION = None
+
+    def setup_method(self):
+        from kanon_cli.core.install import _RefResolution
+
+        self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
+
+    def test_install_with_marketplace_writes_registered_true_to_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """AC-7: install with KANON_MARKETPLACE_INSTALL=true writes marketplace_registered=true."""
+        from kanon_cli.core.lockfile import read_lockfile
+
+        mp_dir = tmp_path / ".claude-mp"
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
+            "KANON_MARKETPLACE_INSTALL=true\n"
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = tmp_path / ".kanon.lock"
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install.install_marketplace_plugins"),
+            patch("kanon_cli.core.install.register_direct_checkout_marketplaces"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+
+        lf = read_lockfile(lock_path)
+        assert lf.marketplace_registered is True, (
+            "install with KANON_MARKETPLACE_INSTALL=true must write marketplace_registered=true"
+        )
+        assert lf.marketplace_dir == str(mp_dir), (
+            "install must record marketplace_dir in the lockfile when marketplace is registered"
+        )
+
+    def test_install_without_marketplace_writes_registered_false_to_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """AC-7: install with KANON_MARKETPLACE_INSTALL=false writes marketplace_registered=false."""
+        from kanon_cli.core.lockfile import read_lockfile
+
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = tmp_path / ".kanon.lock"
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+
+        lf = read_lockfile(lock_path)
+        assert lf.marketplace_registered is False, (
+            "install with KANON_MARKETPLACE_INSTALL=false must write marketplace_registered=false"
+        )
+        assert lf.marketplace_dir == "", "install must write empty marketplace_dir when no marketplace is registered"

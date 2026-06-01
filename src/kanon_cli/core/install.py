@@ -1288,6 +1288,8 @@ def _merge_partial_lockfile(
         kanon_hash=new_kanon_hash,
         catalog=old_lockfile.catalog,
         sources=new_sources,
+        marketplace_registered=old_lockfile.marketplace_registered,
+        marketplace_dir=old_lockfile.marketplace_dir,
     )
 
 
@@ -2348,6 +2350,8 @@ def _run_install(
             kanon_hash=computed_hash,
             catalog=catalog_block,
             sources=resolved_entries,
+            marketplace_registered=marketplace_install,
+            marketplace_dir=marketplace_dir_str if marketplace_install else "",
         )
         write_lockfile(lf, lockfile_path)
 
@@ -2393,6 +2397,8 @@ def _run_install(
                 kanon_hash=new_kanon_hash,
                 catalog=catalog_block,
                 sources=resolved_entries,
+                marketplace_registered=marketplace_install,
+                marketplace_dir=marketplace_dir_str if marketplace_install else "",
             )
             write_lockfile(lf, lockfile_path)
 
@@ -2405,12 +2411,14 @@ def _run_install(
         active_names = set(source_names)
         pruned_sources = [e for e in pruned_lf_nn.sources if e.name in active_names]
         pruned_lockfile = Lockfile(
-            schema_version=pruned_lf_nn.schema_version,
+            schema_version=CURRENT_SCHEMA_VERSION,
             generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             generator=pruned_lf_nn.generator,
             kanon_hash=pruned_lf_nn.kanon_hash,
             catalog=pruned_lf_nn.catalog,
             sources=pruned_sources,
+            marketplace_registered=marketplace_install,
+            marketplace_dir=marketplace_dir_str if marketplace_install else "",
         )
         write_lockfile(pruned_lockfile, lockfile_path)
 

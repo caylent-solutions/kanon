@@ -1,4 +1,4 @@
-"""TOML lockfile parser and atomic writer -- schema v1.
+"""TOML lockfile parser and atomic writer -- schema v2.
 
 Public entry points:
   - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
@@ -17,6 +17,13 @@ Schema migration registry (spec Section 5.2):
   - ``_unregister_upgrader(from_version, to_version)``: remove a registered upgrader.
   - ``_dispatch_migration(data)``: walk the upgrader chain from data's schema_version
     to CURRENT_SCHEMA_VERSION, raising LockfileSchemaError if no chain exists.
+
+Schema changelog:
+  - v1: original schema (catalog, sources, kanon_hash).
+  - v2: added ``marketplace_registered`` (bool) and ``marketplace_dir`` (str) to record
+    whether install registered a marketplace plugin and which directory it used.  Old
+    v1 lockfiles are migrated transparently by setting both fields to their default
+    (false / empty string), preserving backward compatibility.
 
 Spec source: spec Section 5 (Lockfile format and validation rules),
 Section 4.7.1 (atomicity contract for the lockfile writer), and
@@ -46,7 +53,7 @@ from kanon_cli.core.url import canonicalize_repo_url
 # ---------------------------------------------------------------------------
 
 #: The schema version this kanon version reads and writes.
-CURRENT_SCHEMA_VERSION: int = 1
+CURRENT_SCHEMA_VERSION: int = 2
 
 #: Registry of upgrader functions keyed by (from_version, to_version).
 #: Each upgrader receives a raw dict and returns a raw dict with the schema
@@ -211,6 +218,36 @@ def _dispatch_migration(data: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Schema upgraders
+# ---------------------------------------------------------------------------
+
+
+def _upgrade_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a schema-v1 lockfile dict to schema-v2.
+
+    v2 adds ``marketplace_registered`` (bool, default False) and
+    ``marketplace_dir`` (str, default "") to the top-level dict.  Old lockfiles
+    predate marketplace tracking, so both fields default to their not-registered
+    values, which preserves the pre-v2 behavior (kanon clean falls back to the
+    .kanon flag when neither field is set to a registered state).
+
+    Args:
+        data: Raw TOML dict with schema_version == 1.
+
+    Returns:
+        Raw TOML dict with schema_version == 2 and the two new fields populated.
+    """
+    upgraded = dict(data)
+    upgraded["schema_version"] = 2
+    upgraded.setdefault("marketplace_registered", False)
+    upgraded.setdefault("marketplace_dir", "")
+    return upgraded
+
+
+_register_upgrader(1, 2, _upgrade_v1_to_v2)
+
+
+# ---------------------------------------------------------------------------
 # Exception types
 # ---------------------------------------------------------------------------
 
@@ -288,7 +325,13 @@ class CatalogBlock:
 
 @dataclass
 class Lockfile:
-    """Root lockfile dataclass mirroring the top-level TOML structure."""
+    """Root lockfile dataclass mirroring the top-level TOML structure.
+
+    Fields added in schema v2:
+      - ``marketplace_registered``: True when install registered a marketplace plugin.
+      - ``marketplace_dir``: The CLAUDE_MARKETPLACES_DIR path used at install time;
+        non-empty only when marketplace_registered is True.
+    """
 
     schema_version: int
     generated_at: str
@@ -296,6 +339,8 @@ class Lockfile:
     kanon_hash: str
     catalog: CatalogBlock
     sources: list[SourceEntry] = field(default_factory=list)
+    marketplace_registered: bool = False
+    marketplace_dir: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +719,8 @@ def _serialize_toml(lockfile: Lockfile) -> str:
     lines.append(f"generated_at = {_toml_str(lockfile.generated_at)}")
     lines.append(f"generator = {_toml_str(lockfile.generator)}")
     lines.append(f"kanon_hash = {_toml_str(lockfile.kanon_hash)}")
+    lines.append(f"marketplace_registered = {str(lockfile.marketplace_registered).lower()}")
+    lines.append(f"marketplace_dir = {_toml_str(lockfile.marketplace_dir)}")
 
     # [catalog] block -- omitted when no catalog source was configured.
     if lockfile.catalog.source:
@@ -784,6 +831,8 @@ def read_lockfile(path: Path) -> Lockfile:
         kanon_hash=kanon_hash,
         catalog=catalog,
         sources=sources,
+        marketplace_registered=bool(data.get("marketplace_registered", False)),
+        marketplace_dir=str(data.get("marketplace_dir", "")),
     )
 
 

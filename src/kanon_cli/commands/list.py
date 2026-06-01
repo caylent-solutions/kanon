@@ -72,6 +72,14 @@ _ALL_VERSIONS_PARSE_WARNING_FORMAT = (
 # Uses .format(name=<entry_name>) at the call site.
 _ALL_VERSIONS_ALL_MALFORMED_ERROR_FORMAT = "ERROR: every revision for entry {name} was malformed; no versions to list"
 
+# Informational note emitted to stderr when legacy flat-metadata versions (lacking
+# <catalog-metadata><name>) are excluded from the all-versions walk.
+# Uses .format(count=<int>, revision=<version_str>) at the call site.
+_ALL_VERSIONS_LEGACY_SKIPPED_NOTE_FORMAT = (
+    "NOTE: {count} legacy flat-metadata XML(s) at revision {revision} "
+    "skipped (no <catalog-metadata><name>); use canonical-metadata tags only"
+)
+
 # ---------------------------------------------------------------------------
 # Filter framework public constants
 # ---------------------------------------------------------------------------
@@ -288,25 +296,6 @@ def _build_all_versions_rows(
     return rows
 
 
-def _derive_entry_name_from_xml_path(xml_path: pathlib.Path) -> str:
-    """Derive the catalog entry name from the marketplace XML file path.
-
-    The directory convention places marketplace XML files at::
-
-        repo-specs/<entry_name>/<entry_name>-marketplace.xml
-
-    so ``xml_path.parent.name`` is the entry name. This is the same logic
-    used throughout the live ``kanon list`` path when walking ``repo-specs/``.
-
-    Args:
-        xml_path: Path to a ``*-marketplace.xml`` file inside ``repo-specs/``.
-
-    Returns:
-        The entry name string derived from the parent directory name.
-    """
-    return xml_path.parent.name
-
-
 def _is_xml_well_formed(xml_path: pathlib.Path) -> bool:
     """Return True when xml_path contains structurally valid (well-formed) XML.
 
@@ -338,6 +327,13 @@ def _walk_all_versions(
     sorts them newest-first, applies the ``--limit`` cap and optional
     ``--since-version`` PEP 440 filter, clones each version, and builds
     the flat ``VersionRow`` list.
+
+    Only canonical ``<catalog-metadata><name>`` values are emitted.  Legacy
+    flat-metadata XMLs (well-formed XML that lacks ``<name>``) are excluded
+    from the per-entry version list; a single diagnostic line is written to
+    stderr noting how many such XMLs were skipped at each legacy revision.
+    Genuinely non-well-formed XML (parser raises ``XMLParseError``) continues
+    to be skipped with a stderr warning.
 
     Args:
         catalog_source: A ``<git_url>@<ref>`` string. The ``@<ref>`` part
@@ -414,15 +410,17 @@ def _walk_all_versions(
 
         xml_paths = _walk_marketplace_xmls(repo_dir)
         version_names: list[str] = []
+        legacy_skipped_count = 0
         for xml_path in xml_paths:
             try:
                 metadata = _parse_catalog_metadata(xml_path)
                 version_names.append(metadata.name)
             except CatalogMetadataParseError as exc:
                 if _is_xml_well_formed(xml_path):
-                    # XML is structurally valid but lacks <name>; derive from
-                    # the directory convention (repo-specs/<name>/<name>-marketplace.xml).
-                    version_names.append(_derive_entry_name_from_xml_path(xml_path))
+                    # XML is structurally valid but lacks <catalog-metadata><name>;
+                    # this is a legacy flat-metadata tag.  Exclude it rather than
+                    # emitting a directory-path-derived name (which would be wrong).
+                    legacy_skipped_count += 1
                 else:
                     # Genuinely non-well-formed XML -- skip with warning.
                     print(
@@ -434,8 +432,17 @@ def _walk_all_versions(
                         file=sys.stderr,
                     )
 
+        if legacy_skipped_count > 0:
+            print(
+                _ALL_VERSIONS_LEGACY_SKIPPED_NOTE_FORMAT.format(
+                    count=legacy_skipped_count,
+                    revision=version_str,
+                ),
+                file=sys.stderr,
+            )
+
         if not version_names:
-            # No parseable entries at this version -- skip it entirely.
+            # No canonical-metadata entries at this version -- skip it entirely.
             continue
 
         successful_count += 1

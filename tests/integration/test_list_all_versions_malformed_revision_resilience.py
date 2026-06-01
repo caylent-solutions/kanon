@@ -1,19 +1,20 @@
 """Integration tests for `kanon list --all-versions` malformed-revision resilience.
 
-Covers DEFECT-006: `_walk_all_versions` currently aborts on the first malformed
+Covers DEFECT-006: `_walk_all_versions` aborts on the first malformed
 historical revision (raises CatalogMetadataParseError and exits 1) instead of
 skipping that revision with a stderr warning and continuing.
 
-These tests assert the FIXED contract and are RED against unfixed code:
-- exit 0 even when one historical revision has a malformed <catalog-metadata>
+TestAllVersionsResilience asserts the resilience contract:
+- exit 0 even when one historical revision has genuinely non-well-formed XML
 - stdout contains rows for every parseable (entry, revision) pair
 - stdout does NOT contain any row referencing the malformed revision
-- stderr contains a warning line naming the malformed (entry, revision) pair
+- stderr contains a WARNING line naming the malformed (entry, revision) pair
 
-TestAllVersionsNameDerivation asserts the name-derivation contract:
-- revisions lacking <catalog-metadata><name> are listed using the directory name
-- genuinely unparseable (non-well-formed XML) revisions are skipped with warning
-- explicit <name> takes precedence over the derived directory name
+TestAllVersionsLegacyExclusion asserts the legacy-metadata exclusion contract:
+- revisions lacking <catalog-metadata><name> are EXCLUDED (not listed with derived name)
+- a NOTE is emitted to stderr naming the count of skipped legacy-metadata XMLs
+- when ALL revisions are legacy-flat-metadata, the walk exits 1 (fail-fast)
+- genuinely unparseable (non-well-formed XML) revisions are still skipped with WARNING
 
 Autouse fixtures from tests/integration/conftest.py are inherited:
 - _mock_resolve_ref_to_sha
@@ -21,7 +22,7 @@ Autouse fixtures from tests/integration/conftest.py are inherited:
 - _auto_create_manifest_on_walk
 - _default_allow_insecure_remotes
 
-AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004, AC-FUNC-005
+AC-FUNC-002, AC-FUNC-003, AC-FUNC-004, AC-FUNC-005
 """
 
 import os
@@ -422,48 +423,57 @@ class TestAllVersionsResilience:
 
 
 # ---------------------------------------------------------------------------
-# Tests: name derivation from directory convention (AC-FUNC-001 through AC-FUNC-004)
+# Tests: legacy flat-metadata exclusion and unparseable XML handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-class TestAllVersionsNameDerivation:
-    """Name-derivation contract for kanon list --all-versions (E49-F4-S1-T1).
+class TestAllVersionsLegacyExclusion:
+    """Legacy flat-metadata exclusion contract for kanon list --all-versions (E58-F1-S1-T1).
 
-    AC-FUNC-001: revisions without <catalog-metadata><name> are listed using
-    the directory-convention name (xml_path.parent.name under repo-specs/).
+    Legacy flat-metadata XMLs (well-formed XML lacking <catalog-metadata><name>) are
+    EXCLUDED from the per-entry version list.  A single diagnostic NOTE is emitted to
+    stderr for each revision that has legacy-metadata XMLs, naming the count.  When ALL
+    walked revisions are legacy-flat-metadata, the walk yields no canonical entries and
+    exits 1 with the all-malformed error (fail-fast, no silent empty output).
 
-    AC-FUNC-003/AC-FUNC-004: genuinely unparseable (non-well-formed XML)
-    revisions are still skipped with the existing stderr warning.
+    AC-FUNC-003/AC-FUNC-004: genuinely unparseable (non-well-formed XML) revisions are
+    still skipped with the existing stderr WARNING (behavior unchanged).
     """
 
-    @pytest.mark.parametrize("expected_version", ["1.0.0", "2.0.0", "3.0.0"])
-    def test_lists_revisions_without_name_element_using_derived_name(
+    @pytest.mark.parametrize("excluded_version", ["1.0.0", "2.0.0", "3.0.0"])
+    def test_all_legacy_repo_exits_nonzero_with_diagnostic(
         self,
         tmp_path: pathlib.Path,
-        expected_version: str,
+        excluded_version: str,
     ) -> None:
-        """Three tags, none carrying <catalog-metadata><name>; derived name used.
+        """Three tags, none carrying <catalog-metadata><name>; all revisions excluded.
 
-        The directory convention places the XML at
-        repo-specs/<entry_name>/<entry_name>-marketplace.xml, making the entry
-        name derivable even when the XML omits <name>.
+        When every walked revision has only legacy flat-metadata (no <name>), no
+        canonical entries can be emitted.  The walk fails loudly rather than producing
+        silent empty output.
 
-        Expected fixed behaviour:
-        - exit 0
-        - stdout contains a row for every version (1.0.0, 2.0.0, 3.0.0)
-        - each row uses the directory-derived entry name, NOT a sentinel value
+        Expected contract:
+        - exit 1 (no canonical entries found across all revisions)
+        - stdout is empty
+        - stderr contains a NOTE for each revision naming the skipped count
+        - stderr does NOT contain the legacy entry's directory name as an entry name
         """
         entry_name = "derived-name-entry"
         bare_repo = _build_three_tag_repo_all_no_name(tmp_path, entry_name)
 
         result = _run_list_all_versions(bare_repo)
 
-        assert result.returncode == 0, (
-            f"Expected exit 0 but got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        assert result.returncode == 1, (
+            f"Expected exit 1 (all-legacy repo) but got {result.returncode}.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        assert f"{entry_name}@{expected_version}" in result.stdout, (
-            f"Expected stdout to contain '{entry_name}@{expected_version}'.\nstdout: {result.stdout!r}"
+        assert result.stdout == "", f"Expected empty stdout for all-legacy repo, got: {result.stdout!r}"
+        assert excluded_version in result.stderr, (
+            f"Expected stderr to contain a NOTE referencing '{excluded_version}'.\nstderr: {result.stderr!r}"
+        )
+        assert f"{entry_name}@{excluded_version}" not in result.stdout, (
+            f"Legacy entry '{entry_name}@{excluded_version}' must NOT appear in stdout.\nstdout: {result.stdout!r}"
         )
 
     def test_unparseable_revision_skipped_with_warning(
@@ -474,11 +484,11 @@ class TestAllVersionsNameDerivation:
 
         Two-tag repo: 1.0.0 (well-formed with <name>), 2.0.0 (broken XML).
 
-        Expected fixed behaviour:
+        Expected contract (unchanged):
         - exit 0 (one revision is parseable)
         - stdout contains the row for 1.0.0
         - stdout does NOT contain a row for 2.0.0
-        - stderr contains a warning referencing 2.0.0
+        - stderr contains a WARNING referencing 2.0.0
         """
         entry_name = "parseable-entry"
         bare_repo = _build_two_tag_repo_one_unparseable(tmp_path, entry_name)

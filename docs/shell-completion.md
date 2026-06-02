@@ -112,7 +112,8 @@ command performs an inline network fetch bounded by
 `KANON_COMPLETION_TIMEOUT` before returning results.
 
 Used for completing the `<name>[@<spec>]` positional argument of
-`kanon add` and `kanon bootstrap`.
+`kanon add`. (`kanon bootstrap` was removed and accepts no arguments; see
+[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).)
 
 ### `__complete_source_names_in_kanon`
 

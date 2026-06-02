@@ -196,18 +196,18 @@ class TestUJ:
     # ------------------------------------------------------------------
 
     def test_uj_01_bootstrap_kanon_produces_files(self, tmp_path: pathlib.Path) -> None:
-        """UJ-01: bootstrap is a deprecation shim (exit 3 + WARN); no files produced."""
+        """UJ-01: bootstrap was removed (exit 3 + deprecation message); no files produced."""
         work_dir = tmp_path / "uj-01"
         work_dir.mkdir()
 
         result = run_kanon("bootstrap", "kanon", cwd=work_dir)
 
-        # Post-branch deprecation: bootstrap exits 3 (shim) per spec R352-R368.
+        # bootstrap was removed in a major release: every invocation exits 3.
         assert result.returncode == 3, (
             f"bootstrap expected exit 3 (shim), got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
         # The shim must not produce any files.
         assert not (work_dir / ".kanon").exists(), ".kanon must NOT be created (shim must not delegate)"
         assert not (work_dir / "kanon-readme.md").exists(), "kanon-readme.md must NOT be created (shim)"
@@ -217,7 +217,7 @@ class TestUJ:
     # ------------------------------------------------------------------
 
     def test_uj_02_bootstrap_list_catalog_source_pep440(self, tmp_path: pathlib.Path) -> None:
-        """UJ-02: bootstrap is a deprecation shim (exit 3 + WARN) regardless of catalog-source flag."""
+        """UJ-02: bootstrap was removed (exit 3 + deprecation message) regardless of catalog-source flag."""
         catalog_bare = _build_catalog_repo_with_entry(tmp_path / "fixtures", "test-entry")
 
         # Use PEP 440 range >=2.0.0,<3.0.0 -- shim exits 3 before resolving.
@@ -225,12 +225,16 @@ class TestUJ:
 
         result = run_kanon("bootstrap", "list", "--catalog-source", catalog_source)
 
-        # Post-branch deprecation: bootstrap exits 3 (shim) per spec R352-R368.
+        # bootstrap was removed in a major release: every invocation exits 3.
         assert result.returncode == 3, (
             f"bootstrap list expected exit 3 (shim), got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
+        # The list-arm closest-replacement line points at `kanon list`.
+        assert "kanon list --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"Expected the list-arm replacement line, got: {result.stderr!r}"
+        )
 
     # ------------------------------------------------------------------
     # UJ-03: multi-source install -- two sources aggregate

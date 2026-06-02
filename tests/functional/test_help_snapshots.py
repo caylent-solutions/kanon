@@ -55,7 +55,11 @@ _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-catalog", ("catalog",), "kanon-catalog.txt"),
     ("kanon-catalog-audit", ("catalog", "audit"), "kanon-catalog-audit.txt"),
     ("kanon-completion", ("completion",), "kanon-completion.txt"),
-    ("kanon-bootstrap", ("bootstrap",), "kanon-bootstrap.txt"),
+    # NOTE: there is no `kanon-bootstrap` snapshot. bootstrap was removed in a
+    # major release; `kanon bootstrap --help` is no longer help output -- it
+    # exits 3 with the deprecation message on stderr (covered by the dedicated
+    # bootstrap deprecation tests). Only the top-level `kanon --help` snapshot
+    # still lists bootstrap (under "Deprecated").
 ]
 
 

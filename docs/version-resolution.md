@@ -164,11 +164,11 @@ Supports the same constraint syntax as other revision fields:
 export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@>=2.0.0,<3.0.0'
 
 # Compatible release (>=2.0.0, <2.1.0)
-kanon bootstrap <entry> --catalog-source \
+kanon add <entry> --catalog-source \
   'https://github.com/org/repo.git@~=2.0.0'
 
 # Exact version
-kanon bootstrap <entry> --catalog-source \
+kanon add <entry> --catalog-source \
   'https://github.com/org/repo.git@==2.2.0'
 ```
 

@@ -35,21 +35,32 @@ full CLI documentation.
 
 ## New Project Setup
 
-### 1. Bootstrap Your Project
+### 1. Add Catalog Entries to Your Project
 
-Use `kanon bootstrap` to copy catalog entry package files (including a pre-configured `.kanon`) into your project:
+> **Note:** `kanon bootstrap` was removed in a major release (a breaking
+> change). It performs no work and exits 3 on every invocation. Use the
+> commands below instead. See
+> [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+
+Search the catalog and add an entry to your `.kanon` with `kanon list` and
+`kanon add`. A catalog source is required, supplied via `--catalog-source
+'<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable (ref can
+be a branch, tag, `latest`, or a PEP 440 version constraint such as
+`>=2.0.0,<3.0.0`):
 
 ```bash
-kanon bootstrap kanon
+kanon list --catalog-source '<git_url>@<ref>'        # search the catalog
+kanon add kanon --catalog-source '<git_url>@<ref>'   # add an entry to .kanon
 ```
 
-This copies all files from the catalog entry package into the target directory. The `.kanon` is pre-configured by the catalog author -- no placeholder editing required. Use `--output-dir` to specify a different target directory. Use `--catalog-source '<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable to fetch catalog entry packages from a remote catalog repo (ref can be a branch, tag, `latest`, or a PEP 440 version constraint such as `>=2.0.0,<3.0.0`).
+`kanon add` writes the entry into `.kanon`, creating `.kanon` for you if it does
+not yet exist.
 
 ### 2. Review `.kanon` (Optional)
 
-The `.kanon` file is pre-configured from the catalog entry package. If you are using the bundled catalog, the `.kanon` contains example values. You may want to update the source URLs and paths to point to your organization's manifest repository.
-
-If you are using a remote catalog (`--catalog-source` or `KANON_CATALOG_SOURCE`), the `.kanon` should already contain the correct values for your organization.
+The `.kanon` file is populated by `kanon add` with values from your
+organization's catalog entry. You may want to review the source URLs and paths
+before installing.
 
 All `.kanon` values can be overridden by environment variables of the same name (useful for CI/CD pipelines).
 

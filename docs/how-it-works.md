@@ -35,21 +35,18 @@ kanon_cli/
 No external binaries are invoked and no PATH lookups are performed: every call is a direct
 in-process Python API call.
 
-## Bootstrap
+## Bootstrap (removed)
 
-The `kanon bootstrap` command scaffolds a new project by copying all files from a catalog entry package, including a pre-configured `.kanon`:
+`kanon bootstrap` was removed in a major release (a breaking change).
+It no longer performs any work and accepts no flags. Every invocation
+-- any args, any flags, including `--help` -- prints a deprecation
+message to stderr and exits with code `3` (`EXIT_CODE_DEPRECATED`).
 
-```bash
-kanon bootstrap list      # List available catalog entry packages
-kanon bootstrap kanon     # Copies .kanon, kanon-readme.md
-```
-
-Options:
-
-- `--output-dir DIR` -- target directory for bootstrapped files (default: current directory). The **parent** of `DIR` must already exist; bootstrap fails fast with exit code 1 and the message `parent directory '<parent>' does not exist` if it does not.
-- `--catalog-source SOURCE` -- remote catalog as `<git_url>@<ref>` where ref is a branch, tag, `latest` (resolves to highest semver tag), or a PEP 440 version constraint (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`). Overrides the `KANON_CATALOG_SOURCE` environment variable. When neither flag nor env var is set, the bundled catalog shipped with the CLI package is used.
-
-The `.kanon` shipped with each catalog entry package is pre-configured by the catalog author. Users of the bundled catalog get example values; users of a remote catalog get values specific to their organization's manifest repository.
+Use `kanon list` to search a catalog, `kanon add <entry>
+--catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
+`kanon install` to fetch it. See
+[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md) for
+the full migration guide.
 
 ## Install Lifecycle
 

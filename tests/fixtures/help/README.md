@@ -36,7 +36,16 @@ Examples:
 | `kanon-catalog.txt` | `kanon catalog --help` (subcommand-group head; lists `audit` as the available catalog operation) |
 | `kanon-catalog-audit.txt` | `kanon catalog audit --help` (nested subparser child; covers `--check`, `--format`, Catalog source group; hyphenated filename mirrors the `catalog audit` argv path) |
 | `kanon-completion.txt` | `kanon completion --help` (shell completion script emitter; covers `<shell>` positional argument) |
-| `kanon-bootstrap.txt` | `kanon bootstrap --help` (DEPRECATED command; first non-empty line is the DEPRECATED notice per spec Section 14; includes the verbatim pipe-delimited flag-translation table from spec Section 4.9; Exit codes section lists both 0 (help output) and 3 (deprecated invocation; any non-help call) -- bootstrap is the only command whose Exit codes section lists 3. This fixture is the canonical snapshot used by: E6-F1-S1-T3's parser-level unit test (`tests/unit/test_bootstrap_help.py`) and integration snapshot (`tests/integration/test_bootstrap_help.py`); and the functional driver in E9-F1-S1-T11 (`tests/functional/test_help_snapshots.py`). |
+
+> **Note:** There is intentionally no `kanon-bootstrap.txt` fixture. `kanon
+> bootstrap` was removed in a major release (a breaking change). `kanon
+> bootstrap --help` is no longer help output -- every `kanon bootstrap ...`
+> invocation prints a deprecation message to **stderr** and exits **3**. The
+> deprecation behavior is covered by `tests/unit/test_bootstrap_deprecation.py`,
+> `tests/integration/test_bootstrap_shim.py`, and the functional bootstrap
+> tests; it is asserted by key substrings, not a byte-for-byte snapshot. The
+> top-level `kanon-toplevel.txt` snapshot still lists `bootstrap` under
+> "Deprecated".
 
 ## Regeneration Procedure
 

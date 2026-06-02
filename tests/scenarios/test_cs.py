@@ -201,16 +201,17 @@ class TestCS:
             f"{cs_id}: bootstrap list expected exit 3 (shim), got {list_result.returncode}\n"
             f"stdout={list_result.stdout!r}\nstderr={list_result.stderr!r}"
         )
-        assert "WARN:" in list_result.stderr, (
-            f"{cs_id}: expected WARN on stderr from bootstrap list: {list_result.stderr!r}"
+        assert "DEPRECATED" in list_result.stderr, (
+            f"{cs_id}: expected deprecation message on stderr from bootstrap list: {list_result.stderr!r}"
         )
 
         assert bootstrap_result.returncode == 3, (
             f"{cs_id}: bootstrap {_CATALOG_ENTRY!r} expected exit 3 (shim), got {bootstrap_result.returncode}\n"
             f"stdout={bootstrap_result.stdout!r}\nstderr={bootstrap_result.stderr!r}"
         )
-        assert "WARN:" in bootstrap_result.stderr, (
-            f"{cs_id}: expected WARN on stderr from bootstrap {_CATALOG_ENTRY!r}: {bootstrap_result.stderr!r}"
+        assert "DEPRECATED" in bootstrap_result.stderr, (
+            f"{cs_id}: expected deprecation message on stderr from bootstrap {_CATALOG_ENTRY!r}: "
+            f"{bootstrap_result.stderr!r}"
         )
         # The shim must not clone or write any files.
         assert not (out_dir / "version.txt").exists(), (

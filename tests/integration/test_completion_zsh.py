@@ -672,12 +672,10 @@ _FLAG_PRESENCE_ROWS: list[tuple[str, str, list[str]]] = [
         "_shtab_kanon_validate_metadata_options",
         ["--repo-root"],
     ),
-    # -- kanon bootstrap flags --
-    (
-        "bootstrap_flags",
-        "_shtab_kanon_bootstrap_options",
-        ["--help", "--output-dir"],
-    ),
+    # NOTE: there is no `bootstrap_flags` row. bootstrap was removed in a major
+    # release and is now a flagless deprecation shim, so its option-spec array
+    # carries no `--flag` entries. That absence is asserted by
+    # test_bootstrap_option_array_has_no_flags below.
     # -- kanon clean flags --
     (
         "clean_flags",
@@ -755,6 +753,49 @@ def test_static_flag_presence_row(
     assert not missing, (
         f"[{test_id}] Expected flags {expected_flags!r} to be present in "
         f"{option_array_name!r}, but missing {missing!r}. Found: {sorted(found_flags)!r}"
+    )
+
+
+@pytest.mark.integration
+def test_bootstrap_option_array_has_no_flags(tmp_path: Path) -> None:
+    """`_shtab_kanon_bootstrap_options` carries no `--flag` entries.
+
+    bootstrap was removed in a major release and is now a flagless deprecation
+    shim (the subparser declares only a REMAINDER catch-all), so its zsh option
+    spec must not advertise `--output-dir`, `--catalog-source`, or `--help`.
+    """
+    _assert_zsh_available()
+    completion_file = _write_completion_file(tmp_path)
+
+    flags_script = textwrap.dedent(f"""\
+        _arguments() {{ return 0; }}
+        compdef() {{ return 0; }}
+        _describe() {{ return 0; }}
+        source {completion_file}
+        local varname="_shtab_kanon_bootstrap_options"
+        local -a arr
+        arr=("${{(@P)varname}}")
+        for opt in "${{arr[@]}}"; do
+            if [[ "$opt" == *"--"* ]]; then
+                local tmp="$opt"
+                while [[ "$tmp" == *"--"* ]]; do
+                    tmp="${{tmp#*--}}"
+                    local flag="${{tmp%%[^a-zA-Z0-9-]*}}"
+                    [[ -n "$flag" ]] && printf 'FLAG:--%s\\n' "$flag"
+                    tmp="${{tmp#${{flag}}}}"
+                done
+            fi
+        done
+        """)
+
+    result = subprocess.run(["zsh", "-fc", flags_script], capture_output=True, text=True)
+    assert result.returncode == 0, (
+        f"Flag extraction script failed (exit {result.returncode}).\n"
+        f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+    )
+    found_flags = sorted({line[len("FLAG:") :] for line in result.stdout.splitlines() if line.startswith("FLAG:")})
+    assert found_flags == [], (
+        f"bootstrap option spec must advertise no flags (it is a flagless shim), got: {found_flags!r}"
     )
 
 

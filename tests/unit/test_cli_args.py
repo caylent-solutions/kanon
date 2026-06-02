@@ -12,9 +12,6 @@ import pytest
 
 from kanon_cli.constants import CATALOG_ENV_VAR
 
-# Source file paths for import-from-source assertions (AC-TEST-003).
-_BOOTSTRAP_PY = pathlib.Path(__file__).parent.parent.parent / "src" / "kanon_cli" / "commands" / "bootstrap.py"
-
 _CLI_ARGS_PY = pathlib.Path(__file__).parent.parent.parent / "src" / "kanon_cli" / "core" / "cli_args.py"
 
 
@@ -116,16 +113,13 @@ class TestAddCatalogSourceArgPrecedence:
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgHelpText:
-    """The help text is byte-identical to the current bootstrap.py inline definition (AC-FUNC-003)."""
+    """The canonical --catalog-source help text lives in cli_args.py (single source of truth)."""
 
-    def test_help_text_matches_bootstrap_inline(self) -> None:
+    def test_help_text_matches_canonical(self) -> None:
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
-        # After the refactor, the canonical help text lives in cli_args.py.
-        # Load bootstrap.py source and extract the help text passed to
-        # add_catalog_source_arg -- since bootstrap.py now delegates to the
-        # factory, the factory's action.help IS the canonical text.
-        # We verify byte-identity by reading both definitions from source.
+        # The canonical help text lives in cli_args.py and is the single source
+        # of truth for every command that resolves a manifest repo.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
@@ -152,23 +146,6 @@ class TestAddCatalogSourceArgHelpText:
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
         assert "KANON_CATALOG_SOURCE" in action.help
-
-
-@pytest.mark.unit
-class TestBootstrapImportsFactory:
-    """bootstrap.py imports add_catalog_source_arg from kanon_cli.core.cli_args (AC-TEST-003)."""
-
-    def test_bootstrap_imports_add_catalog_source_arg(self) -> None:
-        source = _BOOTSTRAP_PY.read_text()
-        assert "from kanon_cli.core.cli_args import add_catalog_source_arg" in source
-
-    def test_bootstrap_does_not_have_inline_add_argument_for_catalog_source(self) -> None:
-        source = _BOOTSTRAP_PY.read_text()
-        # The inline add_argument call should no longer be present.
-        # We check that "--catalog-source" does not appear as a string
-        # argument to add_argument.
-        assert 'add_argument(\n        "--catalog-source"' not in source
-        assert 'add_argument("--catalog-source"' not in source
 
 
 @pytest.mark.unit

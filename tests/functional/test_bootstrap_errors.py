@@ -1,13 +1,14 @@
-"""Functional tests for kanon bootstrap deprecation shim error paths.
+"""Functional tests for `kanon bootstrap` invocations that previously errored.
 
-Covers:
-- AC-TEST-001: Missing positional package argument exits 2 with argparse error
-- AC-FUNC-001: The shim exits 3 for any non-help invocation
-- AC-CHANNEL-001: stdout vs stderr channel discipline verified (no cross-channel leakage)
+`kanon bootstrap` was removed in a major release (a breaking change). The
+invocation is intercepted before argparse, so cases that previously produced an
+argparse usage error (exit 2) -- bare `kanon bootstrap` with no positional, an
+unknown flag such as `--marketplace-install` -- now uniformly print the
+deprecation message to stderr and exit 3. No work is performed and no Python
+traceback is emitted.
 
-Note: 'unknown package' and 'bad --output-dir' errors are now unreachable because
-the shim exits 3 before performing any work. The tests that verified those error
-paths have been removed as the underlying behavior no longer exists.
+These tests invoke the running CLI (`python -m kanon_cli`) and assert by key
+substrings (never byte-for-byte).
 """
 
 import pytest
@@ -16,87 +17,109 @@ from tests.functional.conftest import _run_kanon
 
 
 @pytest.mark.functional
-class TestBootstrapMissingPackage:
-    """AC-TEST-001: kanon bootstrap with no positional package argument must exit 2.
+class TestBareBootstrapIsDeprecatedNotArgparseError:
+    """Bare `kanon bootstrap` (no positional) exits 3, NOT an argparse exit-2 error.
 
-    argparse exits with code 2 when a required positional argument is omitted.
-    The error message goes to stderr; stdout must be empty.
+    Before the major release, omitting the positional raised an argparse
+    "required" error (exit 2). The intercept now runs before argparse, so bare
+    `kanon bootstrap` exits 3 with the deprecation message instead.
     """
 
-    def test_missing_package_exits_2(self) -> None:
-        """kanon bootstrap with no package argument must exit with code 2 (argparse error)."""
+    def test_bare_bootstrap_exits_3(self) -> None:
         result = _run_kanon("bootstrap")
-        assert result.returncode == 2, (
-            f"Expected exit code 2 for missing positional argument, got {result.returncode}.\nstderr: {result.stderr!r}"
-        )
-
-    def test_missing_package_error_on_stderr(self) -> None:
-        """kanon bootstrap with no package argument must write an error message to stderr."""
-        result = _run_kanon("bootstrap")
-        assert result.returncode == 2
-        assert result.stderr != "", "Expected argparse error message on stderr when package argument is omitted"
-
-    def test_missing_package_error_contains_required_keyword(self) -> None:
-        """argparse error for missing positional argument must mention the argument by name or say 'required'."""
-        result = _run_kanon("bootstrap")
-        assert result.returncode == 2
-        lowered = result.stderr.lower()
-        assert "package" in lowered or "required" in lowered, (
-            f"Expected 'package' or 'required' in argparse error message, got: {result.stderr!r}"
-        )
-
-    def test_missing_package_nothing_on_stdout(self) -> None:
-        """kanon bootstrap with no package argument must not write anything to stdout (AC-CHANNEL-001)."""
-        result = _run_kanon("bootstrap")
-        assert result.returncode == 2
-        assert result.stdout == "", f"Expected empty stdout for missing package error, got: {result.stdout!r}"
-
-
-@pytest.mark.functional
-class TestBootstrapShimAnyPackageExits3:
-    """AC-FUNC-001: any non-help, non-empty invocation exits 3 with a WARN to stderr.
-
-    The shim replaces all delegating behavior. Exit code 3 signals deprecated
-    invocation. No filesystem mutation or catalog resolution occurs.
-    """
-
-    @pytest.mark.parametrize("package_name", ["kanon", "does-not-exist", "no-such-pkg"])
-    def test_any_package_name_exits_3(self, package_name: str) -> None:
-        """kanon bootstrap <package> must exit 3 regardless of whether the package exists."""
-        result = _run_kanon("bootstrap", package_name)
         assert result.returncode == 3, (
-            f"Expected exit code 3 for 'kanon bootstrap {package_name}', "
-            f"got {result.returncode}.\nstderr: {result.stderr!r}"
+            f"Bare 'kanon bootstrap' should exit 3 (deprecated), got {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
-    def test_any_package_name_warn_on_stderr(self) -> None:
-        """kanon bootstrap <package> must write a WARN to stderr."""
-        result = _run_kanon("bootstrap", "kanon")
+    def test_bare_bootstrap_message_on_stderr(self) -> None:
+        result = _run_kanon("bootstrap")
         assert result.returncode == 3
-        assert "WARN:" in result.stderr, f"Expected 'WARN:' in stderr, got: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
-    def test_any_package_name_nothing_on_stdout(self) -> None:
-        """kanon bootstrap <package> must not write anything to stdout (AC-CHANNEL-001)."""
-        result = _run_kanon("bootstrap", "kanon")
+    def test_bare_bootstrap_no_argparse_required_error(self) -> None:
+        result = _run_kanon("bootstrap")
+        assert result.returncode == 3
+        # The old argparse "the following arguments are required" / "unrecognized
+        # arguments" diagnostics must not appear.
+        assert "the following arguments are required" not in result.stderr
+        assert "unrecognized arguments" not in result.stderr
+
+    def test_bare_bootstrap_uses_generic_add_arm(self) -> None:
+        result = _run_kanon("bootstrap")
+        assert result.returncode == 3
+        # No positional -> the generic add-arm closest-replacement line.
+        assert "kanon add <entry> --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"Expected the generic add-arm replacement, got: {result.stderr!r}"
+        )
+
+    def test_bare_bootstrap_nothing_on_stdout(self) -> None:
+        result = _run_kanon("bootstrap")
         assert result.returncode == 3
         assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
 
-    def test_list_subcommand_exits_3(self) -> None:
-        """kanon bootstrap list must exit 3 (shim path)."""
-        result = _run_kanon("bootstrap", "list")
+
+@pytest.mark.functional
+class TestBootstrapUnknownFlagIsDeprecated:
+    """Unknown flags such as `--marketplace-install` exit 3, NOT an argparse error.
+
+    Before the major release, `kanon bootstrap history --marketplace-install`
+    raised an argparse "unrecognized arguments" error (exit 2). It now exits 3
+    with the deprecation message.
+    """
+
+    def test_unknown_flag_exits_3(self) -> None:
+        result = _run_kanon("bootstrap", "history", "--marketplace-install")
         assert result.returncode == 3, (
-            f"Expected exit code 3 for 'kanon bootstrap list', got {result.returncode}.\nstderr: {result.stderr!r}"
+            f"Expected exit 3 for unknown bootstrap flag, got {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
-    def test_warn_contains_see_docs_link(self) -> None:
-        """The WARN message must include the migration docs link."""
+    def test_unknown_flag_no_argparse_error(self) -> None:
+        result = _run_kanon("bootstrap", "history", "--marketplace-install")
+        assert result.returncode == 3
+        assert "unrecognized arguments" not in result.stderr, (
+            f"argparse error must not appear; the intercept runs before argparse: {result.stderr!r}"
+        )
+
+    def test_unknown_flag_uses_entry_add_arm(self) -> None:
+        result = _run_kanon("bootstrap", "history", "--marketplace-install")
+        assert result.returncode == 3
+        # First positional `history` -> add-arm replacement naming the entry.
+        assert "kanon add history --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"Expected the add-arm replacement for entry 'history', got: {result.stderr!r}"
+        )
+
+    def test_flags_only_tail_uses_generic_add_arm(self) -> None:
+        result = _run_kanon("bootstrap", "--marketplace-install")
+        assert result.returncode == 3
+        assert "kanon add <entry> --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"Expected the generic add-arm replacement, got: {result.stderr!r}"
+        )
+
+
+@pytest.mark.functional
+class TestBootstrapShimChannelDiscipline:
+    """The shim never emits a traceback and writes only to stderr, never stdout."""
+
+    @pytest.mark.parametrize("entry", ["kanon", "does-not-exist", "no-such-pkg"])
+    def test_any_entry_exits_3(self, entry: str) -> None:
+        result = _run_kanon("bootstrap", entry)
+        assert result.returncode == 3, (
+            f"Expected exit 3 for 'kanon bootstrap {entry}', got {result.returncode}.\nstderr: {result.stderr!r}"
+        )
+
+    def test_no_traceback_on_stderr(self) -> None:
+        result = _run_kanon("bootstrap", "kanon")
+        assert "Traceback" not in result.stderr, f"Unexpected traceback in stderr: {result.stderr!r}"
+
+    def test_docs_link_present(self) -> None:
         result = _run_kanon("bootstrap", "kanon")
         assert result.returncode == 3
         assert "docs/migration-bootstrap-to-add.md" in result.stderr, (
             f"Expected migration docs link in stderr, got: {result.stderr!r}"
         )
 
-    def test_warn_no_traceback(self) -> None:
-        """The shim must not emit a Python traceback."""
+    def test_nothing_on_stdout(self) -> None:
         result = _run_kanon("bootstrap", "kanon")
-        assert "Traceback" not in result.stderr, f"Unexpected traceback in stderr: {result.stderr!r}"
+        assert result.returncode == 3
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"

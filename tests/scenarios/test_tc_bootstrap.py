@@ -1,8 +1,10 @@
 """TC-bootstrap scenarios: deprecation shim verification.
 
-These scenarios verify that 'kanon bootstrap' is now a deprecation shim that:
-- Exits 3 (EXIT_CODE_DEPRECATED) for any non-help invocation.
-- Prints the verbatim WARN text to stderr.
+These scenarios verify that 'kanon bootstrap' is now a uniform deprecation shim
+that:
+- Exits 3 (EXIT_CODE_DEPRECATED) for EVERY invocation (any args/flags, including
+  --help).
+- Prints the deprecation message to stderr.
 - Performs no filesystem mutation.
 - Does not resolve the catalog.
 
@@ -44,7 +46,7 @@ class TestTCBootstrap:
         assert not output_dir.exists(), (
             f"Expected --output-dir '{output_dir}' to NOT be created (shim must not delegate)"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr, got: {result.stderr!r}"
 
     # ------------------------------------------------------------------
     # TC-bootstrap-02: --catalog-source flag accepted, never resolved (shim)
@@ -63,7 +65,7 @@ class TestTCBootstrap:
             f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         assert "Cloning" not in result.stderr, f"Unexpected clone attempt in stderr: {result.stderr!r}"
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr, got: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr, got: {result.stderr!r}"
 
     # ------------------------------------------------------------------
     # TC-bootstrap-03: KANON_CATALOG_SOURCE env accepted, never resolved (shim)
@@ -116,5 +118,5 @@ class TestTCBootstrap:
         assert result.returncode == 3, (
             f"Expected exit 3 (shim), got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert result.stderr.strip(), "Expected a non-empty WARN message in stderr"
-        assert "WARN:" in result.stderr, f"Expected 'WARN:' in stderr, got: {result.stderr!r}"
+        assert result.stderr.strip(), "Expected a non-empty deprecation message in stderr"
+        assert "DEPRECATED" in result.stderr, f"Expected 'DEPRECATED' in stderr, got: {result.stderr!r}"

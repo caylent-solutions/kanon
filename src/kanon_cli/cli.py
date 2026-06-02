@@ -24,7 +24,11 @@ from types import FrameType
 
 from kanon_cli import __version__
 from kanon_cli.commands.add import register as register_add
-from kanon_cli.commands.bootstrap import register as register_bootstrap
+from kanon_cli.commands.bootstrap import (
+    build_deprecation_message,
+    register as register_bootstrap,
+    select_bootstrap_tail,
+)
 from kanon_cli.commands.catalog import register as register_catalog
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
@@ -43,6 +47,7 @@ from kanon_cli.completions.project_versions import register as register_complete
 from kanon_cli.completions.cached_catalogs import register as register_complete_cached_catalogs
 from kanon_cli.completions.midtoken import register as register_resolve_entry_to_repo_url
 from kanon_cli.completions.source_names import register as register_complete_source_names
+from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 
 # ---------------------------------------------------------------------------
@@ -280,6 +285,16 @@ def main(argv: list[str] | None = None) -> None:
     """
     signal.signal(signal.SIGTERM, _make_signal_handler(signal.SIGTERM))
     signal.signal(signal.SIGINT, _make_signal_handler(signal.SIGINT))
+
+    # `kanon bootstrap` was removed (major release, breaking change). Intercept it
+    # BEFORE argparse so EVERY invocation -- any args/flags, including --help and
+    # unknown flags -- emits the same deprecation message and exits non-zero,
+    # rather than argparse special-casing --help or rejecting unknown flags.
+    raw_argv = sys.argv[1:] if argv is None else argv
+    bootstrap_tail = select_bootstrap_tail(raw_argv)
+    if bootstrap_tail is not None:
+        print(build_deprecation_message(bootstrap_tail), file=sys.stderr)
+        sys.exit(EXIT_CODE_DEPRECATED)
 
     parser = build_parser()
     args = parser.parse_args(argv)

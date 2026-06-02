@@ -586,15 +586,10 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--repo-root"],
         False,
     ),
-    # -- kanon bootstrap flags --
-    (
-        "bootstrap_flags",
-        "kanon bootstrap --",
-        ["kanon", "bootstrap", "--"],
-        2,
-        ["--help", "--output-dir"],
-        False,
-    ),
+    # NOTE: there is no `bootstrap_flags` static row. bootstrap was removed in a
+    # major release and is now a flagless deprecation shim, so it exposes no
+    # per-flag completion. That absence is asserted by
+    # test_bootstrap_offers_no_flag_completion below.
     # -- kanon clean flags --
     (
         "clean_flags",
@@ -652,6 +647,27 @@ def test_static_completion_row(
             f"[{test_id}] Expected COMPREPLY to contain {expected!r}, "
             f"but missing {missing!r}. Got: {sorted(candidates)!r}"
         )
+
+
+@pytest.mark.integration
+def test_bootstrap_offers_no_flag_completion(tmp_path: Path) -> None:
+    """`kanon bootstrap --<TAB>` offers no flag candidates.
+
+    bootstrap was removed in a major release and is now a flagless deprecation
+    shim (the subparser declares only a REMAINDER catch-all and no options), so
+    the old `--output-dir`/`--catalog-source`/`--help` completions are gone.
+    """
+    _assert_bash_version_gte_4()
+    candidates = _bash_completion_runner(
+        tmp_path=tmp_path,
+        comp_line="kanon bootstrap --",
+        comp_words=["kanon", "bootstrap", "--"],
+        comp_cword=2,
+    )
+    flag_candidates = [c for c in candidates if c.startswith("-")]
+    assert flag_candidates == [], (
+        f"bootstrap must offer no flag completion (it is a flagless shim), got: {flag_candidates!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

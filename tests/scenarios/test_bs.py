@@ -1,10 +1,10 @@
 """BS (Bootstrap) scenarios from `docs/integration-testing.md` §3.
 
 Each scenario invokes `kanon bootstrap` and asserts the documented deprecation
-pass criteria (exit code 3 + WARN text on stderr). The bootstrap command is a
-deprecation shim on the feat/kanon-deps-work-2026-05 branch -- it exits 3 and
-prints a WARN message for any non-help invocation, per spec section 4.0 /
-R352-R368.
+pass criteria: exit code 3 and the deprecation message on stderr. `kanon
+bootstrap` was removed in a major release (a breaking change) -- every
+invocation (any args/flags, including `--help`) exits 3 with one deprecation
+message and performs no work.
 
 Scenarios automated:
 - BS-01: List bundled packages -- exits 3 (shim)
@@ -32,7 +32,7 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
 
     def test_bs_02_bootstrap_kanon_default_output_dir(self, tmp_path: pathlib.Path) -> None:
         ws = tmp_path / "bs02"
@@ -41,7 +41,7 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
         assert not (ws / ".kanon").exists(), ".kanon must NOT be created (shim must not delegate)"
         assert not (ws / "kanon-readme.md").exists(), "kanon-readme.md must NOT be created (shim)"
 
@@ -51,7 +51,7 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
         assert not output_dir.exists(), f"output_dir must NOT be created (shim): {output_dir}"
 
     def test_bs_04_conflict_existing_kanon_file(self, tmp_path: pathlib.Path) -> None:
@@ -62,14 +62,14 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
 
     def test_bs_05_unknown_package_name(self) -> None:
         result = run_kanon("bootstrap", "nonexistent")
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
 
     def test_bs_06_blocker_file_at_output_path(self, tmp_path: pathlib.Path) -> None:
         blocker = tmp_path / "bs06-blocker"
@@ -78,7 +78,7 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
 
     def test_bs_07_missing_parent_directory(self, tmp_path: pathlib.Path) -> None:
         missing_parent = tmp_path / "nonexistent-parent" / "child"
@@ -86,4 +86,4 @@ class TestBS:
         assert result.returncode == 3, (
             f"Expected exit 3 (bootstrap shim), got {result.returncode}\nstderr={result.stderr!r}"
         )
-        assert "WARN:" in result.stderr, f"Expected WARN on stderr: {result.stderr!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"

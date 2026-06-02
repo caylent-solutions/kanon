@@ -13,7 +13,7 @@ _shtab_kanon_commands() {
     "__complete_source_names_in_kanon:Internal hidden subcommand for shell completion of .kanon source names."
     "__resolve_entry_to_repo_url:Internal hidden subcommand for the mid-token splitter. Given a catalog entry name, returns the catalog source URL to stdout so the shell helper can route to _kanon_complete_project_versions."
     "add:Resolve catalog entries from a manifest repo and append the"
-    "bootstrap:DEPRECATED command. Use the replacements below."
+    "bootstrap:"
     "catalog:Subcommands for inspecting and auditing manifest repos."
     "clean:Execute the full Kanon clean lifecycle."
     "completion:Emit the shell completion script for kanon to stdout."
@@ -143,10 +143,7 @@ append). Mutually exclusive with --marketplace-install.]"
 _shtab_kanon_add_defaults_added=0
 
 _shtab_kanon_bootstrap_options=(
-  "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--output-dir[\[DEPRECATED\] Target directory for bootstrapped files (default\: current directory)]:output_dir:"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
-  ":Catalog entry package name (e.g. kanon) or \'list\' to show available packages:"
+  "(-)*:argv_tail:"
 )
 
 # guard to ensure default positional specs are added only once per session

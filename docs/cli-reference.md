@@ -447,13 +447,22 @@ passes branches through unfiltered, deduplicates, and returns one ref name
 per line sorted (tags by Version ordering, then branches alphabetically).
 Results are cached in `${KANON_CACHE_DIR}/catalogs/<sha>/tags.txt`.
 
-### `kanon bootstrap`
+### `kanon bootstrap` (removed)
 
-Scaffold a new Kanon project with catalog entry package files.
+`kanon bootstrap` was removed in a major release (a breaking change).
+It no longer performs any work and accepts no flags. **Every**
+invocation -- any args, any flags, including `--help`/`-h`, unknown
+flags, `kanon bootstrap list`, and bare `kanon bootstrap` -- prints a
+deprecation message to stderr and exits with code `3`
+(`EXIT_CODE_DEPRECATED`).
 
-The `--catalog-source` flag on this command is registered by
-`add_catalog_source_arg` from `kanon_cli.core.cli_args`.
+Use the replacement commands instead:
 
 ```
-kanon bootstrap [--output-dir OUTPUT_DIR] [--catalog-source <git-url>@<ref>] package
+kanon list --catalog-source <git-url>@<ref>      # search the catalog
+kanon add <entry> --catalog-source <git-url>@<ref>   # add an entry to .kanon
+kanon install                                    # fetch added entries
 ```
+
+See [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+for the full migration guide.

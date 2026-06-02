@@ -58,25 +58,31 @@ The table shows which codes each subcommand can emit.
 | `kanon validate metadata` | y | y | y | -- |
 | `kanon install` | y | y | y | -- |
 | `kanon doctor` | y | y | y | -- |
-| `kanon bootstrap` | `--help` only | -- | y | non-`--help` only |
-| `kanon bootstrap list` | `--help` only | -- | y | non-`--help` only |
+| `kanon bootstrap` | -- | -- | -- | y (all invocations) |
+| `kanon bootstrap list` | -- | -- | -- | y (all invocations) |
 | `kanon clean` | y | y | y | -- |
 | `kanon completion` | y | y | y | -- |
 | `kanon repo` | y | y | y | -- |
 
 ### Notes on `kanon bootstrap` and `kanon bootstrap list`
 
-Per spec Section 4.9, both commands are **deprecation shims**. Any
-invocation other than `--help` prints a WARN to stderr naming the exact
-replacement command and exits with status `3` without performing any
-work. The shim does not delegate, does not read manifest-repo content,
-and does not touch the filesystem.
+`kanon bootstrap` was removed in a major release (a breaking change)
+and is retained only as a uniform deprecation shim. **Every**
+invocation -- any args, any flags, including `--help`/`-h`, unknown
+flags, `kanon bootstrap list`, and bare `kanon bootstrap` -- prints a
+deprecation message to stderr and exits with status `3` without
+performing any work. There is no invocation that exits `0`, and no
+argparse "unrecognized arguments" error: every flag is swallowed and
+routed to the same message. The shim does not delegate, does not read
+manifest-repo content, and does not touch the filesystem.
 
-`--help` retains discoverability: it exits `0` and prepends the help
-text with a `DEPRECATED:` prefix.
+The message includes a per-invocation "CLOSEST REPLACEMENT" line:
+`kanon bootstrap list` maps to
+`kanon list --catalog-source <git-url>@<ref>`, and any other entry maps
+to `kanon add <entry> --catalog-source <git-url>@<ref>`.
 
 See [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
-for the full migration guide and flag-translation table.
+for the full migration guide.
 
 ## Using this table in CI
 

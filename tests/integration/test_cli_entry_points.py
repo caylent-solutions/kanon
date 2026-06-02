@@ -83,29 +83,54 @@ class TestMainDispatch:
             main(["install"])
         assert exc_info.value.code == 1
 
-    def test_bootstrap_list_exits_3_with_warn(
+    def test_bootstrap_list_exits_3_with_deprecation(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
+        """`kanon bootstrap list` exits 3 with the deprecation message; list arm."""
         monkeypatch.chdir(tmp_path)
         with pytest.raises(SystemExit) as exc:
             main(["bootstrap", "list"])
         assert exc.value.code == 3
         captured = capsys.readouterr()
-        assert "WARN: 'kanon bootstrap list' is deprecated." in captured.err
+        assert "DEPRECATED" in captured.err
+        assert "major release" in captured.err
+        assert "breaking change" in captured.err
+        assert "docs/migration-bootstrap-to-add.md" in captured.err
+        # The list-arm closest-replacement line points at `kanon list`.
+        assert "kanon list --catalog-source <git-url>@<ref>" in captured.err
 
-    def test_bootstrap_kanon_exits_3_with_warn(
+    def test_bootstrap_entry_exits_3_with_deprecation(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
+        """`kanon bootstrap kanon` exits 3 with the deprecation message; add arm."""
         with pytest.raises(SystemExit) as exc:
             main(["bootstrap", "kanon", "--output-dir", str(tmp_path / "project")])
         assert exc.value.code == 3
         captured = capsys.readouterr()
-        assert "WARN: 'kanon bootstrap kanon' is deprecated." in captured.err
+        assert "DEPRECATED" in captured.err
+        assert "docs/migration-bootstrap-to-add.md" in captured.err
+        # The entry-arm closest-replacement line names the entry.
+        assert "kanon add kanon --catalog-source <git-url>@<ref>" in captured.err
+        # The shim performs no work: --output-dir is never created.
+        assert not (tmp_path / "project").exists()
+
+    def test_bootstrap_unknown_flag_exits_3_not_argparse_error(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`kanon bootstrap history --marketplace-install` exits 3 (intercept before argparse)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["bootstrap", "history", "--marketplace-install"])
+        assert exc.value.code == 3
+        captured = capsys.readouterr()
+        assert "DEPRECATED" in captured.err
+        assert "kanon add history --catalog-source <git-url>@<ref>" in captured.err
+        assert "unrecognized arguments" not in captured.err
 
     def test_validate_xml_with_explicit_repo_root_exits_1_when_empty(self, tmp_path: pathlib.Path) -> None:
         with pytest.raises(SystemExit) as exc_info:

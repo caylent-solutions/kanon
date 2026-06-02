@@ -778,3 +778,160 @@ class TestInstallMarketplaceLockfileState:
             "install with KANON_MARKETPLACE_INSTALL=false must write marketplace_registered=false"
         )
         assert lf.marketplace_dir == "", "install must write empty marketplace_dir when no marketplace is registered"
+
+
+# ---------------------------------------------------------------------------
+# AC-1/AC-2/AC-4: install honors KANON_WORKSPACE_DIR
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInstallWorkspaceDirEnvVar:
+    """install() places .packages/ and .kanon-data/ under KANON_WORKSPACE_DIR when set."""
+
+    _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
+    _FAKE_REF_RESOLUTION = None
+
+    def setup_method(self):
+        from kanon_cli.core.install import _RefResolution
+
+        self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
+
+    def test_install_creates_artifacts_under_workspace_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-1: artifacts land under KANON_WORKSPACE_DIR, not under cwd."""
+        alt_workspace = tmp_path / "alt_workspace"
+        cwd_dir = tmp_path / "cwd_dir"
+        cwd_dir.mkdir()
+        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = cwd_dir / ".kanon.lock"
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+
+        assert (alt_workspace / ".kanon-data").exists(), (
+            "KANON_WORKSPACE_DIR set: .kanon-data/ must be created under the alt workspace"
+        )
+        assert not (cwd_dir / ".kanon-data").exists(), (
+            "KANON_WORKSPACE_DIR set: .kanon-data/ must NOT be created in cwd"
+        )
+        assert not (cwd_dir / ".packages").exists(), "KANON_WORKSPACE_DIR set: .packages/ must NOT be created in cwd"
+
+    def test_install_creates_packages_under_workspace_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-1: .packages/ lands under KANON_WORKSPACE_DIR."""
+        alt_workspace = tmp_path / "alt_ws"
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = cwd_dir / ".kanon.lock"
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+
+        assert (alt_workspace / ".packages").exists(), (
+            "KANON_WORKSPACE_DIR set: .packages/ must be created under the alt workspace"
+        )
+
+    def test_install_workspace_dir_created_if_absent(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-1: KANON_WORKSPACE_DIR is created automatically when it does not exist."""
+        alt_workspace = tmp_path / "new_dir" / "deeply_nested"
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+
+        assert not alt_workspace.exists(), "pre-condition: alt workspace must not exist before install"
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = cwd_dir / ".kanon.lock"
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+
+        assert alt_workspace.exists(), "install must create KANON_WORKSPACE_DIR if it does not exist"
+
+    def test_install_unwritable_workspace_dir_exits_nonzero(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-4: unwritable KANON_WORKSPACE_DIR causes non-zero exit with actionable message."""
+        import stat
+
+        locked_parent = tmp_path / "locked"
+        locked_parent.mkdir()
+        unwritable = locked_parent / "workspace"
+        locked_parent.chmod(stat.S_IRUSR | stat.S_IXUSR)
+
+        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(unwritable))
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir(parents=True, exist_ok=True)
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        lock_path = cwd_dir / ".kanon.lock"
+
+        try:
+            with pytest.raises(SystemExit) as exc_info:
+                install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            assert exc_info.value.code != 0, "unwritable KANON_WORKSPACE_DIR must exit non-zero"
+            assert not (cwd_dir / ".kanon-data").exists(), (
+                "on unwritable KANON_WORKSPACE_DIR, no artifacts must be written to cwd (no fallback)"
+            )
+            assert not (cwd_dir / ".packages").exists(), (
+                "on unwritable KANON_WORKSPACE_DIR, no .packages/ must appear in cwd (no fallback)"
+            )
+        finally:
+            locked_parent.chmod(stat.S_IRWXU)

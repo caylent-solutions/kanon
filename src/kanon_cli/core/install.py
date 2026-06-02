@@ -55,6 +55,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from typing import NamedTuple, cast
 
@@ -69,6 +70,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_BLOCK_HEADER,
     KANON_CATALOG_BLOCK_KEY,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    WORKSPACE_DIR_ENV_VAR,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
@@ -106,6 +108,7 @@ __all__ = [
     "MalformedIncludeError",
     "_canonicalize_include_path",
     "_walk_includes",
+    "resolve_workspace_base_dir",
 ]
 
 
@@ -1395,6 +1398,62 @@ def _resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
     )
 
 
+def resolve_workspace_base_dir(kanonenv_parent: pathlib.Path) -> pathlib.Path:
+    """Resolve the base directory for .packages/ and .kanon-data/ artifacts.
+
+    When the ``KANON_WORKSPACE_DIR`` environment variable is set, the value is
+    resolved to an absolute path and used as the base directory.  The directory
+    is created if it does not yet exist.  If creation fails or the resulting
+    directory is not writable, the function calls ``sys.exit(1)`` with an
+    actionable error message naming the path and the environment variable name.
+    There is no silent fallback to ``kanonenv_parent``; the contract is strict
+    fail-fast.
+
+    When ``KANON_WORKSPACE_DIR`` is not set, the function returns
+    ``kanonenv_parent`` -- the directory that contains the ``.kanon`` file --
+    which is the original pre-env-var behavior.
+
+    This function is the single resolution point shared by both ``install`` and
+    ``clean`` so that the two commands agree on where artifacts are placed and
+    removed.  ``clean.py`` imports this function from ``install.py``.
+
+    Args:
+        kanonenv_parent: The resolved parent directory of the ``.kanon`` file.
+            Used as the fallback when ``KANON_WORKSPACE_DIR`` is unset.
+
+    Returns:
+        The absolute ``pathlib.Path`` to use as the base directory.
+
+    Raises:
+        SystemExit: With exit code 1 when ``KANON_WORKSPACE_DIR`` is set to an
+            uncreatable or non-writable path.
+    """
+    raw = os.environ.get(WORKSPACE_DIR_ENV_VAR)
+    if not raw:
+        return kanonenv_parent
+
+    workspace_path = pathlib.Path(raw).resolve()
+    try:
+        workspace_path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(
+            f"ERROR: Cannot create {WORKSPACE_DIR_ENV_VAR} directory {workspace_path}: {exc.strerror}.\n"
+            f"  Set {WORKSPACE_DIR_ENV_VAR} to a path that can be created, or unset the variable.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not os.access(workspace_path, os.W_OK):
+        print(
+            f"ERROR: {WORKSPACE_DIR_ENV_VAR} directory {workspace_path} is not writable.\n"
+            f"  Fix permissions or set {WORKSPACE_DIR_ENV_VAR} to a writable path.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return workspace_path
+
+
 def create_source_dirs(
     source_names: list[str],
     base_dir: pathlib.Path,
@@ -1983,7 +2042,7 @@ def _run_install(
             all_findings=placeholder_findings,
         )
 
-    base_dir = kanonenv_path.parent
+    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
     source_names = config["KANON_SOURCES"]
     sources = config["sources"]
     marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
@@ -2524,7 +2583,7 @@ def install(
         RepoCommandError: If any repo sub-command exits non-zero.
     """
     kanonenv_path = kanonenv_path.resolve()
-    base_dir = kanonenv_path.parent
+    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
 
     with kanon_workspace_lock(base_dir):
         _run_install(

@@ -2241,3 +2241,26 @@ class TestCompletionSanitizationConstants:
 
         for char in COMPLETION_UNSAFE_CHARS:
             assert len(char) == 1, f"Non-single-char element in COMPLETION_UNSAFE_CHARS: {char!r}"
+
+
+@pytest.mark.unit
+class TestWorkspaceDirEnvVar:
+    """Tests for WORKSPACE_DIR_ENV_VAR constant (E58-F4-S1-T1 AC-1..AC-4)."""
+
+    def test_workspace_dir_env_var_exists(self) -> None:
+        """WORKSPACE_DIR_ENV_VAR constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+
+        assert isinstance(WORKSPACE_DIR_ENV_VAR, str)
+
+    def test_workspace_dir_env_var_value(self) -> None:
+        """WORKSPACE_DIR_ENV_VAR must be exactly 'KANON_WORKSPACE_DIR'."""
+        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+
+        assert WORKSPACE_DIR_ENV_VAR == "KANON_WORKSPACE_DIR"
+
+    def test_workspace_dir_env_var_is_non_empty(self) -> None:
+        """WORKSPACE_DIR_ENV_VAR must not be empty."""
+        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+
+        assert len(WORKSPACE_DIR_ENV_VAR) > 0

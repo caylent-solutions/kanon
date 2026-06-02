@@ -5,16 +5,20 @@ Performs full Kanon teardown in the following order:
   2. Determine marketplace state: consult .kanon.lock (marketplace_registered field)
      when present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
      lockfiles or when no lockfile exists (back-compat, AC-8).
-  3. If marketplace was registered: uninstall marketplace plugins via claude CLI,
+  3. Resolve the artifact base directory via resolve_workspace_base_dir: when
+     KANON_WORKSPACE_DIR is set, remove artifacts from that directory; otherwise
+     remove from the directory containing .kanon.
+  4. If marketplace was registered: uninstall marketplace plugins via claude CLI,
      then remove CLAUDE_MARKETPLACES_DIR.
-  4. Remove .packages/ directory (ignore_errors=True)
-  5. Remove .kanon-data/ directory (ignore_errors=True)
+  5. Remove .packages/ directory (ignore_errors=True)
+  6. Remove .kanon-data/ directory (ignore_errors=True)
 """
 
 import pathlib
 import shutil
 import sys
 
+from kanon_cli.core.install import resolve_workspace_base_dir
 from kanon_cli.core.marketplace import uninstall_marketplace_plugins
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, read_lockfile
@@ -101,11 +105,16 @@ def clean(kanonenv_path: pathlib.Path) -> None:
       1. Resolve kanonenv_path symlinks so .packages/ and .kanon-data/ are removed
          from the real project directory even when .kanon is a symlink.
       2. Parse .kanon.
-      3. Determine marketplace state from .kanon.lock (marketplace_registered) when
+      3. Resolve the artifact base directory via ``resolve_workspace_base_dir``:
+         when ``KANON_WORKSPACE_DIR`` is set, artifacts are removed from that
+         directory; otherwise from the directory containing .kanon.  This
+         mirrors the resolution used by install so clean removes exactly what
+         install wrote.
+      4. Determine marketplace state from .kanon.lock (marketplace_registered) when
          present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
          lockfiles or when no lockfile exists.
-      4. If marketplace was registered: run uninstall, remove marketplace dir.
-      5. Remove .packages/ and .kanon-data/.
+      5. If marketplace was registered: run uninstall, remove marketplace dir.
+      6. Remove .packages/ and .kanon-data/.
 
     The lockfile-first lookup ensures that an env-override install
     (KANON_MARKETPLACE_INSTALL=true at install time, while .kanon stores false) is
@@ -122,7 +131,7 @@ def clean(kanonenv_path: pathlib.Path) -> None:
     kanonenv_path = kanonenv_path.resolve()
     print(f"kanon clean: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
-    base_dir = kanonenv_path.parent
+    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
     kanon_flag_marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
     globals_dict = config["globals"]
 

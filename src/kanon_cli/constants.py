@@ -33,6 +33,13 @@ SOURCE_SUFFIXES = (SOURCE_URL_SUFFIX,) + SOURCE_NON_URL_SUFFIXES
 SUFFIX_TO_KEY = {"_URL": "url", "_REVISION": "revision", "_PATH": "path"}
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
+# -- Workspace directory --
+# When set, install and clean resolve .packages/ and .kanon-data/ relative to
+# this directory instead of beside .kanon.  The value is resolved to an
+# absolute path; the directory is created if absent.  An unwritable value
+# causes a non-zero exit with an actionable message -- no silent cwd fallback.
+WORKSPACE_DIR_ENV_VAR = "KANON_WORKSPACE_DIR"
+
 # -- Catalog --
 CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
 

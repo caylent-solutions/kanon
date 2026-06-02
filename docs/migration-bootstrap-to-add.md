@@ -68,13 +68,16 @@ flag definition now lives in `core/cli_args.py`; every command imports
 it from there.
 
 **`--output-dir`.** There is no direct equivalent in `kanon add`. The
-install workspace is the current directory, or `KANON_WORKSPACE_DIR`
-if set. `--output-dir` has no equivalent in `kanon list` either.
-When `--output-dir` appears in a deprecated `kanon bootstrap`
+install artifacts (`.packages/` and `.kanon-data/`) land beside `.kanon`
+by default; setting `KANON_WORKSPACE_DIR` relocates them to that directory
+instead (the directory is created if absent; an unwritable value causes a
+non-zero exit with an actionable message and no silent fallback to cwd).
+`kanon clean` resolves the same directory so it removes exactly what
+`kanon install` wrote. `--output-dir` has no equivalent in `kanon list`
+either. When `--output-dir` appears in a deprecated `kanon bootstrap`
 invocation, the WARN body includes a `Note:` line explaining this.
 
-See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCE`
-and `KANON_WORKSPACE_DIR`.
+See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCE`.
 
 ---
 

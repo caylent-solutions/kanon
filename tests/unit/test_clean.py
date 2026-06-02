@@ -186,3 +186,74 @@ class TestCleanSubparserHelp:
         register(subparsers)
         clean_parser = subparsers.choices["clean"]
         assert clean_parser.add_help is True, "clean subparser must have add_help=True so '-h' is accepted"
+
+
+# ---------------------------------------------------------------------------
+# AC-2: clean honors KANON_WORKSPACE_DIR
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCleanWorkspaceDirEnvVar:
+    """clean() removes .packages/ and .kanon-data/ from KANON_WORKSPACE_DIR when set."""
+
+    def test_clean_removes_dirs_from_workspace_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-2: clean removes .packages/ and .kanon-data/ from KANON_WORKSPACE_DIR."""
+        alt_workspace = tmp_path / "alt_workspace"
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+
+        # Create artifacts under the alt workspace (as install would have)
+        (alt_workspace / ".packages").mkdir(parents=True)
+        (alt_workspace / ".kanon-data").mkdir(parents=True)
+        # Also create decoy artifacts in cwd (should NOT be touched by clean)
+        (cwd_dir / ".packages").mkdir()
+        (cwd_dir / ".kanon-data").mkdir()
+
+        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+            clean(kanonenv)
+
+        assert not (alt_workspace / ".packages").exists(), (
+            "KANON_WORKSPACE_DIR set: .packages/ must be removed from the alt workspace"
+        )
+        assert not (alt_workspace / ".kanon-data").exists(), (
+            "KANON_WORKSPACE_DIR set: .kanon-data/ must be removed from the alt workspace"
+        )
+        # Decoy artifacts in cwd must not be touched
+        assert (cwd_dir / ".packages").exists(), (
+            "KANON_WORKSPACE_DIR set: .packages/ in cwd must NOT be touched by clean"
+        )
+        assert (cwd_dir / ".kanon-data").exists(), (
+            "KANON_WORKSPACE_DIR set: .kanon-data/ in cwd must NOT be touched by clean"
+        )
+
+    def test_clean_without_workspace_dir_uses_kanonenv_parent(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When KANON_WORKSPACE_DIR is not set, clean removes dirs beside .kanon (original behavior)."""
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+        monkeypatch.delenv("KANON_WORKSPACE_DIR", raising=False)
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+
+        (cwd_dir / ".packages").mkdir()
+        (cwd_dir / ".kanon-data").mkdir()
+
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+            clean(kanonenv)
+
+        assert not (cwd_dir / ".packages").exists(), (
+            "Without KANON_WORKSPACE_DIR, .packages/ must be removed beside .kanon"
+        )
+        assert not (cwd_dir / ".kanon-data").exists(), (
+            "Without KANON_WORKSPACE_DIR, .kanon-data/ must be removed beside .kanon"
+        )

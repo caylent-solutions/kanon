@@ -64,6 +64,16 @@ The table shows which codes each subcommand can emit.
 | `kanon completion` | y | y | y | -- |
 | `kanon repo` | y | y | y | -- |
 
+### Notes on `kanon clean`
+
+`kanon clean` exits `0` on a successful teardown, `1` on a runtime error
+(for example, a missing `.kanon` file or `KANON_MARKETPLACE_INSTALL=true`
+with no `CLAUDE_MARKETPLACES_DIR` defined), and `2` on an argparse error.
+The `--orphans` flag does not introduce a new exit code: it only changes
+what cleanup is performed (additionally pruning orphaned-source
+marketplaces from `~/.claude` before the normal teardown), not which codes
+the command can emit.
+
 ### Notes on `kanon bootstrap` and `kanon bootstrap list`
 
 `kanon bootstrap` was removed in a major release (a breaking change)

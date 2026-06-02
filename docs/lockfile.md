@@ -33,7 +33,7 @@ The lockfile records:
 
 The lockfile schema version is embedded in the file and drives the
 migration policy. See [Schema migration](#schema-migration).
-This document describes schema version 1.
+This document describes schema version 3.
 
 **Default lockfile path.** When `--kanon-file ./alt.kanon` is passed
 to `kanon install`, the default lockfile path is `./alt.kanon.lock`
@@ -44,7 +44,7 @@ unless `--lock-file` or `KANON_LOCK_FILE` overrides it. See
 
 ## Format reference
 
-Schema version 1 uses TOML with four sections: top-level scalar fields,
+Schema version 3 uses TOML with four sections: top-level scalar fields,
 a `[catalog]` block, and zero or more `[[sources]]` table-arrays each
 of which may contain `[[sources.includes]]` and `[[sources.projects]]`
 sub-tables.
@@ -52,10 +52,12 @@ sub-tables.
 ### TOML schema
 
 ```toml
-schema_version = 1
-generated_at   = "2026-05-11T13:42:00Z"
-generator      = "kanon-cli/1.4.0"
-kanon_hash     = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+schema_version        = 3
+generated_at          = "2026-05-11T13:42:00Z"
+generator             = "kanon-cli/1.4.0"
+kanon_hash            = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+marketplace_registered = true
+marketplace_dir       = "/home/user/.claude-marketplaces"
 
 [catalog]
 source        = "https://example.com/org/manifest-repo.git@==2.10.0"
@@ -71,6 +73,7 @@ revision_spec = "==2.10.0"
 resolved_ref  = "refs/tags/2.10.0"
 resolved_sha  = "abc1234567890abcdef1234567890abcdef12345"
 path          = "repo-specs/common/package-a/package-a-marketplace.xml"
+registered_marketplaces = ["package-a-marketplace"]
 
   [[sources.includes]]
   name         = "git-connection/remote"
@@ -95,8 +98,9 @@ path          = "repo-specs/common/package-a/package-a-marketplace.xml"
 
 ### Top-level fields
 
-**`schema_version`** (int) -- Must be `1`. Read first by `read_lockfile`
-on every invocation path.
+**`schema_version`** (int) -- Must be `3`. Read first by `read_lockfile`
+on every invocation path. Older lockfiles (`1` or `2`) are migrated
+forward in memory on read; see [Schema migration](#schema-migration).
 
 **`generated_at`** (string) -- ISO-8601 UTC timestamp when the lockfile
 was written. Informational; not read by the state machine.
@@ -109,6 +113,18 @@ writer. Informational; not read by the state machine.
 declared in the `.kanon` file. Pattern: `^sha256:[a-f0-9]{64}$`. Used
 by `_classify_install_state` to detect `.kanon` drift. See
 [kanon_hash](#kanon_hash).
+
+**`marketplace_registered`** (bool, schema v2) -- `true` when the last
+`kanon install` registered a marketplace plugin. `kanon clean` reads this
+field to decide whether to uninstall marketplace plugins and remove the
+marketplace directory, preferring it over the `.kanon`
+`KANON_MARKETPLACE_INSTALL` flag so an env-override install is torn down
+correctly. Defaults to `false`.
+
+**`marketplace_dir`** (string, schema v2) -- The `CLAUDE_MARKETPLACES_DIR`
+path used at install time. Non-empty only when `marketplace_registered`
+is `true`; `kanon clean` removes this directory during teardown. Defaults
+to the empty string.
 
 ### [catalog] block
 
@@ -151,6 +167,17 @@ during `LOCKFILE_CONSISTENT` replay and to check SHA reachability in the
 
 **`path`** (string) -- Path to the XML manifest file in this source repo.
 Must not contain tab (`\t`), NUL (`\x00`), or newline (`\n`).
+
+**`registered_marketplaces`** (list of strings, schema v3) -- The sorted
+set of marketplace names this source registered during the last
+`kanon install`. Written sorted for deterministic, byte-stable output;
+defaults to `[]` for sources that registered no marketplace (or when
+marketplace install is disabled). This per-source ledger is the authority
+for marketplace ownership: `kanon clean --orphans` and the `kanon install`
+auto-prune (see [Marketplace ownership and pruning](#marketplace-ownership-and-pruning))
+consult it to attribute and unregister the marketplaces of a removed
+source, and never enumerate `~/.claude` to remove by exclusion -- so a
+marketplace kanon never recorded can never be unregistered.
 
 **`includes`** (list) -- Zero or more `[[sources.includes]]` entries,
 recursive, unbounded depth.
@@ -231,6 +258,13 @@ Exception: `LockfileValidationError`.
 and the `path_in_repo` field on every `[[sources.includes]]` entry must
 not contain `\x00` (NUL), `\n` (newline), or `\t` (tab).
 Exception: `LockfileValidationError`.
+
+**Rule 6: `registered_marketplaces` shape.** When present on a
+`[[sources]]` entry, `registered_marketplaces` must be a list whose every
+element is a string. A non-list value, or a list containing a non-string
+element, is rejected; malformed entries are never silently coerced or
+dropped. Exception: `LockfileValidationError`. Remediation:
+`kanon install`.
 
 ---
 
@@ -406,7 +440,7 @@ unset and falls through to derivation.
 ### Policy overview (spec Section 5.2)
 
 Every kanon release ships with a single `CURRENT_SCHEMA_VERSION`
-constant (currently `1`). When `read_lockfile` encounters a lockfile
+constant (currently `3`). When `read_lockfile` encounters a lockfile
 whose `schema_version` differs from `CURRENT_SCHEMA_VERSION`, it applies
 one of three outcomes:
 
@@ -467,32 +501,69 @@ kanon install --refresh-lock
 This discards the existing lockfile and rebuilds it from scratch at
 `CURRENT_SCHEMA_VERSION`. The `.kanon` file is never modified.
 
-### v1 to v2 migration (placeholder)
+### Schema changelog (v1 to v3)
 
-Schema v2 has not yet been defined. When it ships, this section will
-document the exact diff between schema v1 and v2 and the upgrader logic
-that kanon applies automatically when it encounters a v1 lockfile at
-runtime.
+kanon migrates older lockfiles forward one step at a time along the
+registered `v1 -> v2 -> v3` upgrader chain. The chain is forward-only:
+there is no downgrade path.
 
-**Placeholder diff (illustrative only -- not yet finalised):**
+- **v1** -- original schema (`[catalog]`, `[[sources]]`, `kanon_hash`).
+- **v2** -- added the top-level `marketplace_registered` (bool) and
+  `marketplace_dir` (string) fields, recording whether install registered
+  a marketplace plugin and which directory it used. The `v1 -> v2`
+  upgrader defaults both fields to their not-registered values
+  (`false` / `""`), preserving the pre-v2 behaviour (`kanon clean` falls
+  back to the `.kanon` `KANON_MARKETPLACE_INSTALL` flag when neither field
+  records a registration).
+- **v3** -- added the per-source `registered_marketplaces` (list of
+  strings) ledger to each `[[sources]]` entry. The `v2 -> v3` upgrader
+  defaults each source's ledger to an empty list, preserving the pre-v3
+  behaviour (no marketplaces are considered kanon-owned or prunable).
 
-```toml
-# v1 lockfile fragment
-schema_version = 1
+Each upgrader transforms the raw TOML dict in memory and advances
+`schema_version` by exactly one step; `read_lockfile` does not write the
+upgraded result back to disk (see [No silent rewrites](#no-silent-rewrites)).
 
-# v2 lockfile fragment (hypothetical additions shown with + prefix)
-schema_version = 2
-# + audit_trail = "sha256:<hash>"   (new field tracking install history)
-```
+**First install after upgrading from a pre-v3 lockfile.** Because the
+`v2 -> v3` upgrader starts every source's `registered_marketplaces` ledger
+empty, the first `kanon install` after the upgrade has no record of which
+marketplaces a source registered before v3. It therefore cannot
+retroactively prune marketplaces that were registered before the per-source
+ledger existed; the ledgers are populated from that install onward, and
+pruning applies to subsequent installs.
 
-When the v2 upgrader runs, it:
+To persist the upgraded schema on disk, run `kanon install` (which
+rewrites the lockfile at `CURRENT_SCHEMA_VERSION` on success) or
+`kanon install --refresh-lock` for a full rebuild.
 
-1. Sets `schema_version = 2`.
-2. Populates any new required fields with their migration-default values.
-3. Returns the upgraded dataclass in memory without writing to disk.
+### Marketplace ownership and pruning
 
-The operator must then run `kanon install --refresh-lock` to persist the
-upgraded lockfile on disk.
+The per-source `registered_marketplaces` ledgers (schema v3) drive two
+related cleanup behaviours. Both draw removal candidates ONLY from the
+ledgers -- the marketplace names kanon itself recorded -- so user-managed
+or keep-set marketplaces (which were never written to any ledger) are
+never unregistered.
+
+**`kanon install` auto-prune.** When install rebuilds the marketplace set,
+it computes `OLD` (the union of every source's recorded
+`registered_marketplaces` in the existing lockfile) and `NEW` (the union
+of the marketplaces attributed to the current sources this run). Any name
+in `OLD` but not in `NEW` is an orphan -- a marketplace whose source was
+removed from `.kanon`, or whose registration was toggled off -- and is
+unregistered from `~/.claude` via `claude plugin marketplace remove`
+(idempotent). The diff runs even when marketplace install is disabled, so
+toggling `KANON_MARKETPLACE_INSTALL` off prunes everything kanon
+previously registered (`NEW` empty, orphans equal `OLD`). The lockfile is
+then rewritten with each source's ledger refreshed to what it registered
+this run.
+
+**`kanon clean --orphans`.** Before the normal teardown, this unregisters
+the marketplaces of orphaned sources -- `[[sources]]` entries recorded in
+`.kanon.lock` whose `name` no longer appears in the current `.kanon`
+(removed via `kanon remove` but not yet reconciled by `kanon install`). A
+marketplace also provided by a still-referenced source is retained
+(subtracted from the prune set). Plain `kanon clean` (without `--orphans`)
+performs the full teardown unchanged and does not consult the ledgers.
 
 ---
 

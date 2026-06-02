@@ -169,6 +169,7 @@ _shtab_kanon_catalog_audit_defaults_added=0
 
 _shtab_kanon_clean_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--orphans[Also unregister kanon-owned marketplaces no longer referenced by .kanon\/.kanon.lock (prunes them from \~\/.claude).]"
   ":Path to the .kanon configuration file (default\: auto-discover from current directory):"
 )
 

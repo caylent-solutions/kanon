@@ -709,6 +709,15 @@ and rewrites the lockfile (the `npm install` model). With
 and the lockfile is not mutated (the `npm ci` model). See
 [docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
 
+If the removed source had registered a marketplace (recorded in its
+per-source `registered_marketplaces` ledger), the next `kanon install`
+also auto-unregisters that marketplace from `~/.claude` as part of the
+reconcile -- unless another still-referenced source provides the same
+marketplace, in which case it is retained. To prune the orphaned
+marketplace explicitly without a reinstall, run `kanon clean --orphans`.
+See
+[docs/lockfile.md -- Marketplace ownership and pruning](lockfile.md#marketplace-ownership-and-pruning).
+
 ### remove -- Error scenarios
 
 #### remove error 1 -- Unknown source name without `--force`

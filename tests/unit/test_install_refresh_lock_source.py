@@ -500,15 +500,73 @@ class TestMergePartialLockfile:
             old_lockfile=old_lockfile,
             refreshed_source=alpha_new,
             new_kanon_hash=new_kanon_hash,
+            attributed_marketplaces={},
         )
 
         # The refreshed source has the new SHA
         refreshed = next(e for e in merged.sources if e.name == "alpha")
         assert refreshed.resolved_sha == new_alpha_sha
 
-        # The preserved source is byte-equal to the original beta entry
+        # The preserved source keeps its SHA/url (ledger reset is asserted separately)
         preserved = next(e for e in merged.sources if e.name == "beta")
-        assert preserved == beta_old
+        assert preserved.resolved_sha == beta_old.resolved_sha
+        assert preserved.url == beta_old.url
+
+    def test_merge_records_per_source_attribution_replacing_old_ledgers(self, tmp_path: pathlib.Path) -> None:
+        """_merge_partial_lockfile refreshes EACH source's per-source ledger from attribution.
+
+        After (re)registration the freshly-attributed set is authoritative for
+        every current source (the marketplace dir was wiped+repopulated this
+        install), so a partial merge must overwrite each source's
+        ``registered_marketplaces`` with the attribution dict -- never carry
+        forward a stale per-source ledger.
+        """
+        kanon_path = _write_kanon(tmp_path)
+        # Seed stale per-source ledgers so we can prove they are replaced.
+        alpha_old = _make_source_entry(name="alpha", sha=_VALID_SHA_A)
+        alpha_old.registered_marketplaces = ["stale-alpha-mp"]
+        beta_old = _make_source_entry(name="beta", sha=_VALID_SHA_B)
+        beta_old.registered_marketplaces = ["stale-beta-mp"]
+        old_lockfile = _make_lockfile(kanon_path, [alpha_old, beta_old])
+
+        alpha_new = _make_source_entry(name="alpha", sha="f" * 40)
+        new_hash = compute_kanon_hash(kanon_path)
+        merged = _merge_partial_lockfile(
+            old_lockfile=old_lockfile,
+            refreshed_source=alpha_new,
+            new_kanon_hash=new_hash,
+            attributed_marketplaces={"alpha": ["fresh-alpha-mp"], "beta": ["fresh-beta-mp"]},
+        )
+
+        by_name = {s.name: s for s in merged.sources}
+        assert by_name["alpha"].registered_marketplaces == ["fresh-alpha-mp"], (
+            f"refreshed source's ledger must be the fresh attribution; got {by_name['alpha'].registered_marketplaces!r}"
+        )
+        assert by_name["beta"].registered_marketplaces == ["fresh-beta-mp"], (
+            f"preserved source's ledger must also be refreshed from attribution; "
+            f"got {by_name['beta'].registered_marketplaces!r}"
+        )
+
+    def test_merge_resets_ledger_for_source_absent_from_attribution(self, tmp_path: pathlib.Path) -> None:
+        """A source not present in the attribution dict (e.g. mp disabled) gets an empty ledger."""
+        kanon_path = _write_kanon(tmp_path)
+        alpha_old = _make_source_entry(name="alpha", sha=_VALID_SHA_A)
+        alpha_old.registered_marketplaces = ["stale-alpha-mp"]
+        old_lockfile = _make_lockfile(kanon_path, [alpha_old])
+
+        alpha_new = _make_source_entry(name="alpha", sha="f" * 40)
+        new_hash = compute_kanon_hash(kanon_path)
+        merged = _merge_partial_lockfile(
+            old_lockfile=old_lockfile,
+            refreshed_source=alpha_new,
+            new_kanon_hash=new_hash,
+            attributed_marketplaces={},
+        )
+
+        assert merged.sources[0].registered_marketplaces == [], (
+            f"a source absent from attribution must be reset to an empty ledger; "
+            f"got {merged.sources[0].registered_marketplaces!r}"
+        )
 
     def test_merge_updates_kanon_hash(self, tmp_path: pathlib.Path) -> None:
         """_merge_partial_lockfile records the freshly-computed kanon_hash, not the old one."""
@@ -527,6 +585,7 @@ class TestMergePartialLockfile:
             old_lockfile=old_lockfile,
             refreshed_source=alpha_new,
             new_kanon_hash=new_kanon_hash,
+            attributed_marketplaces={},
         )
 
         assert merged.kanon_hash == new_kanon_hash
@@ -551,6 +610,7 @@ class TestMergePartialLockfile:
             old_lockfile=old_lockfile,
             refreshed_source=alpha_new,
             new_kanon_hash=new_hash,
+            attributed_marketplaces={},
         )
 
         assert merged.catalog == old_lockfile.catalog
@@ -569,6 +629,7 @@ class TestMergePartialLockfile:
                 old_lockfile=old_lockfile,
                 refreshed_source=gamma_entry,
                 new_kanon_hash=new_hash,
+                attributed_marketplaces={},
             )
 
 

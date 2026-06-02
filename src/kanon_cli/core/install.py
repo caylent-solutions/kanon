@@ -95,7 +95,13 @@ from kanon_cli.core.include_walker import (
     _canonicalize_include_path,
     _walk_includes,
 )
-from kanon_cli.core.marketplace import install_marketplace_plugins, register_direct_checkout_marketplaces
+from kanon_cli.core.marketplace import (
+    discover_registered_marketplace_names,
+    install_marketplace_plugins,
+    locate_claude_binary,
+    register_direct_checkout_marketplaces,
+    remove_marketplace,
+)
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
@@ -1278,6 +1284,7 @@ def _merge_partial_lockfile(
     old_lockfile: Lockfile,
     refreshed_source: SourceEntry,
     new_kanon_hash: str,
+    attributed_marketplaces: dict[str, list[str]],
 ) -> Lockfile:
     """Replace exactly one ``SourceEntry`` in the lockfile, preserving all others.
 
@@ -1286,12 +1293,20 @@ def _merge_partial_lockfile(
     updated to the freshly-computed value so the rewritten lockfile passes the
     consistency check on the next ``kanon install``.
 
+    Every source's per-source ``registered_marketplaces`` ledger is refreshed
+    from ``attributed_marketplaces``: install wiped and repopulated
+    ``CLAUDE_MARKETPLACES_DIR`` for ALL current sources this run, so the freshly
+    attributed set is authoritative for each.  A source not present in the dict
+    (e.g. marketplace install disabled) is reset to an empty ledger.
+
     Args:
         old_lockfile: The existing parsed lockfile.
         refreshed_source: The rebuilt ``SourceEntry`` for the refreshed source.
             Its ``name`` must match exactly one entry in ``old_lockfile.sources``.
         new_kanon_hash: The freshly-computed ``kanon_hash`` for the current
             ``.kanon`` content.
+        attributed_marketplaces: Mapping of current source name to the sorted
+            marketplace names it registered this install.
 
     Returns:
         A new ``Lockfile`` instance with the refreshed source replaced and all
@@ -1306,6 +1321,9 @@ def _merge_partial_lockfile(
         raise UnknownSourceError(name=refreshed_source.name, known_names=known)
 
     new_sources = [refreshed_source if e.name == refreshed_source.name else e for e in old_lockfile.sources]
+    # Refresh every source's per-source ledger from the fresh attribution.
+    for entry in new_sources:
+        entry.registered_marketplaces = attributed_marketplaces.get(entry.name, [])
     return Lockfile(
         schema_version=old_lockfile.schema_version,
         generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -2233,6 +2251,13 @@ def _run_install(
     # resolved_entries: populated for lockfile writing.
     resolved_entries: list[SourceEntry] = []
 
+    # Per-source marketplace attribution (schema v3): maps each current source
+    # name to the sorted list of marketplace names it registered this install.
+    # Built from the before/after discover() diff inside the per-source loop and
+    # attached to each source's SourceEntry.registered_marketplaces.  Empty for
+    # every source when marketplace install is disabled.
+    attributed_marketplaces: dict[str, list[str]] = {}
+
     # For REFRESH_LOCK_SOURCE: resolve the target entry from the existing lockfile.
     # Do this before the per-source loop so we can fail fast with UnknownSourceError
     # before touching any source directories.
@@ -2254,6 +2279,19 @@ def _run_install(
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
+
+        # Per-source marketplace attribution (schema v3): snapshot the
+        # discoverable marketplace-name set BEFORE this source does anything that
+        # could deposit a marketplace (repo sync's native <linkfile> processing,
+        # kanon's _process_manifest_linkfiles, and register_direct_checkout_
+        # marketplaces).  The AFTER snapshot is taken once this source's
+        # marketplace registration completes; the set-difference is exactly the
+        # marketplaces THIS source contributed.  prepare_marketplace_dir wiped the
+        # directory before the loop, so per-source diffs cleanly isolate each
+        # source's contribution.
+        before_marketplace_names: set[str] = set()
+        if marketplace_install:
+            before_marketplace_names = set(discover_registered_marketplace_names(pathlib.Path(marketplace_dir_str)))
 
         # On the RECONCILE path, decide replay-vs-resolve for this source by
         # comparing its .kanon revision spec to the locked entry's recorded spec.
@@ -2473,15 +2511,23 @@ def _run_install(
         # This supplements the repo tool's native linkfile processing so that
         # marketplace entries are present for install_marketplace_plugins even
         # when the repo tool's linkfile step did not run (spec Section 4 E35).
+        #
         if marketplace_install:
+            marketplace_dir = pathlib.Path(marketplace_dir_str)
             _process_manifest_linkfiles(manifest_xml_path, source_dir)
             # Also register direct-checkout entries that carry a
             # .claude-plugin/marketplace.json but have NO <linkfile> element
             # (BUG-3: builders-plugins pattern). For each such project, a
             # symlink from CLAUDE_MARKETPLACES_DIR/<name> to the project
             # checkout dir is created so install_marketplace_plugins can find it.
-            marketplace_dir = pathlib.Path(marketplace_dir_str)
             register_direct_checkout_marketplaces(manifest_xml_path, source_dir, marketplace_dir)
+            # AFTER snapshot for per-source attribution (see the BEFORE snapshot
+            # at the top of the loop).  The diff is exactly the marketplaces this
+            # source deposited via repo sync's linkfiles, kanon's linkfile copy,
+            # or a direct-checkout registration.
+            after_names = set(discover_registered_marketplace_names(marketplace_dir))
+            attributed_marketplaces[name] = sorted(after_names - before_marketplace_names)
+            resolved_entries[-1].registered_marketplaces = attributed_marketplaces[name]
         include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
         # resolved_entries[-1] is the SourceEntry appended for this source
         # in the resolution branches above. Populate its includes list with
@@ -2530,6 +2576,41 @@ def _run_install(
         print("\nkanon install: installing marketplace plugins...")
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
+
+    # Marketplace ownership reconciliation (per-source, schema v3).
+    #
+    # NEW = union of every current source's attributed marketplace names (the
+    # marketplaces present under CLAUDE_MARKETPLACES_DIR after this install).
+    # When marketplace install is disabled, no source is attributed anything, so
+    # NEW is empty.
+    #
+    # OLD = union of every source's recorded ``registered_marketplaces`` in the
+    # existing lockfile (empty when there is no prior lock).
+    #
+    # Auto-prune: any name in OLD that is absent from NEW is an orphan -- a
+    # marketplace whose source was reconciled away (or whose registration was
+    # toggled off).  Each orphan is unregistered from ~/.claude via
+    # ``remove_marketplace`` (idempotent).  The claude binary is located lazily,
+    # only when at least one orphan exists, so a no-orphan run never requires
+    # claude on PATH.  This diff runs even when marketplace install is DISABLED
+    # so toggling KANON_MARKETPLACE_INSTALL off prunes everything kanon
+    # previously registered (NEW=[], orphans=OLD).
+    new_marketplace_set: set[str] = set()
+    for _names in attributed_marketplaces.values():
+        new_marketplace_set.update(_names)
+
+    old_marketplace_set: set[str] = set()
+    if existing_lockfile is not None:
+        for _src in existing_lockfile.sources:
+            old_marketplace_set.update(_src.registered_marketplaces)
+
+    orphaned_marketplaces = sorted(old_marketplace_set - new_marketplace_set)
+    if orphaned_marketplaces:
+        print("\nkanon install: pruning marketplaces no longer referenced by .kanon...")
+        claude_bin = locate_claude_binary()
+        for name in orphaned_marketplaces:
+            print(f"  - unregistering marketplace: {name}")
+            remove_marketplace(claude_bin, name)
 
     # Step 7: Write the lockfile.
     # - LOCKFILE_ABSENT: write fresh lockfile.
@@ -2615,6 +2696,7 @@ def _run_install(
                 old_lockfile=existing_lockfile,
                 refreshed_source=refreshed_entry,
                 new_kanon_hash=new_kanon_hash,
+                attributed_marketplaces=attributed_marketplaces,
             )
             write_lockfile(merged_lf, lockfile_path)
         else:
@@ -2651,6 +2733,9 @@ def _run_install(
         # preserved verbatim from the existing lockfile (it is still consistent).
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
+        # These entry objects were appended to resolved_entries as ``pinned`` and
+        # mutated in the per-source loop with fresh per-source attribution, so
+        # their ``registered_marketplaces`` is already authoritative.
         pruned_sources = [e for e in pruned_lf_nn.sources if e.name in active_names]
         pruned_lockfile = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,

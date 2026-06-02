@@ -5267,6 +5267,52 @@ grep -q "^.packages/$" .gitignore && grep -q "^.kanon-data/$" .gitignore && echo
 
 **Pass criteria:** Both `.gitignore` lines added by install remain after clean.
 
+### TC-clean-03: `clean --orphans` prunes a removed source's marketplace
+
+Fixture setup — a manifest repo with two marketplace-bearing sources. Each
+`<linkfile>` deposits the plugin checkout into `CLAUDE_MARKETPLACES_DIR/<name>`,
+so install attributes `orphan-mp` to the `orphan` source and `keep-mp` to the
+`keep` source in each `[[sources]]` table's `registered_marketplaces`:
+
+```bash
+export MANIFEST_MP_DIR="${KANON_TEST_ROOT}/fixtures/manifest-repos/manifest-mp"
+# Build two plugin repos (orphan-mp, keep-mp), each with a claude-schema
+# .claude-plugin/marketplace.json (the real `claude` CLI requires the `owner`
+# object), then a manifest repo whose repo-specs/{orphan,keep}-only.xml link
+# each plugin into CLAUDE_MARKETPLACES_DIR. (See tests/scenarios/test_tc_clean.py
+# `_build_two_marketplace_sources` for the canonical fixture builder.)
+```
+
+```bash
+mkdir -p "${KANON_TEST_ROOT}/tc-cln-03"
+cd "${KANON_TEST_ROOT}/tc-cln-03"
+cat > .kanon << KANONEOF
+KANON_MARKETPLACE_INSTALL=true
+CLAUDE_MARKETPLACES_DIR=${KANON_TEST_ROOT}/tc-cln-03/marketplaces
+KANON_SOURCE_orphan_URL=file://${MANIFEST_MP_DIR}
+KANON_SOURCE_orphan_REVISION=main
+KANON_SOURCE_orphan_PATH=repo-specs/orphan-only.xml
+KANON_SOURCE_keep_URL=file://${MANIFEST_MP_DIR}
+KANON_SOURCE_keep_REVISION=main
+KANON_SOURCE_keep_PATH=repo-specs/keep-only.xml
+KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_MP_DIR}@main"
+kanon install
+# Remove source 'orphan' from .kanon (its marketplace is now orphaned in the
+# lock). 'keep' remains, so its marketplace must be retained.
+kanon remove orphan
+kanon clean --orphans
+test ! -d .packages && test ! -d .kanon-data && echo "PASS"
+```
+
+**Pass criteria:** Exit code 0; the marketplaces attributed (in each
+`[[sources]]` table's `registered_marketplaces`) to sources recorded in
+`.kanon.lock` but no longer declared in `.kanon` are unregistered from
+`~/.claude` (`claude plugin marketplace remove`) before the normal teardown; a
+marketplace still provided by a referenced source (here `keep-mp`), and
+user/keep-set marketplaces (never recorded in any per-source ledger), are never
+removed; `.packages/` and `.kanon-data/` are removed.
+
 ### TC-validate-01: `validate xml --repo-root=<path>`
 
 <!-- Precondition: MANIFEST_PRIMARY_DIR must be inside a git checkout (git init was run during fixture setup in Category 3). -->
@@ -6115,23 +6161,24 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 336 | TC-install-04 | top-level                          | REPO_REV deprecation                                   |        |      |         |       |
 | 337 | TC-clean-01   | top-level                          | auto-discover clean                                    |        |      |         |       |
 | 338 | TC-clean-02   | top-level                          | .gitignore retention                                   |        |      |         |       |
-| 339 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
-| 340 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
-| 341 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
-| 342 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
-| 343 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
-| 344 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
-| 345 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
-| 346 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
-| 347 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
-| 348 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
-| 349 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
-| 350 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
-| 351 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
-| 352 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
-| 353 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
-| 354 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
-| 355 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
+| 339 | TC-clean-03   | top-level                          | clean --orphans prunes unreferenced marketplace        |        |      |         |       |
+| 340 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
+| 341 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
+| 342 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
+| 343 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
+| 344 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
+| 345 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
+| 346 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
+| 347 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
+| 348 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
+| 349 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
+| 350 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
+| 351 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
+| 352 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
+| 353 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
+| 354 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
+| 355 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
+| 356 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
 |     | TOTAL         | -                                  | -                                                      |        |      |         | aggregate summary populated post-run |
 
 ---

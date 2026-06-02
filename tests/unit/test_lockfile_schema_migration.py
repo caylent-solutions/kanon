@@ -5,10 +5,10 @@ Covers:
   - AC-FUNC-002: missing-upgrader backward-incompatible read raises LockfileSchemaError.
   - AC-FUNC-003: successful backward-compatible read via registered upgrader chain.
   - AC-FUNC-004: current-schema read is unchanged; no upgrader invoked.
-  - AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 2.
+  - AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 3.
   - AC-FUNC-006: _register_upgrader rejects duplicate registrations.
   - AC-TEST-002: fake upgrader registered at setup and unregistered at teardown.
-  - AC-CYCLE-001: end-to-end cycle with v0 fixture (v0 -> v1 -> v2 chain).
+  - AC-CYCLE-001: end-to-end cycle with v0 fixture (v0 -> v1 -> v2 -> v3 chain).
   - FAIL-FAST: _unregister_upgrader raises KeyError for unregistered (from, to) pairs.
 """
 
@@ -34,14 +34,14 @@ _VALID_KANON_HASH = "sha256:" + "a" * 64
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 2
+# AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 3
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_current_schema_version_exported_and_equals_2():
-    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 2."""
-    assert CURRENT_SCHEMA_VERSION == 2
+def test_current_schema_version_exported_and_equals_3():
+    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 3."""
+    assert CURRENT_SCHEMA_VERSION == 3
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ def test_current_schema_version_exported_and_equals_2():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("future_version", [3, 99])
+@pytest.mark.parametrize("future_version", [4, 99])
 def test_forward_incompatible_raises_schema_error_exact_message(future_version, tmp_path):
     """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError with exact message.
 
@@ -93,12 +93,13 @@ def test_backward_incompatible_no_upgrader_raises_schema_error(tmp_path):
 class TestSuccessfulUpgradeViaFakeUpgrader:
     """Tests for backward-compatible read via a registered v0-to-v1 upgrader.
 
-    The v1->v2 upgrader is already registered in production (for the real migration).
-    The fake v0->v1 upgrader is registered at setup and unregistered at teardown
-    so registry state does not leak across tests (AC-TEST-002).
+    The v1->v2 and v2->v3 upgraders are already registered in production (for the
+    real migration). The fake v0->v1 upgrader is registered at setup and unregistered
+    at teardown so registry state does not leak across tests (AC-TEST-002).
 
-    Since CURRENT_SCHEMA_VERSION is now 2, a v0 lockfile goes through the chain:
-    v0 -> v1 (fake upgrader) -> v2 (real upgrader). The final schema_version is 2.
+    Since CURRENT_SCHEMA_VERSION is now 3, a v0 lockfile goes through the chain:
+    v0 -> v1 (fake upgrader) -> v2 (real upgrader) -> v3 (real upgrader). The final
+    schema_version is 3.
     """
 
     def setup_method(self):
@@ -134,7 +135,7 @@ class TestSuccessfulUpgradeViaFakeUpgrader:
         p.write_text(_minimal_toml(0))
         lf = read_lockfile(p)
         assert lf.schema_version == CURRENT_SCHEMA_VERSION
-        assert lf.schema_version == 2
+        assert lf.schema_version == 3
 
     def test_upgrader_register_and_unregister_work_as_pair(self, tmp_path):
         """Registering and unregistering the upgrader leaves registry clean."""
@@ -154,8 +155,10 @@ class TestSuccessfulUpgradeViaFakeUpgrader:
     def test_no_upgrader_invoked_for_current_schema(self, tmp_path):
         """No upgrader function is called when schema_version == CURRENT_SCHEMA_VERSION (AC-FUNC-004).
 
-        Registers a spy upgrader for a hypothetical v2->v3 step (not used here),
-        then reads a v2 lockfile and asserts the spy was never called.
+        Registers a spy upgrader for a hypothetical v3->v4 step (not used here),
+        then reads a v3 lockfile and asserts the spy was never called. The spy is
+        placed at (3, 4) -- one step above the current schema -- because (2, 3) is
+        now a real, registered upgrader and a duplicate registration would collide.
         """
         invocations: list[int] = []
 
@@ -163,17 +166,17 @@ class TestSuccessfulUpgradeViaFakeUpgrader:
             invocations.append(1)
             return data
 
-        # Register a spy at v2->v3 to detect any accidental upgrader dispatch.
-        _register_upgrader(2, 3, _spy_upgrader)
+        # Register a spy at v3->v4 to detect any accidental upgrader dispatch.
+        _register_upgrader(3, 4, _spy_upgrader)
         try:
             p = tmp_path / "kanon.lock"
-            p.write_text(_minimal_toml(2))
+            p.write_text(_minimal_toml(3))
             lf = read_lockfile(p)
-            assert lf.schema_version == 2
+            assert lf.schema_version == 3
             # Spy must not have been called -- current-schema read skips migration.
             assert invocations == []
         finally:
-            _unregister_upgrader(2, 3)
+            _unregister_upgrader(3, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -262,12 +265,13 @@ class TestNonAdvancingUpgraderDetected:
 class TestEndToEndMigrationCycle:
     """AC-CYCLE-001: Full read-upgrade-assert-teardown cycle with a v0 fixture.
 
-    The v0->v1 upgrader is registered by the test; the v1->v2 upgrader is the
-    real one already in the registry.  The chain v0->v1->v2 produces a v2 Lockfile.
+    The v0->v1 upgrader is registered by the test; the v1->v2 and v2->v3 upgraders
+    are the real ones already in the registry.  The chain v0->v1->v2->v3 produces a
+    v3 Lockfile.
     """
 
     def test_full_cycle(self, tmp_path):
-        """Write v0 fixture; register v0->v1 upgrader; read and assert v2; remove; assert raises."""
+        """Write v0 fixture; register v0->v1 upgrader; read and assert v3; remove; assert raises."""
         # Step 1: Write a v0 TOML fixture to tmp_path.
         v0_fixture = tmp_path / "kanon.lock"
         v0_fixture.write_text(_minimal_toml(0))
@@ -292,16 +296,19 @@ class TestEndToEndMigrationCycle:
         _register_upgrader(0, 1, _v0_to_v1)
 
         try:
-            # Step 3: Call read_lockfile; assert the returned object is a v2 Lockfile
-            # (v0->v1 via fake upgrader, v1->v2 via the real upgrader).
+            # Step 3: Call read_lockfile; assert the returned object is a v3 Lockfile
+            # (v0->v1 via fake upgrader, v1->v2->v3 via the real upgraders).
             lf = read_lockfile(v0_fixture)
             assert lf.schema_version == CURRENT_SCHEMA_VERSION
-            assert lf.schema_version == 2
+            assert lf.schema_version == 3
             assert lf.kanon_hash == _VALID_KANON_HASH
             assert lf.catalog.revision_spec == "main"
             # v2 marketplace fields are defaulted by the real v1->v2 upgrader.
             assert lf.marketplace_registered is False
             assert lf.marketplace_dir == ""
+            # v3 moved the ownership ledger per-source; this fixture declares no
+            # sources, so there is nothing to default at the top level.
+            assert lf.sources == []
         finally:
             # Step 4: Remove the upgrader.
             _unregister_upgrader(0, 1)

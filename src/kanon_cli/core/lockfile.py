@@ -1,4 +1,4 @@
-"""TOML lockfile parser and atomic writer -- schema v2.
+"""TOML lockfile parser and atomic writer -- schema v3.
 
 Public entry points:
   - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
@@ -24,6 +24,12 @@ Schema changelog:
     whether install registered a marketplace plugin and which directory it used.  Old
     v1 lockfiles are migrated transparently by setting both fields to their default
     (false / empty string), preserving backward compatibility.
+  - v3: added a PER-SOURCE ``registered_marketplaces`` (list[str]) field to each
+    ``[[sources]]`` table -- the sorted set of marketplace names THAT source
+    registered during install.  ``kanon clean --orphans`` and the install
+    auto-prune consult these per-source ledgers to attribute and prune the
+    marketplaces of a removed source.  Old v2 lockfiles are migrated transparently
+    by defaulting each source's field to an empty list.
 
 Spec source: spec Section 5 (Lockfile format and validation rules),
 Section 4.7.1 (atomicity contract for the lockfile writer), and
@@ -53,7 +59,7 @@ from kanon_cli.core.url import canonicalize_repo_url
 # ---------------------------------------------------------------------------
 
 #: The schema version this kanon version reads and writes.
-CURRENT_SCHEMA_VERSION: int = 2
+CURRENT_SCHEMA_VERSION: int = 3
 
 #: Registry of upgrader functions keyed by (from_version, to_version).
 #: Each upgrader receives a raw dict and returns a raw dict with the schema
@@ -247,6 +253,35 @@ def _upgrade_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
 _register_upgrader(1, 2, _upgrade_v1_to_v2)
 
 
+def _upgrade_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a schema-v2 lockfile dict to schema-v3.
+
+    v3 adds a PER-SOURCE ``registered_marketplaces`` (list[str], default empty)
+    field to each ``[[sources]]`` table -- the marketplace names that source
+    registered.  Old v2 lockfiles predate the field, so each source defaults to an
+    empty list, which preserves the pre-v3 behavior (no marketplaces are
+    considered owned/pruneable).
+
+    Args:
+        data: Raw TOML dict with schema_version == 2.
+
+    Returns:
+        Raw TOML dict with schema_version == 3 and each source's new field
+        defaulted to an empty list.
+    """
+    upgraded = dict(data)
+    upgraded["schema_version"] = 3
+    raw_sources = upgraded.get("sources", [])
+    if isinstance(raw_sources, list):
+        for source in raw_sources:
+            if isinstance(source, dict):
+                source.setdefault("registered_marketplaces", [])
+    return upgraded
+
+
+_register_upgrader(2, 3, _upgrade_v2_to_v3)
+
+
 # ---------------------------------------------------------------------------
 # Exception types
 # ---------------------------------------------------------------------------
@@ -300,7 +335,14 @@ class IncludeEntry:
 
 @dataclass
 class SourceEntry:
-    """A single row under ``[[sources]]``."""
+    """A single row under ``[[sources]]``.
+
+    Fields added in schema v3:
+      - ``registered_marketplaces``: the sorted set of marketplace names THIS
+        source registered during install.  Defaults to an empty list.  ``kanon
+        clean --orphans`` and the install auto-prune consult this per-source
+        ledger to attribute and prune the marketplaces of a removed source.
+    """
 
     name: str
     url: str
@@ -310,6 +352,7 @@ class SourceEntry:
     path: str
     includes: list[IncludeEntry] = field(default_factory=list)
     projects: list[ProjectEntry] = field(default_factory=list)
+    registered_marketplaces: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -331,6 +374,10 @@ class Lockfile:
       - ``marketplace_registered``: True when install registered a marketplace plugin.
       - ``marketplace_dir``: The CLAUDE_MARKETPLACES_DIR path used at install time;
         non-empty only when marketplace_registered is True.
+
+    Schema v3 added a PER-SOURCE ``registered_marketplaces`` field to each
+    ``SourceEntry`` (see :class:`SourceEntry`); the root lockfile carries no
+    marketplace ownership ledger of its own.
     """
 
     schema_version: int
@@ -485,6 +532,44 @@ def _validate_canonical_url(url: str, canonical_url: str, field_path: str) -> No
         )
 
 
+def _validate_registered_marketplaces(value: Any, field_path: str) -> list[str]:
+    """Validate and normalise a source's ``registered_marketplaces`` ledger.
+
+    The field (schema v3, per-source) must be a list whose every element is a
+    string. Fail-fast: a non-list value, or a list containing a non-string
+    element, raises ``LockfileValidationError`` naming the offending source's
+    field -- we never silently coerce or drop malformed entries.
+
+    Args:
+        value: The raw ``registered_marketplaces`` value from a source's TOML dict.
+        field_path: Dot-path of the field for the error message (e.g.
+            ``sources[0].registered_marketplaces``).
+
+    Returns:
+        The validated list of marketplace names.
+
+    Raises:
+        LockfileValidationError: If ``value`` is not a list of strings.
+    """
+    if not isinstance(value, list):
+        raise LockfileValidationError(
+            f"ERROR: Invalid registered_marketplaces at '{field_path}'.\n"
+            f"  Value (repr): {value!r}\n"
+            f'  Expected: an array of marketplace-name strings (e.g. ["a-mp", "b-mp"]).\n'
+            f"  Remediation: regenerate the lockfile with 'kanon install'."
+        )
+    for index, element in enumerate(value):
+        if not isinstance(element, str):
+            raise LockfileValidationError(
+                f"ERROR: Invalid entry in registered_marketplaces at "
+                f"'{field_path}[{index}]'.\n"
+                f"  Value (repr): {element!r}\n"
+                f"  Expected: a marketplace-name string.\n"
+                f"  Remediation: regenerate the lockfile with 'kanon install'."
+            )
+    return list(value)
+
+
 def _validate_path_chars(path_value: str, field_path: str) -> None:
     """Raise ``LockfileValidationError`` if ``path_value`` contains NUL, newline, or tab.
 
@@ -608,6 +693,11 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
     raw_projects: list[dict[str, Any]] = raw.get("projects", [])
     projects = [_parse_project_entry(item, f"{field_path}.projects[{i}]") for i, item in enumerate(raw_projects)]
 
+    registered_marketplaces = _validate_registered_marketplaces(
+        raw.get("registered_marketplaces", []),
+        f"{field_path}.registered_marketplaces",
+    )
+
     return SourceEntry(
         name=raw["name"],
         url=raw["url"],
@@ -617,6 +707,7 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
         path=path,
         includes=includes,
         projects=projects,
+        registered_marketplaces=registered_marketplaces,
     )
 
 
@@ -671,6 +762,22 @@ def _toml_str(value: str) -> str:
     return f'"{result}"'
 
 
+def _toml_str_array(values: list[str]) -> str:
+    """Encode a list of strings as a single-line TOML array of basic strings.
+
+    Each element is encoded with ``_toml_str`` so backslash, double-quote, and
+    control characters are escaped consistently with scalar string fields. An empty
+    list serialises to ``[]``.
+
+    Args:
+        values: The list of strings to encode.
+
+    Returns:
+        A TOML array literal, e.g. ``["a-mp", "b-mp"]`` or ``[]``.
+    """
+    return "[" + ", ".join(_toml_str(v) for v in values) + "]"
+
+
 def _serialize_include_entries(
     includes: list[IncludeEntry],
     table_path: str,
@@ -705,13 +812,15 @@ def _serialize_include_entries(
 def _serialize_toml(lockfile: Lockfile) -> str:
     """Serialise a ``Lockfile`` to a TOML string without any third-party library.
 
-    The output format matches the fixed schema v1 structure exactly:
+    The output format matches the fixed schema v3 structure exactly:
 
-    - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash)
+    - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash,
+      marketplace_registered, marketplace_dir)
     - ``[catalog]`` inline table block
-    - ``[[sources]]`` array-of-tables entries, each followed by
-      ``[[sources.includes]]`` chains (recursively) and ``[[sources.projects]]``
-      entries
+    - ``[[sources]]`` array-of-tables entries, each carrying a per-source
+      ``registered_marketplaces`` array (written sorted for deterministic,
+      byte-stable output) and followed by ``[[sources.includes]]`` chains
+      (recursively) and ``[[sources.projects]]`` entries
 
     String values are encoded as TOML basic strings with all required control-
     character escapes applied.
@@ -752,6 +861,11 @@ def _serialize_toml(lockfile: Lockfile) -> str:
         lines.append(f"resolved_ref = {_toml_str(source.resolved_ref)}")
         lines.append(f"resolved_sha = {_toml_str(source.resolved_sha)}")
         lines.append(f"path = {_toml_str(source.path)}")
+        # Per-source ownership ledger (schema v3): written sorted for
+        # deterministic, byte-stable output.  Emitted before the includes /
+        # projects sub-tables because TOML requires scalar keys to precede
+        # array-of-tables headers within the same table.
+        lines.append(f"registered_marketplaces = {_toml_str_array(sorted(source.registered_marketplaces))}")
         if source.includes:
             _serialize_include_entries(source.includes, "sources.includes", lines)
         for project in source.projects:

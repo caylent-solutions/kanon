@@ -19,7 +19,11 @@ import shutil
 import sys
 
 from kanon_cli.core.install import resolve_workspace_base_dir
-from kanon_cli.core.marketplace import uninstall_marketplace_plugins
+from kanon_cli.core.marketplace import (
+    locate_claude_binary,
+    remove_marketplace,
+    uninstall_marketplace_plugins,
+)
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, read_lockfile
 
@@ -98,7 +102,64 @@ def _read_lockfile_if_present(lockfile_path: pathlib.Path) -> Lockfile | None:
     return read_lockfile(lockfile_path)
 
 
-def clean(kanonenv_path: pathlib.Path) -> None:
+def _prune_orphaned_marketplaces(lockfile: Lockfile | None, current_source_names: list[str]) -> None:
+    """Unregister marketplaces of sources removed from ``.kanon`` (orphaned-source prune).
+
+    An orphaned source is a ``[[sources]]`` entry recorded in ``.kanon.lock``
+    whose ``name`` no longer appears in the current ``.kanon`` (i.e. it was
+    removed via ``kanon remove`` but not yet reconciled away by ``kanon
+    install``).  This prunes the marketplaces THOSE sources registered.
+
+    SAFETY INVARIANT: removal candidates are drawn ONLY from the per-source
+    ``registered_marketplaces`` ledgers in the lockfile -- the marketplace names
+    kanon itself registered.  The directory is never enumerated to remove by
+    exclusion, so user/keep-set marketplaces (which were never written to any
+    ledger) can never be unregistered.  A marketplace that is ALSO provided by a
+    still-referenced source is retained (subtracted from the prune set).
+
+    Each prune candidate is removed via ``remove_marketplace`` (idempotent:
+    tolerates an already-absent registration).  The claude binary is located
+    lazily -- only when at least one candidate exists -- so an invocation with
+    nothing to prune never requires claude on PATH.
+
+    Args:
+        lockfile: The parsed lockfile, or None when .kanon.lock is absent.
+        current_source_names: Source names declared in the current ``.kanon``.
+    """
+    if lockfile is None:
+        print("kanon clean: no .kanon.lock present; nothing to prune.")
+        return
+
+    current = set(current_source_names)
+    orphaned_sources = [s for s in lockfile.sources if s.name not in current]
+    if not orphaned_sources:
+        print("kanon clean: no orphaned sources in .kanon.lock; nothing to prune.")
+        return
+
+    # Marketplaces still provided by a source that remains in .kanon must not be
+    # pruned even if an orphaned source also registered them.
+    referenced: set[str] = set()
+    for source in lockfile.sources:
+        if source.name in current:
+            referenced.update(source.registered_marketplaces)
+
+    orphan_marketplaces: set[str] = set()
+    for source in orphaned_sources:
+        orphan_marketplaces.update(source.registered_marketplaces)
+
+    prune = sorted(orphan_marketplaces - referenced)
+    if not prune:
+        print("kanon clean: orphaned sources registered no prunable marketplaces; nothing to prune.")
+        return
+
+    print(f"kanon clean: pruning {len(prune)} orphaned marketplace(s)...")
+    claude_bin = locate_claude_binary()
+    for name in prune:
+        print(f"  - unregistering marketplace: {name}")
+        remove_marketplace(claude_bin, name)
+
+
+def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     """Execute the full Kanon clean lifecycle.
 
     Steps:
@@ -124,6 +185,12 @@ def clean(kanonenv_path: pathlib.Path) -> None:
     Args:
         kanonenv_path: Path to the .kanon configuration file. May be a symlink;
             the path is resolved before use so teardown targets the real project directory.
+        orphans: When True, before the normal teardown, unregister the
+            marketplaces of any sources recorded in ``.kanon.lock`` that are no
+            longer declared in the current ``.kanon`` (pruning them from
+            ``~/.claude``).  A marketplace also provided by a still-referenced
+            source is retained.  The default (False) leaves the teardown path
+            byte-for-byte unchanged.
 
     Raises:
         SystemExit: On any failure during the clean process.
@@ -141,6 +208,15 @@ def clean(kanonenv_path: pathlib.Path) -> None:
     # over the .kanon flag so that env-override installs are cleaned up correctly.
     lockfile_path = base_dir / ".kanon.lock"
     lockfile = _read_lockfile_if_present(lockfile_path)
+
+    if orphans:
+        # Orphaned-source prune runs BEFORE the normal teardown and does not
+        # require .packages/.  It unregisters the marketplaces of sources that
+        # are recorded in .kanon.lock but no longer declared in the current
+        # .kanon.  Removal candidates come ONLY from the per-source ledgers in
+        # the lockfile (see _prune_orphaned_marketplaces).
+        current_source_names = config["KANON_SOURCES"]
+        _prune_orphaned_marketplaces(lockfile, current_source_names)
 
     if lockfile is not None and lockfile.marketplace_registered:
         # Lockfile records a registration -- use its stored directory.

@@ -1,4 +1,4 @@
-"""Unit tests for src/kanon_cli/core/lockfile.py -- schema v1 validation rules.
+"""Unit tests for src/kanon_cli/core/lockfile.py -- schema validation rules (current: v3).
 
 Covers every validation rule parametrically per AC-TEST-001:
   - resolved_sha shape (40 hex, 64 hex, uppercase rejected, mixed-case rejected, non-hex rejected)
@@ -7,6 +7,8 @@ Covers every validation rule parametrically per AC-TEST-001:
   - canonical_url mismatch on ProjectEntry
   - embedded NUL / newline / tab in path and path_in_repo
   - unknown schema_version raises LockfileSchemaError
+  - schema migration v1/v2 -> v3 with defaulted marketplace / ownership-ledger fields
+  - per-source registered_marketplaces ledger (default empty, sorted round-trip, validation)
   - dataclass construction and field access
 """
 
@@ -74,7 +76,7 @@ _VALID_SOURCE = SourceEntry(
 def _make_lockfile(**kwargs) -> Lockfile:
     """Return a minimal valid Lockfile dataclass with optional field overrides."""
     defaults = {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": "2026-01-01T00:00:00Z",
         "generator": "kanon-cli/1.4.0",
         "kanon_hash": _VALID_KANON_HASH,
@@ -98,6 +100,7 @@ def _make_source(**kwargs) -> SourceEntry:
         path="repo-specs/source.xml",
         includes=[],
         projects=[],
+        registered_marketplaces=[],
     )
     defaults.update(kwargs)
     return SourceEntry(**defaults)
@@ -166,7 +169,7 @@ class TestDataclassConstruction:
 
     def test_lockfile_construction(self):
         lf = _make_lockfile()
-        assert lf.schema_version == 2
+        assert lf.schema_version == 3
         assert lf.generated_at == "2026-01-01T00:00:00Z"
         assert lf.generator == "kanon-cli/1.4.0"
         assert lf.kanon_hash == _VALID_KANON_HASH
@@ -616,7 +619,7 @@ class TestSchemaVersionValidation:
     from backward-incompatible reads (schema_version < current).
     """
 
-    @pytest.mark.parametrize("future_version", [3, 99, 100])
+    @pytest.mark.parametrize("future_version", [4, 99, 100])
     def test_forward_incompatible_schema_raises_lockfile_schema_error(self, future_version, tmp_path):
         """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError."""
         toml_content = _minimal_toml(schema_version=future_version)
@@ -640,21 +643,30 @@ class TestSchemaVersionValidation:
         assert f"v{old_version}" in err_msg
         assert "kanon bug" in err_msg
 
-    def test_schema_version_2_accepted(self, tmp_path):
-        """schema_version == 2 is the current supported version and is accepted."""
+    def test_schema_version_3_accepted(self, tmp_path):
+        """schema_version == 3 is the current supported version and is accepted."""
+        toml_content = _minimal_toml(schema_version=3)
+        p = tmp_path / "kanon.lock"
+        p.write_text(toml_content)
+        lf = read_lockfile(p)
+        assert lf.schema_version == 3
+
+    def test_schema_version_2_migrated_to_3(self, tmp_path):
+        """schema_version == 2 is transparently migrated to v3 (no sources -> empty list)."""
         toml_content = _minimal_toml(schema_version=2)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         lf = read_lockfile(p)
-        assert lf.schema_version == 2
+        assert lf.schema_version == 3
+        assert lf.sources == []
 
-    def test_schema_version_1_migrated_to_2(self, tmp_path):
-        """schema_version == 1 is transparently migrated to v2 with default marketplace fields."""
+    def test_schema_version_1_migrated_to_3(self, tmp_path):
+        """schema_version == 1 is transparently migrated through v2 to v3 with all defaults."""
         toml_content = _minimal_toml(schema_version=1)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         lf = read_lockfile(p)
-        assert lf.schema_version == 2
+        assert lf.schema_version == 3
         assert lf.marketplace_registered is False
         assert lf.marketplace_dir == ""
 
@@ -719,7 +731,7 @@ class TestWriteLockfileUnit:
         write_lockfile(lf, p)
         with open(p, "rb") as f:
             data = tomllib.load(f)
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == 3
 
     def test_write_then_read_roundtrip(self, tmp_path):
         """write_lockfile followed by read_lockfile round-trips the Lockfile object."""
@@ -768,12 +780,12 @@ class TestMarketplaceFields:
         assert lf2.marketplace_dir == ""
 
     def test_v1_lockfile_migration_adds_marketplace_fields(self, tmp_path):
-        """A v1 lockfile (no marketplace fields) is migrated to v2 with defaults."""
+        """A v1 lockfile (no marketplace fields) is migrated to v3 with defaults."""
         v1_toml = _minimal_toml(schema_version=1)
         p = tmp_path / "kanon.lock"
         p.write_text(v1_toml)
         lf = read_lockfile(p)
-        assert lf.schema_version == 2
+        assert lf.schema_version == 3
         assert lf.marketplace_registered is False
         assert lf.marketplace_dir == ""
 
@@ -799,3 +811,165 @@ class TestMarketplaceFields:
         with open(p, "rb") as f:
             data = tomllib.load(f)
         assert data["marketplace_registered"] is False
+
+
+# ---------------------------------------------------------------------------
+# Per-source registered_marketplaces ledger (schema v3)
+# ---------------------------------------------------------------------------
+
+
+def _source_toml_block(*, name: str, registered_marketplaces_literal: str | None) -> str:
+    """Return a ``[[sources]]`` TOML block, optionally carrying the per-source ledger.
+
+    Args:
+        name: The source name.
+        registered_marketplaces_literal: If not None, the raw TOML array literal
+            to emit for ``registered_marketplaces`` (e.g. ``'["a-mp"]'`` or
+            ``"[1, 2, 3]"``).  When None the key is omitted entirely (v2-style).
+    """
+    lines = [
+        "",
+        "[[sources]]",
+        f'name = "{name}"',
+        'url = "https://example.com/source.git"',
+        'revision_spec = "main"',
+        'resolved_ref = "refs/heads/main"',
+        f'resolved_sha = "{_VALID_SHA40}"',
+        'path = "repo-specs/source.xml"',
+    ]
+    if registered_marketplaces_literal is not None:
+        lines.append(f"registered_marketplaces = {registered_marketplaces_literal}")
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.unit
+class TestRegisteredMarketplacesField:
+    """Lockfile schema v3 PER-SOURCE ``registered_marketplaces`` ledger field."""
+
+    def test_source_registered_marketplaces_defaults_empty(self):
+        """SourceEntry.registered_marketplaces defaults to an empty list when not supplied."""
+        src = SourceEntry(
+            name="src",
+            url="https://example.com/source.git",
+            revision_spec="main",
+            resolved_ref="refs/heads/main",
+            resolved_sha=_VALID_SHA40,
+            path="repo-specs/source.xml",
+        )
+        assert src.registered_marketplaces == []
+
+    def test_lockfile_has_no_top_level_registered_marketplaces(self):
+        """The root Lockfile dataclass carries NO top-level registered_marketplaces field."""
+        lf = _make_lockfile()
+        assert not hasattr(lf, "registered_marketplaces"), (
+            "schema v3 moved the ledger per-source; the root Lockfile must not expose it"
+        )
+
+    def test_source_registered_marketplaces_written_empty_as_toml_array(self, tmp_path):
+        """write_lockfile emits registered_marketplaces = [] inside the source table when empty."""
+        import tomllib
+
+        lf = _make_lockfile(sources=[_make_source(name="src", registered_marketplaces=[])])
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        with open(p, "rb") as f:
+            data = tomllib.load(f)
+        assert "registered_marketplaces" not in data, "the ledger must not appear at the top level"
+        assert data["sources"][0]["registered_marketplaces"] == []
+
+    def test_source_registered_marketplaces_roundtrip_sorted(self, tmp_path):
+        """write_lockfile sorts each source's ledger; read_lockfile returns the sorted list."""
+        lf = _make_lockfile(sources=[_make_source(name="src", registered_marketplaces=["b-mp", "a-mp"])])
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        lf2 = read_lockfile(p)
+        assert lf2.sources[0].registered_marketplaces == ["a-mp", "b-mp"]
+
+    def test_per_source_ledgers_are_independent(self, tmp_path):
+        """Two sources keep distinct per-source ledgers across a write/read roundtrip."""
+        lf = _make_lockfile(
+            sources=[
+                _make_source(name="alpha", registered_marketplaces=["alpha-mp"]),
+                _make_source(name="bravo", registered_marketplaces=["bravo-mp"]),
+            ]
+        )
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        lf2 = read_lockfile(p)
+        by_name = {s.name: s for s in lf2.sources}
+        assert by_name["alpha"].registered_marketplaces == ["alpha-mp"]
+        assert by_name["bravo"].registered_marketplaces == ["bravo-mp"]
+
+    def test_source_registered_marketplaces_written_sorted_in_toml(self, tmp_path):
+        """write_lockfile serialises each source's ledger sorted regardless of input order."""
+        import tomllib
+
+        lf = _make_lockfile(sources=[_make_source(name="src", registered_marketplaces=["b-mp", "a-mp", "c-mp"])])
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        with open(p, "rb") as f:
+            data = tomllib.load(f)
+        assert data["sources"][0]["registered_marketplaces"] == ["a-mp", "b-mp", "c-mp"]
+
+    def test_source_registered_marketplaces_rewrite_is_byte_stable(self, tmp_path):
+        """Re-writing a lockfile read from disk produces byte-identical output."""
+        lf = _make_lockfile(sources=[_make_source(name="src", registered_marketplaces=["b-mp", "a-mp"])])
+        p1 = tmp_path / "kanon.lock"
+        write_lockfile(lf, p1)
+        first_bytes = p1.read_bytes()
+
+        lf2 = read_lockfile(p1)
+        p2 = tmp_path / "kanon2.lock"
+        write_lockfile(lf2, p2)
+        second_bytes = p2.read_bytes()
+        assert first_bytes == second_bytes
+
+    def test_v2_source_without_key_migrates_to_empty_ledger(self, tmp_path):
+        """A v2-style source TOML lacking registered_marketplaces migrates to a per-source empty ledger."""
+        v2_toml = (
+            "schema_version = 2\n"
+            'generated_at = "2026-01-01T00:00:00Z"\n'
+            'generator = "kanon-cli/1.4.0"\n'
+            f'kanon_hash = "{_VALID_KANON_HASH}"\n'
+            "marketplace_registered = false\n"
+            'marketplace_dir = ""\n'
+            "\n"
+            "[catalog]\n"
+            'source = "https://example.com/catalog.git@main"\n'
+            'url = "https://example.com/catalog.git"\n'
+            'revision_spec = "main"\n'
+            'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{_VALID_SHA40}"\n'
+            + _source_toml_block(name="legacy", registered_marketplaces_literal=None)
+        )
+        p = tmp_path / "kanon.lock"
+        p.write_text(v2_toml)
+        lf = read_lockfile(p)
+        assert lf.schema_version == 3
+        assert len(lf.sources) == 1
+        assert lf.sources[0].registered_marketplaces == [], (
+            "v2->v3 migration must default each source's registered_marketplaces to []"
+        )
+
+    def test_non_list_source_registered_marketplaces_raises_validation_error(self, tmp_path):
+        """A per-source registered_marketplaces that is not a list of strings raises a validation error."""
+        bad_toml = (
+            "schema_version = 3\n"
+            'generated_at = "2026-01-01T00:00:00Z"\n'
+            'generator = "kanon-cli/1.4.0"\n'
+            f'kanon_hash = "{_VALID_KANON_HASH}"\n'
+            "marketplace_registered = false\n"
+            'marketplace_dir = ""\n'
+            "\n"
+            "[catalog]\n"
+            'source = "https://example.com/catalog.git@main"\n'
+            'url = "https://example.com/catalog.git"\n'
+            'revision_spec = "main"\n'
+            'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{_VALID_SHA40}"\n'
+            + _source_toml_block(name="src", registered_marketplaces_literal="[1, 2, 3]")
+        )
+        p = tmp_path / "kanon.lock"
+        p.write_text(bad_toml)
+        with pytest.raises(LockfileValidationError, match=r"sources\[0\].registered_marketplaces"):
+            read_lockfile(p)

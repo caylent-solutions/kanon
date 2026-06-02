@@ -401,6 +401,43 @@ def register_direct_checkout_marketplaces(
         link_target.symlink_to(project_dir.resolve())
 
 
+def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list[str]:
+    """Discover the marketplace names present under ``marketplace_dir``.
+
+    Walks the directory with :func:`discover_marketplace_entries` and reads each
+    entry's marketplace ``name`` via :func:`read_marketplace_name`. Entries that
+    lack a ``.claude-plugin/marketplace.json`` are skipped (the same tolerance
+    :func:`install_marketplace_plugins` applies to linkfile targets that do not
+    point at a marketplace root). The result is the authoritative set of
+    marketplace names kanon just registered: it feeds the install auto-prune and
+    the ``kanon clean --orphans`` reconciliation.
+
+    Args:
+        marketplace_dir: Path to ``CLAUDE_MARKETPLACES_DIR``.
+
+    Returns:
+        A sorted, de-duplicated list of marketplace names. Returns an empty list
+        when ``marketplace_dir`` does not exist.
+
+    Raises:
+        json.JSONDecodeError: If an entry's ``marketplace.json`` exists but is
+            malformed.
+        KeyError: If an entry's ``marketplace.json`` exists but lacks ``name``.
+    """
+    if not marketplace_dir.is_dir():
+        return []
+
+    names: set[str] = set()
+    for entry in discover_marketplace_entries(marketplace_dir):
+        try:
+            names.add(read_marketplace_name(entry))
+        except FileNotFoundError:
+            # Not a real marketplace (no .claude-plugin/marketplace.json); skip
+            # it exactly as install_marketplace_plugins does.
+            continue
+    return sorted(names)
+
+
 def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
     """Orchestrate marketplace plugin installation.
 

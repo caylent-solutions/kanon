@@ -21,6 +21,7 @@ from kanon_cli.core.marketplace import (
     _get_timeout,
     discover_marketplace_entries,
     discover_plugins,
+    discover_registered_marketplace_names,
     install_marketplace_plugins,
     install_plugin,
     locate_claude_binary,
@@ -624,3 +625,54 @@ class TestRegisterDirectCheckoutMarketplaces:
         error_msg = str(exc_info.value)
         assert "name" in error_msg, f"ValueError message should mention the missing 'name' field; got: {error_msg!r}"
         assert "Remediation" in error_msg, f"ValueError message should include a remediation hint; got: {error_msg!r}"
+
+
+@pytest.mark.unit
+class TestDiscoverRegisteredMarketplaceNames:
+    """``discover_registered_marketplace_names`` returns a sorted, de-duplicated
+    list of marketplace names discovered under ``marketplace_dir``.
+
+    Entries lacking ``.claude-plugin/marketplace.json`` are skipped (same
+    tolerance as ``install_marketplace_plugins``). A missing directory yields
+    an empty list. The helper is the authoritative source of the freshly
+    registered set used by the install auto-prune and ``clean --orphans``.
+    """
+
+    def test_one_valid_one_no_json_returns_only_named(self, tmp_path: pathlib.Path) -> None:
+        """A valid marketplace and a non-marketplace entry: only the named one is returned."""
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+        _create_marketplace(marketplace_dir, "mp-current", plugins=["plug-a"])
+
+        # An entry that is a directory but has NO .claude-plugin/marketplace.json
+        # (e.g. a linkfile target that does not point at a marketplace root).
+        no_json_entry = marketplace_dir / "not-a-marketplace"
+        no_json_entry.mkdir()
+        (no_json_entry / "some-file.txt").write_text("not a marketplace manifest")
+
+        result = discover_registered_marketplace_names(marketplace_dir)
+
+        assert result == ["mp-current"], (
+            f"Expected only the named marketplace 'mp-current'; the entry lacking "
+            f".claude-plugin/marketplace.json must be skipped. Got: {result!r}"
+        )
+
+    def test_returns_sorted_deduplicated(self, tmp_path: pathlib.Path) -> None:
+        """Multiple valid marketplaces are returned sorted (and de-duplicated)."""
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+        # Create in non-sorted creation order; the manifest 'name' fields are the
+        # values that must come back sorted.
+        _create_marketplace(marketplace_dir, "zeta-dir", plugins=[])
+        _create_marketplace(marketplace_dir, "alpha-dir", plugins=[])
+        _create_marketplace(marketplace_dir, "mike-dir", plugins=[])
+
+        result = discover_registered_marketplace_names(marketplace_dir)
+
+        assert result == ["alpha-dir", "mike-dir", "zeta-dir"], f"Expected sorted marketplace names; got: {result!r}"
+        assert result == sorted(set(result)), f"Result must be sorted and de-duplicated; got: {result!r}"
+
+    def test_missing_dir_returns_empty(self, tmp_path: pathlib.Path) -> None:
+        """A non-existent marketplace_dir yields an empty list (tolerant, not an error)."""
+        result = discover_registered_marketplace_names(tmp_path / "does-not-exist")
+        assert result == [], f"Missing marketplace_dir must return []; got: {result!r}"

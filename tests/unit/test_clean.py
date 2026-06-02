@@ -1,5 +1,6 @@
 """Tests for clean core business logic."""
 
+import datetime
 import pathlib
 from unittest.mock import patch
 
@@ -10,6 +11,12 @@ from kanon_cli.core.clean import (
     remove_kanon_dir,
     remove_marketplace_dir,
     remove_packages_dir,
+)
+from kanon_cli.core.lockfile import (
+    CatalogBlock,
+    Lockfile,
+    SourceEntry,
+    write_lockfile,
 )
 
 _MINIMAL_KANONENV = (
@@ -257,3 +264,250 @@ class TestCleanWorkspaceDirEnvVar:
         assert not (cwd_dir / ".kanon-data").exists(), (
             "Without KANON_WORKSPACE_DIR, .kanon-data/ must be removed beside .kanon"
         )
+
+
+# ---------------------------------------------------------------------------
+# clean(orphans=...) ledger-driven marketplace pruning
+# ---------------------------------------------------------------------------
+
+
+def _make_source(name: str, *, registered_marketplaces: list[str]) -> SourceEntry:
+    """Build a valid SourceEntry carrying a per-source marketplace ledger."""
+    return SourceEntry(
+        name=name,
+        url=f"https://example.com/{name}.git",
+        revision_spec="main",
+        resolved_ref="refs/heads/main",
+        resolved_sha="a" * 40,
+        path=f"repo-specs/{name}.xml",
+        registered_marketplaces=registered_marketplaces,
+    )
+
+
+def _write_v3_lock(
+    base_dir: pathlib.Path,
+    *,
+    marketplace_dir: pathlib.Path,
+    sources: list[SourceEntry],
+) -> pathlib.Path:
+    """Write a real schema-v3 .kanon.lock with per-source marketplace ledgers.
+
+    The catalog block and hash are synthetic-but-valid so read_lockfile parses
+    the file without raising. Returns the lockfile path.
+    """
+    lockfile = Lockfile(
+        schema_version=3,
+        generated_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        generator="kanon-cli/test",
+        kanon_hash="sha256:" + ("a" * 64),
+        catalog=CatalogBlock(
+            source="https://catalog.example.com/repo.git@main",
+            url="https://catalog.example.com/repo.git",
+            revision_spec="main",
+            resolved_ref="refs/heads/main",
+            resolved_sha="b" * 40,
+        ),
+        sources=sources,
+        marketplace_registered=True,
+        marketplace_dir=str(marketplace_dir),
+    )
+    lock_path = base_dir / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
+def _write_kanon_sources(
+    directory: pathlib.Path, marketplace_dir: pathlib.Path, source_names: list[str]
+) -> pathlib.Path:
+    """Write a .kanon declaring the given source names (marketplace install on)."""
+    lines = [
+        f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}",
+        "KANON_MARKETPLACE_INSTALL=true",
+    ]
+    for name in source_names:
+        lines.append(f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git")
+        lines.append(f"KANON_SOURCE_{name}_REVISION=main")
+        lines.append(f"KANON_SOURCE_{name}_PATH=repo-specs/{name}.xml")
+    kanonenv = directory / ".kanon"
+    kanonenv.write_text("\n".join(lines) + "\n")
+    return kanonenv
+
+
+_KEEP_SET_NAMES = ("claude-plugins-official", "devbench-authoring")
+
+
+@pytest.mark.unit
+class TestCleanOrphansSourcePrune:
+    """``clean(orphans=True)`` unregisters marketplaces of sources removed from .kanon.
+
+    SAFETY INVARIANT: removal candidates come ONLY from the per-source
+    ``registered_marketplaces`` ledgers of sources in the lock but absent from
+    the current .kanon. A marketplace still provided by a referenced source, and
+    user/keep-set names never written to any ledger, must never be passed to
+    ``remove_marketplace``.
+    """
+
+    def test_orphaned_source_marketplace_is_pruned_keepset_and_referenced_untouched(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """Lock has A+B; .kanon has only B -> prune A's marketplace, keep B's; keep-set untouched.
+
+        Source A (removed from .kanon) registered ``alpha-mp``; source B (still
+        in .kanon) registered ``bravo-mp``. Only ``alpha-mp`` must be removed; B's
+        marketplace and any keep-set name must never be removed.
+        """
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        # .kanon declares only source B; the lock still records A and B.
+        kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
+        (tmp_path / ".packages").mkdir()
+
+        _write_v3_lock(
+            tmp_path,
+            marketplace_dir=marketplace_dir,
+            sources=[
+                _make_source("alpha", registered_marketplaces=["alpha-mp"]),
+                _make_source("bravo", registered_marketplaces=["bravo-mp"]),
+            ],
+        )
+
+        removed: list[str] = []
+
+        def _track_remove(claude_bin, name):
+            removed.append(name)
+            return True
+
+        with (
+            patch("kanon_cli.core.clean.locate_claude_binary", return_value="/usr/bin/claude") as mock_locate,
+            patch("kanon_cli.core.clean.remove_marketplace", side_effect=_track_remove),
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
+        ):
+            clean(kanonenv, orphans=True)
+
+        assert removed == ["alpha-mp"], (
+            f"Only orphaned source A's marketplace 'alpha-mp' must be removed; got {removed!r}"
+        )
+        assert "bravo-mp" not in removed, "A still-referenced source's marketplace must not be removed"
+        for keep in _KEEP_SET_NAMES:
+            assert keep not in removed, (
+                f"Keep-set marketplace {keep!r} was never in any ledger and must never be removed; got {removed!r}"
+            )
+        mock_locate.assert_called_once()
+
+    def test_marketplace_shared_by_referenced_source_is_not_pruned(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace registered by BOTH an orphaned and a referenced source is retained.
+
+        Source A (removed) and source B (kept) both registered ``shared-mp``; A
+        also registered ``alpha-only-mp``. Only ``alpha-only-mp`` is pruned --
+        ``shared-mp`` stays because B still references it.
+        """
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
+        (tmp_path / ".packages").mkdir()
+
+        _write_v3_lock(
+            tmp_path,
+            marketplace_dir=marketplace_dir,
+            sources=[
+                _make_source("alpha", registered_marketplaces=["alpha-only-mp", "shared-mp"]),
+                _make_source("bravo", registered_marketplaces=["shared-mp"]),
+            ],
+        )
+
+        removed: list[str] = []
+
+        with (
+            patch("kanon_cli.core.clean.locate_claude_binary", return_value="/usr/bin/claude"),
+            patch("kanon_cli.core.clean.remove_marketplace", side_effect=lambda claude_bin, name: removed.append(name)),
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
+        ):
+            clean(kanonenv, orphans=True)
+
+        assert removed == ["alpha-only-mp"], (
+            f"Only A's exclusive marketplace must be pruned; 'shared-mp' is still referenced by B; got {removed!r}"
+        )
+
+    def test_no_orphaned_sources_does_not_locate_claude_or_remove(self, tmp_path: pathlib.Path) -> None:
+        """When every lock source is still in .kanon, no removal and no claude lookup."""
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
+        (tmp_path / ".packages").mkdir()
+
+        _write_v3_lock(
+            tmp_path,
+            marketplace_dir=marketplace_dir,
+            sources=[_make_source("bravo", registered_marketplaces=["bravo-mp"])],
+        )
+
+        with (
+            patch("kanon_cli.core.clean.locate_claude_binary") as mock_locate,
+            patch("kanon_cli.core.clean.remove_marketplace") as mock_remove,
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
+        ):
+            clean(kanonenv, orphans=True)
+
+        mock_remove.assert_not_called()
+        mock_locate.assert_not_called()
+
+    def test_orphans_false_never_calls_remove_marketplace(self, tmp_path: pathlib.Path) -> None:
+        """Regression: the default (orphans=False) path never touches remove_marketplace.
+
+        Even with an orphaned source in the lock, the plain clean path must not
+        unregister anything -- the prune is opt-in via --orphans.
+        """
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
+        (tmp_path / ".packages").mkdir()
+
+        _write_v3_lock(
+            tmp_path,
+            marketplace_dir=marketplace_dir,
+            sources=[
+                _make_source("alpha", registered_marketplaces=["alpha-mp"]),
+                _make_source("bravo", registered_marketplaces=["bravo-mp"]),
+            ],
+        )
+
+        with (
+            patch("kanon_cli.core.clean.remove_marketplace") as mock_remove,
+            patch("kanon_cli.core.clean.locate_claude_binary") as mock_locate,
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
+        ):
+            clean(kanonenv, orphans=False)
+
+        mock_remove.assert_not_called()
+        mock_locate.assert_not_called()
+
+    def test_orphaned_source_with_empty_ledger_skips_prune(self, tmp_path: pathlib.Path) -> None:
+        """An orphaned source that registered no marketplaces yields nothing to prune."""
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
+        (tmp_path / ".packages").mkdir()
+
+        _write_v3_lock(
+            tmp_path,
+            marketplace_dir=marketplace_dir,
+            sources=[
+                _make_source("alpha", registered_marketplaces=[]),
+                _make_source("bravo", registered_marketplaces=["bravo-mp"]),
+            ],
+        )
+
+        with (
+            patch("kanon_cli.core.clean.remove_marketplace") as mock_remove,
+            patch("kanon_cli.core.clean.locate_claude_binary") as mock_locate,
+            patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
+        ):
+            clean(kanonenv, orphans=True)
+
+        mock_remove.assert_not_called()
+        mock_locate.assert_not_called()

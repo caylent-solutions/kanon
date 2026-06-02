@@ -218,8 +218,9 @@ Exception: `LockfileValidationError`. Remediation:
 
 **Rule 3: `revision_spec` format.** Accepted if it satisfies any one
 of: (a) a valid PEP 440 `SpecifierSet` with optional monorepo path
-prefix (e.g., `subpackage/==1.0.0`); (b) starts with `refs/`; or
-(c) matches `^[a-zA-Z0-9_./+-]+$`.
+prefix (e.g., `subpackage/==1.0.0`); (b) the bare wildcard `*`
+("any version", written verbatim by `add`/`install`); (c) starts with
+`refs/`; or (d) matches `^[a-zA-Z0-9_./+-]+$`.
 Exception: `LockfileValidationError`.
 
 **Rule 4: `canonical_url` consistency.** Every `[[sources.projects]]`

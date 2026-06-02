@@ -335,6 +335,9 @@ class TestRevisionSpecValidation:
             # monorepo path prefix + SpecifierSet
             "subpackage/==1.0.0",
             "sub/pkg/~=2.0.0",
+            # bare wildcard "*" = "any version" (written verbatim to the lockfile by
+            # add/install; the reader must accept it -- MK-18 / kanon clean)
+            "*",
         ],
     )
     def test_valid_revision_spec_accepted(self, spec, tmp_path):

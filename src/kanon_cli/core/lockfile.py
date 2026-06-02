@@ -393,9 +393,10 @@ def _validate_resolved_sha(sha: str, field_path: str) -> None:
 
 
 def _validate_revision_spec(spec: str, field_path: str) -> None:
-    """Raise ``LockfileValidationError`` if ``spec`` fails all three accept rules.
+    """Raise ``LockfileValidationError`` if ``spec`` fails all accept rules.
 
     Accept rules (any one suffices):
+      0. The bare wildcard ``*`` ("any version"), written verbatim by add/install.
       1. Parses as ``packaging.specifiers.SpecifierSet`` (PEP 440), optionally
          preceded by a monorepo path prefix ending with ``/``.
       2. Starts with ``refs/`` (literal git ref).
@@ -412,10 +413,18 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
         raise LockfileValidationError(
             f"ERROR: Empty revision_spec at '{field_path}'.\n"
             f"  Value: {spec!r}\n"
-            f"  Expected: a PEP 440 specifier (e.g. '==1.0.0'), a git ref "
-            f"(e.g. 'refs/heads/main'), or a branch name (e.g. 'main').\n"
+            f"  Expected: a PEP 440 specifier (e.g. '==1.0.0'), the wildcard '*' "
+            f"(any version), a git ref (e.g. 'refs/heads/main'), or a branch name "
+            f"(e.g. 'main').\n"
             f"  Remediation: update the revision_spec in your .kanon file and re-lock."
         )
+
+    # Rule 0: bare wildcard "*" -- the "any version" constraint, written verbatim into
+    # the lockfile by add/install (resolved_ref/resolved_sha carry the actual
+    # resolution). The marketplace/version layers already accept it, so the lockfile
+    # reader must accept it too.
+    if spec == "*":
+        return
 
     # Rule 2: refs/ prefix
     if spec.startswith("refs/"):
@@ -444,6 +453,7 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
         f"  Value: {spec!r}\n"
         f"  Expected one of:\n"
         f"    - PEP 440 SpecifierSet (e.g. '==1.0.0', '~=2.0.0', '>=1.0,<2.0')\n"
+        f"    - Bare wildcard '*' (any version)\n"
         f"    - Optional monorepo prefix: 'subpackage/==1.0.0'\n"
         f"    - Git ref: 'refs/heads/main'\n"
         f"    - Branch name matching ^[a-zA-Z0-9_./+-]+$\n"

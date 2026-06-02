@@ -49,6 +49,8 @@ from kanon_cli.completions.midtoken import register as register_resolve_entry_to
 from kanon_cli.completions.source_names import register as register_complete_source_names
 from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
+from kanon_cli.core.include_walker import InstallError
+from kanon_cli.repo import RepoCommandError
 
 # ---------------------------------------------------------------------------
 # JSON output contract (spec Section 13 D3)
@@ -310,6 +312,29 @@ def main(argv: list[str] | None = None) -> None:
     # a circular import.
     args.parser = parser
 
-    exit_code = args.func(args)
+    # Top-level user-error boundary. Per-command handlers already convert the
+    # kanon user-error types below into a clean stderr message + non-zero exit
+    # (see commands/install.py::_run and commands/clean.py::_run). This wrapper
+    # is the defence-in-depth backstop for any code path that reaches one of
+    # these errors WITHOUT an enclosing per-command try/except -- e.g. a
+    # zero-source .kanon raising ValueError from parse_kanonenv via doctor's
+    # kanon_hash recompute, outdated's top-level parse, or why's live-resolve.
+    # Without this, such an error leaks a raw Python traceback (fail-ugly).
+    #
+    # Only the spec-canonical user-error types are caught. SystemExit (raised
+    # by per-command sys.exit() calls), KeyboardInterrupt, and bare Exception
+    # are deliberately NOT caught: SystemExit must pass through with its own
+    # code, and masking arbitrary exceptions would hide programming bugs behind
+    # a generic clean error.
+    try:
+        exit_code = args.func(args)
+    except InstallError as exc:
+        # InstallError subclasses already render str(exc) with an "ERROR:"
+        # prefix per the spec-canonical error shape; print it verbatim.
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if exit_code:
         sys.exit(exit_code)

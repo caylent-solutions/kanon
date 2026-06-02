@@ -417,6 +417,16 @@ Output confirms every triple written:
 Wrote KANON_SOURCE_package_a_URL, _REVISION, _PATH to ./.kanon
 ```
 
+### add -- Lockfile interaction
+
+`kanon add` only edits `.kanon`; it does not resolve or write the
+lockfile. The next plain `kanon install` reconciles the new source into
+the lockfile (resolving it fresh while preserving the locked SHAs of
+unchanged sources), so the `kanon add` then `kanon install` loop "just
+works" without any flag -- including when an `add` and a `remove` happen
+between two installs. See
+[docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
+
 ### add -- Flags
 
 | Flag | Default | Description |
@@ -692,9 +702,12 @@ and exits 0 without modifying any file:
 ### remove -- Lockfile interaction
 
 If `.kanon.lock` exists and references the removed source, the
-next `kanon install` detects the orphan and prunes it by
-default. With `--strict-lock` on `kanon install`, the orphan
-is a hard error.
+next `kanon install` detects the orphan and reconciles by
+default: it prunes the orphan, replays the surviving sources,
+and rewrites the lockfile (the `npm install` model). With
+`--strict-lock` on `kanon install`, the orphan is a hard error
+and the lockfile is not mutated (the `npm ci` model). See
+[docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
 
 ### remove -- Error scenarios
 

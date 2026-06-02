@@ -25,9 +25,10 @@ The fixtures are the canonical reference; the source must match them.
 
 Trigger procedure per slug:
 - ``missing-catalog-source``: ``kanon list`` with neither env var nor flag set.
-- ``lockfile-hash-mismatch``: ``kanon install`` with a ``.kanon`` file and a
-  lockfile whose ``kanon_hash`` field intentionally differs from the actual
-  hash of the ``.kanon`` file.
+- ``lockfile-hash-mismatch``: ``kanon install --strict-lock`` with a ``.kanon``
+  file and a lockfile whose ``kanon_hash`` field intentionally differs from the
+  actual hash of the ``.kanon`` file.  (Plain ``kanon install`` reconciles the
+  drift under the npm-like contract; the clean error lives under ``--strict-lock``.)
 - ``lockfile-sha-unreachable``: ``kanon install`` with a lockfile whose
   ``resolved_sha`` for a source points to a SHA that ``git ls-remote`` cannot
   find on the declared remote.  Uses an unreachable HTTPS remote so git fails
@@ -231,7 +232,9 @@ def _build_trigger_workspace(slug: str, tmp_path: pathlib.Path) -> pathlib.Path:
     - ``missing-catalog-source``: empty directory; ``kanon list`` with no
       catalog source set will fire immediately.
     - ``lockfile-hash-mismatch``: a ``.kanon`` file plus a ``.kanon.lock``
-      whose ``kanon_hash`` has been set to a deliberately wrong value.
+      whose ``kanon_hash`` has been set to a deliberately wrong value; the CLI
+      is invoked with ``--strict-lock`` (plain install reconciles instead of
+      erroring under the npm-like contract).
     - ``lockfile-sha-unreachable``: a ``.kanon`` file plus a ``.kanon.lock``
       whose ``resolved_sha`` is a fake 64-char hex string on a real-but-
       unreachable HTTPS remote.
@@ -280,7 +283,9 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
     sha256:2391f761252aa51bfed01b99b60deb08da28644fb84c9b7a5037d42ff111df1a,
     then writes a .kanon.lock with a fixed wrong kanon_hash
     (sha256: followed by 64 'a' chars) so that the hash-mismatch check fires
-    immediately on ``kanon install``.
+    under ``kanon install --strict-lock`` (the npm-ci analogue, which errors on
+    any drift without mutating the lockfile).  Plain ``kanon install`` would
+    instead reconcile the drift, so this snapshot exercises the strict path.
 
     The fixed wrong hash and the deterministic current hash match the values
     in tests/fixtures/errors/lockfile-hash-mismatch.txt exactly, making the
@@ -598,8 +603,14 @@ def _make_cli_args(slug: str, tmp_path: pathlib.Path) -> tuple[list[str], "dict[
         return ["list"], {"KANON_CATALOG_SOURCE": ""}
 
     if slug == "lockfile-hash-mismatch":
+        # Under the npm-like reconcile contract, plain `kanon install` reconciles a
+        # hash mismatch; the clean KanonHashMismatchError now lives under
+        # `--strict-lock` (the npm-ci analogue), which errors on any drift without
+        # mutating the lockfile.  The .kanon declares one source absent from the lock
+        # (an addition), so strict-lock raises KanonHashMismatchError, matching the
+        # canonical fixture text exactly.
         kanon_path = str(ws / ".kanon")
-        return ["install", kanon_path], None
+        return ["install", "--strict-lock", kanon_path], None
 
     if slug == "lockfile-sha-unreachable":
         kanon_path = str(ws / ".kanon")

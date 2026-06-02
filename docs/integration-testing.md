@@ -1014,6 +1014,23 @@ kanon validate
 
 **Pass criteria:** Exit code 2. stderr contains `Must specify a validation target`.
 
+### EC-10: doctor on zero-source .kanon
+
+A `.kanon` that declares no `KANON_SOURCE_<name>_{URL,REVISION,PATH}` triples is
+invalid. With a lockfile present, `kanon doctor` recomputes the `kanon_hash`,
+which forces source discovery and raises the "No sources found" error. The
+command must surface this as a clean finding, not a raw Python traceback.
+
+```bash
+# .kanon contains only: KANON_MARKETPLACE_INSTALL=false  (no sources)
+# .kanon.lock present so doctor reaches the kanon_hash recompute
+kanon doctor --kanon-file .kanon
+```
+
+**Pass criteria:** Exit code is non-zero. stderr reports a clean error
+mentioning `no sources` (the `NO_SOURCES` finding). Neither stdout nor stderr
+contains `Traceback` or a `BUG:` marker.
+
 ---
 
 ## 10. Category 9: Idempotency (3 tests)
@@ -5524,6 +5541,109 @@ for d in uj-{01..04} uj-{06} uj-{08..09} uj-11; do
     cd "${KANON_TEST_ROOT}" && rm -rf "${d}"
 done
 rm -f /tmp/uj-08-cache.tgz /tmp/uj-09.log /tmp/uj-06.log
+```
+
+---
+
+## 28b. Category 27b: Install Reconcile (npm-like) (2 tests)
+
+`kanon install` reconciles `.kanon` against `.kanon.lock` the way `npm install`
+reconciles `package.json` against `package-lock.json`: removed sources are
+pruned, newly-added and changed-spec sources are resolved fresh, unchanged
+sources preserve their locked SHA, and the lockfile is rebuilt and written once
+at the end on success only. `kanon install --strict-lock` is the `npm ci`
+analogue: it errors cleanly on any drift and never mutates the lockfile.
+`kanon install --refresh-lock` forces a full rebuild.
+
+These scenarios guard the fix for the
+`install-orphan-rescue-crash-and-lock-corruption` bug, where removing one source
+while adding another caused a corrupt lockfile write and an internal `BUG:`
+assertion that wedged the workspace.
+
+### RC-01: remove A + add B + install reconciles npm-style (idempotent)
+
+```bash
+export RC01_DIR="${KANON_TEST_ROOT}/test-rc01"
+mkdir -p "${RC01_DIR}"
+cd "${RC01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
+
+# Install with source A only.
+cat > "${RC01_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_alpha_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
+KANONEOF
+kanon install .kanon
+
+# Remove A, add B in the same edit.
+cat > "${RC01_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_beta_URL=file://${MANIFEST_SECONDARY_DIR}
+KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_PATH=repo-specs/beta-only.xml
+KANONEOF
+kanon install .kanon
+
+# Idempotency: a second plain install changes nothing.
+kanon install .kanon
+```
+
+**Pass criteria:**
+- Each `kanon install` exits 0; stdout contains `kanon install: done`.
+- The second install (after the edit) emits `pruned orphaned lock entry: alpha`
+  and `lockfile reconciled with .kanon`.
+- No internal `BUG:` line and no Python traceback appear on stdout/stderr.
+- After the reconcile, `.kanon.lock` `[[sources]]` contains exactly `beta`
+  (the orphaned `alpha` entry is dropped; `beta` is resolved fresh).
+- The third install is idempotent: it reports CONSISTENT
+  (`installing from lockfile`) and leaves `.kanon.lock` byte-for-byte unchanged.
+
+**Cleanup:**
+
+```bash
+cd "${KANON_TEST_ROOT}" && rm -rf "${RC01_DIR}"
+```
+
+### RC-02: `--strict-lock` errors on drift without mutating the lockfile
+
+```bash
+export RC02_DIR="${KANON_TEST_ROOT}/test-rc02"
+mkdir -p "${RC02_DIR}"
+cd "${RC02_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
+
+cat > "${RC02_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_alpha_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
+KANONEOF
+kanon install .kanon
+cp .kanon.lock .kanon.lock.before
+
+# Drift: remove alpha, add beta.
+cat > "${RC02_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_beta_URL=file://${MANIFEST_SECONDARY_DIR}
+KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_PATH=repo-specs/beta-only.xml
+KANONEOF
+kanon install --strict-lock .kanon
+```
+
+**Pass criteria:**
+- The first `kanon install` exits 0.
+- `kanon install --strict-lock` exits non-zero with a clean `ERROR:` (no internal
+  `BUG:` line and no Python traceback).
+- `.kanon.lock` is byte-for-byte identical to `.kanon.lock.before`
+  (`--strict-lock` never mutates the lockfile).
+
+**Cleanup:**
+
+```bash
+cd "${KANON_TEST_ROOT}" && rm -rf "${RC02_DIR}"
 ```
 
 ---

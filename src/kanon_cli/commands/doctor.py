@@ -382,12 +382,17 @@ def _check_kanon_hash(
     Subcheck 1 in spec Section 4.6:
     - If .kanon is absent: returns an error finding (code=NO_KANON).
     - If .kanon.lock is absent: returns an info finding (code=NO_LOCKFILE).
+    - If the .kanon declares zero sources: returns an error finding
+      (code=NO_SOURCES). The kanon_hash recompute re-parses the .kanon file and
+      a zero-source workspace raises NoSourcesError; this is converted to a
+      structured finding rather than allowed to escape.
     - If kanon_hash in lockfile differs from the recomputed hash: returns error
       (code=HASH_MISMATCH).
     - Otherwise: returns None (no finding -- checks 2-5 may proceed).
 
-    This function is pure: it performs no I/O on stdout/stderr and raises no
-    exceptions unless the underlying parser raises them.
+    This function is pure: it performs no I/O on stdout/stderr. It catches the
+    zero-source NoSourcesError and reports it as a finding; any other parser
+    exception propagates to the caller.
 
     Args:
         kanon_file: Path to the .kanon file.
@@ -414,10 +419,23 @@ def _check_kanon_hash(
         )
 
     from kanon_cli.core.kanon_hash import kanon_hash
+    from kanon_cli.core.kanonenv import NoSourcesError
     from kanon_cli.core.lockfile import read_lockfile
 
     lockfile = read_lockfile(lock_file)
-    computed = kanon_hash(kanon_file)
+    # Recomputing kanon_hash re-parses the .kanon file; a zero-source workspace
+    # (no KANON_SOURCE_<name>_* triples) raises NoSourcesError. Convert it to a
+    # structured finding so doctor reports a clean error and exits non-zero
+    # instead of leaking the raw exception (which would surface as a traceback).
+    try:
+        computed = kanon_hash(kanon_file)
+    except NoSourcesError:
+        return DoctorFinding(
+            kind="error",
+            code="NO_SOURCES",
+            message="no sources declared in .kanon; add one with 'kanon add <entry>'",
+            remediation="Run 'kanon add <entry>' to declare at least one source.",
+        )
     if computed != lockfile.kanon_hash:
         return DoctorFinding(
             kind="error",
@@ -1316,6 +1334,21 @@ def doctor_command(
             return 0
 
         if consistency_finding.code == "HASH_MISMATCH":
+            _print_finding(consistency_finding)
+            _print_structured_finding(
+                Finding(
+                    severity=FINDING_SEVERITY_FAIL,
+                    name=DOCTOR_SUBCHECK_KANON_HASH,
+                    reason=consistency_finding.message,
+                ),
+                quiet=quiet,
+            )
+            return 1
+
+        if consistency_finding.code == "NO_SOURCES":
+            # Zero-source .kanon: invalid workspace. Report the structured
+            # finding and exit non-zero; subchecks 2-5/11 cannot run without
+            # any source to inspect.
             _print_finding(consistency_finding)
             _print_structured_finding(
                 Finding(

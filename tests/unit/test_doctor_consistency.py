@@ -135,6 +135,31 @@ class TestCheckKanonHashConsistency:
         assert "kanon_hash mismatch" in finding.message
         assert "--refresh-lock" in finding.remediation
 
+    def test_zero_source_kanon_returns_no_sources_finding(self, tmp_path: pathlib.Path) -> None:
+        """A .kanon with zero source triples returns a clean NO_SOURCES error finding.
+
+        The recompute of kanon_hash parses the .kanon file; a zero-source file
+        raises ValueError from _discover_source_names. _check_kanon_hash must
+        convert that into a structured DoctorFinding (kind=error, code=NO_SOURCES)
+        rather than letting the exception escape and crash the CLI.
+        """
+        from kanon_cli.commands.doctor import _check_kanon_hash
+
+        # Zero-source .kanon: no KANON_SOURCE_<name>_* triples.
+        kanon_file = _write_kanon(tmp_path, content="KANON_MARKETPLACE_INSTALL=false\n")
+        # A lockfile must be present so _check_kanon_hash reaches the kanon_hash
+        # recompute (it short-circuits to NO_LOCKFILE when the lockfile is absent).
+        _write_lockfile(tmp_path, kanon_hash_val="sha256:" + "a" * 64)
+        lock_file = tmp_path / ".kanon.lock"
+
+        finding = _check_kanon_hash(kanon_file, lock_file)
+
+        assert finding is not None
+        assert finding.kind == "error"
+        assert finding.code == "NO_SOURCES"
+        assert "no sources" in finding.message.lower()
+        assert "kanon add" in finding.remediation
+
 
 # ---------------------------------------------------------------------------
 # Test: check 3 -- orphan lock entries
@@ -547,3 +572,25 @@ class TestDoctorCommand:
         result = doctor_command(args)
 
         assert result != 0
+
+    def test_zero_source_kanon_returns_nonzero_cleanly(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """doctor_command returns non-zero and prints a clean NO_SOURCES error for a zero-source .kanon.
+
+        The command must not raise the underlying ValueError from
+        _discover_source_names; it reports the structured finding and exits
+        non-zero instead.
+        """
+        from kanon_cli.commands.doctor import doctor_command
+
+        kanon_file = _write_kanon(tmp_path, content="KANON_MARKETPLACE_INSTALL=false\n")
+        _write_lockfile(tmp_path, kanon_hash_val="sha256:" + "a" * 64)
+        lock_file = tmp_path / ".kanon.lock"
+
+        args = self._make_args(kanon_file=str(kanon_file), lock_file=str(lock_file))
+        result = doctor_command(args)
+
+        assert result != 0
+        captured = capsys.readouterr()
+        assert "no sources" in captured.err.lower(), f"stderr={captured.err!r}"

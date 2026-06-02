@@ -1647,3 +1647,121 @@ class TestResolveEntryToRepoUrlRegistration:
         parser = build_parser()
         args = parser.parse_args(["__resolve_entry_to_repo_url", "foo"])
         assert args.func is _handle
+
+
+# ---------------------------------------------------------------------------
+# Tests for the top-level user-error handler in main() (clean error contract):
+# kanon user-error exceptions that escape a per-command handler must be
+# converted to a clean stderr message + exit code 1, never a raw traceback.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMainUserErrorHandler:
+    """main() converts escaping kanon user-errors into a clean exit-1, no traceback."""
+
+    def _dispatch_with_raising_func(self, exc: BaseException) -> argparse.Namespace:
+        """Build a Namespace whose func raises ``exc`` and patch build_parser to use it.
+
+        Returns the Namespace used so callers can assert on dispatch wiring if
+        needed. Mirrors the build_parser-patching pattern used elsewhere in
+        this module so no real subcommand has to be coerced into raising.
+        """
+
+        def _raising_func(_args: argparse.Namespace) -> int:
+            raise exc
+
+        return argparse.Namespace(
+            command="doctor",
+            quiet=False,
+            verbose=False,
+            no_color=False,
+            func=_raising_func,
+        )
+
+    def _run_main_with_raising_func(
+        self,
+        exc: BaseException,
+        capsys: pytest.CaptureFixture[str],
+    ) -> tuple[SystemExit, str, str]:
+        """Run main() with a func that raises ``exc``; return (SystemExit, stdout, stderr)."""
+        ns = self._dispatch_with_raising_func(exc)
+        with patch("kanon_cli.cli.build_parser") as mock_build:
+            mock_parser = MagicMock()
+            mock_parser.parse_args.return_value = ns
+            mock_build.return_value = mock_parser
+            with pytest.raises(SystemExit) as exc_info:
+                main([])
+        captured = capsys.readouterr()
+        return exc_info.value, captured.out, captured.err
+
+    def test_value_error_becomes_clean_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A ValueError escaping a subcommand func exits 1 with a clean stderr error, no traceback."""
+        sysexit, out, err = self._run_main_with_raising_func(
+            ValueError("No sources found. Define at least one source"),
+            capsys,
+        )
+        assert sysexit.code == 1
+        assert "Traceback" not in err, f"stderr leaked a traceback: {err!r}"
+        assert "Traceback" not in out, f"stdout leaked a traceback: {out!r}"
+        assert "ERROR" in err, f"stderr missing clean ERROR prefix: {err!r}"
+        assert "No sources found" in err, f"stderr missing the error detail: {err!r}"
+
+    def test_install_error_becomes_clean_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """An InstallError escaping a subcommand func exits 1 and prints str(exc) (already ERROR-prefixed)."""
+        from kanon_cli.core.include_walker import InstallError
+
+        sysexit, out, err = self._run_main_with_raising_func(
+            InstallError("ERROR: something went wrong with install"),
+            capsys,
+        )
+        assert sysexit.code == 1
+        assert "Traceback" not in err, f"stderr leaked a traceback: {err!r}"
+        assert "Traceback" not in out, f"stdout leaked a traceback: {out!r}"
+        # InstallError.__str__ already starts with 'ERROR:'; the handler prints it verbatim.
+        assert "ERROR: something went wrong with install" in err, f"stderr={err!r}"
+
+    def test_file_not_found_becomes_clean_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A FileNotFoundError escaping a subcommand func exits 1 with a clean ERROR message."""
+        sysexit, out, err = self._run_main_with_raising_func(
+            FileNotFoundError("missing .kanon"),
+            capsys,
+        )
+        assert sysexit.code == 1
+        assert "Traceback" not in err, f"stderr leaked a traceback: {err!r}"
+        assert "ERROR" in err, f"stderr missing clean ERROR prefix: {err!r}"
+
+    def test_repo_command_error_becomes_clean_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A RepoCommandError escaping a subcommand func exits 1 with a clean ERROR message."""
+        from kanon_cli.repo import RepoCommandError
+
+        sysexit, out, err = self._run_main_with_raising_func(
+            RepoCommandError("repo init failed"),
+            capsys,
+        )
+        assert sysexit.code == 1
+        assert "Traceback" not in err, f"stderr leaked a traceback: {err!r}"
+        assert "ERROR" in err, f"stderr missing clean ERROR prefix: {err!r}"
+
+    def test_subcommand_sys_exit_propagates_unchanged(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A SystemExit raised by a subcommand func is NOT swallowed by the handler.
+
+        Per-command handlers call sys.exit(N) directly; the central handler must
+        let that exit code pass through unchanged rather than masking it as 1.
+        """
+        sysexit, _out, _err = self._run_main_with_raising_func(SystemExit(3), capsys)
+        assert sysexit.code == 3
+
+    def test_programming_error_is_not_masked(self) -> None:
+        """A non-user-error exception (e.g. KeyError) is NOT caught -- it propagates.
+
+        The handler must only catch the kanon user-error types; masking arbitrary
+        Exception would hide programming bugs behind a generic clean error.
+        """
+        ns = self._dispatch_with_raising_func(KeyError("internal bug"))
+        with patch("kanon_cli.cli.build_parser") as mock_build:
+            mock_parser = MagicMock()
+            mock_parser.parse_args.return_value = ns
+            mock_build.return_value = mock_parser
+            with pytest.raises(KeyError):
+                main([])

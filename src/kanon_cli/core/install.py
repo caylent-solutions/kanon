@@ -12,13 +12,18 @@ shared with ``kanon add``, ``kanon remove``, and
 ``kanon doctor --refresh-completion-cache`` so all mutating commands
 serialise on a single per-workspace lock.
 
-Lockfile state machine (spec Section 4.7)
------------------------------------------
-Every ``kanon install`` invocation inspects the five-row state matrix:
+Lockfile state machine
+----------------------
+Every ``kanon install`` invocation inspects the state matrix:
 
   LOCKFILE_ABSENT        -- .kanon.lock absent; resolve fresh, write lockfile.
   LOCKFILE_CONSISTENT    -- .kanon.lock present and kanon_hash matches; replay SHAs.
-  LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs; hard error.
+  LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs.  Default
+                            install derives RECONCILE; --strict-lock turns it into
+                            a clean hard error (npm ci).
+  RECONCILE              -- npm install: prune orphans, resolve added/changed sources
+                            fresh, replay unchanged sources, rebuild + write the lock
+                            once at the end on success only.
   LOCKFILE_UNREACHABLE   -- lockfile SHA no longer reachable on remote; hard error.
   LOCKFILE_SOURCE_MISMATCH -- lockfile catalog source differs from CLI/env; hard error.
   REFRESH_LOCK_SOURCE    -- operator requested partial lockfile rebuild via --refresh-lock-source.
@@ -212,10 +217,15 @@ INFO_PRUNED_ORPHAN_LOCK_ENTRY = "pruned orphaned lock entry"
 class InstallState(enum.Enum):
     """Enumeration of the lockfile state-machine rows (spec Section 4.7).
 
-    The seven rows are:
+    The rows are:
     - LOCKFILE_ABSENT:          .kanon.lock absent; resolve fresh, write lockfile.
     - LOCKFILE_CONSISTENT:      .kanon.lock present and kanon_hash matches; replay SHAs.
-    - LOCKFILE_HASH_MISMATCH:   .kanon.lock present but kanon_hash differs; hard error.
+    - LOCKFILE_HASH_MISMATCH:   .kanon.lock present but kanon_hash differs; classification
+                                result only.  Default install derives ``RECONCILE`` from it;
+                                ``--strict-lock`` turns it into a clean hard error.
+    - RECONCILE:                default install with a hash mismatch; reconcile .kanon <-> lock
+                                npm-style (prune orphans, resolve added/changed sources fresh,
+                                replay unchanged sources, rebuild + write the lock once on success).
     - LOCKFILE_UNREACHABLE:     lockfile SHA no longer reachable on remote; hard error.
     - LOCKFILE_SOURCE_MISMATCH: lockfile catalog source differs from CLI/env; hard error.
     - REFRESH_LOCK:             operator requested a full lockfile rebuild via --refresh-lock;
@@ -227,6 +237,7 @@ class InstallState(enum.Enum):
     LOCKFILE_ABSENT = "lockfile-absent"
     LOCKFILE_CONSISTENT = "lockfile-consistent"
     LOCKFILE_HASH_MISMATCH = "lockfile-hash-mismatch"
+    RECONCILE = "reconcile"
     LOCKFILE_UNREACHABLE = "lockfile-unreachable"
     LOCKFILE_SOURCE_MISMATCH = "lockfile-catalog-source-mismatch"
     REFRESH_LOCK = "refresh-lock"
@@ -1078,7 +1089,7 @@ def _resolve_catalog_source(
     if cli_env_source is not None:
         # In the consistent state, validate that lockfile source agrees (if present).
         if (
-            install_state is InstallState.LOCKFILE_CONSISTENT
+            install_state in (InstallState.LOCKFILE_CONSISTENT, InstallState.RECONCILE)
             and lockfile_catalog_source is not None
             and lockfile_catalog_source != cli_env_source
         ):
@@ -1103,8 +1114,14 @@ def _resolve_catalog_source(
             remediation=_REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION,
         )
 
-    # No CLI/env source -- use lockfile fallback only in the consistent state.
-    if install_state is InstallState.LOCKFILE_CONSISTENT and lockfile_catalog_source is not None:
+    # No CLI/env source -- use the lockfile fallback in the consistent state and on
+    # the reconcile path.  Reconcile keeps the existing lockfile for replay, so its
+    # recorded catalog source is still authoritative provenance (the operator
+    # changed source declarations, not the catalog).
+    if (
+        install_state in (InstallState.LOCKFILE_CONSISTENT, InstallState.RECONCILE)
+        and lockfile_catalog_source is not None
+    ):
         return lockfile_catalog_source
 
     # Fourth precedence layer: read the [catalog] block from the .kanon file.
@@ -1129,9 +1146,12 @@ def _emit_install_state(
 ) -> None:
     """Print the spec's verbatim info-line for the given install state to stdout.
 
-    Four states produce an info-line (spec Section 4.7):
+    Five states produce an info-line:
     - LOCKFILE_ABSENT:        ``"lockfile rebuilt from .kanon (N sources, M projects)"``
     - LOCKFILE_CONSISTENT:    ``"installing from lockfile (N sources, M projects)"``
+    - RECONCILE:              ``"lockfile reconciled with .kanon (N sources, M projects)"``
+      (default install on a hash mismatch: prune orphans, resolve added/changed,
+      replay unchanged, then rebuild + write the lock once on success)
     - REFRESH_LOCK:           ``"lockfile rebuilt from .kanon (N sources, M projects)"``
       (same text as LOCKFILE_ABSENT -- the operator's intent is equivalent)
     - REFRESH_LOCK_SOURCE:    ``"lockfile partially rebuilt: source <name> (M projects refreshed; K projects preserved)"``
@@ -1154,6 +1174,8 @@ def _emit_install_state(
         print(f"lockfile rebuilt from .kanon ({sources} sources, {projects} projects)")
     elif state is InstallState.LOCKFILE_CONSISTENT:
         print(f"installing from lockfile ({sources} sources, {projects} projects)")
+    elif state is InstallState.RECONCILE:
+        print(f"lockfile reconciled with .kanon ({sources} sources, {projects} projects)")
     elif state is InstallState.REFRESH_LOCK_SOURCE:
         assert refreshed_count >= 0, f"refreshed_count must be >= 0; got {refreshed_count}"
         assert preserved_count >= 0, f"preserved_count must be >= 0; got {preserved_count}"
@@ -1753,6 +1775,89 @@ def _detect_orphaned_lock_entries(
     return sorted(entry.name for entry in lockfile.sources if entry.name not in kanon_set)
 
 
+def _strict_lock_drift_error(
+    lockfile: "Lockfile",
+    kanon_sources: list[str],
+    computed_hash: str,
+    kanon_revision_specs: "dict[str, str] | None" = None,
+) -> InstallError:
+    """Return the clean error to raise for a hash mismatch under ``--strict-lock``.
+
+    ``--strict-lock`` is the ``npm ci`` analogue: it errors on ANY drift and never
+    mutates the lockfile.  This helper only decides WHICH error to raise; the
+    caller raises it without writing anything.
+
+    The drift is "purely orphans" iff the operator's only change was removing one
+    or more sources: at least one lockfile source is absent from ``.kanon`` (the
+    orphans), NO ``.kanon`` source is absent from the lockfile (no additions), and
+    every surviving source's ``.kanon`` revision spec still equals its locked
+    ``revision_spec`` (no changed specs).  In that case ``OrphanedLockEntryError``
+    -- which names each orphan and the remediation -- is the precise error.
+
+    Any other mismatch (a newly-added source, or a changed revision spec on an
+    existing source -- which keeps the same source-name set but still changes the
+    ``kanon_hash``) is reported as ``KanonHashMismatchError``; its message already
+    advises ``--refresh-lock`` / ``--refresh-lock-source``.
+
+    Args:
+        lockfile: The parsed lockfile whose ``kanon_hash`` no longer matches.
+        kanon_sources: Source names declared in the current ``.kanon`` file.
+        computed_hash: The freshly-computed ``kanon_hash`` of the current ``.kanon``.
+        kanon_revision_specs: Optional mapping of source name to its current
+            ``.kanon`` ``REVISION`` value.  When provided, a surviving source whose
+            spec changed (relative to the locked entry) downgrades the decision from
+            orphan-only to ``KanonHashMismatchError``.  When ``None``, only the
+            name-set comparison (orphans vs additions) is used.
+
+    Returns:
+        An ``OrphanedLockEntryError`` for a pure-removal drift, otherwise a
+        ``KanonHashMismatchError``.
+    """
+    orphans = _detect_orphaned_lock_entries(lockfile, kanon_sources)
+    locked_names = {entry.name for entry in lockfile.sources}
+    additions = [name for name in kanon_sources if name not in locked_names]
+    spec_changed = False
+    if kanon_revision_specs is not None:
+        spec_changed = any(
+            name in locked_names and not _should_replay_source(name, kanon_revision_specs.get(name), lockfile)
+            for name in kanon_sources
+        )
+    if orphans and not additions and not spec_changed:
+        return OrphanedLockEntryError(orphaned_names=orphans)
+    return KanonHashMismatchError(
+        lockfile_hash=lockfile.kanon_hash,
+        computed_hash=computed_hash,
+    )
+
+
+def _should_replay_source(
+    name: str,
+    kanon_revision_spec: str | None,
+    lockfile: "Lockfile | None",
+) -> bool:
+    """Decide whether a source should be replayed (preserve SHA) or resolved fresh.
+
+    Replay iff the source exists in ``lockfile`` AND the current ``.kanon`` revision
+    spec equals the locked entry's recorded ``revision_spec``.  Otherwise resolve
+    fresh: the source is new (absent from the lock) or its revision spec changed.
+
+    Args:
+        name: The source name to look up.
+        kanon_revision_spec: The ``REVISION`` value from the current ``.kanon`` for
+            this source, or ``None`` when it cannot be compared (forces resolve).
+        lockfile: The existing parsed lockfile, or ``None`` when absent (forces resolve).
+
+    Returns:
+        ``True`` to replay the locked SHA; ``False`` to resolve fresh.
+    """
+    if lockfile is None or kanon_revision_spec is None:
+        return False
+    pinned = next((entry for entry in lockfile.sources if entry.name == name), None)
+    if pinned is None:
+        return False
+    return pinned.revision_spec == kanon_revision_spec
+
+
 def _detect_branch_drift(
     lockfile: "Lockfile",
 ) -> list[BranchDriftReport]:
@@ -1873,10 +1978,15 @@ def _run_install(
     This is the inner implementation called by install() after the exclusive
     file lock is held. All filesystem mutations happen here.
 
-    Implements the lockfile state-machine branching (spec Section 4.7):
+    Implements the lockfile state-machine branching:
     - LOCKFILE_ABSENT: resolve fresh, install, write lockfile.
     - LOCKFILE_CONSISTENT: install exactly the SHAs in the lockfile; skip resolve.
-    - LOCKFILE_HASH_MISMATCH: raise KanonHashMismatchError immediately.
+    - LOCKFILE_HASH_MISMATCH (default, npm install): derive RECONCILE -- prune
+      orphans, resolve added/changed sources fresh, replay unchanged sources,
+      rebuild + write the lockfile once at the end on success only.
+    - LOCKFILE_HASH_MISMATCH (--strict-lock, npm ci): raise a clean error
+      (OrphanedLockEntryError for a pure removal, else KanonHashMismatchError)
+      WITHOUT mutating the lockfile.
     - REFRESH_LOCK: ignore lockfile entirely, re-resolve fresh, overwrite lockfile.
     - REFRESH_LOCK_SOURCE: re-resolve exactly one source chain, preserve all others.
 
@@ -1901,8 +2011,10 @@ def _run_install(
             the locked SHA with an info-line.  Only applies in the consistent state.
 
     Raises:
-        KanonHashMismatchError: If the lockfile exists but its kanon_hash does
-            not match the freshly-computed hash of the .kanon file.
+        KanonHashMismatchError: Only when ``strict_lock=True`` and the lockfile's
+            kanon_hash differs from the freshly-computed hash for a reason other
+            than a pure source removal (an addition or a changed revision spec).
+            Default install reconciles instead of raising.
         MissingCatalogSourceError: If no catalog source can be resolved from
             cli arg, env var, or lockfile fallback (AC-FUNC-007). Always raised;
             never swallowed.  On the REFRESH_LOCK path, the lockfile fallback is
@@ -1949,64 +2061,63 @@ def _run_install(
             lockfile_hash_mismatch_lockfile = classification.lockfile
             lockfile_hash_mismatch_computed = classification.computed_hash
 
-    # _consistent_has_orphans: set True when orphans were detected and pruned so
-    # step 7 knows to rewrite the lockfile without the orphaned entries.
-    # Declared here (before Step 2) so the hash-mismatch orphan-rescue path in
-    # Step 2 can set it when reclassifying a LOCKFILE_HASH_MISMATCH caused solely
-    # by orphan-triple removal from .kanon.
+    # _consistent_has_orphans: set True when orphans were detected and pruned in the
+    # LOCKFILE_CONSISTENT state so Step 7 knows to rewrite the lockfile without the
+    # orphaned entries.  The RECONCILE path does NOT use this flag -- it always
+    # rebuilds and writes a full lockfile in Step 7.
     _consistent_has_orphans: bool = False
 
-    # Step 2: On hash mismatch, check whether the mismatch is caused solely by
-    # orphaned lock entries (sources in .kanon.lock absent from .kanon).  If so
-    # and strict_lock is False, auto-prune the orphans and continue as if the
-    # lockfile were consistent.  If strict_lock is True, raise OrphanedLockEntryError
-    # so the operator can decide.  If orphans do NOT explain the mismatch (i.e.
-    # the .kanon content changed for a reason other than orphan removal), raise
-    # KanonHashMismatchError.
+    # reconcile_computed_hash: the freshly-computed kanon_hash for the current
+    # .kanon, carried into Step 7 so the rebuilt lockfile records it.  Set only on
+    # the RECONCILE path.
+    reconcile_computed_hash: str | None = None
+
+    # Step 2: On a hash mismatch, decide between npm-ci (strict) and npm-install
+    # (reconcile) semantics.
+    #
+    # --strict-lock (npm ci): error cleanly on ANY drift and NEVER mutate the lock.
+    #   Pure-removal drift -> OrphanedLockEntryError (names each orphan); any other
+    #   drift (addition and/or changed spec) -> KanonHashMismatchError.
+    #
+    # default install (npm install): reconcile .kanon <-> lock.  Set the state to
+    #   RECONCILE, KEEP the existing lockfile for replay, and emit one
+    #   "pruned orphaned lock entry: <name>" line per orphan.  Nothing is written to
+    #   disk here; the per-source loop replays unchanged sources and resolves
+    #   added/changed sources fresh, and Step 7 rebuilds + writes the full lockfile
+    #   once on success.
     if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
         # Both fields are populated by _classify_install_state in the HASH_MISMATCH
         # branch (assigned above).  cast() communicates non-None to the type checker.
         existing_lockfile_nn = cast(Lockfile, lockfile_hash_mismatch_lockfile)
         computed_hash_nn = cast(str, lockfile_hash_mismatch_computed)
 
-        # Parse .kanon to get the current set of source names so we can detect
-        # orphaned lock entries (lockfile sources absent from the current .kanon).
+        # Parse .kanon to get the current source set and their revision specs so we
+        # can classify the drift (orphans vs additions vs changed specs).
         mismatch_config = parse_kanonenv(kanonenv_path)
         mismatch_source_names: list[str] = mismatch_config["KANON_SOURCES"]
-        orphaned_on_mismatch = _detect_orphaned_lock_entries(existing_lockfile_nn, mismatch_source_names)
-        if orphaned_on_mismatch:
-            if strict_lock:
-                raise OrphanedLockEntryError(orphaned_names=orphaned_on_mismatch)
-            # Non-strict path: auto-prune the orphaned entries and continue as
-            # LOCKFILE_CONSISTENT so the install replays the remaining locked SHAs.
-            # The pruned lockfile carries the new kanon_hash (computed from the
-            # current .kanon, which already has the orphan triples removed).
-            for orphan_name in orphaned_on_mismatch:
-                print(f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {orphan_name}")
-            # Build the pruned lockfile with the current kanon_hash so the next
-            # install sees it as LOCKFILE_CONSISTENT.
-            active_names_set = set(mismatch_source_names)
-            pruned_sources_early = [e for e in existing_lockfile_nn.sources if e.name in active_names_set]
-            pruned_lockfile_early = Lockfile(
-                schema_version=existing_lockfile_nn.schema_version,
-                generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                generator=existing_lockfile_nn.generator,
-                kanon_hash=computed_hash_nn,
-                catalog=existing_lockfile_nn.catalog,
-                sources=pruned_sources_early,
-            )
-            write_lockfile(pruned_lockfile_early, lockfile_path)
-            # Reclassify: treat this run as LOCKFILE_CONSISTENT using the pruned lockfile.
-            # _consistent_has_orphans stays False here: the lockfile has already been
-            # written above, so Step 7's orphan-rewrite branch must NOT fire a second
-            # time for the same prune.
-            install_state = InstallState.LOCKFILE_CONSISTENT
-            existing_lockfile = pruned_lockfile_early
-        else:
-            raise KanonHashMismatchError(
-                lockfile_hash=existing_lockfile_nn.kanon_hash,
+        mismatch_revision_specs: dict[str, str] = {
+            name: mismatch_config["sources"][name]["revision"] for name in mismatch_source_names
+        }
+
+        if strict_lock:
+            # npm ci: pick the precise clean error and raise it WITHOUT writing.
+            raise _strict_lock_drift_error(
+                existing_lockfile_nn,
+                mismatch_source_names,
                 computed_hash=computed_hash_nn,
+                kanon_revision_specs=mismatch_revision_specs,
             )
+
+        # npm install: reconcile.  Emit one info-line per orphaned lock entry
+        # (lockfile sources absent from the current .kanon).  Orphans are excluded
+        # naturally by the per-source loop (it iterates .kanon source names only),
+        # so this is purely informational; nothing is pruned-and-written here.
+        orphaned_on_mismatch = _detect_orphaned_lock_entries(existing_lockfile_nn, mismatch_source_names)
+        for orphan_name in orphaned_on_mismatch:
+            print(f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {orphan_name}")
+        install_state = InstallState.RECONCILE
+        existing_lockfile = existing_lockfile_nn
+        reconcile_computed_hash = computed_hash_nn
 
     # Step 3: Read catalog source from env var if not supplied by caller.
     env_catalog = os.environ.get(CATALOG_ENV_VAR)
@@ -2076,9 +2187,9 @@ def _run_install(
     # drift detection BEFORE entering the per-source loop.
     # Orphan check: sources in the lockfile but absent from .kanon.
     # Drift check: branch-shaped sources whose remote tip differs from locked SHA.
-    # Both checks run only in the consistent state; refresh and absent paths skip them.
-    # _consistent_has_orphans is declared before Step 2 so the hash-mismatch
-    # orphan-rescue path can set it when reclassifying to LOCKFILE_CONSISTENT.
+    # Both checks run only in the consistent state; reconcile, refresh, and absent
+    # paths skip them (reconcile prunes orphans in Step 2 and rebuilds the lock in
+    # Step 7, so it does not use _consistent_has_orphans).
     # _drifted_source_names: set of source names with detected branch drift in
     # the consistent state.  Used to skip SHA reachability checks for those
     # sources (the locked SHA is not a current ref head after the branch moved,
@@ -2144,21 +2255,39 @@ def _run_install(
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
 
-        # HTTPS enforcement (spec Section 4.7 / Section 3.6 trust model).
-        # On the lockfile-consistent replay path, check the locked URL so a
-        # malicious lockfile that records an HTTP remote is rejected before any
-        # clone attempt.  On all other paths, check the .kanon source URL.
+        # On the RECONCILE path, decide replay-vs-resolve for this source by
+        # comparing its .kanon revision spec to the locked entry's recorded spec.
+        # Computed once here so the HTTPS-enforcement URL selection and the
+        # resolution branch below agree.
+        reconcile_replay = install_state is InstallState.RECONCILE and _should_replay_source(
+            name,
+            source_data["revision"],
+            existing_lockfile,
+        )
+
+        # HTTPS enforcement (Section 3.6 trust model).
+        # On the lockfile-consistent replay path -- and on the RECONCILE path for a
+        # source being replayed -- check the LOCKED URL so a malicious lockfile that
+        # records an HTTP remote is rejected before any clone attempt.  On all other
+        # paths (fresh resolve, refresh) check the .kanon source URL.
         if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
             _replay_candidate = next(
                 (e for e in existing_lockfile.sources if e.name == name),
                 None,
             )
             if _replay_candidate is None:
+                # Defensive invariant: in LOCKFILE_CONSISTENT the kanon_hash matched,
+                # so every .kanon source must be present in the lockfile.  RECONCILE
+                # never reaches this branch (it resolves missing sources fresh).
                 raise InstallError(
                     f"BUG: source {name!r} not found in lockfile under LOCKFILE_CONSISTENT state"
                     " -- kanon_hash consistency violation"
                 )
             _url_to_check = _replay_candidate.url
+        elif reconcile_replay and existing_lockfile is not None:
+            _reconcile_pinned = next((e for e in existing_lockfile.sources if e.name == name), None)
+            # reconcile_replay is True only when the source is present in the lock.
+            _url_to_check = cast(SourceEntry, _reconcile_pinned).url
         else:
             _url_to_check = source_data["url"]
         _enforce_remote_url_policy(
@@ -2197,6 +2326,29 @@ def _run_install(
                     resolved_revision = new_entry.resolved_sha
             else:
                 # No lockfile -- resolve all sources fresh.
+                new_entry = _refresh_one_source(name, source_data)
+                resolved_entries.append(new_entry)
+                resolved_revision = new_entry.resolved_sha
+        elif install_state is InstallState.RECONCILE:
+            # npm install reconcile: replay unchanged sources (preserve the locked
+            # SHA), resolve added/changed sources fresh.  Orphans never reach this
+            # branch -- the loop iterates .kanon source names only.
+            if reconcile_replay and existing_lockfile is not None:
+                # reconcile_replay implies the source is present in the lock with an
+                # identical revision spec.  Apply the same reachability validation the
+                # CONSISTENT branch does before replaying the locked SHA.
+                pinned = cast(SourceEntry, next(e for e in existing_lockfile.sources if e.name == name))
+                _check_sha_reachable(
+                    url=pinned.url,
+                    sha=pinned.resolved_sha,
+                    source_name=name,
+                )
+                resolved_revision = pinned.resolved_sha
+                resolved_entries.append(pinned)
+            else:
+                # New source or changed spec -- re-resolve fresh, mirroring the
+                # REFRESH_LOCK_SOURCE re-resolve so the .repo/manifests working tree
+                # is reset before repo_init (see the reset block below).
                 new_entry = _refresh_one_source(name, source_data)
                 resolved_entries.append(new_entry)
                 resolved_revision = new_entry.resolved_sha
@@ -2263,7 +2415,15 @@ def _run_install(
         # rev-list ^HEAD <sha> raises an unhandled GitCommandError. Resetting the
         # working tree to HEAD state before re-init lets git checkout the new
         # manifest commit cleanly. (AC-FUNC-001)
-        if install_state in (InstallState.REFRESH_LOCK, InstallState.REFRESH_LOCK_SOURCE):
+        # Re-resolved sources need the working-tree reset: REFRESH_LOCK and
+        # REFRESH_LOCK_SOURCE always re-resolve, and RECONCILE re-resolves any
+        # added/changed source (a replayed RECONCILE source keeps its manifest
+        # commit, so it follows the plain repo_init path like CONSISTENT replay).
+        _is_reresolve = install_state in (
+            InstallState.REFRESH_LOCK,
+            InstallState.REFRESH_LOCK_SOURCE,
+        ) or (install_state is InstallState.RECONCILE and not reconcile_replay)
+        if _is_reresolve:
             # On the refresh path, reset the .repo/manifests working tree before
             # re-init, then wrap repo init so that any git-level failure
             # (including the GitCommandError from rev-list ^HEAD on a deleted branch ref)
@@ -2374,6 +2534,10 @@ def _run_install(
     # Step 7: Write the lockfile.
     # - LOCKFILE_ABSENT: write fresh lockfile.
     # - REFRESH_LOCK: full rebuild; overwrite lockfile.
+    # - RECONCILE: full rebuild from the resolved+replayed entries (orphans dropped,
+    #   added/changed resolved fresh, unchanged replayed), preserving the existing
+    #   lockfile's [catalog] block and recording the new kanon_hash.  Written once,
+    #   on success only -- nothing was written earlier on this path.
     # - REFRESH_LOCK_SOURCE: partial rebuild; merge one source into old lockfile.
     # - LOCKFILE_CONSISTENT with orphans pruned: rewrite without orphaned entries.
     # - LOCKFILE_CONSISTENT (no orphans): lockfile is authoritative; do NOT rewrite.
@@ -2408,6 +2572,25 @@ def _run_install(
             generator=f"kanon-cli/{__version__}",
             kanon_hash=computed_hash,
             catalog=catalog_block,
+            sources=resolved_entries,
+            marketplace_registered=marketplace_install,
+            marketplace_dir=marketplace_dir_str if marketplace_install else "",
+        )
+        write_lockfile(lf, lockfile_path)
+
+    elif install_state is InstallState.RECONCILE:
+        # Full rebuild from the reconciled source set.  The existing lockfile's
+        # [catalog] block is preserved verbatim (the catalog did not change; the
+        # operator only edited source declarations), and the new kanon_hash is the
+        # value computed during Step 2 classification.
+        existing_lockfile_for_reconcile = cast(Lockfile, existing_lockfile)
+        reconcile_hash_nn = cast(str, reconcile_computed_hash)
+        lf = Lockfile(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            generator=f"kanon-cli/{__version__}",
+            kanon_hash=reconcile_hash_nn,
+            catalog=existing_lockfile_for_reconcile.catalog,
             sources=resolved_entries,
             marketplace_registered=marketplace_install,
             marketplace_dir=marketplace_dir_str if marketplace_install else "",
@@ -2527,10 +2710,11 @@ def install(
       8. Update .gitignore.
       9. Emit state info-line via _emit_install_state.
       10. If KANON_MARKETPLACE_INSTALL=true: run install script.
-      11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK;
+      11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK/RECONCILE;
           partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
           LOCKFILE_CONSISTENT with orphans; unchanged for LOCKFILE_CONSISTENT
-          without orphans.
+          without orphans.  On the RECONCILE path the lockfile is written once at
+          the end on success only (nothing is persisted earlier).
 
     Args:
         kanonenv_path: Path to the .kanon configuration file.
@@ -2561,8 +2745,10 @@ def install(
             ``False`` preserves prior behaviour (reuse + info-line).
 
     Raises:
-        KanonHashMismatchError: If the lockfile exists but its kanon_hash does
-            not match the freshly-computed hash of the .kanon file.
+        KanonHashMismatchError: Only when ``strict_lock=True`` and the lockfile's
+            kanon_hash differs from the freshly-computed hash for a reason other
+            than a pure source removal (an addition or a changed revision spec).
+            Default install reconciles instead of raising.
         MissingCatalogSourceError: If the consistent state requires a catalog
             source but none can be resolved from cli arg, env var, or lockfile.
             On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths the lockfile

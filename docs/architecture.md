@@ -194,9 +194,15 @@ The full error-propagation contract:
 - Every error path produces a clear, actionable message sent to stderr. No
   silent failures, no swallowed exceptions.
 
-Hard-error states (`LOCKFILE_HASH_MISMATCH`, `LOCKFILE_UNREACHABLE`,
-`LOCKFILE_SOURCE_MISMATCH`) raise typed exception subclasses of
-`InstallError(Exception)` before any filesystem mutation occurs. Each
+Hard-error states (`LOCKFILE_UNREACHABLE`, `LOCKFILE_SOURCE_MISMATCH`)
+raise typed exception subclasses of `InstallError(Exception)` before any
+filesystem mutation occurs. A `kanon_hash` mismatch is NOT a hard error
+on plain install: it derives the `RECONCILE` state and reconciles
+`.kanon` against the lockfile npm-style (prune orphans, resolve
+added/changed sources, replay unchanged ones, write the rebuilt lock once
+on success). Under `--strict-lock` the mismatch is a hard error
+(`OrphanedLockEntryError` for a pure removal, otherwise
+`KanonHashMismatchError`) and the lockfile is never mutated. Each
 exception renders in the spec's standard three-line shape:
 
 ```text

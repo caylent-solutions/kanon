@@ -143,6 +143,18 @@ case $rc in
 esac
 ```
 
+### `kanon install` and lockfile drift
+
+`kanon install` follows the npm-like reconcile model. Plain
+`kanon install` reconciles `.kanon` against `.kanon.lock` (prune removed
+sources, resolve added/changed sources, replay unchanged ones) and exits
+`0`; ordinary `.kanon` edits do not produce a non-zero exit. To make the
+lockfile authoritative in CI, run `kanon install --strict-lock`: it exits
+`1` on any drift (an orphaned lock entry or a `kanon_hash` mismatch) and
+never mutates the lockfile. `kanon install --refresh-lock` forces a full
+rebuild and exits `0` on success. See
+[docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
+
 ### Gate on `kanon doctor` for workspace health checks
 
 `kanon doctor` exits `1` when any health-check finding reaches

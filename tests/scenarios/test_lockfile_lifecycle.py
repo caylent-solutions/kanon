@@ -127,8 +127,9 @@ def _run_install(
     *,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
+    strict_lock: bool = False,
 ) -> subprocess.CompletedProcess:
-    """Invoke ``kanon install [--refresh-lock[--source <name>]]`` as a subprocess.
+    """Invoke ``kanon install [--refresh-lock[--source <name>]] [--strict-lock]`` as a subprocess.
 
     ``KANON_ALLOW_INSECURE_REMOTES=1`` is set per-test so ``file://`` fixture URLs
     pass the HTTPS enforcement gate (AC-FUNC-005 / AC-SEC-001).
@@ -138,6 +139,7 @@ def _run_install(
         catalog_uri: Catalog source URI passed via ``KANON_CATALOG_SOURCE``.
         refresh_lock: When True, passes ``--refresh-lock``.
         refresh_lock_source: When set, passes ``--refresh-lock-source <name>``.
+        strict_lock: When True, passes ``--strict-lock`` (npm-ci: error on any drift).
 
     Returns:
         The completed subprocess result.
@@ -149,6 +151,8 @@ def _run_install(
         cmd.append("--refresh-lock")
     if refresh_lock_source is not None:
         cmd.extend(["--refresh-lock-source", refresh_lock_source])
+    if strict_lock:
+        cmd.append("--strict-lock")
     env = {
         **os.environ,
         "KANON_ALLOW_INSECURE_REMOTES": "1",

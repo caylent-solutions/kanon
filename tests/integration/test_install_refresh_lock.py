@@ -5,12 +5,14 @@ baseline lockfile, hand-edits the lockfile to record a wrong SHA, runs
 install(refresh_lock=True), asserts the rebuilt lockfile contains the correct
 SHA from the fixture.
 
-AC-CYCLE-001: end-to-end cycle:
+End-to-end cycle under the npm-like reconcile contract:
   - Fixture repo has tags 1.0.0 and 1.1.0.
   - First install at ==1.0.0 writes lockfile recording the 1.0.0 SHA.
-  - Modify .kanon REVISION to ==1.1.0.
-  - kanon install fails with KanonHashMismatchError.
-  - kanon install --refresh-lock succeeds, rewriting the lockfile with 1.1.0 SHA.
+  - Modify .kanon REVISION to ==1.1.0 (kanon_hash changes).
+  - Plain kanon install RECONCILES: re-resolves alpha to the 1.1.0 SHA (no error).
+  - kanon install --strict-lock errors cleanly (KanonHashMismatchError) and
+    leaves the lockfile byte-for-byte unchanged.
+  - kanon install --refresh-lock rebuilds the lockfile with the 1.1.0 SHA.
 """
 
 from __future__ import annotations
@@ -143,12 +145,14 @@ def _run_install_mocked(
     kanon_path: pathlib.Path,
     catalog_source: str = _CATALOG_SOURCE,
     refresh_lock: bool = False,
+    *,
+    strict_lock: bool = False,
 ) -> None:
     """Call install() with repo tool calls mocked out.
 
     _resolve_ref_to_sha is patched only for the catalog URL; calls for real
     local source repos pass through so SHA values from the fixture git repo
-    are recorded in the lockfile.
+    are recorded in the lockfile.  ``strict_lock`` is forwarded to ``install()``.
     """
     import kanon_cli.core.install as _install_mod
 
@@ -172,6 +176,7 @@ def _run_install_mocked(
             lock_file_path=kanon_path.parent / ".kanon.lock",
             catalog_source=catalog_source,
             refresh_lock=refresh_lock,
+            strict_lock=strict_lock,
         )
 
 
@@ -269,15 +274,21 @@ class TestRefreshLockRebuildsLockfile:
 
 @pytest.mark.integration
 class TestRefreshLockCycle:
-    """AC-CYCLE-001: end-to-end hash-mismatch -> --refresh-lock cycle."""
+    """End-to-end hash-mismatch cycle under the npm-like reconcile contract.
 
-    def test_hash_mismatch_then_refresh_lock_succeeds(self, tmp_path: pathlib.Path) -> None:
-        """Full AC-CYCLE-001 scenario:
+    Plain `kanon install` reconciles a changed revision spec (no error);
+    `--strict-lock` errors cleanly; `--refresh-lock` is the explicit full
+    rebuild. All three paths land on the new 1.1.0 pin (reconcile/refresh) or
+    leave the lock untouched (strict-lock).
+    """
+
+    def test_hash_mismatch_then_plain_install_reconciles(self, tmp_path: pathlib.Path) -> None:
+        """Plain install reconciles a changed spec to the new pin (no error).
+
         1. Fixture repo has tags 1.0.0 and 1.1.0.
         2. First install at ==1.0.0 writes lockfile with 1.0.0 SHA.
         3. Modify .kanon REVISION to ==1.1.0 -> kanon_hash changes.
-        4. kanon install fails with KanonHashMismatchError.
-        5. kanon install --refresh-lock succeeds, lockfile records 1.1.0 SHA.
+        4. Plain kanon install reconciles: re-resolves alpha to the 1.1.0 SHA.
         """
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
@@ -299,17 +310,54 @@ class TestRefreshLockCycle:
         # Step 3: modify .kanon to bump revision to ==1.1.0.
         _write_kanon(project_dir, str(repo_path), revision="==1.1.0")
 
-        # Step 4: kanon install without --refresh-lock must fail.
-        with pytest.raises(KanonHashMismatchError) as exc_info:
-            _run_install_mocked(kanon_path)
-        assert "--refresh-lock" in str(exc_info.value)
+        # Step 4: plain kanon install reconciles to the new pin.
+        _run_install_mocked(kanon_path)
 
-        # Step 5: kanon install --refresh-lock must succeed and update the lockfile.
+        lf_v2 = read_lockfile(lock_path)
+        assert lf_v2.sources[0].resolved_sha == sha_v2, (
+            f"Expected reconcile to record 1.1.0 SHA {sha_v2!r}; got {lf_v2.sources[0].resolved_sha!r}"
+        )
+        assert lf_v2.sources[0].resolved_sha != sha_v1
+
+    def test_hash_mismatch_strict_lock_errors_then_refresh_lock_succeeds(self, tmp_path: pathlib.Path) -> None:
+        """--strict-lock errors cleanly on the changed spec; --refresh-lock then rebuilds.
+
+        1. Fixture repo has tags 1.0.0 and 1.1.0.
+        2. First install at ==1.0.0 writes lockfile with 1.0.0 SHA.
+        3. Modify .kanon REVISION to ==1.1.0 -> kanon_hash changes.
+        4. kanon install --strict-lock fails with KanonHashMismatchError; lock unchanged.
+        5. kanon install --refresh-lock succeeds, lockfile records 1.1.0 SHA.
+        """
+        fixture_dir = tmp_path / "fixture"
+        fixture_dir.mkdir()
+        repo_path, sha_v1 = _build_fixture_repo(fixture_dir)
+        sha_v2 = _add_tag(repo_path, "1.1.0")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        kanon_path = _write_kanon(project_dir, str(repo_path), revision="==1.0.0")
+        _run_install_mocked(kanon_path)
+
+        lock_path = project_dir / ".kanon.lock"
+        assert lock_path.exists()
+        assert read_lockfile(lock_path).sources[0].resolved_sha == sha_v1
+        lock_before = lock_path.read_bytes()
+
+        # Step 3: bump revision -> hash mismatch (no orphan).
+        _write_kanon(project_dir, str(repo_path), revision="==1.1.0")
+
+        # Step 4: --strict-lock must fail and leave the lock byte-for-byte unchanged.
+        with pytest.raises(KanonHashMismatchError) as exc_info:
+            _run_install_mocked(kanon_path, strict_lock=True)
+        assert "--refresh-lock" in str(exc_info.value)
+        assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile"
+
+        # Step 5: --refresh-lock must succeed and update the lockfile.
         _run_install_mocked(kanon_path, refresh_lock=True)
 
         lf_v2 = read_lockfile(lock_path)
         assert lf_v2.sources[0].resolved_sha == sha_v2, (
             f"Expected lockfile to record 1.1.0 SHA {sha_v2!r}; got {lf_v2.sources[0].resolved_sha!r}"
         )
-        # Lockfile must differ from the original.
         assert lf_v2.sources[0].resolved_sha != sha_v1

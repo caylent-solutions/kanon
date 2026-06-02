@@ -329,8 +329,11 @@ catalog-source switches: the operator changed which manifest repo they
 point at. Both checks fire independently on every `kanon install` run.
 
 - A `kanon_hash` mismatch means `.kanon` changed since the lockfile was
-  written. Remediation: `kanon install --refresh-lock` (full) or
-  `kanon install --refresh-lock-source <name>` (one source chain).
+  written. Plain `kanon install` reconciles the change automatically (see
+  [Install reconcile model](#install-reconcile-model)); under
+  `--strict-lock` it is a hard error, and `kanon install --refresh-lock`
+  (full) or `kanon install --refresh-lock-source <name>` (one source
+  chain) force a rebuild.
 - A `[catalog].source` mismatch means the CLI or `KANON_CATALOG_SOURCE`
   env var points at a different catalog than the one recorded in the
   lockfile. This is a hard error (`CatalogSourceMismatchError`).
@@ -516,20 +519,32 @@ lockfile value when a CLI/env source is explicitly supplied.
 ### Lockfile-hash drift
 
 When the `kanon_hash` computed from the current `.kanon` file differs
-from the value recorded in the lockfile, `kanon install` exits with a
-hard error:
+from the value recorded in the lockfile, the behaviour follows the
+npm-like model described under [Install reconcile model](#install-reconcile-model):
+
+- **Plain `kanon install` reconciles** (the `npm install` analogue).
+  Removed sources (orphans) are pruned, newly-added and changed-spec
+  sources are resolved fresh, unchanged sources preserve their locked
+  SHA, and the lockfile is rebuilt and written **once at the end on
+  success only**. No error is raised for ordinary edits to `.kanon`.
+
+- **`kanon install --strict-lock` errors on the drift** (the `npm ci`
+  analogue) and **never mutates the lockfile**. A pure-removal drift
+  raises `OrphanedLockEntryError` (naming each orphan); any other drift
+  (a newly-added source, or a changed revision spec) raises
+  `KanonHashMismatchError`:
 
 ```text
-ERROR: .kanon has changed since the lockfile was written.
-  Recorded kanon_hash: <old-hash>
-  Current kanon_hash:  <new-hash>
-  Remediation: run 'kanon install --refresh-lock' to rebuild the
-  full lockfile, or 'kanon install --refresh-lock-source <name>'
-  to refresh one source's chain.
+ERROR: .kanon has been modified since the lockfile was written.
+  Lockfile kanon_hash : <old-hash>
+  Current  kanon_hash : <new-hash>
+  Remediation: run 'kanon install --refresh-lock' to rebuild the entire
+  lockfile, or 'kanon install --refresh-lock-source <name>' to re-resolve
+  one source chain while preserving all other lockfile entries.
 ```
 
-`kanon install` never silently re-resolves when the lockfile is present;
-explicit operator action is required.
+`--strict-lock` is the gate to use in CI when the lockfile must be
+treated as authoritative and any drift should fail the pipeline.
 
 ### Branch drift
 
@@ -561,6 +576,63 @@ When two or more `[[sources.projects]]` entries resolve to the same
 canonical URL but pin different commit SHAs, `kanon install` exits with
 `CanonicalUrlConflictError`. This check runs both during fresh resolution
 and during `LOCKFILE_CONSISTENT` replay.
+
+---
+
+## Install reconcile model
+
+`kanon install` treats `.kanon` and `.kanon.lock` the way `npm` treats
+`package.json` and `package-lock.json`.
+
+### Plain `kanon install` -- reconcile (`npm install`)
+
+When `.kanon` is unchanged since the lockfile was written
+(`LOCKFILE_CONSISTENT`), plain install replays every locked SHA verbatim
+and does not touch the remote or the lockfile.
+
+When `.kanon` has changed (the `kanon_hash` differs), plain install
+**reconciles** the lockfile to the new `.kanon`:
+
+- **Prune** sources removed from `.kanon` (orphaned lock entries); one
+  `pruned orphaned lock entry: <name>` info-line is emitted per orphan.
+- **Resolve fresh** any source that is new, or whose `.kanon` revision
+  spec differs from the locked `revision_spec`.
+- **Replay** (preserve the locked SHA) every source still present in
+  `.kanon` with an unchanged revision spec.
+- **Rebuild and write** the lockfile **once at the end, on success
+  only**, recording the new `kanon_hash` and preserving the existing
+  `[catalog]` block. If the install fails part-way, the old lockfile is
+  left untouched.
+
+Info-line emitted on success:
+
+```text
+lockfile reconciled with .kanon (N sources, M projects)
+```
+
+This means the common edit-then-install loop -- `kanon add`/`kanon
+remove` followed by `kanon install` -- "just works" without any flag,
+including the case where one source is removed and another added in the
+same edit.
+
+### `kanon install --strict-lock` -- error on drift (`npm ci`)
+
+`--strict-lock` makes the lockfile authoritative. Any drift between
+`.kanon` and the lockfile is a hard error and the lockfile is **never**
+mutated:
+
+- A pure-removal drift raises `OrphanedLockEntryError` listing each
+  orphan.
+- Any other drift (addition or changed revision spec) raises
+  `KanonHashMismatchError` (see [Lockfile-hash drift](#lockfile-hash-drift)).
+
+Use `--strict-lock` in CI to fail fast when a build's `.kanon` has
+drifted from its committed lockfile.
+
+### `kanon install --refresh-lock` -- force rebuild
+
+`--refresh-lock` discards the lockfile and rebuilds it from scratch (see
+[Refresh flow](#refresh-flow)).
 
 ---
 

@@ -887,9 +887,10 @@ class TestStrictLockDefaultAutoPrune:
     should exit 0, emit one INFO line per orphan ('pruned orphaned lock entry:
     <name>'), and rewrite .kanon.lock without the orphaned entry.
 
-    Current behaviour: the install engine raises KanonHashMismatchError (exit 1)
-    because removing B's triple changes the kanon_hash and the engine treats any
-    hash mismatch as a hard error before it can reach the orphan-detection logic.
+    Under the npm-like reconcile contract, removing B's triple changes the
+    kanon_hash; plain 'kanon install' reconciles (prunes the orphan, replays the
+    surviving sources) and writes the pruned lockfile, exiting 0.  ('kanon install
+    --strict-lock' would instead raise OrphanedLockEntryError without mutating.)
 
     The tests in this class run 'kanon install' as a subprocess so that they
     exercise the real CLI entry point and capture stdout/stderr + exit code.
@@ -1006,11 +1007,12 @@ class TestStrictLockDefaultAutoPrune:
 
         Spec reference: spec Section 4 E34 Failing test.
 
-        DEFECT-014 root cause: removing B's triple from .kanon changes the
-        kanon_hash; the install engine raises KanonHashMismatchError (exit 1)
-        before reaching the orphan-detection logic. This test fails RED against
-        unpatched code because the process exits 1 (KanonHashMismatchError) and
-        the INFO line 'pruned orphaned lock entry:' is absent from stdout.
+        Removing B's triple from .kanon changes the kanon_hash.  Under the
+        npm-like reconcile contract, plain 'kanon install' reconciles: it prunes
+        the orphaned B entry, replays the surviving sources, and writes the pruned
+        lockfile -- exiting 0 and emitting the 'pruned orphaned lock entry:' INFO
+        line.  (The pre-fix engine instead raised KanonHashMismatchError before
+        reaching orphan detection, the bug this guards against.)
 
         Setup:
         - Create two separate bare catalog repos (A and B) via
@@ -1086,9 +1088,8 @@ class TestStrictLockDefaultAutoPrune:
         )
 
         # Second install (no flags): the test assertion target.
-        # Against unpatched code: exits 1 with KanonHashMismatchError because
-        # removing B's triple changed the kanon_hash.
-        # Against patched code: exits 0 with INFO line and pruned lockfile.
+        # Under the reconcile contract, plain install prunes the orphaned B entry
+        # and exits 0 with the INFO line and a pruned lockfile.
         second_result = self._kanon_install(workspace)
         stdout = second_result.stdout
 

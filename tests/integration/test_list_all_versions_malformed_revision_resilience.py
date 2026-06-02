@@ -431,49 +431,53 @@ class TestAllVersionsResilience:
 class TestAllVersionsLegacyExclusion:
     """Legacy flat-metadata exclusion contract for kanon list --all-versions (E58-F1-S1-T1).
 
-    Legacy flat-metadata XMLs (well-formed XML lacking <catalog-metadata><name>) are
-    EXCLUDED from the per-entry version list.  A single diagnostic NOTE is emitted to
-    stderr for each revision that has legacy-metadata XMLs, naming the count.  When ALL
-    walked revisions are legacy-flat-metadata, the walk yields no canonical entries and
-    exits 1 with the all-malformed error (fail-fast, no silent empty output).
+    Old-scheme XMLs (lacking <catalog-metadata><name>) are SKIPPED from the per-entry
+    version list.  A single diagnostic NOTE is emitted to stderr for each revision that
+    has old-scheme XMLs, naming the count.  New-scheme-only: when ALL walked revisions are
+    old-scheme, the walk yields no canonical entries and exits 0 with an empty result plus
+    a clear "no new-scheme version tags" note (not an error -- the old flat-attribute
+    scheme is simply unsupported, so there is nothing to list).
 
     AC-FUNC-003/AC-FUNC-004: genuinely unparseable (non-well-formed XML) revisions are
     still skipped with the existing stderr WARNING (behavior unchanged).
     """
 
     @pytest.mark.parametrize("excluded_version", ["1.0.0", "2.0.0", "3.0.0"])
-    def test_all_legacy_repo_exits_nonzero_with_diagnostic(
+    def test_all_legacy_repo_exits_zero_empty_with_note(
         self,
         tmp_path: pathlib.Path,
         excluded_version: str,
     ) -> None:
-        """Three tags, none carrying <catalog-metadata><name>; all revisions excluded.
+        """Three tags, none carrying <catalog-metadata><name>; all revisions skipped.
 
-        When every walked revision has only legacy flat-metadata (no <name>), no
-        canonical entries can be emitted.  The walk fails loudly rather than producing
-        silent empty output.
+        New-scheme-only: when every walked revision uses the unsupported old scheme
+        (no <name>), no canonical entries can be emitted.  This is NOT an error -- the
+        walk exits 0 with an empty result and a clear "no new-scheme version tags" note.
 
         Expected contract:
-        - exit 1 (no canonical entries found across all revisions)
+        - exit 0 (no new-scheme version tags found)
         - stdout is empty
-        - stderr contains a NOTE for each revision naming the skipped count
-        - stderr does NOT contain the legacy entry's directory name as an entry name
+        - stderr contains a per-revision skipped NOTE and the "no new-scheme" note
+        - stdout does NOT contain the old-scheme entry's directory name as an entry name
         """
         entry_name = "derived-name-entry"
         bare_repo = _build_three_tag_repo_all_no_name(tmp_path, entry_name)
 
         result = _run_list_all_versions(bare_repo)
 
-        assert result.returncode == 1, (
-            f"Expected exit 1 (all-legacy repo) but got {result.returncode}.\n"
+        assert result.returncode == 0, (
+            f"Expected exit 0 (all-old-scheme repo) but got {result.returncode}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        assert result.stdout == "", f"Expected empty stdout for all-legacy repo, got: {result.stdout!r}"
+        assert result.stdout == "", f"Expected empty stdout for all-old-scheme repo, got: {result.stdout!r}"
         assert excluded_version in result.stderr, (
             f"Expected stderr to contain a NOTE referencing '{excluded_version}'.\nstderr: {result.stderr!r}"
         )
+        assert "no new-scheme" in result.stderr.lower(), (
+            f"Expected the 'no new-scheme version tags' note in stderr.\nstderr: {result.stderr!r}"
+        )
         assert f"{entry_name}@{excluded_version}" not in result.stdout, (
-            f"Legacy entry '{entry_name}@{excluded_version}' must NOT appear in stdout.\nstdout: {result.stdout!r}"
+            f"Old-scheme entry '{entry_name}@{excluded_version}' must NOT appear in stdout.\nstdout: {result.stdout!r}"
         )
 
     def test_unparseable_revision_skipped_with_warning(

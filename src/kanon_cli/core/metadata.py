@@ -45,6 +45,26 @@ from kanon_cli.constants import (
     RECOMMENDED_CHAR_RE,
 )
 
+# New-scheme-only: catalog metadata MUST be carried as nested child elements of
+# <catalog-metadata>. The legacy "flat-attribute" scheme put these fields as
+# attributes ON the element (e.g. <catalog-metadata name="..." display-name="..."/>)
+# and is no longer supported. Any of these keys present as an *attribute* on the
+# <catalog-metadata> element identifies the old scheme.
+_OLD_FLAT_ATTRIBUTE_KEYS = frozenset(KANON_CATALOG_METADATA_REQUIRED_FIELDS) | frozenset(
+    KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
+)
+
+
+def _old_flat_attribute_message(xml_path: Path, flat_attrs: set[str]) -> str:
+    """Build the explicit migration error for the unsupported old flat-attribute scheme."""
+    return (
+        f"{xml_path}: <catalog-metadata> uses the unsupported old flat-attribute "
+        f"scheme (metadata as attributes: {', '.join(sorted(flat_attrs))}). "
+        "Only the nested scheme is supported -- migrate to "
+        "<catalog-metadata><name>...</name><display-name>...</display-name>"
+        "<description>...</description><version>...</version>...</catalog-metadata>."
+    )
+
 
 class CatalogMetadataParseError(ValueError):
     """Raised when a ``*-marketplace.xml`` catalog-metadata block is invalid.
@@ -120,6 +140,9 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
     - Malformed XML -- wraps the parser error and names the file.
     - Zero ``<catalog-metadata>`` blocks -- names the file.
     - More than one ``<catalog-metadata>`` block -- names the file and count.
+    - Old flat-attribute scheme (metadata carried as attributes on the
+      ``<catalog-metadata>`` element) -- new-scheme-only; raises an explicit
+      "migrate to the nested scheme" error rather than a generic missing-field error.
     - Duplicate child elements inside the block -- names the tag and file.
     - Missing required field -- names the field and the file.
     - Whitespace-only required field text -- treated as missing (same error).
@@ -168,6 +191,12 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
 
     block = blocks[0]
     _check_duplicate_children(block, xml_path)
+
+    # New-scheme-only: reject the legacy flat-attribute scheme explicitly so the
+    # operator gets a clear migration message instead of a generic missing-field error.
+    flat_attrs = set(block.attrib) & _OLD_FLAT_ATTRIBUTE_KEYS
+    if flat_attrs:
+        raise CatalogMetadataParseError(_old_flat_attribute_message(xml_path, flat_attrs))
 
     # Build a tag -> text mapping for quick lookup.
     children: dict[str, str | None] = {}
@@ -263,6 +292,8 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
     - ``"error"`` / ``M003``: malformed XML (parse failure).
     - ``"error"`` / ``M004``: zero ``<catalog-metadata>`` blocks.
     - ``"error"`` / ``M005``: more than one ``<catalog-metadata>`` block (names count).
+    - ``"error"`` / ``M007``: unsupported old flat-attribute scheme (metadata carried as
+      attributes on the ``<catalog-metadata>`` element instead of nested children).
     - ``"error"`` / ``M006``: duplicate child tag within the single block.
     - ``"error"`` / ``M001``: required field missing or whitespace-only.
     - ``"warn"``  / ``M002``: recommended field absent.
@@ -320,6 +351,20 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
         return issues
 
     block = blocks[0]
+
+    # New-scheme-only: flag the unsupported old flat-attribute scheme explicitly
+    # (metadata as attributes on <catalog-metadata>) instead of reporting it as a
+    # set of generic missing-required-field errors.
+    flat_attrs = set(block.attrib) & _OLD_FLAT_ATTRIBUTE_KEYS
+    if flat_attrs:
+        issues.append(
+            MetadataAuditIssue(
+                severity="error",
+                code="M007",
+                message=_old_flat_attribute_message(xml_path, flat_attrs),
+            )
+        )
+        return issues
 
     # Check for duplicate child tags.
     seen_tags: set[str] = set()

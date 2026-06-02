@@ -1,29 +1,21 @@
-"""Integration tests: `kanon list --all-versions` emits canonical catalog-metadata names only.
+"""Integration tests: `kanon list --all-versions` is new-scheme-only.
 
-Covers GAP-1 / A7 (journey-test category): `kanon list --all-versions` must emit
-only canonical ``<catalog-metadata><name>`` values and must EXCLUDE legacy flat-metadata
-versions from the per-entry version list, emitting a single diagnostic line noting how
-many such versions were skipped.
+New-scheme-only contract for ``kanon list --all-versions``:
+- Only canonical ``<catalog-metadata><name>`` values are emitted; the distinct
+  entry-name set is a subset of the names from ``kanon list`` (AC-1).
+- Old-scheme (flat-attribute / no ``<name>``) tags are SKIPPED, so the output contains
+  none of the directory-path component names ``code-review``, ``idp``, ``cli``,
+  ``microservice`` (AC-2); canonical entries ``security-code-review`` and
+  ``spec-driven-dev-idp`` appear (AC-3).
+- When EVERY version tag is old-scheme (zero new-scheme tags -- the real catalog's
+  current state), the walk exits 0 with an empty result and a clear
+  "no new-scheme version tags" note (TestAllVersionsAllOldScheme), NOT an error.
+- ``kanon list --help`` is unchanged (AC-14).
 
-After the fix (FR-1, DR-1, spec/journey-test-cli-gaps-2026-06/spec.md):
-- The set of distinct entry names in ``--all-versions`` output is a subset of the names
-  from ``kanon list`` (AC-1).
-- The ``--all-versions`` output contains none of the known bad path-component names:
-  ``code-review``, ``idp``, ``cli``, ``microservice`` (AC-2).
-- Canonical entries ``security-code-review`` and ``spec-driven-dev-idp`` appear in the
-  ``--all-versions`` output (AC-3).
-- The ``kanon list --help`` snapshot is unchanged after the fix (AC-14).
-
-These tests use a local synthetic bare-git fixture (not a remote network catalog) that
-mirrors the real catalog's structure:
-- A modern tagged version with nested ``<catalog-metadata><name>`` entries (canonical names).
-- A legacy tagged version with flat metadata (no ``<name>`` element), whose directory names
-  are the known-bad path-component names.
-
-The tests are RED against pre-fix code (which emits derived path-component names from legacy
-versions) and GREEN after the fix (which excludes legacy-flat-metadata versions entirely).
-
-AC-TEST-001, AC-1, AC-2, AC-3, AC-13, AC-14
+The tests use local synthetic bare-git fixtures (not a remote network catalog):
+- ``_build_all_old_scheme_fixture``: every tag uses the real old flat-attribute scheme.
+- ``_build_canonical_names_fixture``: a mixed history (old-scheme + new-scheme tags),
+  asserting old-scheme tags are skipped and only canonical names are emitted.
 """
 
 from __future__ import annotations
@@ -293,6 +285,104 @@ def _parse_entry_names_from_stdout(stdout: str) -> frozenset[str]:
             continue
         names.add(line.split("@")[0])
     return frozenset(names)
+
+
+# ---------------------------------------------------------------------------
+# New-scheme-only: real old flat-attribute fixture (metadata as ATTRIBUTES on
+# <catalog-metadata>, the actual historical catalog format e.g. tag 2.14.0).
+# ---------------------------------------------------------------------------
+
+_OLD_FLAT_ATTRIBUTE_XML_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata display-name="{display_name}"
+                        description="Old flat-attribute integration test entry."
+                        version="{version}"
+                        type="plugin"
+                        owner-name="Integration Tester"
+                        owner-email="integration@example.com"
+                        keywords="integration,test" />
+    </manifest>
+""")
+
+
+def _write_old_flat_xml(
+    repo_specs: pathlib.Path,
+    dir_name: str,
+    display_name: str,
+    version: str,
+) -> None:
+    """Write a real old flat-attribute *-marketplace.xml (metadata as attributes)."""
+    entry_dir = repo_specs / dir_name
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    (entry_dir / f"{dir_name}-marketplace.xml").write_text(
+        _OLD_FLAT_ATTRIBUTE_XML_TEMPLATE.format(display_name=display_name, version=version)
+    )
+
+
+def _build_all_old_scheme_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Bare repo whose ENTIRE tag history is old flat-attribute (zero new-scheme tags).
+
+    Mirrors the real catalog where every release tag (1.3.0-2.14.0) is flat-attribute and
+    only the untagged HEAD carries the new nested scheme.
+    """
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    _init_git_work_dir(work_dir)
+    (work_dir / "README.md").write_text("manifest repo\n")
+    _git(["add", "README.md"], cwd=work_dir)
+    _git(["commit", "-m", "init"], cwd=work_dir)
+    repo_specs = work_dir / "repo-specs"
+    for tag in ("1.3.0", "2.13.0", "2.14.0"):
+        for _canonical_name, legacy_dir, display_name in _CANONICAL_ENTRIES:
+            _write_old_flat_xml(repo_specs, legacy_dir, display_name, tag)
+        _commit_and_tag(work_dir, tag, f"release {tag} (old flat-attribute)")
+    bare_dir = tmp_path / "bare.git"
+    return _clone_as_bare(work_dir, bare_dir)
+
+
+@pytest.mark.integration
+class TestAllVersionsAllOldScheme:
+    """New-scheme-only: when EVERY version tag is old flat-attribute (zero new-scheme tags),
+    ``kanon list --all-versions`` exits 0 with an empty result + a clear note (NOT exit 1)."""
+
+    def test_all_old_scheme_exits_0_empty_with_note(self, tmp_path: pathlib.Path) -> None:
+        bare_repo = _build_all_old_scheme_fixture(tmp_path)
+        result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        assert result.returncode == 0, (
+            f"expected exit 0 for all-old-scheme history, got {result.returncode}.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert _parse_entry_names_from_stdout(result.stdout) == frozenset(), (
+            f"expected empty result for all-old-scheme history.\nstdout: {result.stdout!r}"
+        )
+        assert "no new-scheme" in result.stderr.lower(), (
+            f"expected a 'no new-scheme version tags' note in stderr.\nstderr: {result.stderr!r}"
+        )
+
+    def test_all_old_scheme_format_json_exits_0_valid_empty(self, tmp_path: pathlib.Path) -> None:
+        import json
+
+        bare_repo = _build_all_old_scheme_fixture(tmp_path)
+        result = _run_kanon(bare_repo, ["--all-versions", "--no-limit", "--format", "json"])
+        assert result.returncode == 0, f"expected exit 0, got {result.returncode}.\nstderr: {result.stderr!r}"
+        parsed = json.loads(result.stdout)
+        assert parsed == [], f"expected empty JSON array, got {parsed!r}"
+
+    def test_plain_list_against_old_scheme_is_clean_error_no_traceback(self, tmp_path: pathlib.Path) -> None:
+        """Plain ``kanon list`` against an old flat-attribute catalog exits non-zero with a
+        clean explicit error (the migration message), NOT a raw Python traceback."""
+        bare_repo = _build_all_old_scheme_fixture(tmp_path)
+        result = _run_kanon(bare_repo, [])
+        assert result.returncode != 0, (
+            f"expected non-zero exit for an old-scheme catalog, got {result.returncode}.\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        combined = result.stdout + result.stderr
+        assert "flat-attribute" in combined, f"expected the old-flat-attribute migration error.\n{combined}"
+        assert "Traceback" not in combined, (
+            f"expected a clean error, not a raw Python traceback.\nstderr: {result.stderr!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

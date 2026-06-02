@@ -54,6 +54,36 @@ REQUIRED_ONLY_XML = textwrap.dedent("""\
 """)
 
 
+OLD_FLAT_ATTRIBUTE_XML = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata display-name="My Package"
+                        description="A helpful package."
+                        version="1.2.3"
+                        type="plugin"
+                        owner-name="Alice"
+                        owner-email="alice@example.com"
+                        keywords="tools, utilities" />
+    </manifest>
+""")
+
+
+@pytest.mark.unit
+class TestParseCatalogMetadataRejectsOldScheme:
+    """New-scheme-only: the old flat-attribute ``<catalog-metadata .../>`` form is
+    rejected with a clear, migration-pointing error (not the generic missing-name error)."""
+
+    def test_old_flat_attribute_scheme_raises_explicit_error(self, tmp_path: Path) -> None:
+        xml_file = _write_xml(tmp_path / "old-marketplace.xml", OLD_FLAT_ATTRIBUTE_XML)
+        with pytest.raises(CatalogMetadataParseError) as exc_info:
+            _parse_catalog_metadata(xml_file)
+        msg = str(exc_info.value)
+        assert "flat-attribute" in msg
+        assert "unsupported" in msg or "no longer supported" in msg
+        assert "nested" in msg
+        assert "old-marketplace.xml" in msg
+
+
 @pytest.mark.unit
 class TestCatalogMetadataDataclass:
     """AC-FUNC-001: CatalogMetadata dataclass has the correct field set."""

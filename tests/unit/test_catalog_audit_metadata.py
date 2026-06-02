@@ -64,6 +64,35 @@ def _run_check(tmp_path: pathlib.Path) -> list[AuditFinding]:
     return check_fn(tmp_path)
 
 
+_OLD_FLAT_ATTRIBUTE_XML = textwrap.dedent("""\
+    <?xml version="1.0"?>
+    <package>
+      <catalog-metadata display-name="My Tool"
+                        description="A useful tool."
+                        version="1.0.0"
+                        type="plugin"
+                        owner-name="Alice"
+                        owner-email="alice@example.com"
+                        keywords="infra,deploy" />
+    </package>
+""")
+
+
+@pytest.mark.unit
+class TestMetadataAuditRejectsOldScheme:
+    """New-scheme-only: the metadata audit flags the old flat-attribute scheme with an explicit M007 error."""
+
+    def test_old_flat_attribute_scheme_flagged_m007(self, tmp_path: pathlib.Path) -> None:
+        _write_xml(tmp_path, "old-marketplace.xml", _OLD_FLAT_ATTRIBUTE_XML)
+        findings = _run_check(tmp_path)
+        codes = {f.code for f in findings}
+        assert "M007" in codes
+        m007 = next(f for f in findings if f.code == "M007")
+        assert m007.kind == "error"
+        assert "flat-attribute" in m007.message
+        assert "nested" in m007.message
+
+
 # ---------------------------------------------------------------------------
 # Constants presence
 # ---------------------------------------------------------------------------

@@ -68,16 +68,20 @@ _ALL_VERSIONS_PARSE_WARNING_FORMAT = (
     "WARNING: malformed catalog-metadata for entry {entry} at revision {revision}: {reason}"
 )
 
-# Error emitted to stderr (and exits 1) when every revision is malformed.
-# Uses .format(name=<entry_name>) at the call site.
-_ALL_VERSIONS_ALL_MALFORMED_ERROR_FORMAT = "ERROR: every revision for entry {name} was malformed; no versions to list"
-
-# Informational note emitted to stderr when legacy flat-metadata versions (lacking
-# <catalog-metadata><name>) are excluded from the all-versions walk.
+# Informational note emitted to stderr when version tags using the unsupported old
+# flat-attribute scheme are skipped from the all-versions walk.
 # Uses .format(count=<int>, revision=<version_str>) at the call site.
 _ALL_VERSIONS_LEGACY_SKIPPED_NOTE_FORMAT = (
-    "NOTE: {count} legacy flat-metadata XML(s) at revision {revision} "
-    "skipped (no <catalog-metadata><name>); use canonical-metadata tags only"
+    "NOTE: {count} marketplace XML(s) at revision {revision} use the unsupported old "
+    "flat-attribute scheme (no nested <catalog-metadata><name>); skipped"
+)
+
+# Informational note emitted to stderr (exit 0) when the all-versions walk found no
+# new-scheme version tags at all. New-scheme-only: only tags carrying the nested
+# <catalog-metadata><name> scheme are listed; an empty result here is normal, not an error.
+_ALL_VERSIONS_NO_NEW_SCHEME_NOTE = (
+    "NOTE: no new-scheme version tags found; only releases that carry the nested "
+    "<catalog-metadata><name> scheme are listed (old flat-attribute tags are skipped)"
 )
 
 # ---------------------------------------------------------------------------
@@ -328,12 +332,14 @@ def _walk_all_versions(
     ``--since-version`` PEP 440 filter, clones each version, and builds
     the flat ``VersionRow`` list.
 
-    Only canonical ``<catalog-metadata><name>`` values are emitted.  Legacy
-    flat-metadata XMLs (well-formed XML that lacks ``<name>``) are excluded
-    from the per-entry version list; a single diagnostic line is written to
-    stderr noting how many such XMLs were skipped at each legacy revision.
-    Genuinely non-well-formed XML (parser raises ``XMLParseError``) continues
-    to be skipped with a stderr warning.
+    New-scheme-only: only canonical ``<catalog-metadata><name>`` values are
+    emitted. Version tags using the unsupported old flat-attribute scheme (no
+    nested ``<name>``) are SKIPPED, with a single diagnostic line per revision
+    noting how many were skipped. Genuinely non-well-formed XML continues to be
+    skipped with a stderr warning. When no walked tag carries a new-scheme entry
+    (e.g. the entire release history predates the nested scheme), the function
+    returns an EMPTY list and emits a clear "no new-scheme version tags" note to
+    stderr -- this is exit 0, not an error.
 
     Args:
         catalog_source: A ``<git_url>@<ref>`` string. The ``@<ref>`` part
@@ -347,11 +353,9 @@ def _walk_all_versions(
         Flat list of :class:`VersionRow` objects, newest version first.
 
     Raises:
-        SystemExit: On git ls-remote failure, on git clone failure for any
-            individual revision, or when every revision in the walk has
-            malformed catalog-metadata (all-revisions-malformed edge case).
-            Malformed individual revisions emit a stderr warning and are
-            skipped; the walk continues.
+        SystemExit: On git ls-remote failure or git clone failure for any
+            individual revision. An all-old-scheme history is NOT an error -- the
+            function returns an empty list with a note instead of exiting.
         ValueError: When ``since_version`` is not a valid PEP 440 specifier.
     """
     url, _ref = _parse_catalog_source(catalog_source)
@@ -450,14 +454,13 @@ def _walk_all_versions(
             rows.append(VersionRow(name=name, version=str(ver), ref=ref, sha=sha))
 
     if successful_count == 0 and sorted_triples:
-        # Every revision that was walked had malformed catalog-metadata.
-        # Derive a representative entry name from the warning context already
-        # emitted; use a generic sentinel that tells the operator what happened.
-        print(
-            _ALL_VERSIONS_ALL_MALFORMED_ERROR_FORMAT.format(name="<all entries>"),
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        # New-scheme-only: no walked tag carried a new-scheme (nested
+        # <catalog-metadata><name>) entry -- every version tag used the unsupported
+        # old flat-attribute scheme. This is NOT an error; there are simply no
+        # new-scheme version tags to list yet. Exit 0 with an empty result and a
+        # clear note (the caller renders the empty list / empty JSON array).
+        print(_ALL_VERSIONS_NO_NEW_SCHEME_NOTE, file=sys.stderr)
+        return rows
 
     return rows
 
@@ -1310,7 +1313,11 @@ def run_list(args: argparse.Namespace) -> int:
 
     if tree:
         # Build the full metadata list first so the filter can be applied.
-        all_entries = _build_sorted_metadata(manifest_root)
+        try:
+            all_entries = _build_sorted_metadata(manifest_root)
+        except CatalogMetadataParseError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
         entry_count = len(all_entries)
 
         guardrail_msg = _check_tree_guardrail(entry_count, max_depth, no_filter_required, filter_present=filter_present)
@@ -1340,7 +1347,11 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
 
     # Non-tree modes: build full metadata, apply filter, render.
-    all_entries = _build_sorted_metadata(manifest_root)
+    try:
+        all_entries = _build_sorted_metadata(manifest_root)
+    except CatalogMetadataParseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     if filter_present:
         predicate = _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields)

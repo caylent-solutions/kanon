@@ -91,6 +91,26 @@ Example `<catalog-metadata>` block:
 </catalog-metadata>
 ```
 
+> **Only the nested scheme is supported.** Catalog metadata MUST be carried as
+> nested child elements of `<catalog-metadata>` (as shown above). The legacy
+> **flat-attribute** scheme -- metadata carried as XML *attributes* on the
+> `<catalog-metadata>` element -- is **no longer supported**. `kanon list`,
+> `kanon add`, and `kanon validate metadata` reject it with an explicit
+> "migrate to the nested scheme" error (audit code `M007`), and
+> `kanon list --all-versions` skips old-scheme release tags. Migrate any such file
+> to the nested form above.
+>
+> Rejected (old flat-attribute scheme -- metadata as attributes, no `<name>` child):
+>
+> ```xml
+> <catalog-metadata display-name="My Python Library"
+>                   description="A reusable Python library for internal tooling."
+>                   version="1.2.0" type="library" />
+> ```
+>
+> In the old scheme the entry name was derived from the directory path; the nested
+> scheme requires an explicit `<name>` child so the entry name is authoritative.
+
 **Additional rules enforced by `kanon catalog audit`:**
 
 1. **Source-name normalization** -- the source name written into

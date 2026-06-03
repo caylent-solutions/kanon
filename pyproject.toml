@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kanon-cli"
-version = "1.3.1"
+version = "2.0.0"
 description = "Kanon (Kanon Package Manager) CLI tool"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
@@ -36,6 +36,7 @@ kanon = "kanon_cli.cli:main"
 [project.urls]
 Homepage = "https://github.com/caylent-solutions/kanon"
 Issues = "https://github.com/caylent-solutions/kanon/issues"
+
 
 [tool.hatch.build.targets.wheel]
 packages = [
@@ -115,6 +116,7 @@ allowed_tags = [
 ]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf", "security", "revert"]
+
 
 [dependency-groups]
 dev = [

@@ -1,6 +1,6 @@
 """Unit tests for the four 'kanon remove --force' scenarios.
 
-Covers AC-FUNC-001 through AC-FUNC-004 from spec/cleanup-2026-05/impl-gaps-spec.md
+Covers AC-FUNC-001 through AC-FUNC-004 from the cleanup-2026-05 impl-gaps spec,
 section 4.1 (R225 acceptance criteria AC-1.1 through AC-1.5):
 
 - AC-FUNC-001: unknown-only + --force exits 0, file unchanged (spec AC-1.1)

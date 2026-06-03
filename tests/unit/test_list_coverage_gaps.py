@@ -1,6 +1,6 @@
 """Unit tests closing coverage gaps in src/kanon_cli/commands/list.py.
 
-Gaps targeted (from coverage_gaps.md produced by E15-F4-S1-T1):
+Gaps targeted (from the E15-F4-S1-T1 coverage-gap analysis):
 - Lines 156-160: _list_tags_from_url error path when git ls-remote returns non-zero
 - Lines 164-171: _list_tags_from_url parsing loop (blank lines, malformed lines, tag filter)
 - Lines 220-228: _sort_version_pairs_newest_first body (entire function uncovered)

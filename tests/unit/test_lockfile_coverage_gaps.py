@@ -1,6 +1,6 @@
 """Unit tests closing coverage gaps in src/kanon_cli/core/lockfile.py.
 
-Gaps targeted (from coverage_gaps.md produced by E15-F4-S1-T1):
+Gaps targeted (from the E15-F4-S1-T1 coverage-gap analysis):
 - Line 320: _validate_kanon_hash raises LockfileValidationError on invalid hash
 - Lines 822-824: write_lockfile inner exception handler (fdopen/flush/fsync failure)
 - Lines 826-828: write_lockfile outer exception handler (os.replace failure)

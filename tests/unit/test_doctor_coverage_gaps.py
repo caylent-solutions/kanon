@@ -1,6 +1,6 @@
 """Unit tests closing coverage gaps in src/kanon_cli/commands/doctor.py.
 
-Gaps targeted (from coverage_gaps.md produced by E15-F4-S1-T1):
+Gaps targeted (from the E15-F4-S1-T1 coverage-gap analysis):
 - Line 114: _is_branch_revision returns False when revision_spec starts with "refs/"
 - Line 184: _run_ls_remote_impl sleep path on TimeoutExpired when attempt < retry_count - 1
 - Lines 219-223: _run_ls_remote function body (always mocked elsewhere, now tested directly)

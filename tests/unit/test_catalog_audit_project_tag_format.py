@@ -7,9 +7,9 @@ The existing '--check tag-format' implementation already scans git ls-remote --t
 of the manifest repo and flags every non-PEP-440 last-path-component, covering every
 tag that any '<project revision="..."/>' element might reference.
 
-Decision source: kanon-deps-work/spec/cleanup-2026-05/_workspace/ambiguities.md row 1,
+Decision source: the cleanup-2026-05 ambiguities analysis, row 1,
 resolved as '(a) R3 == R89 / soft-spot 5; no new check required.'
-Reference: kanon-deps-work/spec/cleanup-2026-05/impl-gaps-spec.md section 6.
+Reference: the cleanup-2026-05 impl-gaps spec, section 6.
 
 These tests verify that the EXISTING '--check tag-format' check:
 1. Warns when the manifest repo contains a non-PEP-440 tag that a '<project>' element

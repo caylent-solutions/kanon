@@ -27,11 +27,19 @@ via declarative manifests.
   - [Standalone Usage (No Task Runner Required)](#standalone-usage-no-task-runner-required)
   - [Integrating with Task Runners (Optional)](#integrating-with-task-runners-optional)
 - [CLI Reference](#cli-reference)
-  - [kanon bootstrap](#kanon-bootstrap)
+  - [kanon list](#kanon-list)
+  - [kanon add](#kanon-add)
+  - [kanon remove](#kanon-remove)
   - [kanon install](#kanon-install)
   - [kanon clean](#kanon-clean)
-  - [kanon validate xml](#kanon-validate-xml)
-  - [kanon validate marketplace](#kanon-validate-marketplace)
+  - [kanon outdated](#kanon-outdated)
+  - [kanon why](#kanon-why)
+  - [kanon doctor](#kanon-doctor)
+  - [kanon validate](#kanon-validate)
+  - [kanon catalog audit](#kanon-catalog-audit)
+  - [kanon repo](#kanon-repo)
+  - [kanon completion](#kanon-completion)
+  - [kanon bootstrap (deprecated)](#kanon-bootstrap-deprecated)
 - [.kanon Variable Reference](#kanon-variable-reference)
   - [Core Variables](#core-variables)
   - [Source Variables](#source-variables)
@@ -44,9 +52,10 @@ via declarative manifests.
   - [Environment Variable Portability (envsubst)](#environment-variable-portability-envsubst)
 - [Creating a Manifest Repository](#creating-a-manifest-repository)
   - [Structure](#structure)
+  - [Catalog entry (-marketplace.xml)](#catalog-entry--marketplacexml)
   - [remote.xml -- Git Remote Definition](#remotexml----git-remote-definition)
   - [packages.xml -- Package Declarations](#packagesxml----package-declarations)
-  - [meta.xml -- Entry Point](#metaxml----entry-point)
+  - [Entry-point manifest](#entry-point-manifest)
   - [Include Chains for Hierarchy](#include-chains-for-hierarchy)
   - [Updating Package Versions](#updating-package-versions)
 - [Creating Packages](#creating-packages)
@@ -165,11 +174,10 @@ system-wide setup, see [docs/shell-completion.md](docs/shell-completion.md).
 | `kanon validate xml` | Validate XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
 | `kanon validate marketplace` | Validate marketplace XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
 | `kanon validate metadata` | Validate catalog entry metadata | [docs/catalog-author-guide.md](docs/catalog-author-guide.md) |
-| `kanon clean` | Remove all synced packages and Kanon state directories | [docs/lifecycle.md](docs/lifecycle.md) |
+| `kanon clean` | Remove synced packages and Kanon state (`--orphans` also prunes unreferenced marketplaces) | [docs/lifecycle.md](docs/lifecycle.md) |
 | `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
 | `kanon completion` | Emit a shell completion script for bash or zsh | [docs/shell-completion.md](docs/shell-completion.md) |
-| `kanon bootstrap` | **deprecated; see `kanon add` / `kanon list`** -- scaffold a project from a catalog entry | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
-| `kanon bootstrap list` | **deprecated; see `kanon list`** -- list available catalog entries | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
+| `kanon bootstrap` | **deprecated (removed in 2.0; exits 3)** -- use `kanon list` / `kanon add` instead | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
 
 ---
 
@@ -273,76 +281,79 @@ reinstalling. CI uses `pip install kanon-cli` for ephemeral runners; see
 
 ### Standalone Usage (No Task Runner Required)
 
-Kanon works directly from the command line. No task runner is needed.
-
-**1. Bootstrap a project:**
+Kanon works directly from the command line. No task runner is needed. The
+workflow is declarative: you discover entries in a remote catalog, add the
+ones you want to `.kanon`, install them, and (optionally) clean up. Every
+command that resolves a catalog needs a catalog source -- either the
+`--catalog-source <url>@<ref>` flag or the `KANON_CATALOG_SOURCE`
+environment variable.
 
 ```bash
-kanon bootstrap kanon        # Copy .kanon and readme (template)
-kanon bootstrap list         # See all available catalog entry packages
+# Set once in your shell rc file -- pin to the current major version
+export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@>=2.0.0,<3.0.0'
 ```
 
-**2. Edit `.kanon`** -- Set `GITBASE`, `KANON_MARKETPLACE_INSTALL`, and
-source variables for your organization.
+**1. Discover entries in the catalog:**
 
-**3. Install (sync all packages):**
+```bash
+kanon list                   # all entry names, one per line
+kanon list --detail          # human-readable record per entry
+kanon list my-tool --detail  # narrow to entries matching a substring
+```
+
+`kanon list` reads the `*-marketplace.xml` files under `repo-specs/` in the
+manifest repo and prints one catalog entry name per line.
+
+**2. Add entries to `.kanon`:**
+
+```bash
+kanon add my-tool                       # pin to the highest available version
+kanon add 'my-tool@>=1.0.0,<2.0.0'      # pin with a PEP 440 constraint
+kanon add my-tool --marketplace-install # also enable the marketplace lifecycle
+```
+
+`kanon add` resolves each entry against the catalog and writes the
+`KANON_SOURCE_<name>_{URL,REVISION,PATH}` triple into `.kanon`, creating the
+file with a standard header when it does not yet exist.
+
+**3. Install (sync all packages, write `.kanon.lock`):**
 
 ```bash
 kanon install
 ```
 
-This syncs all packages to `.packages/`, creates source workspaces in
-`.kanon-data/sources/`, and adds `.packages/` and `.kanon-data/` to
-`.gitignore`.
+This reconciles `.kanon` against `.kanon.lock`, runs the repo
+init/envsubst/sync lifecycle for every source, aggregates packages into
+`.packages/` via symlinks, creates source workspaces under
+`.kanon-data/sources/`, writes `.kanon.lock` with the exact resolved SHAs,
+and adds `.packages/` and `.kanon-data/` to `.gitignore`.
 
 **4. Clean (full teardown):**
 
-> **Tip:** Use a remote catalog for pre-configured entries that require no
-> placeholder editing. See
-> [Usage with Remote Catalogs](#usage-with-remote-catalogs-optional) below.
-
 ```bash
-kanon clean
+kanon clean              # remove .packages/, .kanon-data/, marketplace dir
+kanon clean --orphans    # also prune kanon-owned marketplaces no longer referenced
 ```
 
-This removes all synced packages, Kanon state directories, and optionally
-uninstalls marketplace plugins.
+`kanon clean` removes all synced packages and Kanon state directories, and
+(when `KANON_MARKETPLACE_INSTALL=true`) uninstalls marketplace plugins.
 
 **Important:** All synced files in `.packages/` and `.kanon-data/` are
-ephemeral and should not be committed. Only commit the catalog entry files
-and `.kanon` to your repository.
+ephemeral and should not be committed. Commit only `.kanon` and `.kanon.lock`
+to your repository.
 
-### Usage with Remote Catalogs (Optional)
-
-Remote catalogs provide pre-configured `.kanon` files that require no
-placeholder editing. Set `KANON_CATALOG_SOURCE` or pass `--catalog-source`
-to bootstrap from a remote repository:
-
-```bash
-# Set once in your shell rc file -- pin to current major version
-export KANON_CATALOG_SOURCE='https://github.com/your-org/your-catalog-repo.git@>=2.0.0,<3.0.0'
-
-# Bootstrap a pre-configured entry
-kanon bootstrap <entry-name>
-
-# Or pass the catalog source inline
-kanon bootstrap <entry-name> \
-  --catalog-source 'https://github.com/your-org/catalog.git@~=2.0.0'
-```
-
-The `@<ref>` portion accepts a branch name, a tag, the special value `latest`
-(which resolves to the highest semver tag), or a PEP 440 version constraint
-(e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`). Version constraints are resolved
-against the repository's git tags via `git ls-remote`. The remote repo must
-have a `catalog/` directory at its root, with each subdirectory being a
-catalog entry.
+The `@<ref>` portion of a catalog source accepts a branch name, a tag, the
+special value `latest` (which resolves to the highest semver tag), or a PEP
+440 version constraint (e.g., `~=2.0.0`, `>=2.0.0,<3.0.0`). Version
+constraints are resolved against the repository's git tags via
+`git ls-remote`. The manifest repo IS the catalog: every `*-marketplace.xml`
+file under `repo-specs/` carrying a `<catalog-metadata>` block is one catalog
+entry. There is no separate `catalog/` directory.
 
 Manifest repositories should use [semantic versioning](https://semver.org/)
 for git tags. Pinning to a major version range (e.g., `>=2.0.0,<3.0.0`)
 allows automatic pickup of minor and patch releases while preventing
 unexpected breaking changes.
-
-Use `--output-dir DIR` to bootstrap into a different directory.
 
 ### Integrating with Task Runners (Optional)
 
@@ -378,101 +389,249 @@ kanon --help                              # Top-level help
 kanon --version                           # Show version
 ```
 
-### kanon bootstrap
+Run `kanon <command> --help` for the full option list of any command. The
+sections below summarise each 2.0 command. A catalog source (the
+`--catalog-source <url>@<ref>` flag or the `KANON_CATALOG_SOURCE`
+environment variable) is required by `list`, `add`, `outdated`, `why`, and
+`catalog audit`; for `install` and `doctor` the `.kanon.lock` `[catalog]`
+source is used as a fallback when present and consistent.
 
-Scaffolds a new Kanon project from a catalog entry package, including a
-pre-configured `.kanon`.
+### kanon list
+
+Discovers catalog entries. Prints one entry name per line to stdout, sorted
+lexicographically, by reading the `*-marketplace.xml` files under
+`repo-specs/` in the catalog source.
 
 ```bash
-kanon bootstrap list                 # List available catalog entry packages
-kanon bootstrap kanon                # Scaffold standalone (.kanon only)
-kanon bootstrap kanon --output-dir proj   # Scaffold into proj/
-kanon bootstrap <entry> \
-  --catalog-source 'https://github.com/org/repo.git@>=2.0.0,<3.0.0'
+kanon list                       # all entry names
+kanon list foo                   # substring filter (name/desc/keywords)
+kanon list --regex '^foo'        # regex filter
+kanon list --detail              # human-readable record per entry
+kanon list --format json         # structured JSON array
+kanon list --tree                # three-layer ASCII dependency tree
+kanon list --all-versions        # walk historical tagged versions
 ```
 
-**Options:**
+Key options: `--format {names,json}`, `--detail`, `--tree` (with
+`--max-depth N`, `--no-filter-required`), `--all-versions` (with `--limit N`,
+`--no-limit`, `--since-version <spec>`), `--regex <pattern>`,
+`--match-fields <csv>`. A positional `<substring>` and `--regex` are mutually
+exclusive; `--format json` is incompatible with `--tree`.
 
-**`--output-dir DIR`**
-Target directory (default: current directory). The parent of `DIR` must
-already exist; bootstrap fails fast if it does not.
+### kanon add
 
-**`--catalog-source SOURCE`**
-Remote catalog as `<git_url>@<ref>` (branch, tag, `latest`, or PEP 440
-constraint). Overrides `KANON_CATALOG_SOURCE` env var. Default: bundled
-catalog.
+Resolves catalog entries from the catalog source and appends the
+`KANON_SOURCE_<name>_{URL,REVISION,PATH}` triple to `.kanon`, creating the
+file with a standard header when absent.
+
+```bash
+kanon add my-tool                       # pin to highest PEP 440 tag
+kanon add 'my-tool@>=1.0.0,<2.0.0'      # pin with a PEP 440 constraint
+kanon add my-tool --marketplace-install # enable the marketplace lifecycle
+kanon add my-tool --dry-run             # print the diff without writing
+```
+
+Each entry is `<name>` or `<name>@<spec>` (PEP 440 constraint). Key options:
+`--kanon-file <path>` (default `./.kanon`, env `KANON_KANON_FILE`), `--force`
+(overwrite an existing block), `--dry-run`, and the mutually-exclusive
+`--marketplace-install` / `--no-marketplace-install` (applied only when the
+file is created).
+
+### kanon remove
+
+Removes the three `KANON_SOURCE_<name>_{URL,REVISION,PATH}` lines for one or
+more entries from `.kanon`.
+
+```bash
+kanon remove my-tool                      # canonical source OR entry name
+kanon remove my-tool --dry-run            # preview removed lines
+kanon remove my-tool --force              # skip not-fully-present sources
+```
+
+Each `<name>` may be the canonical source name (e.g. `foo_bar`) or the
+original entry name (e.g. `Foo-Bar`); both normalise to the same keys.
+Removal is atomic: if any requested name is not fully present (fewer than
+three matching keys) and `--force` is not set, the command exits non-zero and
+the file is unchanged.
 
 ### kanon install
 
-Executes the full install lifecycle.
+Executes the full install lifecycle and reconciles `.kanon` against
+`.kanon.lock`.
 
 ```bash
-kanon install                     # Auto-discover .kanon by walking up from cwd
-kanon install .kanon              # Explicit path to .kanon file
+kanon install                     # auto-discover .kanon by walking up from cwd
+kanon install .kanon              # explicit path to .kanon file
+kanon install --strict-lock       # error when an orphaned lock entry is present
+kanon install --strict-drift      # error when a branch source has drifted
+kanon install --refresh-lock      # re-resolve every transitive version from scratch
+kanon install --refresh-lock-source NAME  # re-resolve one source's chain only
 ```
 
-**Steps performed:**
+**Behavior:**
 
-1. For each source (alphabetical order): `kanon repo init`,
-   `kanon repo envsubst`, `kanon repo sync`
-2. Aggregates symlinks from `.kanon-data/sources/<name>/.packages/`
-   into `.packages/`
-3. Detects package name collisions across sources (fail-fast)
-4. Updates `.gitignore`
-5. If `KANON_MARKETPLACE_INSTALL=true`: runs the marketplace install lifecycle
+- Parses `.kanon`, then runs the repo init/envsubst/sync lifecycle for each
+  source (alphabetical order).
+- Aggregates packages into `.packages/` via symlinks; detects cross-source
+  name collisions (fail-fast); updates `.gitignore`.
+- Reconciles against `.kanon.lock`: a plain `install` prunes orphaned lock
+  entries (a source removed from `.kanon`) with an info-line; `--strict-lock`
+  promotes that to an error. Branch drift (a locked SHA differing from the
+  branch's current tip) reuses the locked SHA with an info-line; `--strict-drift`
+  promotes that to an error.
+- **Auto-prune:** when a source is removed from `.kanon`, its registered
+  marketplace is unregistered on the next install.
+- If `KANON_MARKETPLACE_INSTALL=true`: runs the marketplace install lifecycle.
+
+`--refresh-lock` and `--refresh-lock-source NAME` require a CLI-supplied or
+`KANON_CATALOG_SOURCE` catalog source; the lockfile fallback is disabled on
+those paths.
 
 ### kanon clean
 
 Executes the full teardown lifecycle.
 
 ```bash
-kanon clean                       # Auto-discover .kanon by walking up from cwd
-kanon clean .kanon                # Explicit path to .kanon file
+kanon clean                       # auto-discover .kanon by walking up from cwd
+kanon clean .kanon                # explicit path to .kanon file
+kanon clean --orphans             # also unregister orphaned marketplaces
 ```
 
-**Steps performed:**
+**Behavior:**
 
-1. Resolves `.kanon` symlinks so teardown targets the real project directory
-   even when `.kanon` is a symlink
-2. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins, removes
-   marketplace directory
-3. Removes `.packages/` directory
-4. Removes `.kanon-data/` directory
+1. If `KANON_MARKETPLACE_INSTALL=true`: uninstalls plugins and removes the
+   marketplace directory.
+2. Removes the `.packages/` and `.kanon-data/` directories.
 
-The order is critical: plugins are uninstalled before files are removed to
-ensure the registry is cleaned while paths are still resolvable.
+With `--orphans`, before the normal teardown kanon also unregisters any
+kanon-owned marketplaces recorded in `.kanon.lock` that are no longer
+referenced by `.kanon`, pruning them from `~/.claude`.
 
-### kanon validate xml
+### kanon outdated
 
-Validates all XML manifest files under `repo-specs/`.
+Compares each source in `.kanon` against the catalog and emits a table of
+`name | current | latest-matching-spec | latest-available | upgrade-type`.
 
 ```bash
-kanon validate xml                        # Validate in current repo
-kanon validate xml --repo-root /path      # Validate with explicit repo root
+kanon outdated                    # table output, always exits 0
+kanon outdated --format json      # JSON array, one object per source
+kanon outdated --fail-on-upgrade  # exit 1 when any source has an upgrade (CI gate)
 ```
 
-**Checks performed:**
+The `current` column comes from `.kanon.lock` when present, or is
+live-resolved against the catalog when absent. Key options:
+`--fail-on-upgrade`, `--format {table,json}`, `--kanon-file`, `--lock-file`.
 
-- Well-formed XML
-- Required attributes on `<project>` (name, path, remote, revision)
-- Required attributes on `<remote>` (name, fetch)
-- `<include>` references point to existing files
+### kanon why
 
-### kanon validate marketplace
-
-Validates marketplace XML manifests under `repo-specs/`.
+Explains why a transitive dependency is in the tree. Reads `.kanon`, resolves
+the full dependency tree (from `.kanon.lock` when present, else live-resolves
+against the catalog), and prints every chain reaching the requested node.
 
 ```bash
-kanon validate marketplace                # Validate in current repo
-kanon validate marketplace --repo-root /path
+kanon why my-project              # by source name, repo URL, or XML path
+kanon why https://example.com/org/project.git
+kanon why --format json my-project
 ```
 
-**Checks performed:**
+The argument is matched three ways: a `<project>` repo URL (canonicalized), a
+transitive XML manifest path (exact-string equality), or a top-level source
+name (normalized via `derive_source_name`). A catalog source is required only
+on the live-resolve path (when `.kanon.lock` is absent).
 
-- `<linkfile dest>` uses `${CLAUDE_MARKETPLACES_DIR}/` prefix
-- Include chains are unbroken
-- Project paths are unique across manifests
-- Revision attributes follow valid formats (refs/tags, constraints, branches)
+### kanon doctor
+
+Diagnoses `.kanon` / `.kanon.lock` health against the current project
+directory.
+
+```bash
+kanon doctor                            # run all health checks
+kanon doctor --strict-drift             # promote branch-drift findings to errors
+kanon doctor --refresh-completion-cache # invalidate the shell completion cache
+kanon doctor --prune-cache              # prune stale cache files (age-based)
+```
+
+Reports findings including `.kanon`/`.kanon.lock` consistency (via
+`kanon_hash`), hand-edit detection, orphaned lock entries, branch drift,
+dangling-SHA detection, a `NO_SOURCES` finding for a zero-source `.kanon`, and
+a remote-reachability sanity check (warning only). See
+[docs/doctor.md](docs/doctor.md) for the full subcheck reference.
+
+### kanon validate
+
+Validates manifest XML files. Subcommands:
+
+```bash
+kanon validate xml          # well-formedness, attributes, include chains
+kanon validate marketplace  # linkfile dest, includes, uniqueness, tag format
+kanon validate metadata     # catalog-metadata soft-spots (no network access)
+```
+
+- **`validate xml`** -- checks well-formed XML, required attributes on
+  `<project>` and `<remote>`, and that `<include>` names point to existing
+  files.
+- **`validate marketplace`** -- checks `<linkfile dest>` attributes, include
+  chain integrity, project path uniqueness, and revision tag format.
+- **`validate metadata`** -- checks the `<catalog-metadata>` blocks for
+  required/recommended fields, source-name derivation, and entry-name
+  uniqueness, without cloning or calling git. Supports `--format {text,json}`.
+
+All three accept `--repo-root REPO_ROOT` (default: auto-detect via
+`git rev-parse`).
+
+### kanon catalog audit
+
+Audits a manifest repo against the catalog standards contract (the five
+soft-spot rules).
+
+```bash
+kanon catalog audit                       # audit the current directory
+kanon catalog audit ./scratch --strict    # promote warnings to errors
+kanon catalog audit https://example.com/org/repo.git@main  # audit a remote source
+kanon catalog audit --check metadata,tag-format            # run a subset of checks
+```
+
+`<dir-or-source>` is a local directory (must contain `repo-specs/`) or a
+remote `<git_url>@<ref>` source; defaults to `.`. Options: `--check <subset>`
+(valid values: `all`, `entry-name-uniqueness`, `metadata`, `remote-url`,
+`source-name-derivation`, `tag-format`), `--format {text,json}`, `--strict`.
+See [docs/catalog-author-guide.md](docs/catalog-author-guide.md).
+
+### kanon repo
+
+Catalog-author / low-level subcommand: runs kanon's embedded repo dispatcher.
+All trailing arguments after `kanon repo` are forwarded verbatim to the repo
+tool.
+
+```bash
+kanon repo init -u <url> -b <branch> -m <manifest>
+kanon repo sync --jobs=4
+kanon repo help
+```
+
+`--repo-dir REPO_DIR` sets the `.repo` directory (default: `${KANON_REPO_DIR}`
+or `.repo`). See [docs/repo/README.md](docs/repo/README.md).
+
+### kanon completion
+
+Emits the shell completion script for kanon to stdout.
+
+```bash
+kanon completion bash > /etc/bash_completion.d/kanon
+kanon completion zsh  > "${fpath[1]}/_kanon"
+```
+
+Target shell choices: `bash`, `zsh`. See
+[docs/shell-completion.md](docs/shell-completion.md).
+
+### kanon bootstrap (deprecated)
+
+`kanon bootstrap` was removed in 2.0 (a breaking change). It no longer
+performs any work and exits with code `3`, directing you to `kanon add` /
+`kanon list`. The catalog model changed: a manifest repo no longer has a
+separate `catalog/<name>/` location and the kanon wheel no longer bundles a
+catalog. Use `kanon list` to discover entries and `kanon add` to add them.
+See [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md).
 
 ---
 
@@ -517,9 +676,14 @@ Path to the entry-point manifest XML for the named source.
 ### Environment Variables
 
 **`KANON_CATALOG_SOURCE`**
-Remote catalog source for `kanon bootstrap` as `<git_url>@<ref>` where ref
-is a branch, tag, `latest`, or PEP 440 constraint (e.g., `>=2.0.0,<3.0.0`).
-Overridden by `--catalog-source` flag.
+Remote catalog source as `<git_url>@<ref>` where ref is a branch, tag,
+`latest`, or PEP 440 constraint (e.g., `>=2.0.0,<3.0.0`). One of this env var
+or the `--catalog-source` flag is **required** by `kanon list`, `kanon add`,
+`kanon outdated`, `kanon why`, and `kanon catalog audit`. For `kanon install`
+and `kanon doctor`, the `.kanon.lock` `[catalog].source` is used as a fallback
+when present and consistent. Resolution precedence is:
+`--catalog-source` flag > `KANON_CATALOG_SOURCE` env var > lock `[catalog]`
+source > the `[catalog]` block in `.kanon`.
 
 ### Example .kanon
 
@@ -549,8 +713,8 @@ KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces/meta.xml
 ```text
                     ┌─────────────────────────┐
                     │     Kanon CLI           │
-                    │  (install / clean /     │
-                    │   bootstrap / validate) │
+                    │  (list / add / install /│
+                    │   clean / validate)     │
                     └───────────┬─────────────┘
                                 │
                defines          │            uses
@@ -665,9 +829,16 @@ For full documentation, see [docs/how-it-works.md](docs/how-it-works.md).
 ## Creating a Manifest Repository
 
 A manifest repository contains `repo-specs/` with XML manifests that define
-what packages to sync, from which repositories, and at which versions. See
-[docs/repo/manifest-format.md](docs/repo/manifest-format.md) for the full
-XML schema.
+what packages to sync, from which repositories, and at which versions. **The
+manifest repo IS the catalog** -- there is no separate `catalog/` directory.
+Each catalog entry is a single `*-marketplace.xml` file under `repo-specs/`
+that carries a nested `<catalog-metadata>` block; the
+`<catalog-metadata><name>` child is the entry name consumers pass to
+`kanon add <name>`. See
+[docs/creating-manifest-repos.md](docs/creating-manifest-repos.md) for the
+full catalog-author guide and
+[docs/repo/manifest-format.md](docs/repo/manifest-format.md) for the
+underlying XML schema.
 
 ### Structure
 
@@ -677,9 +848,36 @@ my-manifest-repo/
     git-connection/
       remote.xml             # Git remotes with ${GITBASE} placeholders
     my-archetype/
-      meta.xml               # Entry-point: includes remote.xml + packages.xml
+      my-archetype-marketplace.xml  # Catalog entry (carries <catalog-metadata>)
       packages.xml           # Package repos with pinned versions
 ```
+
+### Catalog entry (-marketplace.xml)
+
+Each catalog entry is a `*-marketplace.xml` file containing exactly one
+nested `<catalog-metadata>` block. Required fields are `name`,
+`display-name`, `description`, and `version`; recommended fields are `type`,
+`owner-name`, `owner-email`, and `keywords` (comma-separated). The legacy
+flat-attribute scheme (metadata as XML attributes) is rejected.
+
+```xml
+<package>
+  <catalog-metadata>
+    <name>my-archetype</name>
+    <display-name>My Archetype</display-name>
+    <description>Build conventions and lint config for service repos.</description>
+    <version>1.0.0</version>
+    <type>library</type>
+    <owner-name>Platform Team</owner-name>
+    <owner-email>platform@example.com</owner-email>
+    <keywords>build,lint,conventions</keywords>
+  </catalog-metadata>
+  <include name="repo-specs/my-archetype/packages.xml" />
+</package>
+```
+
+`kanon validate metadata` and `kanon catalog audit` enforce the
+`<catalog-metadata>` contract.
 
 ### remote.xml -- Git Remote Definition
 
@@ -712,14 +910,19 @@ Lists each package repository, its local path, and the pinned version:
 </manifest>
 ```
 
-### meta.xml -- Entry Point
+### Entry-point manifest
 
-Combines all includes into a single entry point referenced by `.kanon`:
+The `*-marketplace.xml` catalog entry is the entry point referenced by the
+`KANON_SOURCE_<name>_PATH` value that `kanon add` writes into `.kanon`. It
+pulls in the package declarations via `<include>`:
 
 ```xml
-<manifest>
+<package>
+  <catalog-metadata>
+    <!-- ... required + recommended fields ... -->
+  </catalog-metadata>
   <include name="repo-specs/my-archetype/packages.xml" />
-</manifest>
+</package>
 ```
 
 ### Include Chains for Hierarchy
@@ -729,16 +932,16 @@ hierarchy. This enables cascading configurations where common packages are
 defined once and specialized packages are layered on top:
 
 ```text
-meta.xml
+my-archetype-marketplace.xml
   └── packages.xml (leaf -- e.g., specific project type)
         └── packages.xml (framework level)
               └── packages.xml (language level)
                     └── packages.xml (common/base)
 ```
 
-Each level includes its parent and adds its own package entries. The `repo`
-tool recursively resolves all includes, accumulating a unified set of
-packages.
+Each level includes its parent and adds its own package entries. The
+`kanon repo` subsystem recursively resolves all includes, accumulating a
+unified set of packages.
 
 ### Updating Package Versions
 
@@ -1059,8 +1262,9 @@ make publish       # Clean, build, and check distribution
 src/kanon_cli/
   cli.py              # Entry point
   commands/           # Subcommand implementations
-  core/               # Core logic (install, clean, kanon parsing)
-  catalog/            # Bundled catalog (fallback templates)
+  core/               # Core logic (install, clean, kanon parsing, lockfile)
+  completions/        # Shell-completion generators
+  utils/              # Shared helpers
   repo/               # kanon repo subsystem (manifest sync, PEP 440)
 tests/                # Unit and functional tests
 docs/                 # Configuration, lifecycle, version resolution docs

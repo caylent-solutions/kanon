@@ -72,7 +72,7 @@ block. The following fields are enforced by `kanon validate metadata` and
 - `type` -- entry type classification.
 - `owner-name` -- maintainer's name.
 - `owner-email` -- maintainer's contact address.
-- `keywords` -- space-separated search terms.
+- `keywords` -- comma-separated search terms.
 
 Example `<catalog-metadata>` block:
 
@@ -87,7 +87,7 @@ Example `<catalog-metadata>` block:
   <type>library</type>
   <owner-name>Platform Team</owner-name>
   <owner-email>platform@example.com</owner-email>
-  <keywords>python library utilities</keywords>
+  <keywords>python,library,utilities</keywords>
 </catalog-metadata>
 ```
 

@@ -80,26 +80,17 @@ For existing projects, follow the same steps above but adapt your existing build
 
 ## Troubleshooting
 
-### `kanon install` fails with "python3 is not installed"
+### `kanon: command not found`
 
-Python 3 must be available on PATH before running `kanon install`.
+The `kanon` CLI must be installed before running any `kanon` command.
+Install it with `pipx install kanon-cli` (production) or `pip install -e .`
+(local development on this repository). The `kanon repo` subsystem is part of
+the `kanon` CLI -- there is no separate tool to install.
 
-- **DevContainer:** Python is provided by the devcontainer Python feature.
-- **CI/CD:** Add a Python installation step before running your build.
-- **Local:** Install Python 3 via your system package manager.
-
-### `kanon install` fails with "pipx is not installed"
-
-pipx must be available on PATH to install the `kanon` CLI. Install it with `python3 -m pip install --user pipx && pipx ensurepath`.
-
-### `kanon install` fails with "kanon: command not found"
-
-The `kanon` CLI must be installed before running `kanon install`. Install it with `pipx install kanon-cli`.
-
-### `repo envsubst` fails
+### `kanon repo envsubst` fails
 
 Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`.
 
-### `repo sync` fails with authentication errors
+### `kanon repo sync` fails with authentication errors
 
 Ensure `git` can authenticate with the Git hosting provider for your package repositories (SSH keys or credential helper).

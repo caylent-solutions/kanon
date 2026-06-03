@@ -217,8 +217,11 @@ kanon list
 3. `lockfile.[catalog].source` -- fallback for `kanon install` and
    `kanon doctor` when in the `LOCKFILE_CONSISTENT` state and both
    the CLI flag and env var are unset
+4. `[catalog]` block in `.kanon` -- written by `kanon add` on file
+   creation; the lowest-priority fallback for `kanon install` when the
+   three layers above all return no value
 
-When none of the three sources is set and the lockfile fallback is
+When none of these sources is set and the lockfile fallback is
 not applicable, kanon raises `MissingCatalogSourceError` with
 remediation text. See
 [docs/catalogs-explained.md](catalogs-explained.md) for details.

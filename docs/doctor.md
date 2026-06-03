@@ -100,6 +100,18 @@ ERROR: .kanon has been modified since the lockfile was written.
   revert .kanon to its locked state.
 ```
 
+#### Zero-source `.kanon` (`NO_SOURCES`)
+
+Recomputing the `kanon_hash` re-parses `.kanon`. When the file declares no
+sources (no `KANON_SOURCE_<name>_*` triples), the recompute cannot proceed
+and doctor reports a structured `NO_SOURCES` error finding instead of leaking
+a traceback, then exits non-zero:
+
+```text
+ERROR: no sources declared in .kanon; add one with 'kanon add <entry>'
+  Run 'kanon add <entry>' to declare at least one source.
+```
+
 #### Reproducer
 
 ```bash

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- Fixture: project references remote="missing" but no remote named "missing" is defined.
+     This triggers soft-spot rule 4 remote-url: R001 ERROR (unresolvable remote). -->
+<manifest>
+  <catalog-metadata>
+    <name>unresolvable-remote-tool</name>
+    <display-name>Unresolvable Remote Tool</display-name>
+    <description>A tool whose remote reference cannot be resolved.</description>
+    <version>1.0.0</version>
+  </catalog-metadata>
+  <project name="my-project" remote="missing" path="src/my-project" />
+</manifest>

@@ -19,6 +19,8 @@ import sys
 
 import pytest
 
+from tests.conftest import DEFAULT_CATALOG_SOURCE
+
 
 _TEST_REPO_URL = "https://example.com/repo.git"
 _TEST_KANON_SOURCE_URL = "https://example.com/manifest.git"
@@ -130,11 +132,15 @@ class TestInstallDeprecationWarningSubprocess:
 
     def test_both_set_writes_single_combined_deprecation_to_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-003: Both REPO_URL and REPO_REV set => single combined message on stderr."""
+        # KANON_CATALOG_SOURCE is required so that MissingCatalogSourceError (whose
+        # error text contains '--catalog-source') does not add a second line that trips
+        # the single-combined-notice assertion below.
         result = _run_install_subprocess(
             kanonenv,
             extra_env={
                 "REPO_URL": _TEST_REPO_URL,
                 "REPO_REV": _TEST_REPO_REV,
+                "KANON_CATALOG_SOURCE": DEFAULT_CATALOG_SOURCE,
             },
         )
 
@@ -156,10 +162,14 @@ class TestInstallDeprecationWarningSubprocess:
 
     def test_neither_set_no_deprecation_on_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-004: Neither REPO_URL nor REPO_REV set => no deprecation text on stderr."""
-        # Explicitly remove the legacy vars from the environment.
+        # Explicitly remove the legacy vars from the environment.  Set
+        # KANON_CATALOG_SOURCE so the subprocess does not fail with
+        # MissingCatalogSourceError (whose message contains '--catalog-source',
+        # which would trip the deprecation-line filter below).
         env = _build_env({})
         env.pop("REPO_URL", None)
         env.pop("REPO_REV", None)
+        env["KANON_CATALOG_SOURCE"] = DEFAULT_CATALOG_SOURCE
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", str(kanonenv)],

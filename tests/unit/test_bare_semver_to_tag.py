@@ -1,4 +1,4 @@
-"""Tests for E2-F3-S2-T1: bare semver REVISION normalised to refs/tags/X.Y.Z.
+"""Tests for bare PEP 440 version REVISION normalised to refs/tags/<spec>.
 
 A `.kanon` file with `KANON_SOURCE_<name>_REVISION=1.0.0` (or
 `<project revision="1.0.0">`) previously failed because kanon passed
@@ -6,10 +6,13 @@ the bare value to `repo init -b 1.0.0`, which git resolves as
 `refs/heads/1.0.0` (a branch lookup) and fails.
 
 `_normalize_bare_semver_to_tag` prepends `refs/tags/` when the value
-is a bare digits-and-dots semver (no operator, no path prefix).
-Everything else passes through unchanged.
+is any bare PEP 440 version (no operator, no path prefix), per spec
+Section 4.0 rule 3. This includes v-prefixed versions (``v1.0.0``),
+single-digit versions (``1``), prereleases, epochs, post/dev releases,
+and calendar versions. Everything that fails PEP 440 parsing or
+contains ``/`` passes through unchanged.
 
-Implements II-002 / E2-F3-S2-T1.
+Implements II-002 / E2-F3-S2-T1; widened per E1-F1-S1-T1.
 """
 
 from __future__ import annotations
@@ -28,9 +31,13 @@ class TestNormalizeBareSemverToTag:
             ("1.0", "refs/tags/1.0"),
             ("2.0.0", "refs/tags/2.0.0"),
             ("10.20.30", "refs/tags/10.20.30"),
+            # v-prefixed: valid PEP 440, normalised per spec Section 4.0 rule 3
+            ("v1.0.0", "refs/tags/v1.0.0"),
+            # single-digit: valid PEP 440 epoch-less version
+            ("1", "refs/tags/1"),
         ],
     )
-    def test_bare_semver_gets_refs_tags_prefix(self, rev_spec: str, expected: str) -> None:
+    def test_bare_pep440_gets_refs_tags_prefix(self, rev_spec: str, expected: str) -> None:
         assert _normalize_bare_semver_to_tag(rev_spec) == expected
 
     @pytest.mark.parametrize(
@@ -41,19 +48,13 @@ class TestNormalizeBareSemverToTag:
             "feature/x",
             "refs/tags/1.0.0",
             "refs/heads/1.0",
+            # hex strings that are not valid PEP 440 versions
             "abcdef0",
             "abcdef0123456789",
-            "v1.0.0",  # leading 'v' -- not bare digits
         ],
     )
-    def test_other_forms_pass_through(self, rev_spec: str) -> None:
+    def test_non_pep440_forms_pass_through(self, rev_spec: str) -> None:
         assert _normalize_bare_semver_to_tag(rev_spec) == rev_spec
-
-    def test_single_digit_passes_through(self) -> None:
-        # `1` alone is not a typical semver tag and could be many things
-        # (a branch name, a single-digit version like in old NPM); leave
-        # it alone.
-        assert _normalize_bare_semver_to_tag("1") == "1"
 
     def test_pep440_constraint_passes_through(self) -> None:
         # Constraints are handled separately by `is_version_constraint` /
@@ -65,7 +66,7 @@ class TestNormalizeBareSemverToTag:
 
 @pytest.mark.unit
 class TestResolveVersionDelegatesToBareNormalizer:
-    """`resolve_version()` must apply the bare-semver normalisation to any
+    """`resolve_version()` must apply the bare PEP 440 normalisation to any
     rev_spec that is NOT recognised as a PEP 440 constraint."""
 
     def test_bare_semver_normalised_via_resolve_version(self) -> None:
@@ -73,6 +74,10 @@ class TestResolveVersionDelegatesToBareNormalizer:
         # passthrough branch.
         assert resolve_version("file:///fake", "1.0.0") == "refs/tags/1.0.0"
         assert resolve_version("file:///fake", "2.5") == "refs/tags/2.5"
+
+    def test_v_prefixed_normalised_via_resolve_version(self) -> None:
+        # v-prefixed strings are valid PEP 440 and normalised to refs/tags/.
+        assert resolve_version("file:///fake", "v1.0.0") == "refs/tags/v1.0.0"
 
     def test_branch_name_passes_through_resolve_version(self) -> None:
         assert resolve_version("file:///fake", "main") == "main"

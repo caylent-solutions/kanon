@@ -13,6 +13,7 @@ repos:
           - '--allow-missing-credentials'
       - id: check-merge-conflict
       - id: end-of-file-fixer
+        exclude: ^tests/fixtures/completion/
       - id: detect-private-key
         exclude: ^tests/
 

@@ -33,6 +33,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.constants import EXIT_CODE_DEPRECATED
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
@@ -146,7 +148,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
                 exit_code = 0
             except SystemExit as exc:
                 exit_code = exc.code
@@ -170,7 +172,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
             except SystemExit:
                 pass
 
@@ -199,7 +201,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
             except SystemExit:
                 pass
 
@@ -452,7 +454,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when repo_sync fails with a network error; got exit code {exc_info.value.code!r}"
@@ -483,7 +485,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"repo sync failure must write 'Error' to stderr; got stderr={captured.err!r}"
@@ -513,7 +515,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         captured = capsys.readouterr()
         assert "Error:" not in captured.out, (
@@ -553,7 +555,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv)])
+                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for network error {error_message!r}; got exit code {exc_info.value.code!r}"
@@ -766,7 +768,9 @@ class TestHelpExitsZero:
             ("install", "--help"),
             ("clean", "--help"),
             ("validate", "--help"),
-            ("bootstrap", "--help"),
+            # NOTE: ("bootstrap", "--help") is intentionally absent. bootstrap was
+            # removed in a major release; `bootstrap --help` now exits 3 with the
+            # deprecation message (see TestBootstrapExitsThree below).
         ],
     )
     def test_help_flags_exit_0_for_all_commands(self, command_args: tuple) -> None:
@@ -781,6 +785,42 @@ class TestHelpExitsZero:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# bootstrap exits 3 (EXIT_CODE_DEPRECATED) for every invocation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.functional
+class TestBootstrapExitsThree:
+    """`kanon bootstrap ...` exits 3 (EXIT_CODE_DEPRECATED) for every invocation.
+
+    bootstrap was removed in a major release. Every invocation -- bare, with an
+    entry, with `list`, with `--help`, or with an unknown flag -- exits 3 with
+    the deprecation message on stderr.
+    """
+
+    @pytest.mark.parametrize(
+        "command_args",
+        [
+            ("bootstrap",),
+            ("bootstrap", "list"),
+            ("bootstrap", "kanon"),
+            ("bootstrap", "--help"),
+            ("bootstrap", "-h"),
+            ("bootstrap", "history", "--marketplace-install"),
+        ],
+    )
+    def test_bootstrap_exits_3(self, command_args: tuple) -> None:
+        result = _run_kanon(*command_args)
+        assert result.returncode == EXIT_CODE_DEPRECATED, (
+            f"'kanon {' '.join(command_args)}' must exit {EXIT_CODE_DEPRECATED}; got {result.returncode}.\n"
+            f"  stdout: {result.stdout!r}\n"
+            f"  stderr: {result.stderr!r}"
+        )
+        assert "DEPRECATED" in result.stderr
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
 
 
 # ---------------------------------------------------------------------------

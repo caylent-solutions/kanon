@@ -48,6 +48,16 @@ runs:
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
+        # tests/integration/test_complete_catalog_entries.py and
+        # tests/integration/test_background_refresh.py create fresh git
+        # repos via `git init` and refer to the result by the symbolic ref
+        # `main` (e.g. `KANON_CATALOG_SOURCE=file://<repo>@main`). On the
+        # GitHub-hosted ubuntu-* runners `init.defaultBranch` is `master`
+        # unless explicitly overridden, so without this config the fresh
+        # repos have only `master` and the `@main` lookup returns empty.
+        # The kanon devcontainer already sets this, which is why these
+        # tests pass locally but fail in CI.
+        git config --global init.defaultBranch main
 
     - name: Simulate merge
       if: inputs.base-ref != ''
@@ -99,6 +109,23 @@ runs:
         key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-pip-
+
+    - name: Install zsh (for shell-completion integration tests)
+      shell: bash
+      run: |
+        # tests/integration/test_completion_zsh.py,
+        # tests/integration/test_preamble_zsh.py, and
+        # tests/integration/test_midtoken_zsh.py shell out to a real zsh to
+        # exercise the dynamic completion machinery. The kanon devcontainer
+        # ships with zsh, but the GitHub Actions ubuntu-latest runners do
+        # not; install it explicitly so the zsh suite has the binary it
+        # asserts on (`assert shutil.which("zsh") is not None`).
+        set -euo pipefail
+        if ! command -v zsh >/dev/null 2>&1; then
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends zsh
+        fi
+        zsh --version
 
     - name: Install dependencies
       shell: bash

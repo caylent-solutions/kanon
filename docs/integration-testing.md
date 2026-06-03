@@ -7,6 +7,57 @@ or private repositories are required.
 
 ---
 
+## Catalog source requirement
+
+On the `feat/kanon-deps-work-2026-05` branch and later, every `kanon install`,
+`kanon add`, and `kanon bootstrap` invocation requires a **catalog source** to be
+declared. Running any of these commands without a catalog source produces a loud
+diagnostic:
+
+```
+ERROR: install requires a catalog source.
+```
+
+See [docs/catalogs-explained.md](catalogs-explained.md) for the full catalog
+resolution model and `spec/kanon-list-add-lock-features-spec.md` section 4.0 for
+the normative rule.
+
+### Two ways to satisfy the requirement
+
+**Option 1 -- explicit flag (preferred for single invocations):**
+
+```bash
+kanon install --catalog-source "file:///path/to/manifest-repo@main"
+```
+
+**Option 2 -- environment variable (preferred when multiple calls share the same catalog):**
+
+```bash
+export KANON_CATALOG_SOURCE="file:///path/to/manifest-repo@main"
+kanon install
+```
+
+The environment variable takes precedence over any value baked into `.kanon` files.
+The scenario tests under `tests/scenarios/` exercise both shapes: files with a small
+number of call sites use the explicit `--catalog-source` flag; files with many call
+sites inject `KANON_CATALOG_SOURCE` via a per-test environment fixture.
+
+### `kanon bootstrap` is removed
+
+`kanon bootstrap` was removed in a major release (a breaking change) and is
+retained only as a uniform deprecation shim. **Every** `kanon bootstrap`
+invocation -- any args, any flags, including `--help`/`-h`, unknown flags,
+`kanon bootstrap list`, and bare `kanon bootstrap` -- exits with code 3
+(`EXIT_CODE_DEPRECATED`) and prints the deprecation message on stderr. Every
+flag is swallowed (no exit-0 `--help`, no argparse "unrecognized arguments"
+error) and no work is performed. The message includes a per-invocation "CLOSEST
+REPLACEMENT" line: `kanon bootstrap list` maps to `kanon list`, any other entry
+maps to `kanon add <entry>`. The examples in Category 2 (Bootstrap) reflect this
+behavior. Operators should use `kanon list`, `kanon add`, and `kanon install`
+with a catalog source to replace any bootstrap-based workflows.
+
+---
+
 ## 1. Setup
 
 ### 1.1 Install kanon-cli
@@ -108,21 +159,35 @@ kanon validate marketplace --help
 kanon bootstrap --help
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `package` and `--output-dir`.
+**Pass criteria:** Exit code 3. `--help` is swallowed like any other flag: no
+help text is printed and the command does not exit 0. stderr contains the
+deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`). No work is
+performed.
 
 ---
 
-## 3. Category 2: Bootstrap -- Bundled Catalog (5 tests)
+## 3. Category 2: Bootstrap -- Removed (7 tests)
 
-### BS-01: List bundled packages
+> **Note:** `kanon bootstrap` was removed in a major release (a breaking change)
+> and is retained only as a uniform deprecation shim. All bootstrap invocations
+> exit with code **3** (`EXIT_CODE_DEPRECATED`) and print the deprecation message
+> on stderr. Every flag (including `--output-dir`, `--catalog-source`, and
+> `--help`) is swallowed; no work, clone, or filesystem access occurs and no files
+> are created. The tests in this category verify the deprecation contract, not
+> success behavior.
+
+### BS-01: List bundled packages (removed)
 
 ```bash
 kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `kanon`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), and its "CLOSEST REPLACEMENT"
+line reads `kanon list --catalog-source <git-url>@<ref>`. No package listing is
+produced.
 
-### BS-02: Bootstrap kanon package (default output dir)
+### BS-02: Bootstrap kanon package (default output dir -- removed)
 
 ```bash
 cd "${KANON_TEST_ROOT}"
@@ -130,7 +195,10 @@ mkdir bs02 && cd bs02
 kanon bootstrap kanon
 ```
 
-**Pass criteria:** Exit code 0. Files `.kanon` and `kanon-readme.md` exist in the current directory. stdout contains `kanon install .kanon`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), and its "CLOSEST REPLACEMENT"
+line reads `kanon add kanon --catalog-source <git-url>@<ref>`. No `.kanon` file
+is created in the current directory.
 
 **Cleanup:**
 
@@ -138,13 +206,17 @@ kanon bootstrap kanon
 rm -rf "${KANON_TEST_ROOT}/bs02"
 ```
 
-### BS-03: Bootstrap kanon package with --output-dir
+### BS-03: Bootstrap kanon package with a swallowed flag (removed)
 
 ```bash
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs03-output"
 ```
 
-**Pass criteria:** Exit code 0. Files `${KANON_TEST_ROOT}/bs03-output/.kanon` and `${KANON_TEST_ROOT}/bs03-output/kanon-readme.md` exist.
+**Pass criteria:** Exit code 3. The `--output-dir` flag is swallowed -- there are
+no bootstrap flags any more. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), and its "CLOSEST REPLACEMENT"
+line reads `kanon add kanon --catalog-source <git-url>@<ref>`. No files are
+created in `${KANON_TEST_ROOT}/bs03-output`.
 
 **Cleanup:**
 
@@ -152,7 +224,7 @@ kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs03-output"
 rm -rf "${KANON_TEST_ROOT}/bs03-output"
 ```
 
-### BS-04: Conflict -- bootstrap into dir with existing .kanon
+### BS-04: Conflict -- bootstrap into dir with existing .kanon (removed)
 
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/bs04"
@@ -160,7 +232,10 @@ echo "existing" > "${KANON_TEST_ROOT}/bs04/.kanon"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs04"
 ```
 
-**Pass criteria:** Exit code 1. stderr contains `already exist`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`). The `--output-dir` flag is
+swallowed and the shim performs no work, so the pre-existing `.kanon` file is
+never examined.
 
 **Cleanup:**
 
@@ -168,18 +243,21 @@ kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs04"
 rm -rf "${KANON_TEST_ROOT}/bs04"
 ```
 
-### BS-05: Unknown package name
+### BS-05: Unknown package name (removed)
 
 ```bash
 kanon bootstrap nonexistent
 ```
 
-**Pass criteria:** Exit code 1. stderr contains `Unknown package 'nonexistent'`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), and its "CLOSEST REPLACEMENT"
+line reads `kanon add nonexistent --catalog-source <git-url>@<ref>`. The shim
+does not resolve the catalog, so the package name is not validated.
 
-### BS-06: Blocker file at output path
+### BS-06: Blocker file at the former output path (removed)
 
-**Setup:** Place a regular file at the path that would be used as the output directory so
-that `mkdir` cannot create a directory there.
+**Setup:** Place a regular file at the path that the former `--output-dir` flag
+would have used.
 
 ```bash
 touch "${KANON_TEST_ROOT}/bs06-blocker"
@@ -191,8 +269,9 @@ touch "${KANON_TEST_ROOT}/bs06-blocker"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs06-blocker"
 ```
 
-**Expect:** Exit code 1. stderr contains `Cannot create output directory`. No traceback
-is printed -- only the single error line.
+**Expect:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`). The `--output-dir` flag is
+swallowed and the shim performs no work, so there is no filesystem check.
 
 **Cleanup:**
 
@@ -200,7 +279,7 @@ is printed -- only the single error line.
 rm -f "${KANON_TEST_ROOT}/bs06-blocker"
 ```
 
-### BS-07: Missing parent directory for --output-dir
+### BS-07: Missing parent directory for the former --output-dir (removed)
 
 **Setup:** No setup required. Use a path whose parent directory does not exist.
 
@@ -210,8 +289,9 @@ rm -f "${KANON_TEST_ROOT}/bs06-blocker"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/nonexistent-parent/child"
 ```
 
-**Expect:** Exit code 1. stderr contains `parent directory` and the missing parent path.
-No traceback is printed -- only the single error line.
+**Expect:** Exit code 3. stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`). The `--output-dir` flag is
+swallowed and the shim performs no work, so there is no filesystem check.
 
 **Cleanup:** No cleanup required (no files were created).
 
@@ -470,6 +550,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${IC01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -516,6 +597,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${IC02_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -555,6 +637,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${IC03_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -586,6 +669,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${IC04_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -623,6 +707,7 @@ KANON_SOURCE_bravo_PATH=repo-specs/bravo-only.xml
 KANONEOF
 
 cd "${MS01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -667,6 +752,7 @@ KANON_SOURCE_secondary_PATH=repo-specs/collision.xml
 KANONEOF
 
 cd "${CD01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -700,6 +786,7 @@ KANON_SOURCE_ccc_PATH=repo-specs/packages.xml
 KANONEOF
 
 cd "${CD02_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -732,6 +819,7 @@ KANON_SOURCE_linked_PATH=repo-specs/linkfile.xml
 KANONEOF
 
 cd "${LF01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_LINKFILE_DIR}@main"
 kanon install .kanon
 ```
 
@@ -760,6 +848,7 @@ rm -rf "${LF01_DIR}"
 export EC01_DIR="${KANON_TEST_ROOT}/test-ec01"
 mkdir -p "${EC01_DIR}"
 cd "${EC01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -778,6 +867,7 @@ export EC02_DIR="${KANON_TEST_ROOT}/test-ec02"
 mkdir -p "${EC02_DIR}"
 touch "${EC02_DIR}/.kanon"
 cd "${EC02_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -802,6 +892,7 @@ KANON_SOURCE_test_PATH=meta.xml
 KANONEOF
 
 cd "${EC03_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -825,6 +916,7 @@ KANON_SOURCE_test_PATH=meta.xml
 KANONEOF
 
 cd "${EC04_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -850,6 +942,7 @@ KANON_SOURCE_build_PATH=meta.xml
 KANONEOF
 
 cd "${EC05_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -875,6 +968,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${EC06_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -920,6 +1014,23 @@ kanon validate
 
 **Pass criteria:** Exit code 2. stderr contains `Must specify a validation target`.
 
+### EC-10: doctor on zero-source .kanon
+
+A `.kanon` that declares no `KANON_SOURCE_<name>_{URL,REVISION,PATH}` triples is
+invalid. With a lockfile present, `kanon doctor` recomputes the `kanon_hash`,
+which forces source discovery and raises the "No sources found" error. The
+command must surface this as a clean finding, not a raw Python traceback.
+
+```bash
+# .kanon contains only: KANON_MARKETPLACE_INSTALL=false  (no sources)
+# .kanon.lock present so doctor reaches the kanon_hash recompute
+kanon doctor --kanon-file .kanon
+```
+
+**Pass criteria:** Exit code is non-zero. stderr reports a clean error
+mentioning `no sources` (the `NO_SOURCES` finding). Neither stdout nor stderr
+contains `Traceback` or a `BUG:` marker.
+
 ---
 
 ## 10. Category 9: Idempotency (3 tests)
@@ -938,6 +1049,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${ID01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 kanon install .kanon
 ```
@@ -997,6 +1109,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${ID03_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 kanon clean .kanon
 kanon clean .kanon
@@ -1031,7 +1144,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${EV01_DIR}"
-GITBASE=https://override.example.com kanon install .kanon
+GITBASE=https://override.example.com KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon
 ```
 
 **Pass criteria:**
@@ -1062,7 +1175,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${EV02_DIR}"
-KANON_MARKETPLACE_INSTALL=false kanon install .kanon
+KANON_MARKETPLACE_INSTALL=false KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon
 ```
 
 **Pass criteria:**
@@ -1078,9 +1191,12 @@ KANON_MARKETPLACE_INSTALL=false kanon clean .kanon
 rm -rf "${EV02_DIR}"
 ```
 
-### EV-03: KANON_CATALOG_SOURCE env var for bootstrap
+### EV-03: KANON_CATALOG_SOURCE env var -- bootstrap is removed
 
-This test requires a local git repo that acts as a remote catalog source.
+This test demonstrates that `kanon bootstrap` was removed and exits with code 3
+regardless of whether a catalog source is provided. `KANON_CATALOG_SOURCE` is
+swallowed along with every other input: the shim performs no work and never
+resolves the catalog.
 
 ```bash
 export CUSTOM_CATALOG_DIR="${KANON_TEST_ROOT}/fixtures/custom-catalog"
@@ -1104,8 +1220,11 @@ KANON_CATALOG_SOURCE="file://${CUSTOM_CATALOG_DIR}@v1.0.0" kanon bootstrap list
 ```
 
 **Pass criteria:**
-- Exit code 0
-- stdout contains `my-template`
+- Exit code 3
+- stderr contains the deprecation message
+  (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT"
+  line of `kanon list --catalog-source <git-url>@<ref>`
+- No catalog is resolved; no package listing is produced
 
 **Cleanup:**
 
@@ -1259,7 +1378,9 @@ python -m kanon_cli --help
 
 ## 14. Category 13: Catalog Source PEP 440 Constraints (26 tests)
 
-These tests verify that `--catalog-source` and `KANON_CATALOG_SOURCE` resolve PEP 440 version constraints against git tags before cloning. Every PEP 440 operator is tested via both the CLI flag and the environment variable.
+> **Note:** `kanon bootstrap list` was removed in a major release (a breaking change) and is now a uniform deprecation shim. All 26 tests in this category exercise that shim: every invocation exits with code 3 (`EXIT_CODE_DEPRECATED`) and prints the deprecation message on stderr. The `--catalog-source` flag and `KANON_CATALOG_SOURCE` env var are swallowed, so the PEP 440 constraint resolution path is never reached.
+
+These tests originally verified that `--catalog-source` and `KANON_CATALOG_SOURCE` resolve PEP 440 version constraints against git tags before cloning. Because `kanon bootstrap list` no longer does any work, the constraint resolution is not reached; each invocation now asserts exit code 3 and the deprecation message, whose "CLOSEST REPLACEMENT" line reads `kanon list --catalog-source <git-url>@<ref>`.
 
 Run this category twice:
 1. **Pre-merge:** with kanon installed in editable mode (`pip install -e .`) from the local checkout
@@ -1302,7 +1423,7 @@ git tag 3.0.0
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@*"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-02: Wildcard `*` via env var
 
@@ -1310,7 +1431,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@*"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@*" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-03: `latest` via flag
 
@@ -1318,7 +1439,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@*" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-04: `latest` via env var
 
@@ -1326,7 +1447,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to tag `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-05: Compatible release `~=1.0.0` via flag
 
@@ -1334,7 +1455,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=1.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.0.1` (highest matching `>=1.0.0,<1.1.0`).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-06: Compatible release `~=1.0.0` via env var
 
@@ -1342,7 +1463,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.0.1`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-07: Compatible release `~=2.0.0` via flag
 
@@ -1350,7 +1471,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0` (highest matching `>=2.0.0,<2.1.0`).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-08: Compatible release `~=2.0.0` via env var
 
@@ -1358,7 +1479,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-09: Range `>=1.0.0,<2.0.0` via flag
 
@@ -1366,7 +1487,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest 1.x).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-10: Range `>=1.0.0,<2.0.0` via env var
 
@@ -1374,7 +1495,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-11: Range `>=2.0.0,<3.0.0` via flag
 
@@ -1382,7 +1503,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0" kanon bootstrap l
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.1.0` (highest 2.x).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-12: Range `>=2.0.0,<3.0.0` via env var
 
@@ -1390,7 +1511,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.1.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-13: Minimum `>=1.0.0` via flag
 
@@ -1398,7 +1519,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" kanon bootstrap l
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0` (highest available).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-14: Minimum `>=1.0.0` via env var
 
@@ -1406,7 +1527,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-15: Less than `<2.0.0` via flag
 
@@ -1414,7 +1535,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest below 2.0.0).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-16: Less than `<2.0.0` via env var
 
@@ -1422,7 +1543,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-17: Less than or equal `<=2.0.0` via flag
 
@@ -1430,7 +1551,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<=2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-18: Less than or equal `<=2.0.0` via env var
 
@@ -1438,7 +1559,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<=2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<=2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `2.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-19: Exact `==1.1.0` via flag
 
@@ -1446,7 +1567,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<=2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@==1.1.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to exactly `1.1.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-20: Exact `==1.1.0` via env var
 
@@ -1454,7 +1575,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@==1.1.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@==1.1.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to exactly `1.1.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-21: Exclusion `!=1.0.0` via flag
 
@@ -1462,7 +1583,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@==1.1.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@!=1.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0` (highest non-excluded).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-22: Exclusion `!=1.0.0` via env var
 
@@ -1470,7 +1591,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@!=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@!=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `3.0.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-23: Open range `>1.0.0,<2.0.0` via flag
 
@@ -1478,7 +1599,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@!=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0` (highest in open range).
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-24: Open range `>1.0.0,<2.0.0` via env var
 
@@ -1486,7 +1607,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. Resolves to `1.2.0`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-25: Plain branch passthrough via flag
 
@@ -1494,7 +1615,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0" kanon bootstrap li
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@main"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. No constraint resolution occurs; `main` is passed directly to `git clone --branch`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 ### CS-26: Plain tag passthrough via flag
 
@@ -1502,7 +1623,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@main"
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@2.0.0"
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `test-entry`. No constraint resolution occurs; `2.0.0` is passed directly to `git clone --branch`.
+**Pass criteria:** Exit code 3. stderr contains the deprecation message (`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag / `KANON_CATALOG_SOURCE` env var is swallowed; no catalog resolution or git I/O occurs.
 
 **Cleanup:**
 
@@ -1532,6 +1653,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 ```
 
@@ -1562,6 +1684,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD02_DIR}/child"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 ```
 
@@ -1586,6 +1709,7 @@ mkdir -p "${AD03_DIR}"
 cd "${AD03_DIR}"
 
 set +e
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 exit_code=$?
 set -e
@@ -1615,6 +1739,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD04_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 ```
 
@@ -1645,6 +1770,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD05_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 kanon clean
 ```
@@ -1675,6 +1801,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD06_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 
 cd "${AD06_DIR}/child"
@@ -1708,6 +1835,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD07_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install "${AD07_EXPLICIT}/.kanon"
 ```
 
@@ -1738,6 +1866,7 @@ KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml
 KANONEOF
 
 cd "${AD08_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install 2>&1
 ```
 
@@ -1860,7 +1989,7 @@ KANON_SOURCE_pep_URL=file://${RX_FIX}
 KANON_SOURCE_pep_REVISION=main
 KANON_SOURCE_pep_PATH=${id}.xml
 KANONEOF
-    kanon install .kanon
+    KANON_CATALOG_SOURCE="file://${RX_FIX}@main" kanon install .kanon
     (cd .kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
 }
 ```
@@ -2081,7 +2210,7 @@ KANON_SOURCE_pep_URL=file://${RX_FIX}
 KANON_SOURCE_pep_REVISION=main
 KANON_SOURCE_pep_PATH=rx26.xml
 KANONEOF
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${RX_FIX}@main" kanon install .kanon
 exit_code=$?
 set -e
 ```
@@ -2159,7 +2288,7 @@ KANON_SOURCE_pep_URL=file://${KS_FIX}
 KANON_SOURCE_pep_REVISION=${rev}
 KANON_SOURCE_pep_PATH=default.xml
 KANONEOF
-    kanon install .kanon
+    KANON_CATALOG_SOURCE="file://${KS_FIX}@main" kanon install .kanon
     (cd .kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
 }
 ```
@@ -2358,7 +2487,7 @@ KANON_SOURCE_pep_URL=file://${KS_FIX}
 KANON_SOURCE_pep_REVISION=main
 KANON_SOURCE_pep_PATH=default.xml
 KANONEOF
-KS_FIX="${KS_FIX}" KANON_SOURCE_pep_REVISION="refs/tags/~=1.0.0" kanon install .kanon
+KS_FIX="${KS_FIX}" KANON_SOURCE_pep_REVISION="refs/tags/~=1.0.0" KANON_CATALOG_SOURCE="file://${KS_FIX}@main" kanon install .kanon
 (cd .kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/1.0.1"
 ```
 
@@ -2375,7 +2504,7 @@ KANON_SOURCE_pep_URL=file://${KS_FIX}
 KANON_SOURCE_pep_REVISION=\${UNDEFINED_KS_VAR}
 KANON_SOURCE_pep_PATH=default.xml
 KANONEOF
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${KS_FIX}@main" kanon install .kanon
 exit_code=$?
 set -e
 ```
@@ -2393,7 +2522,7 @@ KANON_SOURCE_pep_URL=file://${KS_FIX}
 KANON_SOURCE_pep_REVISION==*
 KANON_SOURCE_pep_PATH=default.xml
 KANONEOF
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${KS_FIX}@main" kanon install .kanon
 exit_code=$?
 set -e
 ```
@@ -2565,7 +2694,7 @@ KANON_SOURCE_mp_URL=file://${MK_MFST}
 KANON_SOURCE_mp_REVISION=${rev_kanon}
 KANON_SOURCE_mp_PATH=${id}.xml
 KANONEOF
-    kanon install .kanon
+    KANON_CATALOG_SOURCE="file://${MK_MFST}@main" kanon install .kanon
 }
 ```
 
@@ -2857,7 +2986,7 @@ mk_run mk20 "main"
 claude plugin list 2>/dev/null | grep -q "mk20"
 kanon clean .kanon
 claude plugin list 2>/dev/null | grep -q "mk20" || echo "absent ok"
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${MK_MFST}@main" kanon install .kanon
 claude plugin list 2>/dev/null | grep -q "mk20" && echo "PASS: mk20 restored"
 kanon clean .kanon
 ```
@@ -2876,6 +3005,7 @@ KANON_SOURCE_combo_URL=file://${MK_MFST}
 KANON_SOURCE_combo_REVISION=main
 KANON_SOURCE_combo_PATH=mk21.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MK_MFST}@main"
 kanon install .kanon
 claude plugin list 2>/dev/null | grep -E "mk21(a|b)" | wc -l | grep -q "^2$"
 kanon clean .kanon
@@ -3036,7 +3166,7 @@ KANON_SOURCE_pk_URL=file://${PK_MFST}
 KANON_SOURCE_pk_REVISION=${rev_kanon}
 KANON_SOURCE_pk_PATH=${id}.xml
 KANONEOF
-    kanon install .kanon
+    KANON_CATALOG_SOURCE="file://${PK_MFST}@main" kanon install .kanon
 }
 ```
 
@@ -3102,7 +3232,7 @@ kanon clean .kanon
 pk_run pk06 "main"
 test -L .packages/pk06 || (echo "FAIL: first install missing"; exit 1)
 kanon clean .kanon
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${PK_MFST}@main" kanon install .kanon
 test -L .packages/pk06 && echo "PASS: restored"
 kanon clean .kanon
 ```
@@ -3119,7 +3249,7 @@ KANON_SOURCE_pk_URL=file://${PK_MFST}
 KANON_SOURCE_pk_REVISION=main
 KANON_SOURCE_pk_PATH=pk07.xml
 KANONEOF
-KANON_SOURCE_pk_REVISION="refs/tags/~=2.0.0" kanon install .kanon
+KANON_SOURCE_pk_REVISION="refs/tags/~=2.0.0" KANON_CATALOG_SOURCE="file://${PK_MFST}@main" kanon install .kanon
 (cd .kanon-data/sources/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/2.1.0"
 kanon clean .kanon
 ```
@@ -3182,7 +3312,7 @@ KANON_SOURCE_b_REVISION=main
 KANON_SOURCE_b_PATH=pk12.xml
 KANONEOF
 set +e
-kanon install .kanon
+KANON_CATALOG_SOURCE="file://${PK_MFST}@main" kanon install .kanon
 exit_code=$?
 set -e
 ```
@@ -4966,41 +5096,57 @@ rm -rf /tmp/custom-repo /tmp/env-repo /tmp/env-A /tmp/flag-B
 
 Existing categories cover most of the top-level surface. These scenarios fill remaining gaps.
 
-### TC-bootstrap-01: `--output-dir=<path>`
+> **Note on TC-bootstrap-* tests:** `kanon bootstrap` was removed in a major
+> release (a breaking change) and is now a uniform deprecation shim. All
+> TC-bootstrap-* tests verify the deprecation behavior (exit code 3, the
+> deprecation message on stderr, every flag swallowed) rather than success
+> behavior.
+
+### TC-bootstrap-01: former `--output-dir=<path>` flag is swallowed (removed)
 
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/tc-bs-01"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/tc-bs-01"
-test -f "${KANON_TEST_ROOT}/tc-bs-01/.kanon" && echo "PASS"
 ```
 
-**Pass criteria:** Exit code 0; `.kanon` created at the named path.
+**Pass criteria:** Exit code 3; stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line
+of `kanon add kanon --catalog-source <git-url>@<ref>`. The `--output-dir` flag is
+swallowed; no `.kanon` is created at the named path.
 
-### TC-bootstrap-02: `--catalog-source` flag form
+### TC-bootstrap-02: former `--catalog-source` flag form is swallowed (removed)
 
 ```bash
-kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest" | grep -q test-entry
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 0; flag value used.
+**Pass criteria:** Exit code 3; stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line
+of `kanon list --catalog-source <git-url>@<ref>`. The `--catalog-source` flag is
+swallowed; no package listing is produced.
 
-### TC-bootstrap-03: `KANON_CATALOG_SOURCE` env form
+### TC-bootstrap-03: `KANON_CATALOG_SOURCE` env form is swallowed (removed)
 
 ```bash
-KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list | grep -q test-entry
+KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 0; env value used.
+**Pass criteria:** Exit code 3; stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`), with a "CLOSEST REPLACEMENT" line
+of `kanon list --catalog-source <git-url>@<ref>`. The env var is swallowed; no
+package listing is produced.
 
-### TC-bootstrap-04: flag overrides env
+### TC-bootstrap-04: flag and env are both swallowed (removed)
 
 ```bash
-KANON_CATALOG_SOURCE="file://nonexistent.git@1.0.0" kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest" | grep -q test-entry
+KANON_CATALOG_SOURCE="file://nonexistent.git@1.0.0" kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 0; flag value wins; no attempt to read env value.
+**Pass criteria:** Exit code 3; stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`). The shim performs no work, so
+neither the flag nor the env var is consulted for catalog resolution.
 
-### TC-bootstrap-05: bootstrap into nonexistent parent path errors
+### TC-bootstrap-05: former `--output-dir` into nonexistent parent is swallowed (removed)
 
 ```bash
 set +e
@@ -5009,7 +5155,9 @@ exit_code=$?
 set -e
 ```
 
-**Pass criteria:** Exit code non-zero; stderr names the missing parent.
+**Pass criteria:** Exit code 3; stderr contains the deprecation message
+(`DEPRECATED: \`kanon bootstrap\` was removed`). The `--output-dir` flag is
+swallowed and the shim performs no work, so there is no filesystem check.
 
 ### TC-install-01: auto-discover walks parent tree
 
@@ -5022,6 +5170,7 @@ KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 cd sub/deep
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 test -L "${KANON_TEST_ROOT}/tc-inst-01/.packages/pkg-alpha" && echo "PASS"
 kanon clean
@@ -5039,6 +5188,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install my.kanon
 test -L .packages/pkg-alpha && echo "PASS"
 kanon clean my.kanon
@@ -5056,7 +5206,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
-REPO_URL=https://example.com/repo.git kanon install .kanon 2>&1 | tee /tmp/tc-inst-03.log
+REPO_URL=https://example.com/repo.git KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon 2>&1 | tee /tmp/tc-inst-03.log
 grep -qi "deprecat" /tmp/tc-inst-03.log && echo "PASS"
 kanon clean .kanon
 ```
@@ -5073,7 +5223,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
-REPO_REV=v1.2.3 kanon install .kanon 2>&1 | tee /tmp/tc-inst-04.log
+REPO_REV=v1.2.3 KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon 2>&1 | tee /tmp/tc-inst-04.log
 grep -qi "deprecat" /tmp/tc-inst-04.log && echo "PASS"
 kanon clean .kanon
 ```
@@ -5090,6 +5240,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 kanon clean
 test ! -d .packages && test ! -d .kanon-data && echo "PASS"
@@ -5107,6 +5258,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install
 grep -q "^.packages/$" .gitignore || (echo "FAIL: install did not add"; exit 1)
 kanon clean
@@ -5114,6 +5266,52 @@ grep -q "^.packages/$" .gitignore && grep -q "^.kanon-data/$" .gitignore && echo
 ```
 
 **Pass criteria:** Both `.gitignore` lines added by install remain after clean.
+
+### TC-clean-03: `clean --orphans` prunes a removed source's marketplace
+
+Fixture setup — a manifest repo with two marketplace-bearing sources. Each
+`<linkfile>` deposits the plugin checkout into `CLAUDE_MARKETPLACES_DIR/<name>`,
+so install attributes `orphan-mp` to the `orphan` source and `keep-mp` to the
+`keep` source in each `[[sources]]` table's `registered_marketplaces`:
+
+```bash
+export MANIFEST_MP_DIR="${KANON_TEST_ROOT}/fixtures/manifest-repos/manifest-mp"
+# Build two plugin repos (orphan-mp, keep-mp), each with a claude-schema
+# .claude-plugin/marketplace.json (the real `claude` CLI requires the `owner`
+# object), then a manifest repo whose repo-specs/{orphan,keep}-only.xml link
+# each plugin into CLAUDE_MARKETPLACES_DIR. (See tests/scenarios/test_tc_clean.py
+# `_build_two_marketplace_sources` for the canonical fixture builder.)
+```
+
+```bash
+mkdir -p "${KANON_TEST_ROOT}/tc-cln-03"
+cd "${KANON_TEST_ROOT}/tc-cln-03"
+cat > .kanon << KANONEOF
+KANON_MARKETPLACE_INSTALL=true
+CLAUDE_MARKETPLACES_DIR=${KANON_TEST_ROOT}/tc-cln-03/marketplaces
+KANON_SOURCE_orphan_URL=file://${MANIFEST_MP_DIR}
+KANON_SOURCE_orphan_REVISION=main
+KANON_SOURCE_orphan_PATH=repo-specs/orphan-only.xml
+KANON_SOURCE_keep_URL=file://${MANIFEST_MP_DIR}
+KANON_SOURCE_keep_REVISION=main
+KANON_SOURCE_keep_PATH=repo-specs/keep-only.xml
+KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_MP_DIR}@main"
+kanon install
+# Remove source 'orphan' from .kanon (its marketplace is now orphaned in the
+# lock). 'keep' remains, so its marketplace must be retained.
+kanon remove orphan
+kanon clean --orphans
+test ! -d .packages && test ! -d .kanon-data && echo "PASS"
+```
+
+**Pass criteria:** Exit code 0; the marketplaces attributed (in each
+`[[sources]]` table's `registered_marketplaces`) to sources recorded in
+`.kanon.lock` but no longer declared in `.kanon` are unregistered from
+`~/.claude` (`claude plugin marketplace remove`) before the normal teardown; a
+marketplace still provided by a referenced source (here `keep-mp`), and
+user/keep-set marketplaces (never recorded in any per-source ledger), are never
+removed; `.packages/` and `.kanon-data/` are removed.
 
 ### TC-validate-01: `validate xml --repo-root=<path>`
 
@@ -5181,30 +5379,36 @@ done
 
 Each journey reproduces a sequence verbatim from `kanon/docs/`. Source citations are included so doc drift is caught: if the doc updates the journey, the test row updates too.
 
-### UJ-01: `pip install -e .` → `kanon bootstrap kanon` → install → use → clean (`docs/setup-guide.md`)
+### UJ-01: `pip install -e .` → `kanon bootstrap kanon` is deprecated (`docs/setup-guide.md`)
+
+`kanon bootstrap kanon` is deprecated on the `feat/kanon-deps-work-2026-05` branch
+per spec section 4.0. Operators should use `kanon install` with an explicit catalog source
+instead.
 
 ```bash
 cd /workspaces/rpm-migration/kanon && pip install -e . > /dev/null
 mkdir -p "${KANON_TEST_ROOT}/uj-01"
 cd "${KANON_TEST_ROOT}/uj-01"
 kanon bootstrap kanon
-ls .kanon kanon-readme.md
-# (operator would edit .kanon here; we keep the bundled defaults)
-# kanon install (commented; bundled .kanon points at remote — out of scope for offline run)
-echo "PASS: bootstrap produced .kanon and readme"
 ```
 
-**Pass criteria:** Exit code 0; bootstrap files produced.
+**Pass criteria:** Exit code 3; stderr contains the WARN deprecation message per spec R357.
+No `.kanon` or readme files are created.
 
-### UJ-02: bootstrap with `--catalog-source` PEP 440 (`docs/creating-manifest-repos.md`)
+### UJ-02: bootstrap with `--catalog-source` PEP 440 is deprecated (`docs/creating-manifest-repos.md`)
+
+`kanon bootstrap list` is deprecated on the `feat/kanon-deps-work-2026-05` branch
+per spec section 4.0. This invocation exits 3 with the WARN message; the catalog source is
+not resolved.
 
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/uj-02"
 cd "${KANON_TEST_ROOT}/uj-02"
-kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" | grep -q test-entry
+kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 ```
 
-**Pass criteria:** Exit code 0; `test-entry` listed; resolves to highest 2.x tag.
+**Pass criteria:** Exit code 3; stderr contains the WARN deprecation message per spec R355.
+No package listing produced.
 
 ### UJ-03: multi-source install (`docs/multi-source-guide.md`)
 
@@ -5219,6 +5423,7 @@ KANON_SOURCE_bravo_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_bravo_REVISION=main
 KANON_SOURCE_bravo_PATH=repo-specs/bravo-only.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 test -L .packages/pkg-alpha && test -L .packages/pkg-bravo && echo "PASS: both"
 grep -q "^.packages/$" .gitignore && grep -q "^.kanon-data/$" .gitignore && echo "PASS: gitignore"
@@ -5238,7 +5443,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
-GITBASE="file:///tmp/override-base/" kanon install .kanon
+GITBASE="file:///tmp/override-base/" KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon
 test -L .packages/pkg-alpha && echo "PASS"
 kanon clean .kanon
 ```
@@ -5270,6 +5475,7 @@ KANON_SOURCE_b_REVISION=main
 KANON_SOURCE_b_PATH=repo-specs/collision.xml
 KANONEOF
 set +e
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon 2>&1 | tee /tmp/uj-06.log
 exit_code=$?
 set -e
@@ -5299,6 +5505,7 @@ KANON_SOURCE_a_URL=file://${MANIFEST_PRIMARY_DIR}
 KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 # Simulate cache save/restore: archive .packages and .kanon-data, restore.
 tar czf /tmp/uj-08-cache.tgz .packages .kanon-data
@@ -5321,7 +5528,7 @@ KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 HOME_NOTE=${HOME}
 KANONEOF
-MANIFEST_PRIMARY_DIR="${MANIFEST_PRIMARY_DIR}" kanon install .kanon
+MANIFEST_PRIMARY_DIR="${MANIFEST_PRIMARY_DIR}" KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main" kanon install .kanon
 echo "PASS: HOME expansion accepted"
 kanon clean .kanon
 
@@ -5332,6 +5539,7 @@ KANON_SOURCE_a_REVISION=main
 KANON_SOURCE_a_PATH=repo-specs/alpha-only.xml
 KANONEOF
 set +e
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon 2>&1 | tee /tmp/uj-09.log
 exit_code=$?
 set -e
@@ -5379,6 +5587,109 @@ for d in uj-{01..04} uj-{06} uj-{08..09} uj-11; do
     cd "${KANON_TEST_ROOT}" && rm -rf "${d}"
 done
 rm -f /tmp/uj-08-cache.tgz /tmp/uj-09.log /tmp/uj-06.log
+```
+
+---
+
+## 28b. Category 27b: Install Reconcile (npm-like) (2 tests)
+
+`kanon install` reconciles `.kanon` against `.kanon.lock` the way `npm install`
+reconciles `package.json` against `package-lock.json`: removed sources are
+pruned, newly-added and changed-spec sources are resolved fresh, unchanged
+sources preserve their locked SHA, and the lockfile is rebuilt and written once
+at the end on success only. `kanon install --strict-lock` is the `npm ci`
+analogue: it errors cleanly on any drift and never mutates the lockfile.
+`kanon install --refresh-lock` forces a full rebuild.
+
+These scenarios guard the fix for the
+`install-orphan-rescue-crash-and-lock-corruption` bug, where removing one source
+while adding another caused a corrupt lockfile write and an internal `BUG:`
+assertion that wedged the workspace.
+
+### RC-01: remove A + add B + install reconciles npm-style (idempotent)
+
+```bash
+export RC01_DIR="${KANON_TEST_ROOT}/test-rc01"
+mkdir -p "${RC01_DIR}"
+cd "${RC01_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
+
+# Install with source A only.
+cat > "${RC01_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_alpha_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
+KANONEOF
+kanon install .kanon
+
+# Remove A, add B in the same edit.
+cat > "${RC01_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_beta_URL=file://${MANIFEST_SECONDARY_DIR}
+KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_PATH=repo-specs/beta-only.xml
+KANONEOF
+kanon install .kanon
+
+# Idempotency: a second plain install changes nothing.
+kanon install .kanon
+```
+
+**Pass criteria:**
+- Each `kanon install` exits 0; stdout contains `kanon install: done`.
+- The second install (after the edit) emits `pruned orphaned lock entry: alpha`
+  and `lockfile reconciled with .kanon`.
+- No internal `BUG:` line and no Python traceback appear on stdout/stderr.
+- After the reconcile, `.kanon.lock` `[[sources]]` contains exactly `beta`
+  (the orphaned `alpha` entry is dropped; `beta` is resolved fresh).
+- The third install is idempotent: it reports CONSISTENT
+  (`installing from lockfile`) and leaves `.kanon.lock` byte-for-byte unchanged.
+
+**Cleanup:**
+
+```bash
+cd "${KANON_TEST_ROOT}" && rm -rf "${RC01_DIR}"
+```
+
+### RC-02: `--strict-lock` errors on drift without mutating the lockfile
+
+```bash
+export RC02_DIR="${KANON_TEST_ROOT}/test-rc02"
+mkdir -p "${RC02_DIR}"
+cd "${RC02_DIR}"
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
+
+cat > "${RC02_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_alpha_URL=file://${MANIFEST_PRIMARY_DIR}
+KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_PATH=repo-specs/alpha-only.xml
+KANONEOF
+kanon install .kanon
+cp .kanon.lock .kanon.lock.before
+
+# Drift: remove alpha, add beta.
+cat > "${RC02_DIR}/.kanon" << KANONEOF
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_beta_URL=file://${MANIFEST_SECONDARY_DIR}
+KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_PATH=repo-specs/beta-only.xml
+KANONEOF
+kanon install --strict-lock .kanon
+```
+
+**Pass criteria:**
+- The first `kanon install` exits 0.
+- `kanon install --strict-lock` exits non-zero with a clean `ERROR:` (no internal
+  `BUG:` line and no Python traceback).
+- `.kanon.lock` is byte-for-byte identical to `.kanon.lock.before`
+  (`--strict-lock` never mutates the lockfile).
+
+**Cleanup:**
+
+```bash
+cd "${KANON_TEST_ROOT}" && rm -rf "${RC02_DIR}"
 ```
 
 ---
@@ -5486,6 +5797,7 @@ rm -rf "${KANON_TEST_ROOT}"
 
 ```bash
 set +e
+export KANON_CATALOG_SOURCE="file://${MANIFEST_PRIMARY_DIR}@main"
 kanon install .kanon
 exit_code=$?
 set -e
@@ -5849,23 +6161,24 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 336 | TC-install-04 | top-level                          | REPO_REV deprecation                                   |        |      |         |       |
 | 337 | TC-clean-01   | top-level                          | auto-discover clean                                    |        |      |         |       |
 | 338 | TC-clean-02   | top-level                          | .gitignore retention                                   |        |      |         |       |
-| 339 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
-| 340 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
-| 341 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
-| 342 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
-| 343 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
-| 344 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
-| 345 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
-| 346 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
-| 347 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
-| 348 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
-| 349 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
-| 350 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
-| 351 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
-| 352 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
-| 353 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
-| 354 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
-| 355 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
+| 339 | TC-clean-03   | top-level                          | clean --orphans prunes unreferenced marketplace        |        |      |         |       |
+| 340 | TC-validate-01 | top-level                         | xml --repo-root                                        |        |      |         |       |
+| 341 | TC-validate-02 | top-level                         | marketplace --repo-root                                |        |      |         |       |
+| 342 | TC-validate-03 | top-level                         | auto-detect git root                                   |        |      |         |       |
+| 343 | TC-validate-04 | top-level                         | rejected when no root                                  |        |      |         |       |
+| 344 | TC-extra      | top-level                          | KANON_GIT_RETRY_* / KANON_SSH_MASTER_TIMEOUT_SEC       |        |      |         |       |
+| 345 | UJ-01         | user-journey                       | pip install -e + bootstrap                             |        |      |         |       |
+| 346 | UJ-02         | user-journey                       | --catalog-source PEP 440                               |        |      |         |       |
+| 347 | UJ-03         | user-journey                       | multi-source                                           |        |      |         |       |
+| 348 | UJ-04         | user-journey                       | GITBASE override                                       |        |      |         |       |
+| 349 | UJ-05         | user-journey                       | full marketplace lifecycle                             |        |      |         |       |
+| 350 | UJ-06         | user-journey                       | collision detection                                    |        |      |         |       |
+| 351 | UJ-07         | user-journey                       | linkfile journey                                       |        |      |         |       |
+| 352 | UJ-08         | user-journey                       | pipeline cache                                         |        |      |         |       |
+| 353 | UJ-09         | user-journey                       | shell variable expansion                               |        |      |         |       |
+| 354 | UJ-10         | user-journey                       | python -m kanon_cli                                    |        |      |         |       |
+| 355 | UJ-11         | user-journey                       | standalone repo journey                                |        |      |         |       |
+| 356 | UJ-12         | user-journey                       | manifest validation                                    |        |      |         |       |
 |     | TOTAL         | -                                  | -                                                      |        |      |         | aggregate summary populated post-run |
 
 ---

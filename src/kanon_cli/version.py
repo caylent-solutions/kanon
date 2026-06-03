@@ -12,14 +12,20 @@ revision attributes:
 - Prefixed: refs/tags/~=1.0.0 or refs/tags/prefix/~=1.0.0
 """
 
-import re
+import enum
 import subprocess
 import sys
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from kanon_cli.constants import PEP440_OPERATORS
+from kanon_cli.constants import (
+    BRANCH_SHA_TRUNCATION_LENGTH,
+    PEP440_OPERATORS,
+    SHA1_HEX_LENGTH,
+    SHA256_HEX_LENGTH,
+    TAG_ERROR_DISPLAY_CAP,
+)
 
 
 def is_version_constraint(rev_spec: str) -> bool:
@@ -90,11 +96,13 @@ def resolve_version(url: str, rev_spec: str) -> str:
     for use with ``repo init -b``.
 
     Plain branch or tag names (no PEP 440 operators) pass through unchanged,
-    EXCEPT bare semver-style values (e.g. ``1.0.0`` or ``1.0``) which are
-    automatically prefixed with ``refs/tags/`` so the underlying ``git
-    fetch`` resolves them as tags rather than branch names. Use the
-    ``refs/heads/<branch>`` form explicitly to force branch resolution
-    of a numeric branch name.
+    EXCEPT bare PEP 440 version strings (e.g. ``1.0.0``, ``1.0.0a1``,
+    ``1.0.0.post1``, ``2026.4.1``, ``1!2.0.0``) which are automatically
+    prefixed with ``refs/tags/`` so the underlying ``git fetch`` resolves
+    them as tags rather than branch names. Any string that parses cleanly
+    via ``packaging.version.Version`` and contains no ``/`` is treated as a
+    bare PEP 440 version. Use the ``refs/heads/<branch>`` form explicitly to
+    force branch resolution of a numeric branch name.
 
     Args:
         url: Git repository URL.
@@ -121,36 +129,110 @@ def resolve_version(url: str, rev_spec: str) -> str:
         sys.exit(1)
 
 
-_BARE_SEMVER_RE = re.compile(r"^\d+(?:\.\d+){1,2}$")
+def _is_bare_pep440_version(spec: str) -> bool:
+    """Return True if spec parses as a PEP 440 Version and contains no '/'.
+
+    Used to detect bare version strings (e.g. ``1.0.0a1``, ``1!2.0.0``,
+    ``1.0.0+local``) that should be normalized to ``refs/tags/<spec>``.
+    Inputs containing ``/`` are never bare versions -- they are either
+    already-prefixed refs or monorepo-prefixed tags.
+
+    Args:
+        spec: A revision string with no leading whitespace.
+
+    Returns:
+        True if spec contains no ``/`` and parses cleanly as a
+        ``packaging.version.Version``.
+    """
+    if "/" in spec:
+        return False
+    try:
+        Version(spec)
+        return True
+    except InvalidVersion:
+        return False
 
 
 def _normalize_bare_semver_to_tag(rev_spec: str) -> str:
-    """Prepend ``refs/tags/`` to bare semver-style values.
+    """Prepend ``refs/tags/`` to bare PEP 440 version strings.
 
-    Detects bare ``X.Y`` or ``X.Y.Z`` (digits-and-dots only, no operators,
-    no path prefix) and rewrites them as ``refs/tags/X.Y.Z``. All other
-    inputs (branch names, SHAs, already-prefixed refs) pass through
-    unchanged.
+    Accepts any input that (a) contains no ``/`` and (b) parses cleanly
+    via ``packaging.version.Version``. This widens the previous
+    digits-and-dots-only regex to cover all PEP 440 version shapes,
+    per spec Section 4.0 rule 3.
+
+    Accepted shapes include (but are not limited to):
+
+    - Plain semver: ``1.0.0``, ``1.0``, ``1``
+    - Prereleases: ``1.0.0a1``, ``1.0.0b3``, ``1.0.0rc2``
+    - Local versions: ``1.0.0+local``, ``1.0.0+local.build``
+    - Calendar versions: ``2026.4.1``
+    - Epochs: ``1!2.0.0``
+    - Post-releases: ``1.0.0.post1``
+    - Dev-releases: ``1.0.0.dev0``
+
+    All other inputs pass through unchanged:
+
+    - Already-prefixed refs: ``refs/tags/1.0.0``, ``refs/heads/main``
+    - Branch names that fail PEP 440: ``main``, ``develop``
+    - Hex SHAs (40- or 64-char): passed through unchanged
+    - Any input containing ``/``: ``feature/foo``, ``subpackage/1.0.0``
 
     Examples:
 
     - ``1.0.0``           -> ``refs/tags/1.0.0``
-    - ``1.0``             -> ``refs/tags/1.0``
+    - ``1.0.0a1``         -> ``refs/tags/1.0.0a1``
+    - ``1!2.0.0``         -> ``refs/tags/1!2.0.0``
     - ``main``            -> ``main`` (no change)
     - ``refs/tags/1.0.0`` -> ``refs/tags/1.0.0`` (no change)
-    - ``refs/heads/1.0``  -> ``refs/heads/1.0`` (no change)
-    - ``abcdef0``         -> ``abcdef0`` (no change)
+    - ``feature/foo``     -> ``feature/foo`` (no change)
 
-    Rationale: when a `.kanon` REVISION (or `<project revision="...">`)
-    declares a bare semver value, the user almost always means "the tag
-    with this version". Without the prefix, the underlying git fetch
-    resolves it as ``refs/heads/X.Y.Z`` (a branch lookup) which fails.
+    Args:
+        rev_spec: A revision string (branch, tag, SHA, or version spec).
+
+    Returns:
+        ``refs/tags/<rev_spec>`` when rev_spec is a bare PEP 440 version;
+        otherwise ``rev_spec`` unchanged.
     """
-    if "/" in rev_spec:
-        return rev_spec
-    if _BARE_SEMVER_RE.match(rev_spec):
+    if _is_bare_pep440_version(rev_spec):
         return "refs/tags/" + rev_spec
     return rev_spec
+
+
+def _format_zero_pep440_tags_error(prefix: str, skipped: list[str]) -> str:
+    """Format the loud error message for the zero-PEP-440-parseable-tags case.
+
+    Called when candidate tags exist under ``prefix`` but none of their last
+    path components parse as a valid PEP 440 version. Per spec Section 0.4
+    and Section 13 decision 14, the message must enumerate the non-PEP-440
+    tag names (capped at 10, deterministically sorted) plus a remediation
+    pointer to ``kanon catalog audit --check tag-format``.
+
+    Args:
+        prefix: The tag namespace prefix that was searched (e.g.
+            ``refs/tags/mylib`` or ``refs/tags``).
+        skipped: Full tag ref names of every candidate whose last path
+            component failed PEP 440 parsing.
+
+    Returns:
+        A multi-line error message string (without a trailing newline)
+        ready to be passed to ``ValueError``.
+    """
+    count = len(skipped)
+    sorted_skipped = sorted(skipped)
+    display = sorted_skipped[:TAG_ERROR_DISPLAY_CAP]
+    lines: list[str] = [
+        f"ERROR: No PEP 440-parseable version tags found under '{prefix}'.",
+        f"Skipped {count} tag(s) whose last path component is not a valid PEP 440 version:",
+    ]
+    for tag in display:
+        lines.append(f"  - {tag}")
+    if count > TAG_ERROR_DISPLAY_CAP:
+        lines.append(f"... (showing first {TAG_ERROR_DISPLAY_CAP} of {count})")
+    lines.append("Run 'kanon catalog audit --check tag-format' against the manifest repo")
+    lines.append("to identify every non-PEP-440 tag, then ask the catalog author to rename")
+    lines.append("them to PEP 440 form (e.g., 'release-1.0.0' -> '1.0.0').")
+    return "\n".join(lines)
 
 
 def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> str:
@@ -164,6 +246,17 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     This is the canonical constraint resolution implementation. Both
     ``resolve_version`` (CLI, fetches its own tags) and the repo module's
     ``resolve_version_constraint`` (receives pre-fetched tags) delegate here.
+
+    Two distinct error variants apply when no PEP 440 versions are found:
+
+    1. Zero candidates under prefix -- ``prefix`` has no tags at all. Raises a
+       narrow ``ValueError`` with message ``"No tags found under prefix '<prefix>'
+       for the given revision"``. This path is unchanged from before this task.
+
+    2. Candidates exist but none parse as PEP 440 (spec Section 0.4) -- Raises a
+       loud ``ValueError`` produced by ``_format_zero_pep440_tags_error``, which
+       enumerates up to 10 non-PEP-440 tag names (sorted deterministically) and
+       includes a remediation pointer to ``kanon catalog audit --check tag-format``.
 
     Args:
         revision: A revision string with a PEP 440 constraint in the last
@@ -197,16 +290,19 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         raise ValueError(f"No tags found under prefix '{prefix}' for the given revision")
 
     # Parse version from the last path component of each candidate.
+    # Collect skipped non-PEP-440 tag names for the loud error if needed.
     versions = []
+    skipped: list[str] = []
     for tag in candidate_tags:
         version_str = tag.rsplit("/", 1)[-1]
         try:
             versions.append((tag, Version(version_str)))
         except InvalidVersion:
-            continue
+            skipped.append(tag)
 
     if not versions:
-        raise ValueError(f"No parseable version tags found under '{prefix or 'refs/tags'}'")
+        display_prefix = prefix if prefix is not None else "refs/tags"
+        raise ValueError(_format_zero_pep440_tags_error(display_prefix, skipped))
 
     # Wildcard or 'latest': return highest version. The literal ``latest``
     # is treated as an alias for ``*`` so that ``refs/tags/latest`` and the
@@ -240,6 +336,123 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         )
 
     return max(matching, key=lambda pair: pair[1])[0]
+
+
+class RevisionShape(enum.Enum):
+    """Classification of a REVISION string for 'kanon outdated' column dispatch.
+
+    Values:
+        TAG: A PEP 440 version constraint (e.g. ``~=1.0.0``, ``>=1.0.0,<2.0.0``,
+            ``*``, ``latest``) or a ``refs/tags/...`` reference. Tag-pinned
+            sources use PEP 440 resolution against the remote's tag list.
+        BRANCH: A plain branch name (e.g. ``main``, ``develop``, ``feature/foo``)
+            that is neither a PEP 440 constraint nor a 40/64-hex-char SHA.
+            Branch-pinned sources query the branch HEAD via
+            ``git ls-remote refs/heads/<branch>``.
+        SHA: A full hexadecimal commit SHA (40 or 64 characters). SHA-pinned
+            sources display the same truncated SHA in all columns and have
+            ``upgrade-type=none`` (the operator pinned exactly that commit).
+    """
+
+    TAG = "tag"
+    BRANCH = "branch"
+    SHA = "sha"
+
+
+def _classify_revision_shape(revision: str) -> RevisionShape:
+    """Classify a REVISION string into TAG, BRANCH, or SHA.
+
+    Classification rules (applied in order):
+    1. If the string is exactly 40 or 64 hex characters, it is SHA-pinned.
+    2. If ``is_version_constraint`` returns True or the string starts with
+       ``refs/tags/``, it is TAG-pinned.
+    3. Otherwise it is BRANCH-pinned.
+
+    Args:
+        revision: The REVISION string from a KANON_SOURCE_<name>_REVISION
+            environment variable (e.g. ``main``, ``>=1.0.0``, ``a3b4c5...``).
+
+    Returns:
+        A :class:`RevisionShape` member describing the revision kind.
+    """
+    # SHA check: exactly 40 or 64 hex characters
+    hex_chars = frozenset("0123456789abcdefABCDEF")
+    if len(revision) in (SHA1_HEX_LENGTH, SHA256_HEX_LENGTH) and all(c in hex_chars for c in revision):
+        return RevisionShape.SHA
+
+    # Tag check: PEP 440 constraint or explicit refs/tags/ prefix
+    if is_version_constraint(revision) or revision.startswith("refs/tags/"):
+        return RevisionShape.TAG
+
+    # Default: branch-pinned
+    return RevisionShape.BRANCH
+
+
+def _truncate_sha(sha: str) -> str:
+    """Return the first ``BRANCH_SHA_TRUNCATION_LENGTH`` characters of a SHA.
+
+    This matches the ``git`` default short-SHA convention. Used for the
+    ``current``, ``latest-matching-spec``, and ``latest-available`` columns
+    for branch-pinned and SHA-pinned sources in 'kanon outdated'.
+
+    Args:
+        sha: A full hexadecimal commit SHA (typically 40 or 64 characters,
+            but any non-empty string is accepted; the first
+            ``BRANCH_SHA_TRUNCATION_LENGTH`` characters are returned).
+
+    Returns:
+        The leading ``BRANCH_SHA_TRUNCATION_LENGTH`` characters of ``sha``.
+    """
+    return sha[:BRANCH_SHA_TRUNCATION_LENGTH]
+
+
+def _list_branch_head(url: str, branch: str) -> str:
+    """Return the full commit SHA at the HEAD of a remote branch.
+
+    Runs ``git ls-remote <url> refs/heads/<branch>`` and parses the SHA from
+    the single matching output line.
+
+    Issues a single ``git ls-remote`` call with no timeout or retry logic.
+    The caller is responsible for any retry or timeout policy if needed.
+
+    Args:
+        url: Git repository URL (any scheme accepted by git ls-remote).
+        branch: Branch name without the ``refs/heads/`` prefix.
+
+    Returns:
+        The full 40-character hexadecimal commit SHA at the branch HEAD.
+
+    Raises:
+        RuntimeError: If the ``git`` binary is not found on PATH, or if the
+            git command exits with a non-zero return code.
+        ValueError: If the branch ref is not found in the remote's output
+            (i.e., the branch does not exist on the remote).
+    """
+    ref = f"refs/heads/{branch}"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", url, ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("ERROR: git binary not found. Install git and ensure it is on PATH.") from exc
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ERROR: git ls-remote failed for {url!r}: {result.stderr.strip()}")
+
+    for line in result.stdout.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[1] == ref:
+            return parts[0]
+
+    raise ValueError(
+        f"ERROR: Branch '{branch}' ({ref}) not found on remote {url!r}.\n"
+        f"Check that the branch name is correct and that the remote is accessible."
+    )
 
 
 def _list_tags(url: str) -> list[str]:

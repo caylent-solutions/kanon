@@ -197,7 +197,11 @@ def _run_ks(
         work_dir,
         [("pep", ks_fix_bare.as_uri(), revision, "default.xml")],
     )
-    install_result = kanon_install(work_dir)
+    catalog_source = f"{ks_fix_bare.as_uri()}@main"
+    install_result = kanon_install(
+        work_dir,
+        extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+    )
     assert install_result.returncode == 0, (
         f"kanon install exited {install_result.returncode}\n"
         f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -382,9 +386,14 @@ class TestKS:
             work_dir,
             [("pep", ks_fix.as_uri(), "main", "default.xml")],
         )
+        catalog_source = f"{ks_fix.as_uri()}@main"
         install_result = kanon_install(
             work_dir,
-            extra_env={"KANON_SOURCE_pep_REVISION": "refs/tags/~=1.0.0"},
+            extra_env={
+                "KANON_SOURCE_pep_REVISION": "refs/tags/~=1.0.0",
+                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_ALLOW_INSECURE_REMOTES": "1",
+            },
         )
         assert install_result.returncode == 0, (
             f"kanon install exited {install_result.returncode}\n"
@@ -416,7 +425,11 @@ class TestKS:
             "KANON_SOURCE_pep_REVISION=${UNDEFINED_KS_VAR}\n"
             "KANON_SOURCE_pep_PATH=default.xml\n"
         )
-        result = kanon_install(work_dir)
+        catalog_source = f"{ks_fix.as_uri()}@main"
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert result.returncode != 0, (
             f"Expected non-zero exit for undefined shell var, got 0.\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -440,7 +453,11 @@ class TestKS:
             work_dir,
             [("pep", ks_fix.as_uri(), "==*", "default.xml")],
         )
-        result = kanon_install(work_dir)
+        catalog_source = f"{ks_fix.as_uri()}@main"
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert result.returncode != 0, (
             f"Expected non-zero exit for invalid ==* constraint, got 0.\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"

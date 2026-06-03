@@ -96,7 +96,11 @@ class TestID:
         _content_repo, manifest_bare = _make_fixtures(fixtures)
         _write_primary_kanonenv(working, manifest_bare)
 
-        first = kanon_install(working)
+        catalog_source = f"file://{manifest_bare}@main"
+        first = kanon_install(
+            working,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert first.returncode == 0, (
             f"ID-01: first install failed (rc={first.returncode})\nstdout={first.stdout!r}\nstderr={first.stderr!r}"
         )
@@ -104,7 +108,10 @@ class TestID:
             f"ID-01: first install stdout missing 'kanon install: done': {first.stdout!r}"
         )
 
-        second = kanon_install(working)
+        second = kanon_install(
+            working,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert second.returncode == 0, (
             f"ID-01: second install failed (rc={second.returncode})\nstdout={second.stdout!r}\nstderr={second.stderr!r}"
         )
@@ -157,7 +164,11 @@ class TestID:
         _content_repo, manifest_bare = _make_fixtures(fixtures)
         _write_primary_kanonenv(working, manifest_bare)
 
-        install_result = kanon_install(working)
+        catalog_source = f"file://{manifest_bare}@main"
+        install_result = kanon_install(
+            working,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"ID-03: install failed (rc={install_result.returncode})\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"

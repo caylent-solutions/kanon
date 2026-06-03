@@ -17,10 +17,21 @@ class TestCleanCommand:
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
         )
-        args = types.SimpleNamespace(kanonenv_path=kanonenv)
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False)
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
             _run(args)
-            mock_clean.assert_called_once_with(kanonenv)
+            mock_clean.assert_called_once_with(kanonenv, orphans=False)
+
+    def test_delegates_orphans_flag_to_core(self, tmp_path: pathlib.Path) -> None:
+        """``_run`` must forward ``args.orphans`` into ``clean(..., orphans=...)``."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=True)
+        with patch("kanon_cli.commands.clean.clean") as mock_clean:
+            _run(args)
+            mock_clean.assert_called_once_with(kanonenv, orphans=True)
 
 
 @pytest.mark.unit
@@ -40,6 +51,24 @@ class TestCleanRegister:
 
         parsed = parser.parse_args(["clean", "/tmp/test-kanonenv"])
         assert str(parsed.kanonenv_path) == "/tmp/test-kanonenv"
+
+    def test_orphans_flag_defaults_false(self) -> None:
+        """``--orphans`` is opt-in: absent from argv => ``args.orphans is False``."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["clean"])
+        assert parsed.orphans is False
+
+    def test_orphans_flag_parses_true(self) -> None:
+        """``kanon clean --orphans`` sets ``args.orphans`` to True."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["clean", "--orphans"])
+        assert parsed.orphans is True
 
 
 @pytest.mark.unit
@@ -120,10 +149,11 @@ class TestCleanResolvesExplicitPath:
 
         args = MagicMock()
         args.kanonenv_path = pathlib.Path(".kanon")
+        args.orphans = False
 
         received: list[pathlib.Path] = []
 
-        def _capture_clean(path):
+        def _capture_clean(path, orphans=False):
             received.append(path)
 
         with patch("kanon_cli.commands.clean.clean", side_effect=_capture_clean):
@@ -142,10 +172,11 @@ class TestCleanResolvesExplicitPath:
         kanonenv.write_text(_VALID_KANONENV)
         args = MagicMock()
         args.kanonenv_path = kanonenv
+        args.orphans = False
 
         received: list[pathlib.Path] = []
 
-        def _capture_clean(path):
+        def _capture_clean(path, orphans=False):
             received.append(path)
 
         with patch("kanon_cli.commands.clean.clean", side_effect=_capture_clean):

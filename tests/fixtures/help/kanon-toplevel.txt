@@ -1,0 +1,39 @@
+kanon -- declarative dependency manager for git-hosted assets
+
+Usage: kanon <command> [options]
+
+Discovery & management:
+  list             Discover catalog entries
+  add              Add catalog entries to .kanon
+  remove           Remove sources from .kanon
+  outdated         Report installable upgrades
+  why              Explain why a transitive dep is in the tree
+
+Lifecycle:
+  install          Install/sync everything in .kanon
+  clean            Remove installed artifacts (use --orphans to also prune unreferenced)
+  validate         Validate XML manifests (subcommands: xml, marketplace, metadata)
+  doctor           Diagnose .kanon / .kanon.lock health
+
+Manifest repo (catalog author):
+  catalog audit    Audit a manifest repo against the standards contract
+  repo             Catalog-author repo subcommands (see kanon repo --help)
+
+Shell integration:
+  completion       Generate shell completion script
+
+Deprecated:
+  bootstrap        DEPRECATED -- use 'kanon add' / 'kanon list'. See docs/migration-bootstrap-to-add.md.
+
+Global options (always available):
+  --version                      Print kanon version and exit.
+  --help                         Show this and exit.
+  --quiet / --verbose            Logging verbosity (mutually exclusive).
+  --no-color                     Disable ANSI color (also respects NO_COLOR env var).
+
+Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
+  --catalog-source <url>@<ref>   Override KANON_CATALOG_SOURCE. No default; one of
+                                 --catalog-source or KANON_CATALOG_SOURCE is required
+                                 for list/add/outdated/why/catalog audit. For install
+                                 and doctor, .kanon.lock [catalog].source is used as
+                                 fallback when present and consistent.

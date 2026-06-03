@@ -90,10 +90,10 @@ class TestFindKanonenvNotFound:
         with pytest.raises(FileNotFoundError):
             find_kanonenv(start_dir=empty)
 
-    def test_error_message_mentions_bootstrap(self, tmp_path: Path) -> None:
+    def test_error_message_mentions_kanon_add(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
-        with pytest.raises(FileNotFoundError, match="kanon bootstrap kanon"):
+        with pytest.raises(FileNotFoundError, match="kanon add"):
             find_kanonenv(start_dir=empty)
 
     def test_error_message_mentions_start_dir(self, tmp_path: Path) -> None:

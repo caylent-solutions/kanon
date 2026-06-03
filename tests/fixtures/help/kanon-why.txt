@@ -1,0 +1,50 @@
+usage: kanon why [-h] [--catalog-source <git-url>@<ref>] [--kanon-file <path>]
+                 [--lock-file <path>] [--format <format>]
+                 <project-url-or-name>
+
+Reads the .kanon file, resolves the full dependency tree
+(from .kanon.lock when present, else live-resolves against
+the catalog), and prints every chain reaching the requested
+node.
+
+Argument matching (all three categories evaluated):
+  (a) <project> repo URL -- canonicalized via canonicalize_repo_url.
+  (b) Transitive XML manifest path -- exact-string equality.
+  (c) Top-level source name -- normalized via derive_source_name.
+
+Chain format:
+  <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>
+
+Catalog source precedence: --catalog-source flag, then
+KANON_CATALOG_SOURCE env var. Required only when .kanon.lock
+is absent (live-resolve path).
+
+positional arguments:
+  <project-url-or-name>
+                        The project URL, XML manifest path, or source name to
+                        look up. Project URLs are canonicalized via
+                        canonicalize_repo_url before matching. XML manifest
+                        paths are matched by exact string equality. Source
+                        names are normalized via derive_source_name (case- and
+                        separator-insensitive).
+
+options:
+  -h, --help            show this help message and exit
+  --catalog-source <git-url>@<ref>
+                        Remote catalog source as '<git_url>@<ref>' where ref
+                        is a branch, tag, or 'latest'. Overrides
+                        KANON_CATALOG_SOURCE env var. Required when
+                        KANON_CATALOG_SOURCE is not set.
+  --kanon-file <path>   Path to the .kanon file. Defaults to './.kanon'.
+                        Overridden by the KANON_KANON_FILE environment
+                        variable; the CLI flag takes precedence when both are
+                        set.
+  --lock-file <path>    Path to the .kanon.lock file. When present, the tree
+                        is built from lockfile entries (no git calls). When
+                        absent, the command live-resolves against the catalog.
+                        Defaults to <kanon-file>.lock. Overridden by the
+                        KANON_LOCK_FILE environment variable; the CLI flag
+                        takes precedence when both are set.
+  --format <format>     Output format: 'text' (default) or 'json'. Overridden
+                        by the KANON_WHY_FORMAT environment variable; the CLI
+                        flag takes precedence when both are set.

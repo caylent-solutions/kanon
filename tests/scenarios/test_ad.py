@@ -135,7 +135,12 @@ class TestAD:
         work_dir.mkdir()
         _write_ad_kanonenv(work_dir, manifest_bare)
 
-        result = run_kanon("install", cwd=work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        result = run_kanon(
+            "install",
+            cwd=work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
@@ -151,7 +156,12 @@ class TestAD:
         child_dir.mkdir()
         _write_ad_kanonenv(parent_dir, manifest_bare)
 
-        result = run_kanon("install", cwd=child_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        result = run_kanon(
+            "install",
+            cwd=child_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
@@ -178,7 +188,13 @@ class TestAD:
         work_dir.mkdir()
         _write_ad_kanonenv(work_dir, manifest_bare)
 
-        result = run_kanon("install", ".kanon", cwd=work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        result = run_kanon(
+            "install",
+            ".kanon",
+            cwd=work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
@@ -193,7 +209,13 @@ class TestAD:
         _write_ad_kanonenv(work_dir, manifest_bare)
 
         # First install with explicit arg, then clean without any arg.
-        install_result = run_kanon("install", ".kanon", cwd=work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = run_kanon(
+            "install",
+            ".kanon",
+            cwd=work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
@@ -215,7 +237,13 @@ class TestAD:
         child_dir.mkdir()
         _write_ad_kanonenv(parent_dir, manifest_bare)
 
-        install_result = run_kanon("install", ".kanon", cwd=parent_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = run_kanon(
+            "install",
+            ".kanon",
+            cwd=parent_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
@@ -241,7 +269,13 @@ class TestAD:
         explicit_dir.mkdir()
         _write_ad_kanonenv(explicit_dir, manifest_bare)
 
-        result = run_kanon("install", str(explicit_dir / ".kanon"), cwd=cwd_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        result = run_kanon(
+            "install",
+            str(explicit_dir / ".kanon"),
+            cwd=cwd_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
@@ -259,7 +293,12 @@ class TestAD:
         work_dir.mkdir()
         _write_ad_kanonenv(work_dir, manifest_bare)
 
-        result = run_kanon("install", cwd=work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        result = run_kanon(
+            "install",
+            cwd=work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         combined = result.stdout + result.stderr

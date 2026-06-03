@@ -150,7 +150,11 @@ class TestIC:
         manifest_url = manifest_bare.as_uri()
         (work_dir / ".kanon").write_text(_kanonenv_content(manifest_url))
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         _assert_install_pass_criteria(work_dir, install_result)
 
         clean_result = kanon_clean(work_dir)
@@ -177,7 +181,11 @@ class TestIC:
         # Verify the literal string is present in the file (not pre-expanded)
         assert "${HOME}" in kanon_file.read_text(), "The .kanon file should contain the literal string '${HOME}'"
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"kanon install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -212,7 +220,11 @@ class TestIC:
         )
         (work_dir / ".kanon").write_text(kanon_text)
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"kanon install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -237,7 +249,11 @@ class TestIC:
         manifest_url = manifest_bare.as_uri()
         (work_dir / ".kanon").write_text(_kanonenv_content(manifest_url))
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"kanon install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"

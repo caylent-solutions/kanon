@@ -19,6 +19,7 @@ from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -54,12 +55,20 @@ def _two_source_content(name_a: str = "alpha", name_b: str = "beta") -> str:
     )
 
 
-def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, list[str]]) -> None:
+def _install_with_synced_packages(
+    kanonenv: Path,
+    packages_by_source: dict[str, list[str]],
+    refresh_lock: bool = False,
+) -> None:
     """Run install() with a fake repo_sync that creates .packages/ entries.
 
     Args:
         kanonenv: Path to the .kanon configuration file.
         packages_by_source: Mapping of source name to list of package names to create.
+        refresh_lock: When True, pass refresh_lock=True to install() so that a
+            previous lockfile whose kanon_hash no longer matches the current
+            .kanon content does not raise KanonHashMismatchError.  Required
+            when the test intentionally modifies .kanon between two installs.
     """
 
     def fake_repo_sync(repo_dir: str, **kwargs) -> None:
@@ -76,7 +85,12 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
-        install(kanonenv)
+        install(
+            kanonenv,
+            lock_file_path=kanonenv.parent / ".kanon.lock",
+            catalog_source=DEFAULT_CATALOG_SOURCE,
+            refresh_lock=refresh_lock,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +128,7 @@ class TestInstallCrashCleanReinstall:
             ),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         # Step 2: Partial artifacts exist after crash
         source_dir = tmp_path / ".kanon-data" / "sources" / "crash"
@@ -239,8 +253,8 @@ class TestInstallIdempotency:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         gitignore_content = (tmp_path / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (
@@ -299,7 +313,13 @@ class TestKanonChangeReconciliation:
         # Update .kanon to add a second source
         kanonenv.write_text(_two_source_content(name_a="src-one", name_b="src-two"))
 
-        _install_with_synced_packages(kanonenv, {"src-one": ["package-x"], "src-two": ["package-y"]})
+        # refresh_lock=True is required because .kanon was modified after the first install
+        # wrote the lockfile; without it KanonHashMismatchError is raised.
+        _install_with_synced_packages(
+            kanonenv,
+            {"src-one": ["package-x"], "src-two": ["package-y"]},
+            refresh_lock=True,
+        )
 
         assert (tmp_path / ".packages" / "package-x").is_symlink(), (
             "package-x from src-one must still be present after adding src-two"
@@ -330,8 +350,10 @@ class TestKanonChangeReconciliation:
         kanonenv.write_text(_single_source_content("alpha"))
 
         # Clean + reinstall with reduced .kanon
+        # refresh_lock=True is required because .kanon was modified before clean() was called;
+        # clean() does not remove the lockfile, so the old lockfile hash no longer matches.
         clean(kanonenv)
-        _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"]})
+        _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"]}, refresh_lock=True)
 
         # Only alpha source dir must exist
         assert (tmp_path / ".kanon-data" / "sources" / "alpha").is_dir(), (

@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 
 def locate_claude_binary() -> str:
@@ -323,6 +324,118 @@ def remove_marketplace(claude_bin: str, marketplace_name: str) -> bool:
         )
         return False
     return True
+
+
+def register_direct_checkout_marketplaces(
+    manifest_xml_path: pathlib.Path,
+    source_dir: pathlib.Path,
+    marketplace_dir: pathlib.Path,
+) -> None:
+    """Register direct-checkout marketplace entries that carry no ``<linkfile>`` element.
+
+    Scans every ``<project>`` in the manifest XML that has NO ``<linkfile>``
+    children.  For each such project whose checkout directory contains a
+    ``.claude-plugin/marketplace.json``, creates a symlink in
+    ``marketplace_dir/<name>`` pointing at the project checkout directory.
+    This allows ``install_marketplace_plugins`` to discover and register the
+    marketplace even though no ``<linkfile>`` copied it there automatically.
+
+    A project without a ``.claude-plugin/marketplace.json`` is silently skipped
+    (not an error -- it may be a plain data package, not a marketplace).
+
+    A project that already has at least one ``<linkfile>`` child is skipped
+    entirely because ``_process_manifest_linkfiles`` (in ``core.install``)
+    already handled it via the linkfile mechanism.
+
+    Args:
+        manifest_xml_path: Absolute path to the manifest XML file to parse.
+        source_dir: Root of the source workspace (project paths are resolved
+            relative to this directory).
+        marketplace_dir: Path to ``CLAUDE_MARKETPLACES_DIR`` where symlinks
+            will be created.
+
+    Raises:
+        xml.etree.ElementTree.ParseError: If the manifest XML is malformed.
+        OSError: If a symlink cannot be created.
+        ValueError: If ``marketplace.json`` exists but lacks a ``name`` field.
+        json.JSONDecodeError: If ``marketplace.json`` exists but is malformed.
+    """
+    if not manifest_xml_path.is_file():
+        return
+
+    tree = ET.parse(str(manifest_xml_path))
+    root = tree.getroot()
+
+    for project_el in root.findall("project"):
+        project_path = project_el.get("path", "")
+        if not project_path:
+            continue
+
+        # Skip projects that already have <linkfile> children -- handled elsewhere.
+        if project_el.findall("linkfile"):
+            continue
+
+        project_dir = source_dir / project_path
+        marketplace_json = project_dir / ".claude-plugin" / "marketplace.json"
+        if not marketplace_json.is_file():
+            continue
+
+        try:
+            marketplace_name = read_marketplace_name(project_dir)
+        except KeyError as exc:
+            raise ValueError(
+                f"ERROR: marketplace.json for project '{project_path}' at"
+                f" {project_dir / '.claude-plugin' / 'marketplace.json'}"
+                f" is missing the required 'name' field.\n"
+                f'Remediation: add a top-level "name" key to that file, e.g.'
+                f' {{"name": "<marketplace-name>", "plugins": [...]}}.'
+            ) from exc
+
+        link_target = marketplace_dir / marketplace_name
+
+        if link_target.exists() or link_target.is_symlink():
+            # Entry already present (idempotent re-install).
+            continue
+
+        marketplace_dir.mkdir(parents=True, exist_ok=True)
+        link_target.symlink_to(project_dir.resolve())
+
+
+def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list[str]:
+    """Discover the marketplace names present under ``marketplace_dir``.
+
+    Walks the directory with :func:`discover_marketplace_entries` and reads each
+    entry's marketplace ``name`` via :func:`read_marketplace_name`. Entries that
+    lack a ``.claude-plugin/marketplace.json`` are skipped (the same tolerance
+    :func:`install_marketplace_plugins` applies to linkfile targets that do not
+    point at a marketplace root). The result is the authoritative set of
+    marketplace names kanon just registered: it feeds the install auto-prune and
+    the ``kanon clean --orphans`` reconciliation.
+
+    Args:
+        marketplace_dir: Path to ``CLAUDE_MARKETPLACES_DIR``.
+
+    Returns:
+        A sorted, de-duplicated list of marketplace names. Returns an empty list
+        when ``marketplace_dir`` does not exist.
+
+    Raises:
+        json.JSONDecodeError: If an entry's ``marketplace.json`` exists but is
+            malformed.
+        KeyError: If an entry's ``marketplace.json`` exists but lacks ``name``.
+    """
+    if not marketplace_dir.is_dir():
+        return []
+
+    names: set[str] = set()
+    for entry in discover_marketplace_entries(marketplace_dir):
+        try:
+            names.add(read_marketplace_name(entry))
+        except FileNotFoundError:
+            # Not a real marketplace (no .claude-plugin/marketplace.json); skip
+            # it exactly as install_marketplace_plugins does.
+            continue
+    return sorted(names)
 
 
 def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:

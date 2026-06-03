@@ -1,12 +1,15 @@
-"""Catalog directory resolution for Kanon bootstrap.
+"""Catalog directory resolution for Kanon.
 
-Resolves the catalog directory from multiple sources in priority order:
-  1. ``--catalog-source`` CLI flag
-  2. ``KANON_CATALOG_SOURCE`` environment variable
-  3. Bundled catalog shipped with the ``kanon_cli`` package
+Resolves the catalog directory from the ``--catalog-source`` CLI flag or
+the ``KANON_CATALOG_SOURCE`` environment variable. No default catalog source
+exists; when neither is set, the resolver raises ``MissingCatalogSourceError``
+per spec Section 4 and Section 13 decision 19 (no default manifest repo).
 
 Remote catalog sources use the format ``<git_url>@<ref>`` where ref
 can be a branch name, tag, or ``latest`` (resolves to highest semver tag).
+The ``@`` delimiter is always the LAST ``@`` in the source string, which
+allows SSH URLs containing a user-info ``@`` (e.g. ``git@host:org/repo.git@main``)
+to be parsed unambiguously.
 """
 
 import os
@@ -19,8 +22,20 @@ from kanon_cli.constants import CATALOG_ENV_VAR
 from kanon_cli.version import is_version_constraint, resolve_version
 
 
+class MissingCatalogSourceError(ValueError):
+    """Raised when resolve_catalog_dir cannot determine a catalog source.
+
+    Neither the ``--catalog-source`` CLI flag nor the ``KANON_CATALOG_SOURCE``
+    environment variable was set. The calling command catches this exception,
+    formats the canonical spec Section 4 missing-source error text with its
+    own command name, writes it to stderr, and exits 1.
+    """
+
+
 def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
-    """Resolve the catalog directory from flag, env var, or bundled fallback.
+    """Resolve the catalog directory from the ``--catalog-source`` flag or ``KANON_CATALOG_SOURCE`` env var.
+
+    Raises ``MissingCatalogSourceError`` when neither is set. See spec Section 4.
 
     Args:
         catalog_source: Remote catalog source from CLI flag (``<git_url>@<ref>``).
@@ -29,6 +44,7 @@ def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
         Path to the resolved catalog directory.
 
     Raises:
+        MissingCatalogSourceError: When neither the CLI flag nor the env var is set.
         SystemExit: If the remote catalog cannot be cloned or has no ``catalog/`` dir.
         ValueError: If the catalog source format is invalid.
     """
@@ -37,16 +53,7 @@ def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
     if source:
         return _clone_remote_catalog(source)
 
-    return _get_bundled_catalog_dir()
-
-
-def _get_bundled_catalog_dir() -> pathlib.Path:
-    """Return the path to the bundled catalog shipped with the package.
-
-    Returns:
-        Absolute path to the bundled catalog directory.
-    """
-    return pathlib.Path(__file__).parent.parent / "catalog"
+    raise MissingCatalogSourceError()
 
 
 def _parse_catalog_source(source: str) -> tuple[str, str]:
@@ -62,7 +69,11 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
         Tuple of (url, ref).
 
     Raises:
-        ValueError: If the format is invalid (no ``@`` or empty ref).
+        ValueError: If the format is invalid (no ``@`` or empty ref), if the
+            ref or URL component is empty, or if the URL portion contains
+            neither ``://`` nor ``@`` (indicating the source is an SSH-shorthand
+            URL with no ref separator, e.g. ``git@host:org/repo.git`` with no
+            trailing ``@<ref>``).
     """
     idx = source.rfind("@")
     if idx == -1:
@@ -84,6 +95,19 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
 
     if not url:
         msg = f"Empty URL in catalog source: '{source}'"
+        raise ValueError(msg)
+
+    # Guard: if the URL portion contains neither '://' (scheme separator) nor '@'
+    # (user-info separator), the rfind hit a user-info '@' that is part of the URL
+    # itself (e.g. 'git@host:org/repo.git' with no ref), not a ref delimiter.
+    # Spec Section 4.0: the ref separator is always the LAST '@'; if no unambiguous
+    # ref delimiter exists, the source is malformed.
+    if "://" not in url and "@" not in url:
+        msg = (
+            f"Invalid catalog source format: '{source}'. "
+            "No ref separator '@' found after the URL -- "
+            "expected '<git_url>@<ref>' (e.g. 'git@host:org/repo.git@main')"
+        )
         raise ValueError(msg)
 
     return url, ref

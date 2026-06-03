@@ -1,0 +1,1001 @@
+"""TOML lockfile parser and atomic writer -- schema v3.
+
+Public entry points:
+  - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
+    Applies schema migration policy (spec Section 5.2) when schema_version differs
+    from CURRENT_SCHEMA_VERSION.
+  - ``write_lockfile(lockfile: Lockfile, path: Path) -> None``: atomically serialise
+    a Lockfile to disk using a write-temp-then-rename pattern.
+
+Exception hierarchy:
+  - ``LockfileSchemaError``: raised when the schema_version is not supported or has
+    no upgrade path to the current schema.
+  - ``LockfileValidationError``: raised when a field value violates a validation rule.
+
+Schema migration registry (spec Section 5.2):
+  - ``_register_upgrader(from_version, to_version, fn)``: register an upgrader function.
+  - ``_unregister_upgrader(from_version, to_version)``: remove a registered upgrader.
+  - ``_dispatch_migration(data)``: walk the upgrader chain from data's schema_version
+    to CURRENT_SCHEMA_VERSION, raising LockfileSchemaError if no chain exists.
+
+Schema changelog:
+  - v1: original schema (catalog, sources, kanon_hash).
+  - v2: added ``marketplace_registered`` (bool) and ``marketplace_dir`` (str) to record
+    whether install registered a marketplace plugin and which directory it used.  Old
+    v1 lockfiles are migrated transparently by setting both fields to their default
+    (false / empty string), preserving backward compatibility.
+  - v3: added a PER-SOURCE ``registered_marketplaces`` (list[str]) field to each
+    ``[[sources]]`` table -- the sorted set of marketplace names THAT source
+    registered during install.  ``kanon clean --orphans`` and the install
+    auto-prune consult these per-source ledgers to attribute and prune the
+    marketplaces of a removed source.  Old v2 lockfiles are migrated transparently
+    by defaulting each source's field to an empty list.
+
+Spec source: spec Section 5 (Lockfile format and validation rules),
+Section 4.7.1 (atomicity contract for the lockfile writer), and
+Section 5.2 (Lockfile schema migration policy).
+"""
+
+from __future__ import annotations
+
+import os
+import random
+import re
+import string
+import tempfile
+import tomllib
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from packaging.requirements import InvalidRequirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+from kanon_cli.core.url import canonicalize_repo_url
+
+# ---------------------------------------------------------------------------
+# Schema version constant and migration registry
+# ---------------------------------------------------------------------------
+
+#: The schema version this kanon version reads and writes.
+CURRENT_SCHEMA_VERSION: int = 3
+
+#: Registry of upgrader functions keyed by (from_version, to_version).
+#: Each upgrader receives a raw dict and returns a raw dict with the schema
+#: advanced by one step. The registry is intentionally empty in production;
+#: future schema bumps add a single entry here rather than a refactor.
+_UPGRADERS: dict[tuple[int, int], Callable[[dict[str, Any]], dict[str, Any]]] = {}
+
+# -- Compiled validation patterns --
+
+# resolved_sha must be exactly 40 or 64 lowercase hex digits (SHA-1 or SHA-256).
+_SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
+
+# kanon_hash must be a sha256:-prefixed 64-char lowercase hex digest (spec Rule 1a).
+# Total length: 71 chars ("sha256:" + 64 hex chars).
+_KANON_HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+# -- TOML serialisation: control-character escape table --
+# Maps every control character that TOML requires to be escaped in basic strings
+# (U+0000-U+001F, U+007F) to its TOML escape sequence.
+_TOML_CONTROL_ESCAPES: dict[str, str] = {
+    "\x00": "\\u0000",
+    "\x01": "\\u0001",
+    "\x02": "\\u0002",
+    "\x03": "\\u0003",
+    "\x04": "\\u0004",
+    "\x05": "\\u0005",
+    "\x06": "\\u0006",
+    "\x07": "\\u0007",
+    "\x08": "\\b",
+    "\x09": "\\t",
+    "\x0a": "\\n",
+    "\x0b": "\\u000B",
+    "\x0c": "\\f",
+    "\x0d": "\\r",
+    "\x0e": "\\u000E",
+    "\x0f": "\\u000F",
+    "\x10": "\\u0010",
+    "\x11": "\\u0011",
+    "\x12": "\\u0012",
+    "\x13": "\\u0013",
+    "\x14": "\\u0014",
+    "\x15": "\\u0015",
+    "\x16": "\\u0016",
+    "\x17": "\\u0017",
+    "\x18": "\\u0018",
+    "\x19": "\\u0019",
+    "\x1a": "\\u001A",
+    "\x1b": "\\u001B",
+    "\x1c": "\\u001C",
+    "\x1d": "\\u001D",
+    "\x1e": "\\u001E",
+    "\x1f": "\\u001F",
+    "\x7f": "\\u007F",
+}
+
+# branch-name charset for the third accept rule of revision_spec validation.
+_BRANCH_RE = re.compile(r"^[a-zA-Z0-9_./+-]+$")
+
+# Characters forbidden in path / path_in_repo fields.
+_FORBIDDEN_PATH_CHARS: tuple[tuple[str, str], ...] = (
+    ("\x00", "U+0000 (NUL)"),
+    ("\n", "U+000A (newline)"),
+    ("\t", "U+0009 (tab)"),
+)
+
+
+# ---------------------------------------------------------------------------
+# Migration registry helpers
+# ---------------------------------------------------------------------------
+
+
+def _register_upgrader(
+    from_version: int,
+    to_version: int,
+    fn: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    """Register an upgrader function for the (from_version, to_version) pair.
+
+    The upgrader receives a raw TOML dict and must return a raw dict with
+    schema_version set to ``to_version``. Callers are responsible for ensuring
+    the returned dict is valid for ``to_version`` parsing.
+
+    Raises:
+        ValueError: If an upgrader for the same (from_version, to_version) pair
+            is already registered. Duplicate registrations are rejected to prevent
+            accidental shadowing in tests.
+
+    Args:
+        from_version: The schema version the upgrader reads.
+        to_version: The schema version the upgrader produces.
+        fn: The upgrader function.
+    """
+    key = (from_version, to_version)
+    if key in _UPGRADERS:
+        raise ValueError(
+            f"Upgrader for schema ({from_version} -> {to_version}) is already registered. "
+            f"Unregister the existing upgrader before registering a replacement."
+        )
+    _UPGRADERS[key] = fn
+
+
+def _unregister_upgrader(from_version: int, to_version: int) -> None:
+    """Remove the upgrader for (from_version, to_version) from the registry.
+
+    Used by test teardown to prevent registry state leaking across tests.
+
+    Args:
+        from_version: The schema version the upgrader reads.
+        to_version: The schema version the upgrader produces.
+
+    Raises:
+        KeyError: If no upgrader is registered for the given (from_version, to_version)
+            pair. Fail-fast: a missing key indicates a programming error (mismatched
+            register/unregister calls or a double-unregister in test teardown).
+    """
+    key = (from_version, to_version)
+    if key not in _UPGRADERS:
+        raise KeyError(
+            f"No upgrader registered for schema ({from_version} -> {to_version}). "
+            f"Ensure _register_upgrader was called before _unregister_upgrader."
+        )
+    del _UPGRADERS[key]
+
+
+def _dispatch_migration(data: dict[str, Any]) -> dict[str, Any]:
+    """Walk the upgrader chain from data's schema_version to CURRENT_SCHEMA_VERSION.
+
+    Applies upgraders one step at a time, following the (N, N+1) chain until the
+    data's schema_version reaches CURRENT_SCHEMA_VERSION.
+
+    Args:
+        data: Raw TOML dict with ``schema_version`` set to a version older than
+            CURRENT_SCHEMA_VERSION.
+
+    Returns:
+        The raw TOML dict after all upgrader functions have been applied, with
+        ``schema_version`` equal to ``CURRENT_SCHEMA_VERSION``.
+
+    Raises:
+        LockfileSchemaError: If no registered upgrader exists for a required step
+            in the chain from data's ``schema_version`` to ``CURRENT_SCHEMA_VERSION``.
+    """
+    current = data
+    from_ver: int = current["schema_version"]
+    while from_ver < CURRENT_SCHEMA_VERSION:
+        to_ver = from_ver + 1
+        key = (from_ver, to_ver)
+        if key not in _UPGRADERS:
+            raise LockfileSchemaError(
+                f"no upgrade path from lockfile schema v{from_ver} "
+                f"to v{CURRENT_SCHEMA_VERSION}; this is a kanon bug; please report."
+            )
+        current = _UPGRADERS[key](current)
+        if current["schema_version"] <= from_ver:
+            raise LockfileSchemaError(
+                f"upgrader for schema v{from_ver}->v{to_ver} did not advance "
+                f"schema_version (returned {current['schema_version']}); "
+                f"this is a kanon bug; please report."
+            )
+        from_ver = current["schema_version"]
+    return current
+
+
+# ---------------------------------------------------------------------------
+# Schema upgraders
+# ---------------------------------------------------------------------------
+
+
+def _upgrade_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a schema-v1 lockfile dict to schema-v2.
+
+    v2 adds ``marketplace_registered`` (bool, default False) and
+    ``marketplace_dir`` (str, default "") to the top-level dict.  Old lockfiles
+    predate marketplace tracking, so both fields default to their not-registered
+    values, which preserves the pre-v2 behavior (kanon clean falls back to the
+    .kanon flag when neither field is set to a registered state).
+
+    Args:
+        data: Raw TOML dict with schema_version == 1.
+
+    Returns:
+        Raw TOML dict with schema_version == 2 and the two new fields populated.
+    """
+    upgraded = dict(data)
+    upgraded["schema_version"] = 2
+    upgraded.setdefault("marketplace_registered", False)
+    upgraded.setdefault("marketplace_dir", "")
+    return upgraded
+
+
+_register_upgrader(1, 2, _upgrade_v1_to_v2)
+
+
+def _upgrade_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """Upgrade a schema-v2 lockfile dict to schema-v3.
+
+    v3 adds a PER-SOURCE ``registered_marketplaces`` (list[str], default empty)
+    field to each ``[[sources]]`` table -- the marketplace names that source
+    registered.  Old v2 lockfiles predate the field, so each source defaults to an
+    empty list, which preserves the pre-v3 behavior (no marketplaces are
+    considered owned/pruneable).
+
+    Args:
+        data: Raw TOML dict with schema_version == 2.
+
+    Returns:
+        Raw TOML dict with schema_version == 3 and each source's new field
+        defaulted to an empty list.
+    """
+    upgraded = dict(data)
+    upgraded["schema_version"] = 3
+    raw_sources = upgraded.get("sources", [])
+    if isinstance(raw_sources, list):
+        for source in raw_sources:
+            if isinstance(source, dict):
+                source.setdefault("registered_marketplaces", [])
+    return upgraded
+
+
+_register_upgrader(2, 3, _upgrade_v2_to_v3)
+
+
+# ---------------------------------------------------------------------------
+# Exception types
+# ---------------------------------------------------------------------------
+
+
+class LockfileSchemaError(Exception):
+    """Raised when the lockfile's schema_version is not supported by this kanon version.
+
+    This exception is intentionally distinct from ``LockfileValidationError`` so
+    downstream callers (e.g., the T2 migration policy) can dispatch on it.
+    """
+
+
+class LockfileValidationError(Exception):
+    """Raised when a lockfile field value violates a schema-v1 validation rule.
+
+    The error message always:
+      - Names the offending field path (e.g., ``sources[0].projects[2].resolved_sha``).
+      - Includes the offending value.
+      - Suggests the operator's likely remediation step.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Dataclass tree (mirrors the TOML schema exactly)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProjectEntry:
+    """A single row under ``[[sources.projects]]``."""
+
+    name: str
+    url: str
+    canonical_url: str
+    revision_spec: str
+    resolved_ref: str
+    resolved_sha: str
+
+
+@dataclass
+class IncludeEntry:
+    """A single row under ``[[sources.includes]]`` -- recursive, unbounded depth."""
+
+    name: str
+    path_in_repo: str
+    url: str
+    resolved_sha: str
+    includes: list[IncludeEntry] = field(default_factory=list)
+
+
+@dataclass
+class SourceEntry:
+    """A single row under ``[[sources]]``.
+
+    Fields added in schema v3:
+      - ``registered_marketplaces``: the sorted set of marketplace names THIS
+        source registered during install.  Defaults to an empty list.  ``kanon
+        clean --orphans`` and the install auto-prune consult this per-source
+        ledger to attribute and prune the marketplaces of a removed source.
+    """
+
+    name: str
+    url: str
+    revision_spec: str
+    resolved_ref: str
+    resolved_sha: str
+    path: str
+    includes: list[IncludeEntry] = field(default_factory=list)
+    projects: list[ProjectEntry] = field(default_factory=list)
+    registered_marketplaces: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CatalogBlock:
+    """The ``[catalog]`` block."""
+
+    source: str
+    url: str
+    revision_spec: str
+    resolved_ref: str
+    resolved_sha: str
+
+
+@dataclass
+class Lockfile:
+    """Root lockfile dataclass mirroring the top-level TOML structure.
+
+    Fields added in schema v2:
+      - ``marketplace_registered``: True when install registered a marketplace plugin.
+      - ``marketplace_dir``: The CLAUDE_MARKETPLACES_DIR path used at install time;
+        non-empty only when marketplace_registered is True.
+
+    Schema v3 added a PER-SOURCE ``registered_marketplaces`` field to each
+    ``SourceEntry`` (see :class:`SourceEntry`); the root lockfile carries no
+    marketplace ownership ledger of its own.
+    """
+
+    schema_version: int
+    generated_at: str
+    generator: str
+    kanon_hash: str
+    catalog: CatalogBlock
+    sources: list[SourceEntry] = field(default_factory=list)
+    marketplace_registered: bool = False
+    marketplace_dir: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Private validation helpers
+# ---------------------------------------------------------------------------
+
+
+def _validate_kanon_hash(value: str) -> None:
+    """Raise ``LockfileValidationError`` if ``value`` is not a valid kanon_hash string.
+
+    A valid kanon_hash (spec Rule 1a) is a 71-character string of the form
+    ``sha256:<64 lowercase hex chars>``. Bare hex strings without the prefix are
+    rejected; uppercase hex characters are rejected.
+
+    Args:
+        value: The ``kanon_hash`` field value to validate.
+
+    Raises:
+        LockfileValidationError: If the value does not match the required pattern.
+    """
+    if not _KANON_HASH_RE.match(value):
+        raise LockfileValidationError(
+            f"ERROR: Invalid kanon_hash at 'kanon_hash'.\n"
+            f"  Value: {value!r}\n"
+            f"  Expected: 'sha256:' followed by exactly 64 lowercase hex digits (a-f0-9).\n"
+            f"  Total expected length: 71 characters.\n"
+            f"  Remediation: regenerate the lockfile with 'kanon install' to obtain "
+            f"a valid kanon_hash."
+        )
+
+
+def _validate_resolved_sha(sha: str, field_path: str) -> None:
+    """Raise ``LockfileValidationError`` if ``sha`` is not 40 or 64 lowercase hex digits.
+
+    Args:
+        sha: The resolved_sha value to validate.
+        field_path: Dot-path of the field in the lockfile (for the error message).
+
+    Raises:
+        LockfileValidationError: If the value does not match the SHA pattern.
+    """
+    if not _SHA_RE.match(sha):
+        raise LockfileValidationError(
+            f"ERROR: Invalid resolved_sha at '{field_path}'.\n"
+            f"  Value: {sha!r}\n"
+            f"  Expected: exactly 40 or 64 lowercase hex digits (a-f0-9).\n"
+            f"  Remediation: regenerate the lockfile with 'kanon lock' to obtain "
+            f"a valid SHA-1 (40 chars) or SHA-256 (64 chars) git object ID."
+        )
+
+
+def _validate_revision_spec(spec: str, field_path: str) -> None:
+    """Raise ``LockfileValidationError`` if ``spec`` fails all accept rules.
+
+    Accept rules (any one suffices):
+      0. The bare wildcard ``*`` ("any version"), written verbatim by add/install.
+      1. Parses as ``packaging.specifiers.SpecifierSet`` (PEP 440), optionally
+         preceded by a monorepo path prefix ending with ``/``.
+      2. Starts with ``refs/`` (literal git ref).
+      3. Matches the branch-charset regex ``^[a-zA-Z0-9_./+-]+$``.
+
+    Args:
+        spec: The revision_spec value to validate.
+        field_path: Dot-path of the field for the error message.
+
+    Raises:
+        LockfileValidationError: If none of the three rules accept the value.
+    """
+    if not spec:
+        raise LockfileValidationError(
+            f"ERROR: Empty revision_spec at '{field_path}'.\n"
+            f"  Value: {spec!r}\n"
+            f"  Expected: a PEP 440 specifier (e.g. '==1.0.0'), the wildcard '*' "
+            f"(any version), a git ref (e.g. 'refs/heads/main'), or a branch name "
+            f"(e.g. 'main').\n"
+            f"  Remediation: update the revision_spec in your .kanon file and re-lock."
+        )
+
+    # Rule 0: bare wildcard "*" -- the "any version" constraint, written verbatim into
+    # the lockfile by add/install (resolved_ref/resolved_sha carry the actual
+    # resolution). The marketplace/version layers already accept it, so the lockfile
+    # reader must accept it too.
+    if spec == "*":
+        return
+
+    # Rule 2: refs/ prefix
+    if spec.startswith("refs/"):
+        return
+
+    # Rule 3: branch-charset regex
+    if _BRANCH_RE.match(spec):
+        return
+
+    # Rule 1: PEP 440 SpecifierSet -- strip monorepo path prefix if present
+    suffix = spec
+    if "/" in spec:
+        # Strip the leading path component(s) up to the last "/" before the specifier
+        # e.g. "subpackage/==1.0.0" -> "==1.0.0"
+        last_slash = spec.rfind("/")
+        suffix = spec[last_slash + 1 :]
+
+    try:
+        SpecifierSet(suffix)
+        return
+    except (InvalidSpecifier, InvalidRequirement, ValueError):
+        pass
+
+    raise LockfileValidationError(
+        f"ERROR: Invalid revision_spec at '{field_path}'.\n"
+        f"  Value: {spec!r}\n"
+        f"  Expected one of:\n"
+        f"    - PEP 440 SpecifierSet (e.g. '==1.0.0', '~=2.0.0', '>=1.0,<2.0')\n"
+        f"    - Bare wildcard '*' (any version)\n"
+        f"    - Optional monorepo prefix: 'subpackage/==1.0.0'\n"
+        f"    - Git ref: 'refs/heads/main'\n"
+        f"    - Branch name matching ^[a-zA-Z0-9_./+-]+$\n"
+        f"  Remediation: update the revision_spec in your .kanon file and re-lock."
+    )
+
+
+def _validate_canonical_url(url: str, canonical_url: str, field_path: str) -> None:
+    """Raise ``LockfileValidationError`` if ``canonical_url`` does not match ``canonicalize_repo_url(url)``.
+
+    Args:
+        url: The raw URL from the ProjectEntry.
+        canonical_url: The recorded canonical_url from the ProjectEntry.
+        field_path: Dot-path of the ProjectEntry for the error message.
+
+    Raises:
+        LockfileValidationError: If the recorded canonical_url does not equal the
+            computed canonical form of ``url``.
+    """
+    computed = canonicalize_repo_url(url)
+    if canonical_url != computed:
+        raise LockfileValidationError(
+            f"ERROR: canonical_url mismatch at '{field_path}'.\n"
+            f"  Recorded canonical_url: {canonical_url!r}\n"
+            f"  Computed  canonical_url: {computed!r}\n"
+            f"  (computed from url={url!r})\n"
+            f"  Remediation: regenerate the lockfile with 'kanon lock' to update "
+            f"the canonical_url field."
+        )
+
+
+def _validate_registered_marketplaces(value: Any, field_path: str) -> list[str]:
+    """Validate and normalise a source's ``registered_marketplaces`` ledger.
+
+    The field (schema v3, per-source) must be a list whose every element is a
+    string. Fail-fast: a non-list value, or a list containing a non-string
+    element, raises ``LockfileValidationError`` naming the offending source's
+    field -- we never silently coerce or drop malformed entries.
+
+    Args:
+        value: The raw ``registered_marketplaces`` value from a source's TOML dict.
+        field_path: Dot-path of the field for the error message (e.g.
+            ``sources[0].registered_marketplaces``).
+
+    Returns:
+        The validated list of marketplace names.
+
+    Raises:
+        LockfileValidationError: If ``value`` is not a list of strings.
+    """
+    if not isinstance(value, list):
+        raise LockfileValidationError(
+            f"ERROR: Invalid registered_marketplaces at '{field_path}'.\n"
+            f"  Value (repr): {value!r}\n"
+            f'  Expected: an array of marketplace-name strings (e.g. ["a-mp", "b-mp"]).\n'
+            f"  Remediation: regenerate the lockfile with 'kanon install'."
+        )
+    for index, element in enumerate(value):
+        if not isinstance(element, str):
+            raise LockfileValidationError(
+                f"ERROR: Invalid entry in registered_marketplaces at "
+                f"'{field_path}[{index}]'.\n"
+                f"  Value (repr): {element!r}\n"
+                f"  Expected: a marketplace-name string.\n"
+                f"  Remediation: regenerate the lockfile with 'kanon install'."
+            )
+    return list(value)
+
+
+def _validate_path_chars(path_value: str, field_path: str) -> None:
+    """Raise ``LockfileValidationError`` if ``path_value`` contains NUL, newline, or tab.
+
+    Args:
+        path_value: The path string to validate.
+        field_path: Dot-path of the field for the error message (e.g. ``sources[0].path``).
+
+    Raises:
+        LockfileValidationError: If any forbidden character is found.
+    """
+    for char, codepoint_desc in _FORBIDDEN_PATH_CHARS:
+        if char in path_value:
+            raise LockfileValidationError(
+                f"ERROR: Forbidden character in '{field_path}'.\n"
+                f"  Character: {codepoint_desc}\n"
+                f"  Value (repr): {path_value!r}\n"
+                f"  Paths must not contain NUL (\\x00), newline (\\n), or tab (\\t).\n"
+                f"  Remediation: correct the path value in your .kanon file and re-lock."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Private parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_include_entry(raw: dict[str, Any], field_path: str) -> IncludeEntry:
+    """Parse a raw TOML dict into an ``IncludeEntry``, validating all fields.
+
+    Recursively parses nested ``includes`` entries.
+
+    Args:
+        raw: A dict from the TOML parser representing one include entry.
+        field_path: Dot-path for error messages (e.g. ``sources[0].includes[1]``).
+
+    Returns:
+        A validated ``IncludeEntry`` dataclass instance.
+
+    Raises:
+        LockfileValidationError: If any field fails validation.
+    """
+    resolved_sha = raw["resolved_sha"]
+    _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
+
+    path_in_repo = raw["path_in_repo"]
+    _validate_path_chars(path_in_repo, f"{field_path}.path_in_repo")
+
+    nested_raws: list[dict[str, Any]] = raw.get("includes", [])
+    nested_includes = [_parse_include_entry(item, f"{field_path}.includes[{i}]") for i, item in enumerate(nested_raws)]
+
+    return IncludeEntry(
+        name=raw["name"],
+        path_in_repo=path_in_repo,
+        url=raw["url"],
+        resolved_sha=resolved_sha,
+        includes=nested_includes,
+    )
+
+
+def _parse_project_entry(raw: dict[str, Any], field_path: str) -> ProjectEntry:
+    """Parse a raw TOML dict into a ``ProjectEntry``, validating all fields.
+
+    Args:
+        raw: A dict from the TOML parser representing one project entry.
+        field_path: Dot-path for error messages.
+
+    Returns:
+        A validated ``ProjectEntry`` dataclass instance.
+
+    Raises:
+        LockfileValidationError: If any field fails validation.
+    """
+    resolved_sha = raw["resolved_sha"]
+    _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
+
+    revision_spec = raw["revision_spec"]
+    _validate_revision_spec(revision_spec, f"{field_path}.revision_spec")
+
+    url = raw["url"]
+    canonical_url = raw["canonical_url"]
+    _validate_canonical_url(url, canonical_url, f"{field_path}.canonical_url")
+
+    return ProjectEntry(
+        name=raw["name"],
+        url=url,
+        canonical_url=canonical_url,
+        revision_spec=revision_spec,
+        resolved_ref=raw["resolved_ref"],
+        resolved_sha=resolved_sha,
+    )
+
+
+def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
+    """Parse a raw TOML dict into a ``SourceEntry``, validating all fields.
+
+    Args:
+        raw: A dict from the TOML parser representing one source entry.
+        source_idx: The zero-based index of this source in the ``[[sources]]`` array
+            (used in field-path strings for error messages).
+
+    Returns:
+        A validated ``SourceEntry`` dataclass instance.
+
+    Raises:
+        LockfileValidationError: If any field fails validation.
+    """
+    field_path = f"sources[{source_idx}]"
+
+    resolved_sha = raw["resolved_sha"]
+    _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
+
+    revision_spec = raw["revision_spec"]
+    _validate_revision_spec(revision_spec, f"{field_path}.revision_spec")
+
+    path = raw["path"]
+    _validate_path_chars(path, f"{field_path}.path")
+
+    raw_includes: list[dict[str, Any]] = raw.get("includes", [])
+    includes = [_parse_include_entry(item, f"{field_path}.includes[{i}]") for i, item in enumerate(raw_includes)]
+
+    raw_projects: list[dict[str, Any]] = raw.get("projects", [])
+    projects = [_parse_project_entry(item, f"{field_path}.projects[{i}]") for i, item in enumerate(raw_projects)]
+
+    registered_marketplaces = _validate_registered_marketplaces(
+        raw.get("registered_marketplaces", []),
+        f"{field_path}.registered_marketplaces",
+    )
+
+    return SourceEntry(
+        name=raw["name"],
+        url=raw["url"],
+        revision_spec=revision_spec,
+        resolved_ref=raw["resolved_ref"],
+        resolved_sha=resolved_sha,
+        path=path,
+        includes=includes,
+        projects=projects,
+        registered_marketplaces=registered_marketplaces,
+    )
+
+
+def _parse_catalog_block(raw: dict[str, Any]) -> CatalogBlock:
+    """Parse the ``[catalog]`` TOML block into a ``CatalogBlock``, validating all fields.
+
+    Args:
+        raw: The TOML dict for the ``[catalog]`` block.
+
+    Returns:
+        A validated ``CatalogBlock`` dataclass instance.
+
+    Raises:
+        LockfileValidationError: If any field fails validation.
+    """
+    resolved_sha = raw["resolved_sha"]
+    _validate_resolved_sha(resolved_sha, "catalog.resolved_sha")
+
+    revision_spec = raw["revision_spec"]
+    _validate_revision_spec(revision_spec, "catalog.revision_spec")
+
+    return CatalogBlock(
+        source=raw["source"],
+        url=raw["url"],
+        revision_spec=revision_spec,
+        resolved_ref=raw["resolved_ref"],
+        resolved_sha=resolved_sha,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Serialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def _toml_str(value: str) -> str:
+    """Encode a Python string as a TOML basic string literal.
+
+    Escapes backslash, double-quote, and the control characters that TOML
+    requires to be escaped in basic strings (U+0000-U+001F, U+007F).
+
+    Args:
+        value: The string to encode.
+
+    Returns:
+        A quoted TOML basic string, e.g. ``"hello"`` or ``"line\\nbreak"``.
+    """
+    result = value.replace("\\", "\\\\").replace('"', '\\"')
+    # Escape control characters (TOML spec requires explicit escaping)
+    for char, escape in _TOML_CONTROL_ESCAPES.items():
+        result = result.replace(char, escape)
+    return f'"{result}"'
+
+
+def _toml_str_array(values: list[str]) -> str:
+    """Encode a list of strings as a single-line TOML array of basic strings.
+
+    Each element is encoded with ``_toml_str`` so backslash, double-quote, and
+    control characters are escaped consistently with scalar string fields. An empty
+    list serialises to ``[]``.
+
+    Args:
+        values: The list of strings to encode.
+
+    Returns:
+        A TOML array literal, e.g. ``["a-mp", "b-mp"]`` or ``[]``.
+    """
+    return "[" + ", ".join(_toml_str(v) for v in values) + "]"
+
+
+def _serialize_include_entries(
+    includes: list[IncludeEntry],
+    table_path: str,
+    lines: list[str],
+) -> None:
+    """Append TOML lines for an ``includes`` array-of-tables at the given path.
+
+    Each ``IncludeEntry`` is serialised as a ``[[<table_path>]]`` header followed
+    by its scalar fields. Nested includes are serialised recursively under the
+    extended path ``<table_path>.includes``.
+
+    A depth-3 chain under ``sources`` yields headers
+    ``[[sources.includes]]``, ``[[sources.includes.includes]]``,
+    and ``[[sources.includes.includes.includes]]``.
+
+    Args:
+        includes: The list of ``IncludeEntry`` objects to serialise.
+        table_path: Dot-separated TOML table-array path for the header,
+            e.g. ``"sources.includes"`` or ``"sources.includes.includes"``.
+        lines: Mutable list of output lines to append to.
+    """
+    for entry in includes:
+        lines.append(f"[[{table_path}]]")
+        lines.append(f"name = {_toml_str(entry.name)}")
+        lines.append(f"path_in_repo = {_toml_str(entry.path_in_repo)}")
+        lines.append(f"url = {_toml_str(entry.url)}")
+        lines.append(f"resolved_sha = {_toml_str(entry.resolved_sha)}")
+        if entry.includes:
+            _serialize_include_entries(entry.includes, f"{table_path}.includes", lines)
+
+
+def _serialize_toml(lockfile: Lockfile) -> str:
+    """Serialise a ``Lockfile`` to a TOML string without any third-party library.
+
+    The output format matches the fixed schema v3 structure exactly:
+
+    - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash,
+      marketplace_registered, marketplace_dir)
+    - ``[catalog]`` inline table block
+    - ``[[sources]]`` array-of-tables entries, each carrying a per-source
+      ``registered_marketplaces`` array (written sorted for deterministic,
+      byte-stable output) and followed by ``[[sources.includes]]`` chains
+      (recursively) and ``[[sources.projects]]`` entries
+
+    String values are encoded as TOML basic strings with all required control-
+    character escapes applied.
+
+    Args:
+        lockfile: The ``Lockfile`` to serialise.
+
+    Returns:
+        A TOML-formatted string representing the lockfile, ending with a newline.
+    """
+    lines: list[str] = []
+
+    # Top-level scalar fields
+    lines.append(f"schema_version = {lockfile.schema_version}")
+    lines.append(f"generated_at = {_toml_str(lockfile.generated_at)}")
+    lines.append(f"generator = {_toml_str(lockfile.generator)}")
+    lines.append(f"kanon_hash = {_toml_str(lockfile.kanon_hash)}")
+    lines.append(f"marketplace_registered = {str(lockfile.marketplace_registered).lower()}")
+    lines.append(f"marketplace_dir = {_toml_str(lockfile.marketplace_dir)}")
+
+    # [catalog] block -- omitted when no catalog source was configured.
+    if lockfile.catalog.source:
+        lines.append("")
+        lines.append("[catalog]")
+        lines.append(f"source = {_toml_str(lockfile.catalog.source)}")
+        lines.append(f"url = {_toml_str(lockfile.catalog.url)}")
+        lines.append(f"revision_spec = {_toml_str(lockfile.catalog.revision_spec)}")
+        lines.append(f"resolved_ref = {_toml_str(lockfile.catalog.resolved_ref)}")
+        lines.append(f"resolved_sha = {_toml_str(lockfile.catalog.resolved_sha)}")
+
+    # [[sources]] array-of-tables
+    for source in lockfile.sources:
+        lines.append("")
+        lines.append("[[sources]]")
+        lines.append(f"name = {_toml_str(source.name)}")
+        lines.append(f"url = {_toml_str(source.url)}")
+        lines.append(f"revision_spec = {_toml_str(source.revision_spec)}")
+        lines.append(f"resolved_ref = {_toml_str(source.resolved_ref)}")
+        lines.append(f"resolved_sha = {_toml_str(source.resolved_sha)}")
+        lines.append(f"path = {_toml_str(source.path)}")
+        # Per-source ownership ledger (schema v3): written sorted for
+        # deterministic, byte-stable output.  Emitted before the includes /
+        # projects sub-tables because TOML requires scalar keys to precede
+        # array-of-tables headers within the same table.
+        lines.append(f"registered_marketplaces = {_toml_str_array(sorted(source.registered_marketplaces))}")
+        if source.includes:
+            _serialize_include_entries(source.includes, "sources.includes", lines)
+        for project in source.projects:
+            lines.append("")
+            lines.append("[[sources.projects]]")
+            lines.append(f"name = {_toml_str(project.name)}")
+            lines.append(f"url = {_toml_str(project.url)}")
+            lines.append(f"canonical_url = {_toml_str(project.canonical_url)}")
+            lines.append(f"revision_spec = {_toml_str(project.revision_spec)}")
+            lines.append(f"resolved_ref = {_toml_str(project.resolved_ref)}")
+            lines.append(f"resolved_sha = {_toml_str(project.resolved_sha)}")
+
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+
+def read_lockfile(path: Path) -> Lockfile:
+    """Parse a TOML lockfile from disk into the ``Lockfile`` dataclass tree.
+
+    Applies every validation rule from spec Section 5 and the migration policy
+    from spec Section 5.2:
+      - ``resolved_sha``: exactly 40 or 64 lowercase hex digits.
+      - ``revision_spec``: PEP 440 SpecifierSet, ``refs/...`` prefix, or
+        branch-charset regex -- with optional monorepo path prefix.
+      - ``canonical_url`` on every ``ProjectEntry``: must equal
+        ``canonicalize_repo_url(entry.url)``.
+      - ``path`` and ``path_in_repo``: must not contain NUL, newline, or tab.
+      - ``schema_version > CURRENT_SCHEMA_VERSION``: raises ``LockfileSchemaError``
+        with message "lockfile schema v<N> written by newer kanon; upgrade kanon-cli."
+      - ``schema_version < CURRENT_SCHEMA_VERSION``: applies the registered upgrader
+        chain; raises ``LockfileSchemaError`` if no chain exists.
+      - ``schema_version == CURRENT_SCHEMA_VERSION``: parsed and validated directly.
+
+    Args:
+        path: Filesystem path to the TOML lockfile.
+
+    Returns:
+        A fully populated ``Lockfile`` dataclass instance.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        LockfileSchemaError: If ``schema_version > CURRENT_SCHEMA_VERSION`` (forward-
+            incompatible) or if ``schema_version < CURRENT_SCHEMA_VERSION`` with no
+            registered upgrader chain (backward-incompatible, missing upgrader).
+        LockfileValidationError: If any field value violates a validation rule,
+            with an error message naming the offending field path and value.
+    """
+    with open(path, "rb") as f:
+        data: dict[str, Any] = tomllib.load(f)
+
+    schema_version = data["schema_version"]
+    if schema_version > CURRENT_SCHEMA_VERSION:
+        raise LockfileSchemaError(f"lockfile schema v{schema_version} written by newer kanon; upgrade kanon-cli.")
+    if schema_version < CURRENT_SCHEMA_VERSION:
+        data = _dispatch_migration(data)
+        schema_version = data["schema_version"]
+
+    kanon_hash = data["kanon_hash"]
+    _validate_kanon_hash(kanon_hash)
+
+    # The [catalog] section is optional: lockfiles written without a catalog
+    # source (e.g. when KANON_CATALOG_SOURCE is unset) omit it.
+    raw_catalog = data.get("catalog")
+    catalog = (
+        _parse_catalog_block(raw_catalog)
+        if raw_catalog is not None
+        else CatalogBlock(
+            source="",
+            url="",
+            revision_spec="",
+            resolved_ref="",
+            resolved_sha="",
+        )
+    )
+
+    raw_sources: list[dict[str, Any]] = data.get("sources", [])
+    sources = [_parse_source_entry(raw, i) for i, raw in enumerate(raw_sources)]
+
+    return Lockfile(
+        schema_version=schema_version,
+        generated_at=data["generated_at"],
+        generator=data["generator"],
+        kanon_hash=kanon_hash,
+        catalog=catalog,
+        sources=sources,
+        marketplace_registered=bool(data.get("marketplace_registered", False)),
+        marketplace_dir=str(data.get("marketplace_dir", "")),
+    )
+
+
+def write_lockfile(lockfile: Lockfile, path: Path) -> None:
+    """Serialise ``lockfile`` to TOML and atomically replace ``path``.
+
+    Atomicity contract (spec Section 4.7.1):
+      - A temp file is created in ``path.parent`` with a ``.tmp.<pid>.<rand>`` suffix.
+      - The TOML content is written and fsynced to the temp file.
+      - ``os.replace`` renames the temp file over ``path`` in a single kernel call.
+      - A reader observing ``path`` sees either the prior full content or the new
+        full content, never a truncated intermediate state.
+      - Two concurrent writers use different pids/rand suffixes, so they never
+        collide on the temp path.
+
+    Args:
+        lockfile: The ``Lockfile`` to serialise.
+        path: Destination path for the lockfile.
+
+    Raises:
+        OSError: If the temp file cannot be created, written, fsynced, or renamed.
+    """
+    toml_bytes = _serialize_toml(lockfile).encode("utf-8")
+
+    rand_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    tmp_suffix = f".tmp.{os.getpid()}.{rand_suffix}"
+
+    tmp_fd, tmp_path_str = tempfile.mkstemp(dir=path.parent, suffix=tmp_suffix)
+    tmp_path = Path(tmp_path_str)
+    try:
+        try:
+            with os.fdopen(tmp_fd, "wb") as tmp_f:
+                tmp_f.write(toml_bytes)
+                tmp_f.flush()
+                os.fsync(tmp_f.fileno())
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        os.replace(tmp_path, path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise

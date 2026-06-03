@@ -49,6 +49,18 @@ _UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 _PATH_SUFFIX = "_PATH"
 
 
+class NoSourcesError(ValueError):
+    """Raised when a .kanon file declares zero source triples.
+
+    Subclasses ``ValueError`` so that every existing ``except ValueError``
+    handler (e.g. commands/install.py::_run, commands/clean.py::_run) and the
+    top-level CLI user-error boundary continue to treat it as a clean user
+    error. The dedicated type lets callers that need to distinguish the
+    zero-source case (e.g. ``kanon doctor``'s structured NO_SOURCES finding)
+    catch it precisely without matching on the message string.
+    """
+
+
 def parse_kanonenv(path: pathlib.Path) -> dict:
     """Parse a .kanon file into a structured configuration dict.
 
@@ -284,8 +296,9 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
         Sorted list of discovered source names.
 
     Raises:
-        ValueError: If no ``KANON_SOURCE_<name>_URL`` keys are found, or
-            if a source name is inferred from a non-URL suffix but the
+        NoSourcesError: If no ``KANON_SOURCE_<name>_URL`` keys are found
+            (a ``ValueError`` subclass; the zero-source case).
+        ValueError: If a source name is inferred from a non-URL suffix but the
             corresponding ``KANON_SOURCE_<name>_URL`` key is absent.
     """
     url_names: set[str] = set()
@@ -315,7 +328,7 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
             "KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, "
             "and KANON_SOURCE_<name>_PATH variables in .kanon"
         )
-        raise ValueError(msg)
+        raise NoSourcesError(msg)
 
     return sorted(url_names)
 

@@ -360,7 +360,7 @@ class TestSigintMidSync:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".packages").is_dir(), (
             ".packages/ must exist after install retry following SIGINT interruption"

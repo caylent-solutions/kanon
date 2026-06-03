@@ -15,6 +15,7 @@ Scenarios automated:
 - EC-07: No subcommand
 - EC-08: Invalid subcommand
 - EC-09: Missing required args (validate without target)
+- EC-10: doctor on zero-source .kanon (clean error, no traceback)
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import pathlib
 
 import pytest
 
+from tests.conftest import write_lockfile_doctor_unit
 from tests.scenarios.conftest import run_kanon
 
 
@@ -79,7 +81,10 @@ class TestEC:
         )
         # Inherit the parent env but strip CLAUDE_MARKETPLACES_DIR so the
         # subprocess hits the documented "not defined" branch.
+        # KANON_CATALOG_SOURCE is provided so the catalog-source check does not
+        # mask the marketplace-dir check (which is the error this test targets).
         env_no_mkt = {k: v for k, v in os.environ.items() if k != "CLAUDE_MARKETPLACES_DIR"}
+        env_no_mkt["KANON_CATALOG_SOURCE"] = "file:///does/not/matter@main"
         result = run_kanon("install", ".kanon", cwd=tmp_path, env=env_no_mkt)
         assert result.returncode == 1, f"stderr={result.stderr!r}"
         assert "KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined" in result.stderr, (
@@ -100,3 +105,20 @@ class TestEC:
         result = run_kanon("validate")
         assert result.returncode == 2, f"stderr={result.stderr!r}"
         assert "Must specify a validation target" in result.stderr, f"stderr={result.stderr!r}"
+
+    def test_ec_10_doctor_zero_source_clean_error(self, tmp_path: pathlib.Path) -> None:
+        """EC-10: kanon doctor on a zero-source .kanon exits non-zero with a clean error.
+
+        A lockfile is written so doctor reaches the kanon_hash recompute, which
+        forces source discovery on the zero-source .kanon. The command must
+        report a clean NO_SOURCES error rather than leaking a Python traceback.
+        """
+        kanon = tmp_path / ".kanon"
+        kanon.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
+        write_lockfile_doctor_unit(tmp_path)
+        result = run_kanon("doctor", "--kanon-file", str(kanon))
+        assert result.returncode != 0, f"stderr={result.stderr!r}"
+        assert "Traceback" not in result.stderr, f"traceback leaked: {result.stderr!r}"
+        assert "Traceback" not in result.stdout, f"traceback leaked: {result.stdout!r}"
+        assert "BUG:" not in result.stderr, f"BUG marker present: {result.stderr!r}"
+        assert "no sources" in result.stderr.lower(), f"stderr={result.stderr!r}"

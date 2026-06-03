@@ -219,7 +219,11 @@ def _run_mk_scenario(
         marketplace_install=marketplace_install,
         extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
     )
-    return kanon_install(work_dir)
+    catalog_source = f"{mfst_bare.as_uri()}@main"
+    return kanon_install(
+        work_dir,
+        extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -794,7 +798,11 @@ class TestMK:
         assert clean_result.returncode == 0, "MK-20 first clean failed"
         assert not link_path.exists(), "MK-20: linkfile still present after first clean"
 
-        reinstall_result = kanon_install(work_dir)
+        catalog_source = f"{mfst_bare.as_uri()}@main"
+        reinstall_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert reinstall_result.returncode == 0, (
             f"MK-20 second install failed: stdout={reinstall_result.stdout!r} stderr={reinstall_result.stderr!r}"
         )
@@ -846,7 +854,11 @@ class TestMK:
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={claude_marketplaces_dir}"],
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{mfst_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"MK-21 install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"

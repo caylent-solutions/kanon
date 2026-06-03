@@ -1,0 +1,244 @@
+"""Integration tests for 'kanon doctor --refresh-completion-cache' and
+'kanon doctor --prune-cache' in a workspace-free working directory.
+
+DEFECT-013: Both flags error with "no kanon workspace in .: '.kanon' not
+found" when the cwd contains no .kanon file, even though the cache operations
+do not require a workspace. These tests assert the expected post-fix contract
+(exit 0, info-line emitted, no workspace-error on stderr) and FAIL against
+the unfixed feat branch HEAD.
+
+Autouse fixtures from tests/integration/conftest.py (spec sec 3.2) are
+inherited automatically: _mock_resolve_ref_to_sha, _mock_check_sha_reachable,
+_auto_create_manifest_on_walk, _default_allow_insecure_remotes.
+
+This file is tightened from a hand-built Namespace that omitted CLI-injected
+sentinel attributes (catalog_source=_UNSET, func=run_doctor) to a
+full-fidelity Namespace produced by the real argparse parser. The earlier
+version passed even against the unfixed code because the missing attributes
+prevented active_flag_names from including non-cache truthy values. The
+tightened version fails against the unfixed code because catalog_source=_UNSET
+is truthy and prevents the WORKSPACE_FREE_FLAGS subset check from firing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import pathlib
+import typing
+
+import pytest
+
+from kanon_cli.commands.doctor import (
+    DoctorArgsTypeError,
+    register,
+    run_doctor,
+)
+
+
+# ---------------------------------------------------------------------------
+# Parametrized fixture data
+# ---------------------------------------------------------------------------
+
+_CACHE_FLAG_PARAMS = [
+    pytest.param(
+        "--refresh-completion-cache",
+        "Completion cache refreshed:",
+        id="refresh_completion_cache",
+    ),
+    pytest.param(
+        "--prune-cache",
+        "Cache pruned:",
+        id="prune_cache",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _parse_doctor_args(*cli_args: str) -> argparse.Namespace:
+    """Parse 'kanon doctor' CLI args through the real argparse doctor parser.
+
+    Uses the real register() function to build the doctor subparser, then
+    parses the given cli_args. The resulting Namespace includes all attributes
+    that argparse injects, including the _UNSET sentinel for catalog_source
+    and the func callable for the registered subcommand. This mirrors the
+    actual Namespace that reaches doctor_command during real CLI dispatch.
+
+    This approach replaces the hand-built _build_args() helper that used a
+    minimal Namespace omitting CLI-injected sentinel attributes (catalog_source,
+    func). The old approach allowed the WORKSPACE_FREE_FLAGS subset check to
+    succeed even against unfixed code because the missing attributes meant
+    active_flag_names only contained the cache flag names.
+
+    Args:
+        *cli_args: CLI argument strings to parse, e.g. '--refresh-completion-cache'.
+
+    Returns:
+        An argparse.Namespace with the full attribute set produced by the real
+        doctor parser, ready to pass to run_doctor.
+    """
+    top_parser = argparse.ArgumentParser(prog="kanon")
+    subparsers = top_parser.add_subparsers(dest="subcommand")
+    register(subparsers)
+    return top_parser.parse_args(["doctor", *cli_args])
+
+
+# ---------------------------------------------------------------------------
+# Test class
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestDoctorCacheFlagsWorkspaceIndependent:
+    """Doctor cache flags must succeed in a workspace-free cwd.
+
+    Both --refresh-completion-cache and --prune-cache perform cache operations
+    that are independent of the .kanon workspace. When only these flags are
+    active, the command must exit 0, emit an info-line about the cache action,
+    and not raise the "no kanon workspace" diagnostic.
+    """
+
+    @pytest.mark.parametrize("flag,expected_message", _CACHE_FLAG_PARAMS)
+    def test_refresh_completion_cache_succeeds_in_empty_cwd(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        flag: str,
+        expected_message: str,
+    ) -> None:
+        """Cache flag exits 0 and emits info-line in an empty cwd (no .kanon).
+
+        Parameterised over --refresh-completion-cache and --prune-cache.
+        Dispatches through the real doctor parser so the Namespace includes
+        CLI-injected sentinel attributes (catalog_source=_UNSET, func=run_doctor)
+        that the WORKSPACE_FREE_FLAGS short-circuit must handle correctly.
+        _print_finding emits the message to stderr; assertions check for the
+        message substring (e.g. 'Completion cache refreshed:' or 'Cache pruned:')
+        in combined stdout+stderr.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory (no .kanon present).
+            monkeypatch: Pytest monkeypatch fixture for env and cwd isolation.
+            capsys: Pytest capture fixture to inspect stdout and stderr.
+            flag: CLI flag string, e.g. '--refresh-completion-cache'.
+            expected_message: Substring of the info-line message emitted by
+                _print_finding that must appear in combined output.
+        """
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(mode=0o700)
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+
+        args = _parse_doctor_args(flag)
+        exit_code = run_doctor(args)
+
+        captured = capsys.readouterr()
+        combined_output = captured.out + captured.err
+
+        assert exit_code == 0, (
+            f"Expected exit 0 for cache-only flag in workspace-free cwd; "
+            f"got {exit_code}.\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
+        )
+        assert expected_message in combined_output, (
+            f"Expected info-line message '{expected_message}' in output; "
+            f"got:\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
+        )
+        assert "no kanon workspace" not in captured.err, (
+            f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
+        )
+
+    @pytest.mark.parametrize("flag,expected_message", _CACHE_FLAG_PARAMS)
+    def test_prune_cache_succeeds_in_empty_cwd(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        flag: str,
+        expected_message: str,
+    ) -> None:
+        """Cache flag exits 0 and does not emit workspace diagnostic (no .kanon).
+
+        Mirrors test_refresh_completion_cache_succeeds_in_empty_cwd to provide
+        an independently-named test method per AC-FUNC-001 while sharing the
+        same parametrize coverage. Uses real parser dispatch so CLI-injected
+        sentinel attributes are present in the Namespace. _print_finding emits
+        the message to stderr; assertions check for the message substring in
+        combined output.
+
+        Args:
+            tmp_path: Pytest-provided temporary directory (no .kanon present).
+            monkeypatch: Pytest monkeypatch fixture for env and cwd isolation.
+            capsys: Pytest capture fixture to inspect stdout and stderr.
+            flag: CLI flag string, e.g. '--prune-cache'.
+            expected_message: Substring of the info-line message emitted by
+                _print_finding that must appear in combined output.
+        """
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir(mode=0o700)
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+
+        args = _parse_doctor_args(flag)
+        exit_code = run_doctor(args)
+
+        captured = capsys.readouterr()
+        combined_output = captured.out + captured.err
+
+        assert exit_code == 0, (
+            f"Expected exit 0 for cache-only flag in workspace-free cwd; "
+            f"got {exit_code}.\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
+        )
+        assert expected_message in combined_output, (
+            f"Expected info-line message '{expected_message}' in output; "
+            f"got:\nstdout: {captured.out!r}\nstderr: {captured.err!r}"
+        )
+        assert "no kanon workspace" not in captured.err, (
+            f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# DoctorArgsTypeError contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestDoctorArgsTypeError:
+    """doctor_command raises DoctorArgsTypeError when args is not a Namespace.
+
+    This covers the defensive type-guard introduced by DEFECT-013 fix in
+    doctor_command. The exception carries the received type so callers can
+    emit a structured error message.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_args",
+        [
+            pytest.param({}, id="dict"),
+            pytest.param(object(), id="object"),
+            pytest.param("string", id="str"),
+        ],
+    )
+    def test_non_namespace_args_raises_doctor_args_type_error(
+        self,
+        bad_args: object,
+    ) -> None:
+        """Non-Namespace args raises DoctorArgsTypeError with received type.
+
+        Args:
+            bad_args: A non-Namespace object that must trigger the type guard.
+        """
+        with pytest.raises(DoctorArgsTypeError) as exc_info:
+            run_doctor(typing.cast(argparse.Namespace, bad_args))
+        assert exc_info.value.received_type is type(bad_args), (
+            f"Expected received_type={type(bad_args)!r}; got {exc_info.value.received_type!r}"
+        )
+        assert "argparse.Namespace" in str(exc_info.value), (
+            f"Expected 'argparse.Namespace' in error message; got: {str(exc_info.value)!r}"
+        )

@@ -1,0 +1,63 @@
+usage: kanon add [-h] [--catalog-source <git-url>@<ref>] [--kanon-file <path>]
+                 [--force] [--dry-run] [--marketplace-install |
+                 --no-marketplace-install]
+                 <name>[@<spec>] [<name>[@<spec>] ...]
+
+Resolve catalog entries from a manifest repo and append the
+KANON_SOURCE_<name>_{URL,REVISION,PATH} triple to the destination
+.kanon file. Creates the file with a standard header when absent.
+
+Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440
+constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in
+each argument is the delimiter -- see spec Section 4.0 resolver rules.
+When <spec> is omitted the highest PEP 440-valid git tag in the
+manifest repo is selected automatically.
+
+positional arguments:
+  <name>[@<spec>]       One or more catalog entry names, optionally suffixed
+                        with '@<spec>' where <spec> is a PEP 440 version
+                        constraint. The last '@' is the delimiter (spec
+                        Section 4.0). Shell-quote constraints containing
+                        special characters such as '>' or '<'.
+
+options:
+  -h, --help            show this help message and exit
+  --catalog-source <git-url>@<ref>
+                        Remote catalog source as '<git_url>@<ref>' where ref
+                        is a branch, tag, or 'latest'. Overrides
+                        KANON_CATALOG_SOURCE env var. Required when
+                        KANON_CATALOG_SOURCE is not set.
+  --kanon-file <path>   Destination .kanon file path. Defaults to './.kanon'.
+                        Overridden by the KANON_KANON_FILE environment
+                        variable; the CLI flag takes precedence when both are
+                        set.
+  --force               Overwrite an existing KANON_SOURCE_<name>_* block in
+                        the destination .kanon file. Without this flag, any
+                        collision between a requested source name and an
+                        existing block is a hard error. Collision detection
+                        pre-flight runs before any write whether or not
+                        --force is set.
+  --dry-run             Print the diff that WOULD be written to the
+                        destination .kanon file ('+' for added lines, '-' for
+                        removed lines under --force). Makes no on-disk change.
+                        Exits 0. Collision detection pre-flight still runs, so
+                        within-request and against-existing collisions are
+                        reported before a diff is shown (unless --force is
+                        also passed).
+  --marketplace-install
+                        Write KANON_MARKETPLACE_INSTALL=true in the .kanon
+                        header. Takes precedence over the
+                        KANON_MARKETPLACE_INSTALL environment variable. Only
+                        applied when the .kanon file is created (not on
+                        append). Mutually exclusive with --no-marketplace-
+                        install.
+  --no-marketplace-install
+                        Write KANON_MARKETPLACE_INSTALL=false in the .kanon
+                        header. Takes precedence over the
+                        KANON_MARKETPLACE_INSTALL environment variable. Only
+                        applied when the .kanon file is created (not on
+                        append). Mutually exclusive with --marketplace-
+                        install.
+
+Note: when supplying a PEP 440 range, quote the spec to avoid shell parsing:
+   kanon add 'package-a@>=1.0,<2.0'

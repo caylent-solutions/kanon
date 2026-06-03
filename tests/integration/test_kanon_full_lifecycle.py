@@ -18,6 +18,7 @@ import pytest
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
+from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +77,7 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
-        install(kanonenv)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +126,7 @@ class TestInstallCleanRoundtripLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert (tmp_path / ".gitignore").is_file(), ".gitignore must exist after install"
 
@@ -158,7 +159,7 @@ class TestMultiSourceInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert (tmp_path / ".kanon-data" / "sources" / "marketplace").is_dir(), (
             ".kanon-data/sources/marketplace/ must be created for the marketplace source"
@@ -179,7 +180,7 @@ class TestMultiSourceInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert mock_init.call_count == 2, (
             f"repo_init must be called once per source (2 sources), but was called {mock_init.call_count} times"
@@ -233,7 +234,7 @@ class TestSourceCollisionDetection:
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_collision),
         ):
             with pytest.raises(ValueError, match="Package collision"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +273,7 @@ class TestAutoDiscoveryWorkflow:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(discovered)
+            install(discovered, lock_file_path=discovered.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
             "install() must create .kanon-data/sources/primary/ relative to .kanon parent"
@@ -304,7 +305,7 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: network error")),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: network error"):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
     def test_clean_succeeds_after_partial_install(self, tmp_path: Path) -> None:
         """clean() can remove partial install artifacts left by a failed install.
@@ -322,7 +323,7 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: timeout")),
         ):
             with pytest.raises(RepoCommandError):
-                install(kanonenv)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         # Source dir was created by create_source_dirs before sync failed
         assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
@@ -376,8 +377,8 @@ class TestReinstallIdempotency:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv)
-            install(kanonenv)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
 
         gitignore_content = (tmp_path / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (

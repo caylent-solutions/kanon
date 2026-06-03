@@ -1,0 +1,47 @@
+usage: kanon remove [-h] [--kanon-file <path>] [--force] [--dry-run]
+                    <name> [<name> ...]
+
+Remove the three KANON_SOURCE_<name>_{URL,REVISION,PATH} lines for one
+or more entries from the .kanon file.
+
+Each <name> may be EITHER the canonical source name (e.g. foo_bar) OR
+the original entry name (e.g. Foo-Bar); both are normalised via
+derive_source_name() before lookup.
+
+Atomicity rule: if ANY requested name is not fully present (fewer than
+three matching keys), the command exits non-zero and the file is NOT
+modified. Either every requested removal succeeds or nothing changes.
+
+The --kanon-file path defaults to './.kanon' and may be overridden by
+the KANON_KANON_FILE environment variable (CLI flag takes
+precedence when both are set).
+
+File-writing rules (applied on non-dry-run writes):
+  - Line-ending preservation: the dominant ending (LF or CRLF) in the
+    source file is used on write. Mixed files are normalised to LF with
+    a stderr warning.
+  - Blank-run collapse: runs of 3 or more consecutive blank lines
+    collapse to exactly 2 blank lines.
+  - Trailing newline: the output always ends with exactly one newline.
+
+positional arguments:
+  <name>               One or more source names to remove. Each may be the
+                       canonical source name (e.g. foo_bar) or the original
+                       entry name (e.g. Foo-Bar); both forms normalise to the
+                       same KANON_SOURCE_<name>_* keys.
+
+options:
+  -h, --help           show this help message and exit
+  --kanon-file <path>  Path to the .kanon file to modify. Defaults to
+                       './.kanon'. Overridden by the KANON_KANON_FILE
+                       environment variable; the CLI flag takes precedence
+                       when both are set.
+  --force              Silently skip sources that are not fully present in the
+                       .kanon file (used to clean up partially-orphaned
+                       entries). Known sources are still removed atomically.
+  --dry-run            Preview mode: shows which lines would be removed. Each
+                       removed line is printed to stdout with a '-' prefix.
+                       Makes no on-disk change. Exits 0. The file-writing
+                       rules (line-ending preservation, blank-run collapse,
+                       trailing-newline normalisation) apply only to the
+                       normal write path, not to the dry-run output.

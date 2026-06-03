@@ -28,3 +28,6 @@ TRACE_FILE
 
 # Temporary test runtime directories (created at runtime, never committed)
 tmp/
+
+# Deleted bundled catalog -- guard against accidental re-addition (E6-F2-S1-T1)
+src/kanon_cli/catalog/

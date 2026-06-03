@@ -52,44 +52,78 @@ class TestKanonVersion:
 
 @pytest.mark.functional
 class TestKanonBootstrapList:
-    def test_bootstrap_list_shows_kanon_package(self) -> None:
+    def test_bootstrap_list_exits_3(self) -> None:
+        # 'kanon bootstrap' was removed in a major release. Every invocation,
+        # including 'kanon bootstrap list', exits 3 (EXIT_CODE_DEPRECATED) with
+        # the deprecation message; it does not delegate to 'kanon list'.
         result = _run_kanon("bootstrap", "list")
-        assert result.returncode == 0
-        assert "kanon" in result.stdout
+        assert result.returncode == 3, (
+            f"'kanon bootstrap list' expected exit 3 (EXIT_CODE_DEPRECATED), "
+            f"got {result.returncode}.\n  stderr: {result.stderr!r}"
+        )
 
-    def test_bootstrap_list_contains_only_kanon(self) -> None:
+    def test_bootstrap_list_deprecation_on_stderr(self) -> None:
         result = _run_kanon("bootstrap", "list")
-        assert result.returncode == 0
-        lines = [
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip() and line.strip() != "Available packages:"
-        ]
-        assert lines == ["kanon"]
+        assert result.returncode == 3
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr
+        # The list-arm closest-replacement line points at 'kanon list'.
+        assert "kanon list --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"'kanon bootstrap list' stderr did not contain the list-arm replacement.\n  stderr: {result.stderr!r}"
+        )
 
 
 @pytest.mark.functional
 class TestKanonBootstrapKanon:
-    def test_bootstrap_kanon_creates_kanonenv_and_readme(self, tmp_path) -> None:
+    def test_bootstrap_kanon_exits_3(self, tmp_path) -> None:
+        # The shim exits 3 and performs no filesystem work; the unknown
+        # '--output-dir' flag is ignored (intercept runs before argparse).
         output_dir = tmp_path / "test-project"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
-        assert result.returncode == 0
-        assert (output_dir / ".kanon").is_file()
-        assert (output_dir / "kanon-readme.md").is_file()
-        created_files = sorted(f.name for f in output_dir.iterdir())
-        assert created_files == [".kanon", "kanon-readme.md"]
+        assert result.returncode == 3, (
+            f"'kanon bootstrap kanon --output-dir ...' expected exit 3 (EXIT_CODE_DEPRECATED), "
+            f"got {result.returncode}.\n  stderr: {result.stderr!r}"
+        )
 
-    def test_bootstrap_kanon_output_mentions_kanon_install(self, tmp_path) -> None:
+    def test_bootstrap_kanon_deprecation_on_stderr(self, tmp_path) -> None:
         output_dir = tmp_path / "test-project"
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
-        assert result.returncode == 0
-        assert "kanon install .kanon" in result.stdout
+        assert result.returncode == 3
+        assert "DEPRECATED" in result.stderr
+        # The add-arm closest-replacement line names the entry.
+        assert "kanon add kanon --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"'kanon bootstrap kanon' stderr did not contain the add-arm replacement.\n  stderr: {result.stderr!r}"
+        )
 
-    def test_bootstrap_kanon_conflict_on_existing_kanonenv(self, tmp_path) -> None:
+    def test_bootstrap_kanon_creates_no_files(self, tmp_path) -> None:
+        # The shim performs NO work. The (ignored) --output-dir must not be
+        # created and no files must appear in tmp_path after exit 3.
+        output_dir = tmp_path / "test-project"
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(output_dir))
+        assert result.returncode == 3
+        assert not output_dir.exists(), (
+            f"'kanon bootstrap kanon' must not create the output directory.\n"
+            f"  output_dir: {output_dir}\n  stderr: {result.stderr!r}"
+        )
+
+    def test_bootstrap_kanon_with_existing_kanonenv_exits_3(self, tmp_path) -> None:
+        # Even when a .kanon file already exists, the shim exits 3 immediately
+        # -- it does not inspect the filesystem.
         (tmp_path / ".kanon").write_text("existing")
         result = _run_kanon("bootstrap", "kanon", "--output-dir", str(tmp_path))
-        assert result.returncode == 1
-        assert "already exist" in result.stderr
+        assert result.returncode == 3, (
+            f"'kanon bootstrap kanon' with existing .kanon expected exit 3, "
+            f"got {result.returncode}.\n  stderr: {result.stderr!r}"
+        )
+
+    def test_bootstrap_kanon_with_existing_kanonenv_deprecation_on_stderr(self, tmp_path) -> None:
+        # The DEPRECATED message must appear on stderr regardless of whether a
+        # .kanon file is already present.
+        (tmp_path / ".kanon").write_text("existing")
+        result = _run_kanon("bootstrap", "kanon", "--output-dir", str(tmp_path))
+        assert result.returncode == 3
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
 
 @pytest.mark.functional

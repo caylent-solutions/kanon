@@ -57,15 +57,24 @@ class TestIsVersionConstraint:
 
 @pytest.mark.integration
 class TestResolveVersionPassthrough:
-    """Verify plain branch/tag refs pass through unchanged."""
+    """Verify plain branch/tag refs pass through unchanged.
+
+    Note: v-prefixed versions (e.g. ``v1.0.0``) are accepted by PEP 440
+    and are normalised to ``refs/tags/v1.0.0`` per spec Section 4.0 rule 3.
+    """
 
     @pytest.mark.parametrize(
         "rev_spec",
-        ["main", "v1.0.0", "refs/tags/1.1.2", "my-branch"],
+        ["main", "refs/tags/1.1.2", "my-branch"],
     )
     def test_plain_ref_unchanged(self, rev_spec: str) -> None:
         result = resolve_version("https://example.com/repo.git", rev_spec)
         assert result == rev_spec
+
+    def test_v_prefixed_version_normalises_to_refs_tags(self) -> None:
+        """v-prefixed strings are valid PEP 440 and normalise to refs/tags/."""
+        result = resolve_version("https://example.com/repo.git", "v1.0.0")
+        assert result == "refs/tags/v1.0.0"
 
 
 @pytest.mark.integration

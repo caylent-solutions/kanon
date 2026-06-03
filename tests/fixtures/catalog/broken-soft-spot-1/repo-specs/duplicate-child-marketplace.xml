@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Fixture: duplicate <name> elements in one <catalog-metadata> block -->
+<package>
+  <catalog-metadata>
+    <name>dup-tool</name>
+    <name>dup-tool-duplicate</name>
+    <display-name>Duplicate Name Tool</display-name>
+    <description>A tool with two name elements.</description>
+    <version>1.0.0</version>
+    <type>plugin</type>
+    <owner-name>Carol</owner-name>
+    <owner-email>carol@example.com</owner-email>
+    <keywords>infra</keywords>
+  </catalog-metadata>
+</package>

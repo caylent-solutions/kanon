@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Fixture: entry name 'foo.bar' triggers soft-spot rule 2 charset warning.
+     '.' is outside [a-zA-Z0-9_-] => S002 WARN.
+     derive_source_name('foo.bar') = 'foo.bar' (no drift) so S001 does NOT fire. -->
+<package>
+  <catalog-metadata>
+    <name>foo.bar</name>
+    <display-name>Foo.Bar Tool</display-name>
+    <description>A tool with a dotted entry name containing an out-of-charset character.</description>
+    <version>3.0.0</version>
+    <type>plugin</type>
+    <owner-name>Test Author</owner-name>
+    <owner-email>author@example.com</owner-email>
+    <keywords>test,fixture</keywords>
+  </catalog-metadata>
+</package>

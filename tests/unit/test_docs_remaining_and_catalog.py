@@ -118,89 +118,29 @@ class TestMultiSourceGuideRepoToolUpdated:
 
 
 @pytest.mark.unit
-class TestCatalogKanonDotKanonNoRepoUrlRev:
-    """AC-DOC-005: catalog/kanon/.kanon has no REPO_URL or REPO_REV references."""
+class TestCatalogKanonFilesRemoved:
+    """AC-DOC-005/006/007 (E6-F2-S1-T1): catalog/kanon/ was deleted.
 
-    def test_file_exists(self) -> None:
-        assert KANON_DOT_KANON.exists(), f"Expected {KANON_DOT_KANON} to exist"
+    The catalog files (.kanon and kanon-readme.md) no longer exist.
+    These tests assert the expected post-deletion state.
+    """
 
-    def test_no_repo_url_variable(self) -> None:
-        content = KANON_DOT_KANON.read_text()
-        assert "REPO_URL" not in content, "catalog/kanon/.kanon must not contain REPO_URL (use embedded repo tool)"
-
-    def test_no_repo_rev_variable(self) -> None:
-        content = KANON_DOT_KANON.read_text()
-        assert "REPO_REV" not in content, "catalog/kanon/.kanon must not contain REPO_REV (use embedded repo tool)"
-
-
-@pytest.mark.unit
-class TestCatalogKanonReadmeNoPipxPrerequisites:
-    """AC-DOC-006: catalog/kanon/kanon-readme.md has no pipx/repo prerequisites."""
-
-    def test_file_exists(self) -> None:
-        assert KANON_README.exists(), f"Expected {KANON_README} to exist"
-
-    def test_no_pipx_prerequisite(self) -> None:
-        content = KANON_README.read_text()
-        # pipx should not appear as a prerequisite bullet point
-        lines = content.splitlines()
-        prereq_section = False
-        for line in lines:
-            if "## Prerequisites" in line:
-                prereq_section = True
-            elif line.startswith("## ") and prereq_section:
-                prereq_section = False
-            if prereq_section and "pipx" in line and line.startswith("-"):
-                raise AssertionError(
-                    f"catalog/kanon/kanon-readme.md must not list pipx as a prerequisite. Found: {line!r}"
-                )
-
-    def test_no_repo_tool_prerequisite(self) -> None:
-        content = KANON_README.read_text()
-        lines = content.splitlines()
-        prereq_section = False
-        for line in lines:
-            if "## Prerequisites" in line:
-                prereq_section = True
-            elif line.startswith("## ") and prereq_section:
-                prereq_section = False
-            if prereq_section:
-                lower = line.lower()
-                assert "repo tool" not in lower, (
-                    f"catalog/kanon/kanon-readme.md must not list repo tool as a prerequisite. Found: {line!r}"
-                )
-
-
-@pytest.mark.unit
-class TestCatalogKanonReadmeInstallInstructionsUpdated:
-    """AC-DOC-007: catalog/kanon/kanon-readme.md install instructions updated."""
-
-    def test_no_repo_url_in_variable_reference_table(self) -> None:
-        content = KANON_README.read_text()
-        assert "REPO_URL" not in content, "catalog/kanon/kanon-readme.md must not reference REPO_URL in variable table"
-
-    def test_no_repo_rev_in_variable_reference_table(self) -> None:
-        content = KANON_README.read_text()
-        assert "REPO_REV" not in content, "catalog/kanon/kanon-readme.md must not reference REPO_REV in variable table"
-
-    def test_troubleshooting_no_pipx_install_kanon_cli(self) -> None:
-        content = KANON_README.read_text()
-        # The troubleshooting entry for 'kanon: command not found' must not say 'pipx install kanon-cli'
-        assert "pipx install kanon-cli" not in content, (
-            "catalog/kanon/kanon-readme.md troubleshooting must not recommend 'pipx install kanon-cli' "
-            "(use 'uv tool install kanon-cli' or remove the pipx reference)"
+    def test_kanon_dot_kanon_absent(self) -> None:
+        assert not KANON_DOT_KANON.exists(), (
+            f"catalog/kanon/.kanon at {KANON_DOT_KANON} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
         )
 
-    def test_kanon_install_command_present(self) -> None:
-        content = KANON_README.read_text()
-        assert "kanon install .kanon" in content, (
-            "catalog/kanon/kanon-readme.md must document the 'kanon install .kanon' command"
+    def test_kanon_readme_absent(self) -> None:
+        assert not KANON_README.exists(), (
+            f"catalog/kanon/kanon-readme.md at {KANON_README} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
         )
 
-    def test_kanon_clean_command_present(self) -> None:
-        content = KANON_README.read_text()
-        assert "kanon clean .kanon" in content, (
-            "catalog/kanon/kanon-readme.md must document the 'kanon clean .kanon' command"
+    def test_catalog_dir_absent(self) -> None:
+        assert not CATALOG_KANON_DIR.exists(), (
+            f"catalog/kanon/ at {CATALOG_KANON_DIR} must not exist after E6-F2-S1-T1 deletion. "
+            "If this fails, the bundled catalog was accidentally re-added."
         )
 
 

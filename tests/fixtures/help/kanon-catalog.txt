@@ -1,0 +1,12 @@
+usage: kanon catalog [-h] {audit} ...
+
+Subcommands for inspecting and auditing manifest repos.
+
+options:
+  -h, --help  show this help message and exit
+
+catalog subcommands:
+  Available catalog operations
+
+  {audit}
+    audit     Audit a manifest repo for catalog soft-spot violations.

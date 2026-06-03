@@ -9,9 +9,12 @@ import pathlib
 import sys
 import warnings
 
+from kanon_cli.constants import KANON_LOCK_FILE as _KANON_LOCK_FILE_ENV
+from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.discover import find_kanonenv
-from kanon_cli.core.install import install
+from kanon_cli.core.install import InstallError, install
 from kanon_cli.repo import RepoCommandError
+from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
 # Legacy environment variables superseded by the embedded repo tool and --catalog-source.
 _LEGACY_REPO_URL_ENV = "REPO_URL"
@@ -64,6 +67,7 @@ def register(subparsers) -> None:
     """
     parser = subparsers.add_parser(
         "install",
+        add_help=True,
         help="Full install lifecycle: multi-source manifest sync and marketplace setup",
         description=(
             "Execute the full Kanon install lifecycle.\n\n"
@@ -81,10 +85,81 @@ def register(subparsers) -> None:
         type=pathlib.Path,
         help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
+    add_catalog_source_arg(parser)
+
+    # --refresh-lock and --refresh-lock-source are mutually exclusive (spec Section 4.7).
+    refresh_group = parser.add_mutually_exclusive_group()
+    refresh_group.add_argument(
+        "--refresh-lock",
+        action="store_true",
+        default=False,
+        help=(
+            "Ignore the existing lockfile, re-resolve every transitive version from "
+            "scratch, and overwrite .kanon.lock with the new state. "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "the lockfile fallback is disabled on this path."
+        ),
+    )
+    refresh_group.add_argument(
+        "--refresh-lock-source",
+        metavar="NAME",
+        default=None,
+        help=(
+            "Re-resolve exactly one top-level source's full chain while preserving "
+            "every other source's lockfile entries verbatim. NAME may be a source "
+            "name (the KANON_SOURCE_<name> key) or a catalog entry name resolved "
+            "via derive_source_name. "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "the lockfile fallback is disabled on this path."
+        ),
+    )
+
+    parser.add_argument(
+        "--strict-lock",
+        action="store_true",
+        default=False,
+        help=(
+            "Upgrade orphaned lock entries to a hard error. An orphaned lock "
+            "entry is a source present in .kanon.lock but absent from .kanon "
+            "(e.g. after 'kanon remove'). Without this flag, orphaned entries "
+            "are pruned and an info-line is emitted per orphan. With this flag, kanon exits with an error "
+            "listing every orphaned source. "
+            "Remediation: run without --strict-lock to prune, or restore the "
+            "missing KANON_SOURCE_<name>_* triples in .kanon."
+        ),
+    )
+    parser.add_argument(
+        "--strict-drift",
+        action="store_true",
+        default=False,
+        help=(
+            "Upgrade branch drift to a hard error. Branch drift occurs when "
+            "the lockfile records a SHA for a branch-shaped source but the "
+            "branch's current tip on the remote is a different SHA. Without "
+            "this flag, the locked SHA is reused and an info-line is emitted. "
+            "With this flag, kanon exits with an error listing every drifted "
+            "source. "
+            "Remediation: run 'kanon install --refresh-lock-source <source>' "
+            "to accept the new branch tip."
+        ),
+    )
+
+    parser.add_argument(
+        "--lock-file",
+        metavar="PATH",
+        default=None,
+        type=pathlib.Path,
+        help=(
+            "Path to the lock file. Defaults to <kanon-file>.lock (derived from "
+            "--kanon-file). The KANON_LOCK_FILE environment variable is consulted "
+            "when this flag is absent; the CLI flag takes precedence when both are set."
+        ),
+    )
+
     parser.set_defaults(func=_run)
 
 
-def _run(args) -> None:
+def _run(args) -> int | None:
     """Execute the install command.
 
     Resolves the .kanon path (walking up from cwd when not provided), parses
@@ -127,8 +202,34 @@ def _run(args) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    lock_file_path = derive_lock_file_path(
+        args.kanonenv_path,
+        args.lock_file,
+        os.environ.get(_KANON_LOCK_FILE_ENV),
+    )
+
     try:
-        install(args.kanonenv_path)
+        install(
+            args.kanonenv_path,
+            lock_file_path=lock_file_path,
+            catalog_source=args.catalog_source,
+            refresh_lock=args.refresh_lock,
+            refresh_lock_source=args.refresh_lock_source,
+            strict_lock=args.strict_lock,
+            strict_drift=args.strict_drift,
+        )
+    except InstallError as exc:
+        # InstallError subclasses already format their message with an "ERROR:"
+        # prefix per the spec-canonical error shape (spec Section 4 header).
+        # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt,
+        # lockfile-sha-unreachable.txt, conflict-detected.txt.
+        # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
+        # Covers MissingCatalogSourceError (no source in the four-tier precedence
+        # chain), CatalogSourceMismatchError (lockfile source differs from CLI/env),
+        # and CatalogBlockParseError (malformed [catalog] block in .kanon -- E22).
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+    return None

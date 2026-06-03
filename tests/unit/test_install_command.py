@@ -92,10 +92,11 @@ class TestRunResolvesExplicitPath:
 
         args = MagicMock()
         args.kanonenv_path = pathlib.Path(".kanon")
+        args.catalog_source = None
 
         received: list[pathlib.Path] = []
 
-        def _capture_install(path):
+        def _capture_install(path, **kwargs):
             received.append(path)
 
         with patch("kanon_cli.commands.install.install", side_effect=_capture_install):
@@ -116,10 +117,11 @@ class TestRunResolvesExplicitPath:
         kanonenv.write_text(_VALID_KANONENV)
         args = MagicMock()
         args.kanonenv_path = kanonenv
+        args.catalog_source = None
 
         received: list[pathlib.Path] = []
 
-        def _capture_install(path):
+        def _capture_install(path, **kwargs):
             received.append(path)
 
         with patch("kanon_cli.commands.install.install", side_effect=_capture_install):

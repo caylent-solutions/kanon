@@ -13,6 +13,8 @@ Scenarios automated:
 - HV-06: Validate xml sub-subcommand help -- `kanon validate xml --help`
 - HV-07: Validate marketplace sub-subcommand help -- `kanon validate marketplace --help`
 - HV-08: Bootstrap subcommand help -- `kanon bootstrap --help`
+  (bootstrap was removed; `--help` is no longer help -- it exits 3 with the
+  deprecation message on stderr)
 """
 
 from __future__ import annotations
@@ -66,7 +68,11 @@ class TestHV:
         assert "--repo-root" in result.stdout
 
     def test_hv_08_bootstrap_help(self) -> None:
+        # bootstrap was removed in a major release. `kanon bootstrap --help` is
+        # no longer help output: it exits 3 with the deprecation message on
+        # stderr (stdout stays empty).
         result = run_kanon("bootstrap", "--help")
-        assert result.returncode == 0, f"stderr={result.stderr!r}"
-        assert "package" in result.stdout
-        assert "--output-dir" in result.stdout
+        assert result.returncode == 3, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr

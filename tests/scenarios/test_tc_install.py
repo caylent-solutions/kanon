@@ -104,7 +104,12 @@ class TestTCInstall:
         sub_deep = project_root / "sub" / "deep"
         sub_deep.mkdir(parents=True)
 
-        install_result = run_kanon("install", cwd=sub_deep)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = run_kanon(
+            "install",
+            cwd=sub_deep,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -143,7 +148,13 @@ class TestTCInstall:
         # Rename .kanon to my.kanon so auto-discover cannot find it.
         (work_dir / ".kanon").rename(kanon_file)
 
-        install_result = run_kanon("install", str(kanon_file), cwd=work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = run_kanon(
+            "install",
+            str(kanon_file),
+            cwd=work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -181,6 +192,8 @@ class TestTCInstall:
 
         env = dict(os.environ)
         env["REPO_URL"] = "https://example.com/repo.git"
+        env["KANON_CATALOG_SOURCE"] = f"{manifest_bare.as_uri()}@main"
+        env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
 
         install_result = run_kanon("install", ".kanon", cwd=work_dir, env=env)
         assert install_result.returncode == 0, (
@@ -220,6 +233,8 @@ class TestTCInstall:
 
         env = dict(os.environ)
         env["REPO_REV"] = "v1.2.3"
+        env["KANON_CATALOG_SOURCE"] = f"{manifest_bare.as_uri()}@main"
+        env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
 
         install_result = run_kanon("install", ".kanon", cwd=work_dir, env=env)
         assert install_result.returncode == 0, (

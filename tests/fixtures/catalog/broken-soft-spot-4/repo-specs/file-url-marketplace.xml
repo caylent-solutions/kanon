@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- Fixture: remote fetch URL uses file:// scheme (insecure by default).
+     This triggers soft-spot rule 4 remote-url: R002 ERROR (non-HTTPS remote URL)
+     unless KANON_ALLOW_INSECURE_REMOTES=1 is set. -->
+<manifest>
+  <catalog-metadata>
+    <name>file-url-tool</name>
+    <display-name>File URL Tool</display-name>
+    <description>A tool whose remote uses a file:// fetch URL.</description>
+    <version>1.0.0</version>
+  </catalog-metadata>
+  <remote name="local" fetch="file:///tmp/test-repos" />
+  <project name="my-project" remote="local" path="src/my-project" />
+</manifest>

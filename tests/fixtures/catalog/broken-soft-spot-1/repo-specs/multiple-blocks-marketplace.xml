@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Fixture: two <catalog-metadata> blocks in one XML file -->
+<package>
+  <catalog-metadata>
+    <name>first-tool</name>
+    <display-name>First Tool</display-name>
+    <description>The first catalog-metadata block.</description>
+    <version>1.0.0</version>
+  </catalog-metadata>
+  <catalog-metadata>
+    <name>second-tool</name>
+    <display-name>Second Tool</display-name>
+    <description>The second catalog-metadata block.</description>
+    <version>2.0.0</version>
+  </catalog-metadata>
+</package>

@@ -92,7 +92,7 @@ class TestCleanRelativePath:
 
         received_paths: list[pathlib.Path] = []
 
-        def capture_path(path: pathlib.Path) -> None:
+        def capture_path(path: pathlib.Path, orphans: bool = False) -> None:
             received_paths.append(path)
 
         with patch("kanon_cli.commands.clean.clean", side_effect=capture_path):

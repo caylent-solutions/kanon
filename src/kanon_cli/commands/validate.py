@@ -1,21 +1,31 @@
-"""Validate subcommand with xml and marketplace sub-subcommands."""
+"""Validate subcommand with xml, marketplace, and metadata sub-subcommands."""
 
 import subprocess
 import sys
 from pathlib import Path
 
+from kanon_cli.commands.catalog import (
+    KANON_CATALOG_AUDIT_FORMAT_JSON,
+    AuditFinding,
+    _build_findings_payload,
+    _check_entry_name_uniqueness,
+    _check_metadata,
+    _check_source_name_derivation,
+    _format_findings,
+)
 from kanon_cli.core.marketplace_validator import validate_marketplace
 from kanon_cli.core.xml_validator import validate_xml
 
 
 def register(subparsers) -> None:
-    """Register the validate subcommand with xml and marketplace sub-subcommands.
+    """Register the validate subcommand with xml, marketplace, and metadata sub-subcommands.
 
     Args:
         subparsers: The subparsers object from the parent parser.
     """
     validate_parser = subparsers.add_parser(
         "validate",
+        add_help=True,
         help="Validate XML manifests",
         description="Validate manifest XML files for well-formedness and correctness.",
     )
@@ -29,6 +39,7 @@ def register(subparsers) -> None:
     # xml sub-subcommand
     xml_parser = validate_subs.add_parser(
         "xml",
+        add_help=True,
         help="Validate manifest XML files (well-formedness, required attributes, include chains)",
         description=(
             "Validate all XML manifest files under repo-specs/.\n\n"
@@ -49,6 +60,7 @@ def register(subparsers) -> None:
     # marketplace sub-subcommand
     mp_parser = validate_subs.add_parser(
         "marketplace",
+        add_help=True,
         help="Validate marketplace XML manifests (linkfile dest, include chains, name uniqueness, tag format)",
         description=(
             "Validate all marketplace XML manifests under repo-specs/.\n\n"
@@ -66,6 +78,53 @@ def register(subparsers) -> None:
     )
     mp_parser.set_defaults(func=_run_marketplace)
 
+    # metadata sub-subcommand
+    meta_parser = validate_subs.add_parser(
+        "metadata",
+        add_help=True,
+        help=(
+            "Check catalog metadata soft-spots (required/recommended fields, "
+            "source-name derivation, entry-name uniqueness) without network access."
+        ),
+        description=(
+            "Check every *-marketplace.xml under repo-specs/ for in-repo soft-spot "
+            "violations (spec Section 3.5 rules 1, 2, 3).\n\n"
+            "Checks performed:\n"
+            "  - Soft-spot 1 (metadata): required fields present and non-empty,\n"
+            "    no duplicate child elements, exactly one <catalog-metadata> block.\n"
+            "  - Soft-spot 2 (source-name derivation): entry name normalises cleanly\n"
+            "    and uses only [a-zA-Z0-9_-] characters.\n"
+            "  - Soft-spot 3 (entry-name uniqueness): no two XML files share the\n"
+            "    same <catalog-metadata><name> value.\n\n"
+            "No network access. Does not clone. Does not call git ls-remote."
+        ),
+        epilog=(
+            "Example:\n"
+            "  kanon validate metadata\n"
+            "  kanon validate metadata --repo-root /path/to/repo\n"
+            "  kanon validate metadata --format json"
+        ),
+        formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
+    )
+    meta_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Repository root directory (default: auto-detect via git rev-parse)",
+    )
+    meta_parser.add_argument(
+        "--format",
+        dest="format",
+        choices=("text", "json"),
+        default="text",
+        metavar="{text,json}",
+        help=(
+            "Output format. 'text' prints one finding per line with ERROR:/WARN:/INFO: "
+            "prefix. 'json' prints a single JSON object {\"findings\": [...]}. Default: text."
+        ),
+    )
+    meta_parser.set_defaults(func=_run_metadata)
+
     validate_parser.set_defaults(func=_run_validate_help)
     validate_parser._validate_subs = validate_subs
 
@@ -74,7 +133,7 @@ def _run_validate_help(args) -> None:
     """Show help when no validate sub-subcommand is given."""
     if args.validate_command is None:
         print(
-            "Error: Must specify a validation target: xml or marketplace",
+            "Error: Must specify a validation target: xml, marketplace, or metadata",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -142,3 +201,59 @@ def _run_marketplace(args) -> None:
     repo_root = _resolve_repo_root(args.repo_root)
     exit_code = validate_marketplace(repo_root)
     sys.exit(exit_code)
+
+
+def validate_metadata_command(args) -> None:
+    """Execute catalog metadata validation (soft-spots 1, 2, 3) without network access.
+
+    Runs three in-repo soft-spot checks from spec Section 3.5 against every
+    ``*-marketplace.xml`` file under ``<repo_root>/repo-specs/``:
+
+    - Soft-spot 1 (metadata): required fields present, no duplicate child elements,
+      exactly one ``<catalog-metadata>`` block per file.
+    - Soft-spot 2 (source-name derivation): entry name normalises cleanly via
+      ``derive_source_name`` and uses only ``[a-zA-Z0-9_-]`` characters.
+    - Soft-spot 3 (entry-name uniqueness): no two files share the same
+      ``<catalog-metadata><name>`` value.
+
+    Does NOT call ``git ls-remote``. No network access. No cloning.
+
+    Exit code semantics:
+    - Exit 0 if no ERROR-level findings (warnings are acceptable).
+    - Exit 1 if any ERROR-level finding is produced.
+
+    Args:
+        args: Parsed arguments. Expected attributes:
+            repo_root (Path | None): Optional path to the manifest repo root.
+            format (str): Output format -- "text" or "json".
+
+    Raises:
+        SystemExit: Always. Exit 0 on success (no errors), exit 1 on any error finding.
+    """
+    repo_root = _resolve_repo_root(args.repo_root)
+
+    findings: list[AuditFinding] = []
+    findings.extend(_check_metadata(repo_root))
+    findings.extend(_check_source_name_derivation(repo_root))
+    findings.extend(_check_entry_name_uniqueness(repo_root))
+
+    if args.format == KANON_CATALOG_AUDIT_FORMAT_JSON:
+        from kanon_cli.cli import _emit_json_payload
+
+        _emit_json_payload(_build_findings_payload(findings))
+    else:
+        formatted = _format_findings(findings, args.format)
+        if formatted:
+            print(formatted)
+
+    has_error = any(f.kind == "error" for f in findings)
+    sys.exit(1 if has_error else 0)
+
+
+def _run_metadata(args) -> None:
+    """Execute catalog metadata validation.
+
+    Args:
+        args: Parsed arguments with optional repo_root and format.
+    """
+    validate_metadata_command(args)

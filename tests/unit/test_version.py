@@ -4,7 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.version import is_version_constraint, _list_tags, resolve_version
+from kanon_cli.version import (
+    RevisionShape,
+    _classify_revision_shape,
+    _format_zero_pep440_tags_error,
+    _list_branch_head,
+    _list_tags,
+    _normalize_bare_semver_to_tag,
+    _resolve_constraint_from_tags,
+    _truncate_sha,
+    is_version_constraint,
+    resolve_version,
+)
 
 
 def _mock_ls_remote(tags: list[str]) -> MagicMock:
@@ -48,16 +59,27 @@ class TestIsVersionConstraint:
 
 @pytest.mark.unit
 class TestResolveVersionPassthrough:
-    """Verify plain branch/tag names pass through unchanged."""
+    """Verify plain branch/tag names pass through unchanged.
+
+    Note: v-prefixed versions (e.g. ``v1.0.0``) are accepted by PEP 440
+    and are normalised to ``refs/tags/v1.0.0`` per spec Section 4.0 rule 3.
+    Only strings that fail ``packaging.version.Version`` parsing -- or that
+    contain a ``/`` -- are passed through unchanged.
+    """
 
     @pytest.mark.parametrize(
         "rev_spec",
-        ["main", "caylent-2.0.0", "v1.0.0", "some-branch", "refs/tags/1.1.2"],
-        ids=["main", "caylent-tag", "v-prefixed", "branch", "full-tag-ref"],
+        ["main", "caylent-2.0.0", "some-branch", "refs/tags/1.1.2"],
+        ids=["main", "caylent-tag", "branch", "full-tag-ref"],
     )
     def test_passthrough(self, rev_spec: str) -> None:
         result = resolve_version("https://example.com/repo.git", rev_spec)
         assert result == rev_spec
+
+    def test_v_prefixed_version_normalises_to_refs_tags(self) -> None:
+        """v-prefixed strings are valid PEP 440 and normalise to refs/tags/."""
+        result = resolve_version("https://example.com/repo.git", "v1.0.0")
+        assert result == "refs/tags/v1.0.0"
 
 
 @pytest.mark.unit
@@ -210,3 +232,436 @@ class TestListTags:
             mock_run.return_value = MagicMock(returncode=128, stdout="", stderr="fatal")
             with pytest.raises(SystemExit):
                 _list_tags("https://example.com/repo.git")
+
+
+@pytest.mark.unit
+class TestNormalizeBareWidenedPep440:
+    """AC-FUNC-001 through AC-FUNC-007, AC-TEST-001, AC-TEST-002.
+
+    Verify that _normalize_bare_semver_to_tag accepts any PEP 440 Version
+    (spec Section 4.0 rule 3) and still passes through non-PEP-440 inputs.
+    """
+
+    @pytest.mark.parametrize(
+        ("spec", "expected"),
+        [
+            # AC-FUNC-001: prerelease
+            ("1.0.0a1", "refs/tags/1.0.0a1"),
+            # AC-FUNC-001: release candidate
+            ("1.0.0rc2", "refs/tags/1.0.0rc2"),
+            # AC-FUNC-001: beta
+            ("1.0.0b3", "refs/tags/1.0.0b3"),
+            # AC-FUNC-002: local version
+            ("1.0.0+local.build", "refs/tags/1.0.0+local.build"),
+            # AC-FUNC-003: calendar version
+            ("2026.4.1", "refs/tags/2026.4.1"),
+            # AC-FUNC-004: epoch
+            ("1!2.0.0", "refs/tags/1!2.0.0"),
+            # AC-FUNC-005: post-release
+            ("1.0.0.post1", "refs/tags/1.0.0.post1"),
+            # AC-FUNC-006: dev-release
+            ("1.0.0.dev0", "refs/tags/1.0.0.dev0"),
+        ],
+        ids=[
+            "prerelease-alpha",
+            "prerelease-rc",
+            "prerelease-beta",
+            "local-version",
+            "calendar-version",
+            "epoch",
+            "post-release",
+            "dev-release",
+        ],
+    )
+    def test_widened_pep440_shapes_normalize_to_tag(self, spec: str, expected: str) -> None:
+        assert _normalize_bare_semver_to_tag(spec) == expected
+
+    @pytest.mark.parametrize(
+        ("spec", "expected"),
+        [
+            # AC-FUNC-007: narrow shapes still resolve
+            ("1", "refs/tags/1"),
+            ("1.0", "refs/tags/1.0"),
+            ("1.0.0", "refs/tags/1.0.0"),
+            # AC-TEST-002: pass-through -- already-prefixed refs
+            ("refs/tags/x", "refs/tags/x"),
+            ("refs/heads/main", "refs/heads/main"),
+            # AC-TEST-002: pass-through -- branch names that fail PEP 440
+            ("main", "main"),
+            ("develop", "develop"),
+            # AC-TEST-002: pass-through -- any input containing '/'
+            ("feature/foo", "feature/foo"),
+            ("subpackage/1.0.0", "subpackage/1.0.0"),
+            # AC-TEST-002: pass-through -- 40-char hex SHA
+            ("a" * 40, "a" * 40),
+            # AC-TEST-002: pass-through -- 64-char hex SHA
+            ("b" * 64, "b" * 64),
+        ],
+        ids=[
+            "single-digit",
+            "two-part-semver",
+            "three-part-semver",
+            "refs-tags-x",
+            "refs-heads-main",
+            "branch-main",
+            "branch-develop",
+            "feature-slash",
+            "monorepo-prefixed",
+            "sha-40",
+            "sha-64",
+        ],
+    )
+    def test_passthrough_and_narrow_preserved(self, spec: str, expected: str) -> None:
+        assert _normalize_bare_semver_to_tag(spec) == expected
+
+
+@pytest.mark.unit
+class TestResolveConstraintFromTagsLoudError:
+    """AC-FUNC-001 through AC-FUNC-007, AC-TEST-001, AC-TEST-002, AC-TEST-003.
+
+    Verify that _resolve_constraint_from_tags emits a loud, enumerated error
+    message when candidates exist under the prefix but none parse as PEP 440.
+
+    Spec source: kanon-list-add-lock-features-spec.md Section 0.4 and
+    Section 13 decision 14.
+    """
+
+    def _make_tags(self, prefix: str, names: list[str]) -> list[str]:
+        """Build full tag refs under a given prefix."""
+        return [f"refs/tags/{prefix}/{name}" for name in names]
+
+    @pytest.mark.parametrize(
+        ("skipped_names", "constraint", "prefix", "expected_count"),
+        [
+            # AC-TEST-001: 1 skipped tag
+            (["release-2024"], "==1.0.0", "mylib", 1),
+            # AC-TEST-001: 5 skipped tags
+            (
+                ["release-a", "release-b", "release-c", "release-d", "release-e"],
+                "==1.0.0",
+                "mylib",
+                5,
+            ),
+            # AC-TEST-001: exactly 10 skipped tags (no suffix line)
+            (
+                [f"release-{i:02d}" for i in range(10)],
+                "==1.0.0",
+                "mylib",
+                10,
+            ),
+        ],
+        ids=["one-skipped", "five-skipped", "ten-skipped"],
+    )
+    def test_loud_error_message_structure(
+        self,
+        skipped_names: list[str],
+        constraint: str,
+        prefix: str,
+        expected_count: int,
+    ) -> None:
+        """AC-FUNC-001, AC-FUNC-002, AC-FUNC-003: message structure for N<=10 skipped."""
+        tags = self._make_tags(prefix, skipped_names)
+        revision = f"refs/tags/{prefix}/{constraint}"
+
+        with pytest.raises(ValueError) as exc_info:
+            _resolve_constraint_from_tags(revision, tags)
+
+        msg = str(exc_info.value)
+        assert msg.startswith(f"ERROR: No PEP 440-parseable version tags found under 'refs/tags/{prefix}'."), (
+            f"Message did not start with expected header. Got: {msg!r}"
+        )
+        assert f"Skipped {expected_count} tag(s) whose last path component is not a valid PEP 440 version:" in msg, (
+            f"Missing skipped-count line in: {msg!r}"
+        )
+        # All skipped names should appear as bullet lines
+        for name in skipped_names:
+            assert f"  - refs/tags/{prefix}/{name}" in msg, f"Missing bullet for {name!r} in: {msg!r}"
+        # No truncation suffix when N <= 10
+        assert "showing first 10 of" not in msg, f"Unexpected truncation suffix when N={expected_count}: {msg!r}"
+
+    def test_loud_error_eleven_skipped_has_suffix(self) -> None:
+        """AC-FUNC-004, AC-TEST-001: exactly 11 skipped tags shows suffix line."""
+        skipped_names = [f"release-{i:02d}" for i in range(11)]
+        tags = self._make_tags("mylib", skipped_names)
+        revision = "refs/tags/mylib/==1.0.0"
+
+        with pytest.raises(ValueError) as exc_info:
+            _resolve_constraint_from_tags(revision, tags)
+
+        msg = str(exc_info.value)
+        assert "... (showing first 10 of 11)" in msg, f"Expected truncation suffix for 11 skipped tags. Got: {msg!r}"
+        # Only 10 bullets should appear
+        bullet_lines = [line for line in msg.splitlines() if line.startswith("  - ")]
+        assert len(bullet_lines) == 10, f"Expected 10 bullet lines for 11 skipped tags, got {len(bullet_lines)}"
+
+    def test_zero_candidates_preserves_narrow_message(self) -> None:
+        """AC-FUNC-006, AC-TEST-001: zero candidates under prefix keeps original message."""
+        # Tags exist, but none are under the requested prefix
+        tags = ["refs/tags/other/1.0.0", "refs/tags/other/2.0.0"]
+        revision = "refs/tags/mylib/==1.0.0"
+
+        with pytest.raises(ValueError) as exc_info:
+            _resolve_constraint_from_tags(revision, tags)
+
+        msg = str(exc_info.value)
+        assert "No tags found under prefix" in msg, f"Expected narrow no-candidates message. Got: {msg!r}"
+        assert "ERROR: No PEP 440-parseable" not in msg, (
+            f"Loud format should NOT fire for zero-candidate case. Got: {msg!r}"
+        )
+
+    def test_bullet_ordering_is_deterministic_regardless_of_input_order(self) -> None:
+        """AC-TEST-002: bullet list is sorted deterministically.
+
+        Passes the same set of tag names in two different orderings and
+        asserts that the resulting error message is identical in both cases.
+        """
+        names_forward = ["release-b", "release-a", "release-c"]
+        names_reversed = list(reversed(names_forward))
+        prefix = "mylib"
+        revision = f"refs/tags/{prefix}/==1.0.0"
+
+        tags_forward = self._make_tags(prefix, names_forward)
+        tags_reversed = self._make_tags(prefix, names_reversed)
+
+        with pytest.raises(ValueError) as exc_forward:
+            _resolve_constraint_from_tags(revision, tags_forward)
+        with pytest.raises(ValueError) as exc_reversed:
+            _resolve_constraint_from_tags(revision, tags_reversed)
+
+        assert str(exc_forward.value) == str(exc_reversed.value), (
+            "Error message differs based on input ordering -- must be deterministic"
+        )
+
+    def test_remediation_pointer_contains_audit_command(self) -> None:
+        """AC-TEST-003, AC-FUNC-005: message contains exact remediation command."""
+        tags = self._make_tags("mylib", ["release-2024"])
+        revision = "refs/tags/mylib/==1.0.0"
+
+        with pytest.raises(ValueError) as exc_info:
+            _resolve_constraint_from_tags(revision, tags)
+
+        msg = str(exc_info.value)
+        assert "kanon catalog audit --check tag-format" in msg, (
+            f"Remediation pointer missing from error message. Got: {msg!r}"
+        )
+
+    def test_format_zero_pep440_tags_error_helper_direct(self) -> None:
+        """AC-FUNC-001 through AC-FUNC-005: exercise the private helper directly.
+
+        The helper must be independently testable per SRP/DRY requirements.
+        """
+        skipped = ["refs/tags/mylib/release-a", "refs/tags/mylib/release-b"]
+        msg = _format_zero_pep440_tags_error("refs/tags/mylib", skipped)
+        assert msg.startswith("ERROR: No PEP 440-parseable version tags found under 'refs/tags/mylib'.")
+        assert "Skipped 2 tag(s)" in msg
+        assert "  - refs/tags/mylib/release-a" in msg
+        assert "  - refs/tags/mylib/release-b" in msg
+        assert "kanon catalog audit --check tag-format" in msg
+
+
+# ---------------------------------------------------------------------------
+# RevisionShape enum tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRevisionShapeEnum:
+    """Verify the RevisionShape enum has the expected members and values."""
+
+    def test_has_tag_member(self) -> None:
+        """RevisionShape.TAG member exists."""
+        assert RevisionShape.TAG is not None
+
+    def test_has_branch_member(self) -> None:
+        """RevisionShape.BRANCH member exists."""
+        assert RevisionShape.BRANCH is not None
+
+    def test_has_sha_member(self) -> None:
+        """RevisionShape.SHA member exists."""
+        assert RevisionShape.SHA is not None
+
+    def test_members_are_distinct(self) -> None:
+        """TAG, BRANCH, and SHA are distinct enum values."""
+        assert RevisionShape.TAG != RevisionShape.BRANCH
+        assert RevisionShape.TAG != RevisionShape.SHA
+        assert RevisionShape.BRANCH != RevisionShape.SHA
+
+    def test_tag_value_is_string(self) -> None:
+        """RevisionShape.TAG has a string value."""
+        assert isinstance(RevisionShape.TAG.value, str)
+
+
+# ---------------------------------------------------------------------------
+# _classify_revision_shape tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "revision, expected_shape",
+    [
+        # SHA-pinned: exactly 40 hex characters
+        ("a" * 40, RevisionShape.SHA),
+        ("0" * 40, RevisionShape.SHA),
+        ("abcdef1234567890abcdef1234567890abcdef12", RevisionShape.SHA),
+        # SHA-pinned: exactly 64 hex characters
+        ("b" * 64, RevisionShape.SHA),
+        ("f" * 64, RevisionShape.SHA),
+        # Tag-pinned: PEP 440 constraint operators
+        (">=1.0.0", RevisionShape.TAG),
+        ("~=1.0.0", RevisionShape.TAG),
+        ("<=2.0.0", RevisionShape.TAG),
+        ("==1.0.0", RevisionShape.TAG),
+        ("!=1.0.0", RevisionShape.TAG),
+        (">1.0.0", RevisionShape.TAG),
+        ("<2.0.0", RevisionShape.TAG),
+        (">=1.0.0,<2.0.0", RevisionShape.TAG),
+        ("*", RevisionShape.TAG),
+        ("latest", RevisionShape.TAG),
+        # Tag-pinned: refs/tags/ prefix
+        ("refs/tags/1.0.0", RevisionShape.TAG),
+        ("refs/tags/>=1.0.0", RevisionShape.TAG),
+        ("refs/tags/~=1.0.0", RevisionShape.TAG),
+        # Branch-pinned: plain branch names
+        ("main", RevisionShape.BRANCH),
+        ("develop", RevisionShape.BRANCH),
+        ("feature/foo", RevisionShape.BRANCH),
+        ("release/v1", RevisionShape.BRANCH),
+        ("my-branch", RevisionShape.BRANCH),
+    ],
+)
+class TestClassifyRevisionShapeVersion:
+    def test_classification(self, revision: str, expected_shape: RevisionShape) -> None:
+        result = _classify_revision_shape(revision)
+        assert result == expected_shape, (
+            f"_classify_revision_shape({revision!r}) = {result!r}, expected {expected_shape!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _truncate_sha tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "full_sha, expected",
+    [
+        ("abcdef1234567890abcdef1234567890abcdef12", "abcdef123456"),
+        ("0" * 40, "0" * 12),
+        ("f" * 64, "f" * 12),
+        ("1234567890abcdef" + "0" * 24, "1234567890ab"),
+    ],
+)
+class TestTruncateSha:
+    def test_truncation(self, full_sha: str, expected: str) -> None:
+        result = _truncate_sha(full_sha)
+        assert result == expected, f"_truncate_sha({full_sha!r}) = {result!r}, expected {expected!r}"
+        assert len(result) == 12
+
+
+# ---------------------------------------------------------------------------
+# _list_branch_head tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestListBranchHead:
+    """Unit tests for _list_branch_head in version.py."""
+
+    def test_returns_sha_for_matching_branch(self) -> None:
+        """Successful lookup returns the full SHA string."""
+        expected_sha = "abcdef1234567890abcdef1234567890abcdef12"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=f"{expected_sha}\trefs/heads/main\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == expected_sha
+
+    def test_multiple_refs_returns_correct_branch(self) -> None:
+        """When multiple refs are returned, only the matching branch SHA is returned."""
+        sha_main = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        sha_other = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=(f"{sha_other}\trefs/heads/other\n{sha_main}\trefs/heads/main\n"),
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == sha_main
+
+    def test_nonzero_returncode_raises_runtime_error(self) -> None:
+        """Non-zero git exit code raises RuntimeError."""
+        mock_result = MagicMock(returncode=128, stdout="", stderr="fatal: not a repository")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError, match="ERROR:"):
+                _list_branch_head("file:///repo", "main")
+
+    def test_nonzero_returncode_error_includes_url(self) -> None:
+        """RuntimeError message includes the repository URL."""
+        mock_result = MagicMock(returncode=1, stdout="", stderr="error")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError) as exc_info:
+                _list_branch_head("https://example.com/repo.git", "main")
+        assert "https://example.com/repo.git" in str(exc_info.value)
+
+    def test_branch_not_found_raises_value_error(self) -> None:
+        """Empty stdout raises ValueError when branch is not found."""
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError, match="not found on remote"):
+                _list_branch_head("file:///repo", "missing-branch")
+
+    def test_branch_not_found_error_includes_branch_name(self) -> None:
+        """ValueError message includes the branch name."""
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError) as exc_info:
+                _list_branch_head("file:///repo", "my-branch")
+        assert "my-branch" in str(exc_info.value)
+
+    def test_git_not_found_raises_runtime_error(self) -> None:
+        """FileNotFoundError when git is absent raises RuntimeError."""
+        with patch(
+            "kanon_cli.version.subprocess.run",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            with pytest.raises(RuntimeError, match="ERROR:"):
+                _list_branch_head("file:///repo", "main")
+
+    def test_git_not_found_error_mentions_git(self) -> None:
+        """RuntimeError message for missing git binary mentions 'git'."""
+        with patch(
+            "kanon_cli.version.subprocess.run",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                _list_branch_head("file:///repo", "main")
+        assert "git" in str(exc_info.value).lower()
+
+    def test_empty_lines_in_output_are_skipped(self) -> None:
+        """Empty lines in git ls-remote output are skipped without error."""
+        expected_sha = "cccccccccccccccccccccccccccccccccccccccc"
+        mock_result = MagicMock(
+            returncode=0,
+            stdout=f"\n{expected_sha}\trefs/heads/main\n\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            sha = _list_branch_head("file:///repo", "main")
+        assert sha == expected_sha
+
+    def test_lines_without_tab_are_skipped(self) -> None:
+        """Lines without a tab separator are skipped; ValueError if no match found."""
+        mock_result = MagicMock(
+            returncode=0,
+            stdout="malformed-line-no-tab\n",
+            stderr="",
+        )
+        with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError, match="not found on remote"):
+                _list_branch_head("file:///repo", "main")

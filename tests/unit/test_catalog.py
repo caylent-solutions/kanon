@@ -1,29 +1,39 @@
 """Tests for the catalog resolution module."""
 
+import json
 import pathlib
 from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.commands.catalog import AuditFinding, _build_findings_payload
 from kanon_cli.core.catalog import (
+    MissingCatalogSourceError,
     _clone_remote_catalog,
-    _get_bundled_catalog_dir,
     _parse_catalog_source,
     resolve_catalog_dir,
 )
 
 
 @pytest.mark.unit
-class TestGetBundledCatalogDir:
-    """Verify bundled catalog directory resolution."""
+class TestMissingCatalogSourceError:
+    """Verify MissingCatalogSourceError exception class (AC-FUNC-001)."""
 
-    def test_bundled_catalog_exists(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        assert catalog.is_dir()
+    def test_is_subclass_of_value_error(self) -> None:
+        assert issubclass(MissingCatalogSourceError, ValueError)
 
-    def test_bundled_catalog_contains_kanon(self) -> None:
-        catalog = _get_bundled_catalog_dir()
-        assert (catalog / "kanon").is_dir()
+    def test_can_be_raised_and_caught_as_value_error(self) -> None:
+        with pytest.raises(ValueError):
+            raise MissingCatalogSourceError()
+
+    def test_can_be_raised_and_caught_as_missing_catalog_source_error(self) -> None:
+        with pytest.raises(MissingCatalogSourceError):
+            raise MissingCatalogSourceError()
+
+    def test_carries_no_required_fields(self) -> None:
+        # Must be instantiable with no arguments (caller supplies message context)
+        err = MissingCatalogSourceError()
+        assert isinstance(err, MissingCatalogSourceError)
 
 
 @pytest.mark.unit
@@ -57,15 +67,21 @@ class TestParseCatalogSource:
         with pytest.raises(ValueError, match="Empty URL"):
             _parse_catalog_source("@main")
 
+    def test_ambiguous_ssh_url_without_ref_raises(self) -> None:
+        """SSH-style URL with no trailing @<ref> is rejected (lines 105-111 guard)."""
+        with pytest.raises(ValueError, match="Invalid catalog source format"):
+            _parse_catalog_source("git@host:org/repo.git")
+
 
 @pytest.mark.unit
 class TestResolveCatalogDir:
     """Verify catalog directory resolution priority."""
 
-    def test_returns_bundled_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_missing_catalog_source_error_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AC-FUNC-002: no flag, no env var raises MissingCatalogSourceError."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        result = resolve_catalog_dir(None)
-        assert result == _get_bundled_catalog_dir()
+        with pytest.raises(MissingCatalogSourceError):
+            resolve_catalog_dir(None)
 
     def test_flag_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
@@ -256,3 +272,118 @@ class TestCloneRemoteCatalog:
         mock_resolve.assert_not_called()
         cmd = mock_run.call_args[0][0]
         assert "v2.0.0" in cmd
+
+
+# ---------------------------------------------------------------------------
+# Tests for add_help=True on the 'catalog' and 'catalog audit' subparsers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCatalogSubparserHelp:
+    """The 'catalog' and 'catalog audit' subparsers have add_help=True and accept '-h'."""
+
+    def test_catalog_short_dash_h_exits_0(self) -> None:
+        """kanon catalog -h exits 0 (add_help=True on the catalog subparser)."""
+
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["catalog", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_catalog_audit_short_dash_h_exits_0(self) -> None:
+        """kanon catalog audit -h exits 0 (add_help=True on the audit sub-subparser)."""
+
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["catalog", "audit", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_catalog_subparser_has_add_help_true(self) -> None:
+        """The 'catalog' subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.catalog import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        catalog_parser = subparsers.choices["catalog"]
+        assert catalog_parser.add_help is True, "catalog subparser must have add_help=True so '-h' is accepted"
+
+    def test_catalog_audit_subparser_has_add_help_true(self) -> None:
+        """The 'catalog audit' sub-subparser has add_help=True set explicitly."""
+        import argparse
+
+        from kanon_cli.commands.catalog import register
+
+        root_parser = argparse.ArgumentParser()
+        subparsers = root_parser.add_subparsers(dest="command")
+        register(subparsers)
+        catalog_parser = subparsers.choices["catalog"]
+        for action in catalog_parser._actions:
+            if hasattr(action, "choices") and action.choices and "audit" in action.choices:
+                audit_parser = action.choices["audit"]
+                assert audit_parser.add_help is True, (
+                    "catalog audit sub-subparser must have add_help=True so '-h' is accepted"
+                )
+                return
+        raise AssertionError("No 'audit' sub-subparser found under 'catalog'")
+
+
+# ---------------------------------------------------------------------------
+# Tests for _build_findings_payload helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildFindingsPayload:
+    """_build_findings_payload returns a dict consumed by _emit_json_payload."""
+
+    def _make_finding(
+        self,
+        kind: str = "error",
+        code: str = "E001",
+        message: str = "Something wrong.",
+        remediation: str = "",
+    ) -> AuditFinding:
+        """Build a minimal AuditFinding for testing."""
+        return AuditFinding(kind=kind, code=code, message=message, remediation=remediation)
+
+    def test_payload_has_findings_key(self) -> None:
+        """The payload dict has a single 'findings' key."""
+        finding = self._make_finding()
+        payload = _build_findings_payload([finding])
+        assert "findings" in payload
+        assert set(payload.keys()) == {"findings"}
+
+    def test_findings_list_length_matches_input(self) -> None:
+        """The 'findings' list has the same length as the input list."""
+        findings = [self._make_finding(), self._make_finding(kind="warn", code="W001")]
+        payload = _build_findings_payload(findings)
+        assert len(payload["findings"]) == 2
+
+    def test_empty_input_produces_empty_findings_list(self) -> None:
+        """Empty input produces {'findings': []}."""
+        payload = _build_findings_payload([])
+        assert payload == {"findings": []}
+
+    def test_finding_fields_are_preserved(self) -> None:
+        """Each finding dict contains the expected fields."""
+        finding = self._make_finding(kind="error", code="E001", message="Bad.", remediation="Fix it.")
+        payload = _build_findings_payload([finding])
+        finding_dict = payload["findings"][0]
+        assert finding_dict["kind"] == "error"
+        assert finding_dict["code"] == "E001"
+        assert finding_dict["message"] == "Bad."
+        assert finding_dict["remediation"] == "Fix it."
+
+    def test_result_is_json_serialisable(self) -> None:
+        """The payload round-trips through json.dumps / json.loads without error."""
+        finding = self._make_finding()
+        payload = _build_findings_payload([finding])
+        serialised = json.dumps(payload)
+        parsed = json.loads(serialised)
+        assert parsed["findings"][0]["code"] == "E001"

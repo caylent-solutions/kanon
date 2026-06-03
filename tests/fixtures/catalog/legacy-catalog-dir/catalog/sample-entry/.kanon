@@ -1,0 +1,7 @@
+# Legacy .kanon file inside catalog/sample-entry/ -- this subtree demonstrates
+# the old kanon bootstrap layout that is no longer used by kanon >= 1.0.0.
+# The kanon catalog audit command detects this directory and emits a WARN finding.
+# See docs/migration-bootstrap-to-add.md for the migration guide.
+GITBASE=https://example.com/org
+CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
+KANON_MARKETPLACE_INSTALL=false

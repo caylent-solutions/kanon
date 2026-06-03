@@ -49,6 +49,13 @@ from kanon_cli.core.install import install
 
 _SRC_DIR = pathlib.Path(__file__).resolve().parents[2] / "src"
 _LOCK_FILENAME = ".kanon-install.lock"
+# Dummy catalog source used by _patched_install so install() passes
+# catalog-source validation. The _resolve_ref_to_sha function is mocked
+# by the integration conftest autouse fixture, so the URL need not be real.
+_DUMMY_CATALOG_SOURCE = "https://example.com/manifest-repo.git@main"
+# Minimal well-formed manifest XML written by fake sync helpers so that
+# install()'s include-walker can parse the manifest path after sync.
+_EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +113,36 @@ def _write_two_source_kanonenv(
     return kanonenv.resolve()
 
 
+def _write_empty_manifest(repo_dir: str, sub_path: str = "repo-specs/manifest.xml") -> None:
+    """Write a minimal empty manifest XML under repo_dir/.repo/manifests/sub_path.
+
+    After repo init + repo sync, manifest files live at source_dir/.repo/manifests/
+    (the repo tool's manifest checkout dir). This helper mirrors that layout so
+    install()'s include-walker finds the manifest at the expected location.
+
+    Args:
+        repo_dir: The source directory passed by install() to repo_sync.
+        sub_path: Manifest path relative to the manifests repo root.
+    """
+    manifest_path = pathlib.Path(repo_dir) / ".repo" / "manifests" / sub_path
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
+
+
+def _default_repo_sync(repo_dir: str, **_kwargs: object) -> None:
+    """Default ``repo_sync`` side_effect used by the autouse patch fixture.
+
+    Creates a minimal ``repo-specs/manifest.xml`` inside ``repo_dir`` so that
+    ``install()``'s include-walker can parse the manifest path after sync.
+    Tests that need custom sync behaviour override this via
+    ``_use_repo_sync_side_effect``.
+
+    Args:
+        repo_dir: The source directory passed by install() to repo_sync.
+    """
+    _write_empty_manifest(repo_dir)
+
+
 @pytest.fixture(autouse=True)
 def _patch_kanon_cli_repo_for_each_test() -> Iterator[None]:
     """Auto-patch kanon_cli.repo.repo_{init,envsubst,sync} for every test.
@@ -122,11 +159,16 @@ def _patch_kanon_cli_repo_for_each_test() -> Iterator[None]:
     ``_use_repo_sync_side_effect`` below; that helper restarts the
     ``repo_sync`` patch with the requested side_effect, still in the
     single-threaded test body.
+
+    ``repo_sync`` is patched with ``_default_repo_sync`` as its side_effect
+    so that ``install()``'s include-walker can parse the manifest XML that
+    the real ``repo_sync`` would have created. Tests that need custom sync
+    behaviour replace the side_effect via ``_use_repo_sync_side_effect``.
     """
     patches = [
         patch("kanon_cli.repo.repo_init"),
         patch("kanon_cli.repo.repo_envsubst"),
-        patch("kanon_cli.repo.repo_sync"),
+        patch("kanon_cli.repo.repo_sync", side_effect=_default_repo_sync),
     ]
     try:
         for p in patches:
@@ -169,8 +211,16 @@ def _patched_install(kanonenv: pathlib.Path) -> None:
     threaded setup), so threads that run this function concurrently
     only execute the production install() code path -- they do not
     set up or tear down their own patch contexts.
+
+    ``catalog_source`` is supplied so install() passes catalog-source
+    validation; _resolve_ref_to_sha is mocked by the integration conftest
+    autouse fixture so no real git call is made for the catalog URL.
     """
-    install(kanonenv)
+    install(
+        kanonenv,
+        lock_file_path=kanonenv.parent / ".kanon.lock",
+        catalog_source=_DUMMY_CATALOG_SOURCE,
+    )
 
 
 def _patched_install_with_packages(
@@ -179,6 +229,9 @@ def _patched_install_with_packages(
 ) -> None:
     """Run install() with a fake repo_sync side_effect that creates .packages/.
 
+    Also creates a minimal repo-specs/manifest.xml so that install()'s
+    include-walker can parse the manifest path after sync.
+
     Args:
         kanonenv: Path to the .kanon configuration file.
         packages_by_source: Mapping of source name to list of package names.
@@ -186,6 +239,8 @@ def _patched_install_with_packages(
 
     def _fake_repo_sync(repo_dir: str, **_kwargs: object) -> None:
         repo_path = pathlib.Path(repo_dir)
+        # Create minimal manifest XML so install()'s include-walker succeeds.
+        _write_empty_manifest(repo_dir)
         source_name = repo_path.name
         for pkg_name in packages_by_source.get(source_name, []):
             pkg_dir = repo_path / ".packages" / pkg_name
@@ -193,7 +248,11 @@ def _patched_install_with_packages(
             (pkg_dir / "README.md").write_text(f"# {pkg_name}\n", encoding="utf-8")
 
     with _use_repo_sync_side_effect(_fake_repo_sync):
-        install(kanonenv)
+        install(
+            kanonenv,
+            lock_file_path=kanonenv.parent / ".kanon.lock",
+            catalog_source=_DUMMY_CATALOG_SOURCE,
+        )
 
 
 def _build_subprocess_env() -> dict[str, str]:
@@ -438,7 +497,11 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("simulated sync failure")),
         ):
             with pytest.raises(RepoCommandError, match="simulated sync failure"):
-                install(kanonenv)
+                install(
+                    kanonenv,
+                    lock_file_path=kanonenv.parent / ".kanon.lock",
+                    catalog_source=_DUMMY_CATALOG_SOURCE,
+                )
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)
@@ -470,7 +533,11 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync"),
         ):
             with pytest.raises(RepoCommandError, match="simulated init failure"):
-                install(kanonenv)
+                install(
+                    kanonenv,
+                    lock_file_path=kanonenv.parent / ".kanon.lock",
+                    catalog_source=_DUMMY_CATALOG_SOURCE,
+                )
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)
@@ -526,9 +593,13 @@ class TestIdempotentRetryAfterPartialFailure:
 
         def _selective_fail_sync(repo_dir: str, **_kwargs: object) -> None:
             call_count["n"] += 1
-            source_name = pathlib.Path(repo_dir).name
+            repo_path = pathlib.Path(repo_dir)
+            source_name = repo_path.name
             if source_name == failing_source:
                 raise RepoCommandError(f"simulated failure for source '{failing_source}'")
+            # Create minimal manifest XML for the non-failing source so that
+            # install()'s include-walker can parse the manifest path after sync.
+            _write_empty_manifest(repo_dir)
 
         # First attempt: fails for one source.
         with (
@@ -537,7 +608,11 @@ class TestIdempotentRetryAfterPartialFailure:
             patch("kanon_cli.repo.repo_sync", side_effect=_selective_fail_sync),
         ):
             with pytest.raises(RepoCommandError):
-                install(kanonenv)
+                install(
+                    kanonenv,
+                    lock_file_path=kanonenv.parent / ".kanon.lock",
+                    catalog_source=_DUMMY_CATALOG_SOURCE,
+                )
 
         # Second attempt: all repo ops succeed.
         _patched_install(kanonenv)

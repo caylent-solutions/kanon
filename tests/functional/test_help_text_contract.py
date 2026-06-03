@@ -62,11 +62,10 @@ _SUBCOMMAND_DOCUMENTED_FLAGS: list[tuple[tuple[str, ...], list[str]]] = [
         ("clean",),
         ["kanonenv_path"],
     ),
-    # bootstrap: positional package, --output-dir, --catalog-source
-    (
-        ("bootstrap",),
-        ["package", "--output-dir", "--catalog-source"],
-    ),
+    # bootstrap is intentionally absent: it was removed in a major release and
+    # is now a uniform deprecation shim that exits 3 for every invocation
+    # (including --help). Its deprecation behavior is covered by the dedicated
+    # bootstrap test classes below, not by the generic --help-exits-0 contract.
     # validate: nested subcommands xml and marketplace
     (
         ("validate",),
@@ -167,8 +166,10 @@ _ARGUMENT_ERROR_CASES: list[tuple[tuple[str, ...], str, str]] = [
     (("--not-a-valid-kanon-flag",), "--not-a-valid-kanon-flag", "unknown top-level flag"),
     # Unknown subcommand: error message must name the invalid subcommand
     (("nosuchsubcommand",), "nosuchsubcommand", "unknown subcommand"),
-    # Unknown bootstrap flag: must name the flag
-    (("bootstrap", "--no-such-bootstrap-option", "mypkg"), "--no-such-bootstrap-option", "unknown bootstrap flag"),
+    # NOTE: bootstrap is NOT an argparse-error case. Unknown flags such as
+    # `--no-such-bootstrap-option` are intercepted before argparse and produce
+    # the exit-3 deprecation message, not an argparse "unrecognized arguments"
+    # error. Covered by TestBootstrapDeprecationShim below.
     # Unknown install flag: must name the flag
     (("install", "--no-such-install-option"), "--no-such-install-option", "unknown install flag"),
     # Unknown clean flag: must name the flag
@@ -510,22 +511,22 @@ class TestArgparseErrorArgumentName:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_bootstrap_missing_required_positional_names_argument(self) -> None:
-        """'kanon bootstrap' without a package name must name the missing positional.
+    def test_bare_bootstrap_exits_3_with_deprecation_not_argparse_error(self) -> None:
+        """Bare 'kanon bootstrap' exits 3 with the deprecation message (NOT an argparse error).
 
-        argparse exit-code 2 errors for missing required positionals must
-        include the argument name so users know what they forgot to supply.
+        Before the major release, bare `kanon bootstrap` raised an argparse
+        "missing required positional" error (exit 2). It now exits 3 with the
+        uniform deprecation message because the intercept runs before argparse.
         """
         result = _run_kanon("bootstrap")
-        assert result.returncode == 2, (
-            f"'kanon bootstrap' without package should exit 2, got {result.returncode}.\n"
+        assert result.returncode == 3, (
+            f"Bare 'kanon bootstrap' should exit 3 (deprecated), got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-        combined = result.stdout + result.stderr
-        assert "package" in combined, (
-            f"'kanon bootstrap' error does not name the missing 'package' positional.\n  combined: {combined!r}"
-        )
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr
+        assert "unrecognized arguments" not in result.stderr
 
     def test_validate_no_subcommand_names_required_choice(self) -> None:
         """'kanon validate' without xml or marketplace must produce a clear error.
@@ -567,13 +568,20 @@ class TestHelpContractChannelDiscipline:
         assert result.returncode == 0
         assert len(result.stdout) > 0, f"'kanon install --help' produced no stdout output.\n  stderr: {result.stderr!r}"
 
-    def test_bootstrap_help_on_stdout(self) -> None:
-        """'kanon bootstrap --help' must write help text to stdout."""
+    def test_bootstrap_help_is_deprecation_on_stderr_not_stdout(self) -> None:
+        """'kanon bootstrap --help' is no longer help: it exits 3 with the message on stderr.
+
+        The deprecation message goes to stderr; stdout stays empty so that
+        pipelines parsing stdout never see the deprecation text.
+        """
         result = _run_kanon("bootstrap", "--help")
-        assert result.returncode == 0
-        assert len(result.stdout) > 0, (
-            f"'kanon bootstrap --help' produced no stdout output.\n  stderr: {result.stderr!r}"
+        assert result.returncode == 3, (
+            f"'kanon bootstrap --help' should exit 3 (deprecated), got {result.returncode}.\n"
+            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
+        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
+        assert "DEPRECATED" in result.stderr
+        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
     def test_validate_xml_help_on_stdout(self) -> None:
         """'kanon validate xml --help' must write help text to stdout."""

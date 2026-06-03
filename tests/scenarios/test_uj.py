@@ -196,35 +196,45 @@ class TestUJ:
     # ------------------------------------------------------------------
 
     def test_uj_01_bootstrap_kanon_produces_files(self, tmp_path: pathlib.Path) -> None:
-        """UJ-01: kanon bootstrap kanon → .kanon and kanon-readme.md produced."""
+        """UJ-01: bootstrap was removed (exit 3 + deprecation message); no files produced."""
         work_dir = tmp_path / "uj-01"
         work_dir.mkdir()
 
         result = run_kanon("bootstrap", "kanon", cwd=work_dir)
 
-        assert result.returncode == 0, (
-            f"bootstrap exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        # bootstrap was removed in a major release: every invocation exits 3.
+        assert result.returncode == 3, (
+            f"bootstrap expected exit 3 (shim), got {result.returncode}\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert (work_dir / ".kanon").exists(), ".kanon not found after bootstrap"
-        assert (work_dir / "kanon-readme.md").exists(), "kanon-readme.md not found after bootstrap"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
+        # The shim must not produce any files.
+        assert not (work_dir / ".kanon").exists(), ".kanon must NOT be created (shim must not delegate)"
+        assert not (work_dir / "kanon-readme.md").exists(), "kanon-readme.md must NOT be created (shim)"
 
     # ------------------------------------------------------------------
     # UJ-02: bootstrap list --catalog-source PEP 440 resolves to highest 2.x
     # ------------------------------------------------------------------
 
     def test_uj_02_bootstrap_list_catalog_source_pep440(self, tmp_path: pathlib.Path) -> None:
-        """UJ-02: bootstrap list --catalog-source with PEP 440 range resolves correctly."""
+        """UJ-02: bootstrap was removed (exit 3 + deprecation message) regardless of catalog-source flag."""
         catalog_bare = _build_catalog_repo_with_entry(tmp_path / "fixtures", "test-entry")
 
-        # Use PEP 440 range >=2.0.0,<3.0.0 -- should resolve to tag 2.0.0
+        # Use PEP 440 range >=2.0.0,<3.0.0 -- shim exits 3 before resolving.
         catalog_source = f"{catalog_bare.as_uri()}@>=2.0.0,<3.0.0"
 
         result = run_kanon("bootstrap", "list", "--catalog-source", catalog_source)
 
-        assert result.returncode == 0, (
-            f"bootstrap list exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+        # bootstrap was removed in a major release: every invocation exits 3.
+        assert result.returncode == 3, (
+            f"bootstrap list expected exit 3 (shim), got {result.returncode}\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "test-entry" in result.stdout, f"Expected 'test-entry' in bootstrap list stdout: {result.stdout!r}"
+        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
+        # The list-arm closest-replacement line points at `kanon list`.
+        assert "kanon list --catalog-source <git-url>@<ref>" in result.stderr, (
+            f"Expected the list-arm replacement line, got: {result.stderr!r}"
+        )
 
     # ------------------------------------------------------------------
     # UJ-03: multi-source install -- two sources aggregate
@@ -250,7 +260,11 @@ class TestUJ:
             marketplace_install="false",
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_url}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
@@ -287,9 +301,14 @@ class TestUJ:
 
         # Override GITBASE via environment -- install must still succeed because
         # the explicit KANON_SOURCE_a_URL (a file:// URL) is used directly.
+        catalog_source = f"{manifest_url}@main"
         install_result = kanon_install(
             work_dir,
-            extra_env={"GITBASE": "https://override.example.com"},
+            extra_env={
+                "GITBASE": "https://override.example.com",
+                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_ALLOW_INSECURE_REMOTES": "1",
+            },
         )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
@@ -375,7 +394,11 @@ class TestUJ:
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{mfst_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r} stderr={install_result.stderr!r}"
         )
@@ -417,7 +440,11 @@ class TestUJ:
             marketplace_install="false",
         )
 
-        result = kanon_install(work_dir)
+        catalog_source = f"{manifest_a_bare.as_uri()}@main"
+        result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
 
         assert result.returncode != 0, (
             f"Expected non-zero exit on collision but got 0.\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -478,7 +505,11 @@ class TestUJ:
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{mfst_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r} stderr={install_result.stderr!r}"
         )
@@ -509,7 +540,11 @@ class TestUJ:
             marketplace_install="false",
         )
 
-        install_result = kanon_install(work_dir)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        install_result = kanon_install(
+            work_dir,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r} stderr={install_result.stderr!r}"
         )
@@ -568,7 +603,11 @@ class TestUJ:
         )
         (work_dir_ok / ".kanon").write_text(kanon_text)
 
-        ok_result = kanon_install(work_dir_ok)
+        catalog_source = f"{manifest_bare.as_uri()}@main"
+        ok_result = kanon_install(
+            work_dir_ok,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert ok_result.returncode == 0, (
             f"install with HOME expansion failed: stdout={ok_result.stdout!r} stderr={ok_result.stderr!r}"
         )
@@ -585,7 +624,10 @@ class TestUJ:
         )
         (work_dir_bad / ".kanon").write_text(bad_kanon_text)
 
-        bad_result = kanon_install(work_dir_bad)
+        bad_result = kanon_install(
+            work_dir_bad,
+            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
+        )
         assert bad_result.returncode != 0, "Expected non-zero exit when KANON_SOURCE_a_URL is an undefined variable"
         combined = bad_result.stdout + bad_result.stderr
         assert "UNDEFINED_KANON_VAR" in combined, f"Expected undefined variable name in error output: {combined!r}"

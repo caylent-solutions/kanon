@@ -2,7 +2,7 @@
 
 Exercises _parse_catalog_source(), _clone_remote_catalog(), and
 resolve_catalog_dir() covering format validation, constraint resolution,
-and the bundled-catalog fallback path.
+and the missing-source error path.
 """
 
 import pathlib
@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.core.catalog import (
+    MissingCatalogSourceError,
     _clone_remote_catalog,
-    _get_bundled_catalog_dir,
     _parse_catalog_source,
     resolve_catalog_dir,
 )
@@ -59,10 +59,11 @@ class TestParseCatalogSource:
 class TestResolveCatalogDir:
     """Verify catalog directory resolution priority."""
 
-    def test_returns_bundled_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_missing_catalog_source_error_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AC-FUNC-002: no flag, no env var raises MissingCatalogSourceError (no bundled fallback)."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        result = resolve_catalog_dir(None)
-        assert result == _get_bundled_catalog_dir()
+        with pytest.raises(MissingCatalogSourceError):
+            resolve_catalog_dir(None)
 
     def test_flag_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")

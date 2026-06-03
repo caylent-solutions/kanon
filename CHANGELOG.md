@@ -2,6 +2,15 @@
 
 
 
+## v2.0.1 (2026-06-03)
+
+### Documentation
+
+* docs: present kanon repo as a native subcommand in the CLI reference (#73)
+
+* docs: align CLI documentation with the released 2.0.0 surface (#72)
+
+
 ## v2.0.0 (2026-06-03)
 
 ### Breaking

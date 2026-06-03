@@ -599,9 +599,8 @@ See [docs/catalog-author-guide.md](docs/catalog-author-guide.md).
 
 ### kanon repo
 
-Catalog-author / low-level subcommand: runs kanon's embedded repo dispatcher.
-All trailing arguments after `kanon repo` are forwarded verbatim to the repo
-tool.
+Catalog-author / low-level subcommand: runs kanon's `repo` dispatcher.
+All trailing arguments after `kanon repo` are forwarded verbatim to it.
 
 ```bash
 kanon repo init -u <url> -b <branch> -m <manifest>

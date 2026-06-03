@@ -427,7 +427,8 @@ before publishing a release. The steps assume a scratch clone at
 
 - [docs/creating-manifest-repos.md](creating-manifest-repos.md) --
   full guide to setting up a manifest repository from scratch,
-  including repo structure, versioning, and the `catalog/` directory.
+  including repo structure, the `<catalog-metadata>` contract, and
+  tag/versioning rules.
 - [docs/list-and-add.md](list-and-add.md) --
   consumer-side reference for `kanon list`, `kanon add`, and
   `kanon remove`.

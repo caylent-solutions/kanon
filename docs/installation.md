@@ -14,8 +14,10 @@ For lifecycle details see [docs/lifecycle.md](lifecycle.md).
 
 ```text
 kanon install [--catalog-source <git-url>@<ref>]
-              [--refresh-lock]
-              [--refresh-lock-source <name>]
+              [--refresh-lock | --refresh-lock-source <name>]
+              [--strict-lock] [--strict-drift]
+              [--lock-file <path>]
+              [<kanonenv_path>]
 ```
 
 ## How it works
@@ -131,6 +133,9 @@ auto-derive behaviour as one created by `kanon add`.
 | `--catalog-source <git-url>@<ref>` | Override or supply the catalog source. Wins over env var, lockfile, and `.kanon` block. |
 | `--refresh-lock` | Rebuild the full lockfile from `.kanon`. Requires `--catalog-source` or `KANON_CATALOG_SOURCE`; the lockfile fallback is disabled on this path. |
 | `--refresh-lock-source <name>` | Rebuild the lockfile entry for a single named source. Same catalog-source requirement as `--refresh-lock`. |
+| `--strict-lock` | Promote orphaned lock entries to a hard error instead of pruning them (see [Orphaned lockfile entries](#orphaned-lockfile-entries)). |
+| `--strict-drift` | Promote branch drift (a locked SHA differing from the branch's current tip) to a hard error instead of reusing the locked SHA. |
+| `--lock-file <path>` | Path to the lock file (default: `<kanon-file>.lock`; env `KANON_LOCK_FILE`). |
 
 ## Orphaned lockfile entries
 

@@ -1,4 +1,4 @@
-# Multi-Source Kanon Bootstrap Guide
+# Multi-Source Kanon Guide
 
 This guide documents how Kanon supports multiple manifest sources,
 enabling teams to compose packages from different repositories
@@ -15,9 +15,9 @@ and organizations.
 > given, and performs collision detection before writing the file --
 > all of which are error-prone to reproduce by hand.
 >
-> See `docs/list-and-add.md` (forthcoming) for the full `kanon add`
-> reference, and `docs/catalogs-explained.md` (forthcoming)
-> for a first-time on-ramp to finding a catalog source.
+> See `docs/list-and-add.md` for the full `kanon add` reference, and
+> `docs/catalogs-explained.md` for a first-time on-ramp to finding a
+> catalog source.
 >
 > **When hand-writing remains valid:** hand-editing the `KANON_SOURCE_*`
 > triples directly is still appropriate for two edge cases:

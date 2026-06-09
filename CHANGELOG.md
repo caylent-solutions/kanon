@@ -2,13 +2,92 @@
 
 
 
+## v2.1.0 (2026-06-09)
+
+### Feature
+
+* feat: discover catalog entries by &lt;catalog-metadata&gt;, not the *-marketplace.xml filename
+
+feat: discover catalog entries by &lt;catalog-metadata&gt;, not the *-marketplace.xml filename ([`3a55eea`](https://github.com/caylent-solutions/kanon/commit/3a55eea6ac2380551f8e0bc045252d84db1d0408))
+
+* feat: discover catalog entries by &lt;catalog-metadata&gt;, not the *-marketplace.xml filename
+
+A catalog entry is now any repo-specs/**/*.xml manifest that contains a
+&lt;catalog-metadata&gt; block; the *-marketplace.xml filename suffix is no longer
+required. Plain packages (e.g. widget.xml, my-tool.xml) can be catalog entries,
+not only packaged Claude marketplaces.
+
+- Add core.metadata.find_catalog_entry_files(repo_root): globs repo-specs/**/*.xml
+  and keeps files whose content (XML comments stripped) declares a
+  &lt;catalog-metadata&gt; block. Shared by every discovery site.
+- Route kanon list, add, validate marketplace, validate metadata, catalog audit,
+  and shell completion through it; remove MARKETPLACE_FILE_GLOB and the
+  per-command *-marketplace.xml globs.
+- Backward compatible: *-marketplace.xml still matches (it carries the block).
+  Metadata-less includes (remote.xml) are not entries, but are still validated by
+  kanon validate xml and resolved via &lt;include&gt;.
+- Markers that appear only inside an XML comment are ignored.
+- Migrate test fixtures that relied on filename discovery to carry
+  &lt;catalog-metadata&gt;; add find_catalog_entry_files unit coverage and a
+  comment-exclusion regression.
+- Update author/explainer docs to describe content-based discovery. ([`3faca3f`](https://github.com/caylent-solutions/kanon/commit/3faca3fbb6aef3e9db871145e9998cd38efbb3c5))
+
+
 ## v2.0.1 (2026-06-03)
+
+### Chore
+
+* chore(release): 2.0.1 ([`90dd32b`](https://github.com/caylent-solutions/kanon/commit/90dd32b290f65544727c00f5e752071d0fc23595))
 
 ### Documentation
 
 * docs: present kanon repo as a native subcommand in the CLI reference (#73)
 
+Drop the &#39;embedded repo dispatcher&#39; wording from the &#39;kanon repo&#39;
+CLI-reference entry; describe it as kanon&#39;s native &#39;repo&#39; subcommand
+with arguments forwarded verbatim. Developer-facing
+docs/architecture.md is intentionally left accurate about the
+vendored repo fork. ([`f054536`](https://github.com/caylent-solutions/kanon/commit/f05453662fbc07e3406c072b7094ebb7ad2cbc24))
+
 * docs: align CLI documentation with the released 2.0.0 surface (#72)
+
+Rewrite README.md and audit docs/ so every command, flag, and behavior
+matches the verified 2.0 CLI (help snapshot fixtures + src/).
+
+README.md:
+- Replace the bootstrap-centric standalone-usage flow with the real 2.0
+  flow: list (discover) -&gt; add -&gt; install -&gt; clean (--orphans).
+- Replace the bootstrap/install/clean/validate-only CLI Reference with a
+  full per-command reference (list, add, remove, install, clean, outdated,
+  why, doctor, validate xml/marketplace/metadata, catalog audit, repo,
+  completion); bootstrap appears only as a deprecation note (exits 3).
+- Fix KANON_CATALOG_SOURCE to its real role and full precedence chain
+  (flag &gt; env &gt; lock [catalog] &gt; .kanon [catalog]).
+- Update the TOC, Subcommands table, architecture diagram, the
+  manifest-repo authoring sections to the nested &lt;catalog-metadata&gt;
+  /*-marketplace.xml model, and the project-structure layout (no catalog/).
+
+docs/:
+- setup-guide: drop stale pipx/python3 install-failure entries that no
+  longer match kanon install; prefix bare repo commands with kanon.
+- installation: add --strict-lock/--strict-drift/--lock-file to synopsis
+  and flag table.
+- configuration: add the 4th-tier .kanon [catalog] fallback to precedence.
+- doctor: document the NO_SOURCES finding for a zero-source .kanon.
+- creating-manifest-repos: keywords are comma-separated (was space).
+- catalog-author-guide: drop the removed catalog/ directory reference.
+- multi-source-guide: retitle (drop &#34;Bootstrap&#34;); de-&#34;forthcoming&#34; links.
+- how-it-works: kanon repo sync (was bare repo sync).
+
+doc-validation tests (test_docs_embedded_architecture,
+test_doc_validation) pass; markdown edits add no new lint categories and
+keep no trailing whitespace with a single trailing newline. ([`b99d4b4`](https://github.com/caylent-solutions/kanon/commit/b99d4b48cdc56bfa4ff79d3fa6db3d50768382d2))
+
+### Unknown
+
+* Merge pull request #74 from caylent-solutions/release-2.0.1
+
+chore(release): 2.0.1 ([`4a49134`](https://github.com/caylent-solutions/kanon/commit/4a491348e9e2770bfb510d2116fb150451bcc123))
 
 
 ## v2.0.0 (2026-06-03)
@@ -752,6 +831,10 @@ No code changed (docs/planning-only removal); format-check + lint-check pass.
 
 Co-authored-by: Claude Opus 4.6 &lt;noreply@anthropic.com&gt; ([`8f0ac32`](https://github.com/caylent-solutions/kanon/commit/8f0ac32e874369c9aa5c3c3431003211adc4aee4))
 
+### Chore
+
+* chore(release): 2.0.0 ([`747851f`](https://github.com/caylent-solutions/kanon/commit/747851f4d0625c00a3661e9a165c952c6c27abc0))
+
 ### Documentation
 
 * docs(readme): update Kanon overview (#68)
@@ -759,6 +842,12 @@ Co-authored-by: Claude Opus 4.6 &lt;noreply@anthropic.com&gt; ([`8f0ac32`](https
 * docs(readme): update Kanon overview
 
 * docs(readme): restore overview emphasis ([`19a00f5`](https://github.com/caylent-solutions/kanon/commit/19a00f5173e9ee49f38b1403706c6de83bbc7cee))
+
+### Unknown
+
+* Merge pull request #70 from caylent-solutions/release-2.0.0
+
+Release 2.0.0 ([`36bbb1d`](https://github.com/caylent-solutions/kanon/commit/36bbb1d6109dd076cf6d8454fdc4d88e63db3f3d))
 
 
 ## v1.3.1 (2026-05-04)

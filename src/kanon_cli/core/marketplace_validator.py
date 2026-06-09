@@ -16,9 +16,9 @@ from kanon_cli.constants import (
     ALLOWED_BRANCHES,
     CONSTRAINT_RE,
     MARKETPLACE_DIR_PREFIX,
-    MARKETPLACE_FILE_GLOB,
     REFS_TAGS_RE,
 )
+from kanon_cli.core.metadata import find_catalog_entry_files
 
 
 def validate_linkfile_dest(xml_path: Path) -> list[str]:
@@ -215,11 +215,11 @@ def validate_marketplace(repo_root: Path) -> int:
     Returns:
         0 if all files pass validation, 1 otherwise.
     """
-    marketplace_files = sorted(repo_root.joinpath("repo-specs").rglob(MARKETPLACE_FILE_GLOB))
+    marketplace_files = find_catalog_entry_files(repo_root)
 
     if not marketplace_files:
         print(
-            "Error: No *-marketplace.xml files found under repo-specs/",
+            "Error: No catalog entry manifests (*.xml with a <catalog-metadata> block) found under repo-specs/",
             file=sys.stderr,
         )
         return 1

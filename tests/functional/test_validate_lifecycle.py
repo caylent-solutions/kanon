@@ -65,6 +65,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -80,6 +86,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="/bad/path" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -95,6 +107,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="proj" path=".packages/proj" remote="r" revision="invalid-string">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -110,6 +128,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="proj" path=".packages/proj" remote="r" revision="main">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -144,6 +168,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="dup" path=".packages/dup" remote="r" revision="refs/tags/ex/dup/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/dup" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -154,6 +184,12 @@ class TestValidateMarketplaceLifecycle:
                   <project name="dup" path=".packages/dup" remote="r" revision="refs/tags/ex/dup/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/dup" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )

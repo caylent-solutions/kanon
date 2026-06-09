@@ -168,11 +168,19 @@ class TestValidXmlProducesNoFindings:
         findings = _run_check(tmp_path)
         assert findings == []
 
-    def test_non_marketplace_xml_ignored(self, tmp_path: pathlib.Path) -> None:
-        """Files not matching *-marketplace.xml are not processed."""
-        _write_xml(tmp_path, "tool-other.xml", _VALID_XML)
+    def test_metadata_less_xml_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """A manifest WITHOUT <catalog-metadata> (a shared include) is not an entry, so it is not processed."""
+        _write_xml(tmp_path, "remote.xml", '<manifest><remote name="r" fetch="https://example.com" /></manifest>')
         findings = _run_check(tmp_path)
         assert findings == []
+
+    def test_entry_processed_regardless_of_filename(self, tmp_path: pathlib.Path) -> None:
+        """A metadata-bearing entry is processed even without a -marketplace name (here invalid -> finding)."""
+        invalid = _VALID_XML.replace("<version>1.0.0</version>", "")
+        _write_xml(tmp_path, "tool-other.xml", invalid)
+        findings = _run_check(tmp_path)
+        assert findings != []
+        assert any("tool-other.xml" in f.message for f in findings)
 
 
 # ---------------------------------------------------------------------------
@@ -462,9 +470,9 @@ class TestMalformedXml:
     @pytest.mark.parametrize(
         "bad_xml",
         [
-            "<?xml version='1.0'?><package><unclosed>",
-            "not xml at all",
-            "<?xml version='1.0'?><a><b></a></b>",
+            "<?xml version='1.0'?><package><catalog-metadata><unclosed>",
+            "<catalog-metadata not xml at all",
+            "<?xml version='1.0'?><package><catalog-metadata></package>",
         ],
     )
     def test_malformed_xml_produces_m003_error(self, tmp_path: pathlib.Path, bad_xml: str) -> None:
@@ -482,7 +490,7 @@ class TestMalformedXml:
 
     def test_malformed_xml_message_names_file(self, tmp_path: pathlib.Path) -> None:
         """M003 finding message must name the XML file path."""
-        xml_file = _write_xml(tmp_path, "broken-marketplace.xml", "<unclosed")
+        xml_file = _write_xml(tmp_path, "broken-marketplace.xml", "<catalog-metadata><unclosed")
         findings = _run_check(tmp_path)
         m003_findings = [f for f in findings if f.code == "M003"]
         assert m003_findings, "Expected M003 finding for malformed XML"
@@ -496,7 +504,12 @@ class TestMalformedXml:
 
 @pytest.mark.unit
 class TestZeroCatalogMetadataBlocks:
-    """XML with no <catalog-metadata> block produces an ERROR with code M004."""
+    """Content-based discovery: only files carrying the <catalog-metadata marker are entries.
+
+    A file with NO marker is a non-entry (a shared <include>) and is silently skipped. A file that
+    carries the marker substring but parses to ZERO real <catalog-metadata> elements (e.g. a typo'd
+    tag) is a malformed entry and produces an M004 ERROR.
+    """
 
     @pytest.mark.parametrize(
         "xml",
@@ -506,13 +519,26 @@ class TestZeroCatalogMetadataBlocks:
             "<?xml version='1.0'?><root/>",
         ],
     )
-    def test_no_catalog_metadata_block_produces_m004(self, tmp_path: pathlib.Path, xml: str) -> None:
-        """AC-TEST-001: zero <catalog-metadata> blocks => exactly one ERROR with code M004."""
+    def test_metadata_less_file_is_not_an_entry(self, tmp_path: pathlib.Path, xml: str) -> None:
+        """A file with no <catalog-metadata marker is not a catalog entry, so it produces no findings."""
+        _write_xml(tmp_path, "include.xml", xml)
+        findings = _run_check(tmp_path)
+        assert findings == []
+
+    @pytest.mark.parametrize(
+        "xml",
+        [
+            "<?xml version='1.0'?><package><catalog-metadata-typo><name>x</name></catalog-metadata-typo></package>",
+            "<?xml version='1.0'?><package><catalog-metadata-v2/></package>",
+        ],
+    )
+    def test_marked_but_zero_valid_blocks_produces_m004(self, tmp_path: pathlib.Path, xml: str) -> None:
+        """A marker-bearing file that parses to zero real <catalog-metadata> elements => exactly one M004."""
         _write_xml(tmp_path, "empty-blocks-marketplace.xml", xml)
         findings = _run_check(tmp_path)
 
         error_findings = [f for f in findings if f.kind == "error"]
-        assert error_findings, "Expected at least one ERROR for missing <catalog-metadata> block"
+        assert error_findings, "Expected at least one ERROR for zero valid <catalog-metadata> blocks"
         m004_findings = [f for f in error_findings if f.code == "M004"]
         assert len(m004_findings) == 1, (
             f"Expected exactly one ERROR with code M004 for zero blocks, "
@@ -521,7 +547,11 @@ class TestZeroCatalogMetadataBlocks:
 
     def test_no_catalog_metadata_message_names_file(self, tmp_path: pathlib.Path) -> None:
         """M004 finding message must name the XML file path."""
-        xml_file = _write_xml(tmp_path, "empty-blocks-marketplace.xml", "<?xml version='1.0'?><package/>")
+        xml_file = _write_xml(
+            tmp_path,
+            "empty-blocks-marketplace.xml",
+            "<?xml version='1.0'?><package><catalog-metadata-typo/></package>",
+        )
         findings = _run_check(tmp_path)
         m004_findings = [f for f in findings if f.code == "M004"]
         assert m004_findings, "Expected M004 finding for zero <catalog-metadata> blocks"

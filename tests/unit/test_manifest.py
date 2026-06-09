@@ -18,7 +18,6 @@ import pytest
 
 from kanon_cli.core.manifest import (
     RawFinding,
-    _iter_marketplace_xml_paths,
     collect_remote_url_findings,
     walk_includes_collecting_remotes,
 )
@@ -42,6 +41,12 @@ def _simple_manifest(remote_name: str, fetch_url: str) -> str:
         <manifest>
           <remote name="{remote_name}" fetch="{fetch_url}" />
           <project name="proj" remote="{remote_name}" path="src/proj" />
+          <catalog-metadata>
+            <name>proj</name>
+            <display-name>Proj</display-name>
+            <description>d</description>
+            <version>1.0.0</version>
+          </catalog-metadata>
         </manifest>
     """)
 
@@ -52,6 +57,12 @@ def _manifest_no_remotes() -> str:
         <?xml version="1.0"?>
         <manifest>
           <project name="proj" remote="origin" path="src/proj" />
+          <catalog-metadata>
+            <name>proj</name>
+            <display-name>Proj</display-name>
+            <description>d</description>
+            <version>1.0.0</version>
+          </catalog-metadata>
         </manifest>
     """)
 
@@ -248,43 +259,6 @@ class TestWalkIncludesCollectingRemotes:
         )
         result = walk_includes_collecting_remotes(root, tmp_path)
         assert result == {"named": "https://named.example.com"}
-
-
-# ---------------------------------------------------------------------------
-# _iter_marketplace_xml_paths
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestIterMarketplaceXmlPaths:
-    """Tests for the _iter_marketplace_xml_paths internal helper."""
-
-    def test_returns_sorted_marketplace_files(self, tmp_path: pathlib.Path) -> None:
-        """Returns marketplace XML files in sorted order."""
-        repo_specs = tmp_path / "repo-specs"
-        repo_specs.mkdir()
-        (repo_specs / "b-marketplace.xml").write_text("<manifest/>", encoding="utf-8")
-        (repo_specs / "a-marketplace.xml").write_text("<manifest/>", encoding="utf-8")
-        result = _iter_marketplace_xml_paths(tmp_path)
-        names = [p.name for p in result]
-        assert names == sorted(names)
-
-    def test_does_not_include_non_marketplace_files(self, tmp_path: pathlib.Path) -> None:
-        """Non-marketplace XML files are excluded."""
-        repo_specs = tmp_path / "repo-specs"
-        repo_specs.mkdir()
-        (repo_specs / "tool-marketplace.xml").write_text("<manifest/>", encoding="utf-8")
-        (repo_specs / "helpers.xml").write_text("<manifest/>", encoding="utf-8")
-        result = _iter_marketplace_xml_paths(tmp_path)
-        names = [p.name for p in result]
-        assert "helpers.xml" not in names
-        assert "tool-marketplace.xml" in names
-
-    def test_empty_repo_specs_returns_empty(self, tmp_path: pathlib.Path) -> None:
-        """An empty repo-specs/ returns no files."""
-        (tmp_path / "repo-specs").mkdir()
-        result = _iter_marketplace_xml_paths(tmp_path)
-        assert result == []
 
 
 # ---------------------------------------------------------------------------

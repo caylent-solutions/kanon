@@ -33,9 +33,10 @@ kanon list [--catalog-source <git-url>@<ref>]
 
 `kanon list` clones the manifest repo identified by
 `--catalog-source` (or `KANON_CATALOG_SOURCE`) and walks every
-`repo-specs/**/*-marketplace.xml` file. One entry is emitted per
-XML file whose `<catalog-metadata>` block contains the required
-fields. Entry name = `<catalog-metadata><name>`.
+`repo-specs/**/*.xml` file. One entry is emitted per XML file whose
+`<catalog-metadata>` block contains the required fields (the filename is
+unrestricted -- the `-marketplace.xml` suffix is a convention, not a
+requirement). Entry name = `<catalog-metadata><name>`.
 
 The legacy `catalog/<name>/` directory inside a manifest repo is
 ignored; `kanon list` reads only the XML manifests.

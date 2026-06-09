@@ -118,8 +118,9 @@ the emitted finding message, and give the catalog-author fix.
 ### Rule 1 -- catalog-metadata completeness
 
 **What it looks for:**
-The check reads every `*-marketplace.xml` file under `repo-specs/` and
-inspects the `<catalog-metadata>` block for:
+The check reads every catalog entry manifest (any `repo-specs/**/*.xml` file
+with a `<catalog-metadata>` block) under `repo-specs/` and inspects the
+`<catalog-metadata>` block for:
 
 1. Missing or whitespace-only **required** fields -- produces one ERROR
    (M001) per missing field.

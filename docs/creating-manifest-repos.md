@@ -6,14 +6,16 @@ of packages for kanon consumers.
 ## What a manifest repo is
 
 A **manifest repo** is a git repository whose `repo-specs/` directory
-holds XML manifest files whose names match `*-marketplace.xml`. The git
+holds XML manifest files. Each file that contains a `<catalog-metadata>`
+block is a catalog entry, regardless of its filename. The git
 URL (with an optional `@<ref>`) of this repository is exactly what a
 consumer passes to `--catalog-source` or sets in `KANON_CATALOG_SOURCE`.
 
 The manifest repo IS the catalog. There is no separate catalog directory;
-every catalog entry lives in a single `*-marketplace.xml` file under
-`repo-specs/`. Each XML file is identified by its `<catalog-metadata>`
-block. The `<catalog-metadata><name>` child is the **entry name** -- the
+every catalog entry lives in a single `*.xml` file under `repo-specs/`,
+identified by its `<catalog-metadata>` block (the `-marketplace.xml` suffix
+is a convention, not a requirement). The `<catalog-metadata><name>` child is
+the **entry name** -- the
 identifier consumers pass to `kanon add <name>`.
 
 Key terminology (canonical form from spec Section 1.1):
@@ -46,7 +48,9 @@ my-manifest-repo/
 +-- README.md
 ```
 
-Every `*-marketplace.xml` under `repo-specs/` is a catalog entry. There
+Every `repo-specs/**/*.xml` file that contains a `<catalog-metadata>` block is
+a catalog entry, regardless of filename; files without the block (such as
+shared `<include>` targets) are not entries. There
 is no `catalog/` directory in a current manifest repo. If you are
 migrating a repo that still has one, see
 [Migrating away from catalog/\<name\>/](#migrating-away-from-catalogname)

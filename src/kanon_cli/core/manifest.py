@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 import defusedxml.ElementTree as ET
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+from kanon_cli.core.metadata import find_catalog_entry_files
 from kanon_cli.core.remote_url import RemoteUrlScheme, _classify_remote_url_scheme
 
 if TYPE_CHECKING:
@@ -129,12 +130,6 @@ def walk_includes_collecting_remotes(
     return remotes
 
 
-def _iter_marketplace_xml_paths(target_path: pathlib.Path) -> list[pathlib.Path]:
-    """Return sorted list of *-marketplace.xml paths under target_path/repo-specs/."""
-    repo_specs = target_path / "repo-specs"
-    return sorted(repo_specs.rglob("*-marketplace.xml"))
-
-
 # Regex that matches any remaining ${VAR} or $VAR placeholder after expansion.
 _PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
 
@@ -221,7 +216,7 @@ def collect_remote_url_findings(
 
     findings: list[RawFinding] = []
 
-    for xml_file in _iter_marketplace_xml_paths(target_path):
+    for xml_file in find_catalog_entry_files(target_path):
         # Build the remote-name -> fetch-URL map for this file and its includes.
         try:
             remote_map = walk_includes_collecting_remotes(xml_file, target_path)

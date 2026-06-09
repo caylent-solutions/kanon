@@ -372,13 +372,13 @@ class TestMultipleXmlFiles:
         findings = _run_check(tmp_path)
         assert findings == []
 
-    def test_non_marketplace_xml_ignored(self, tmp_path: pathlib.Path) -> None:
-        """Files not matching *-marketplace.xml are not processed."""
+    def test_metadata_less_xml_ignored(self, tmp_path: pathlib.Path) -> None:
+        """A manifest without <catalog-metadata> (a shared include) is not an entry, so it is not processed."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir(parents=True, exist_ok=True)
-        other_file = repo_specs / "tool-other.xml"
-        other_file.write_text(
-            '<?xml version="1.0"?><package><catalog-metadata><name>Foo-Bar</name></catalog-metadata></package>',
+        include_file = repo_specs / "remote.xml"
+        include_file.write_text(
+            '<?xml version="1.0"?><manifest><remote name="r" fetch="https://example.com" /></manifest>',
             encoding="utf-8",
         )
         findings = _run_check(tmp_path)

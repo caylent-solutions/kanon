@@ -99,8 +99,9 @@ kanon validate marketplace --repo-root /path/to/repo
 
 ### `kanon validate metadata`
 
-Check every `*-marketplace.xml` under `repo-specs/` for in-repo catalog
-soft-spot violations (spec Section 3.5 rules 1, 2, 3) without network access.
+Check every catalog entry manifest (any `repo-specs/**/*.xml` file with a
+`<catalog-metadata>` block) for in-repo catalog soft-spot violations (spec
+Section 3.5 rules 1, 2, 3) without network access.
 
 No git operations are performed. No `git ls-remote` calls. No cloning.
 

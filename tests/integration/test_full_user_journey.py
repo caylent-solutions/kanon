@@ -560,6 +560,12 @@ class TestFullJourneyBootstrapInstallValidateClean:
             "  >\n"
             '    <linkfile src="plugin.sh" dest="${CLAUDE_MARKETPLACES_DIR}/some-plugin.sh" />\n'
             "  </project>\n"
+            "  <catalog-metadata>\n"
+            "    <name>some-plugin</name>\n"
+            "    <display-name>Some Plugin</display-name>\n"
+            "    <description>d</description>\n"
+            "    <version>1.0.0</version>\n"
+            "  </catalog-metadata>\n"
             "</manifest>\n"
         )
         (repo_specs / "test-marketplace.xml").write_text(marketplace_xml, encoding="utf-8")

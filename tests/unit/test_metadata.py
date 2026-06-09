@@ -15,6 +15,7 @@ from kanon_cli.core.metadata import (
     CatalogMetadataParseError,
     _parse_catalog_metadata,
     derive_source_name,
+    find_catalog_entry_files,
 )
 
 
@@ -573,3 +574,103 @@ class TestDeriveSourceName:
         result_warn_true = derive_source_name(input_name, warn=True)
         result_warn_false = derive_source_name(input_name, warn=False)
         assert result_warn_true == result_warn_false
+
+
+# ---------------------------------------------------------------------------
+# find_catalog_entry_files -- content-based catalog-entry discovery
+# ---------------------------------------------------------------------------
+
+_ENTRY_XML = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata>
+        <name>{name}</name>
+        <display-name>{name}</display-name>
+        <description>desc</description>
+        <version>1.0.0</version>
+      </catalog-metadata>
+    </manifest>
+""")
+
+_INCLUDE_XML = '<manifest><remote name="caylent" fetch="https://example.com" /></manifest>'
+
+
+@pytest.mark.unit
+class TestFindCatalogEntryFiles:
+    """A catalog entry is any repo-specs/**/*.xml containing a <catalog-metadata> block."""
+
+    def test_discovers_marketplace_named_entries(self, tmp_path: Path) -> None:
+        """Legacy *-marketplace.xml names still match (they carry the block)."""
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "alpha-marketplace.xml", _ENTRY_XML.format(name="alpha"))
+        _write_xml(repo_specs / "beta-marketplace.xml", _ENTRY_XML.format(name="beta"))
+        names = {p.name for p in find_catalog_entry_files(tmp_path)}
+        assert names == {"alpha-marketplace.xml", "beta-marketplace.xml"}
+
+    def test_discovers_entry_regardless_of_filename(self, tmp_path: Path) -> None:
+        """The -marketplace suffix is no longer required: any dash-or-no-dash name works."""
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "widget.xml", _ENTRY_XML.format(name="widget"))
+        _write_xml(repo_specs / "my-tool.xml", _ENTRY_XML.format(name="my-tool"))
+        _write_xml(repo_specs / "a-b-c.xml", _ENTRY_XML.format(name="abc"))
+        names = {p.name for p in find_catalog_entry_files(tmp_path)}
+        assert names == {"widget.xml", "my-tool.xml", "a-b-c.xml"}
+
+    def test_excludes_metadata_less_includes(self, tmp_path: Path) -> None:
+        """A manifest without <catalog-metadata> (a shared include) is NOT an entry."""
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "real.xml", _ENTRY_XML.format(name="real"))
+        _write_xml(repo_specs / "remote.xml", _INCLUDE_XML)
+        names = {p.name for p in find_catalog_entry_files(tmp_path)}
+        assert names == {"real.xml"}
+        assert "remote.xml" not in names
+
+    def test_recurses_subdirectories(self, tmp_path: Path) -> None:
+        nested = tmp_path / "repo-specs" / "team-a" / "group"
+        _write_xml(nested / "svc.xml", _ENTRY_XML.format(name="svc"))
+        names = [p.name for p in find_catalog_entry_files(tmp_path)]
+        assert names == ["svc.xml"]
+
+    def test_only_under_repo_specs(self, tmp_path: Path) -> None:
+        """Entries outside repo-specs/ (e.g. a legacy catalog/ dir) are not discovered."""
+        _write_xml(tmp_path / "catalog" / "x.xml", _ENTRY_XML.format(name="x"))
+        _write_xml(tmp_path / "repo-specs" / "kept.xml", _ENTRY_XML.format(name="kept"))
+        names = [p.name for p in find_catalog_entry_files(tmp_path)]
+        assert names == ["kept.xml"]
+
+    def test_excludes_non_xml(self, tmp_path: Path) -> None:
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "kept.xml", _ENTRY_XML.format(name="kept"))
+        (repo_specs / "README.txt").write_text("not xml")
+        names = [p.name for p in find_catalog_entry_files(tmp_path)]
+        assert names == ["kept.xml"]
+
+    def test_malformed_but_marked_file_is_returned(self, tmp_path: Path) -> None:
+        """A malformed file that still contains the marker is returned so callers report the error."""
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "broken.xml", "<manifest><catalog-metadata><name>x")
+        names = [p.name for p in find_catalog_entry_files(tmp_path)]
+        assert names == ["broken.xml"]
+
+    def test_sorted_output(self, tmp_path: Path) -> None:
+        repo_specs = tmp_path / "repo-specs"
+        _write_xml(repo_specs / "zeta.xml", _ENTRY_XML.format(name="zeta"))
+        _write_xml(repo_specs / "alpha.xml", _ENTRY_XML.format(name="alpha"))
+        results = find_catalog_entry_files(tmp_path)
+        assert results == sorted(results)
+
+    def test_empty_when_repo_specs_missing(self, tmp_path: Path) -> None:
+        assert find_catalog_entry_files(tmp_path) == []
+
+    def test_empty_when_only_includes(self, tmp_path: Path) -> None:
+        _write_xml(tmp_path / "repo-specs" / "remote.xml", _INCLUDE_XML)
+        assert find_catalog_entry_files(tmp_path) == []
+
+    def test_marker_only_in_comment_is_not_an_entry(self, tmp_path: Path) -> None:
+        """A file whose only <catalog-metadata mention is inside an XML comment is not an entry."""
+        _write_xml(
+            tmp_path / "repo-specs" / "remote.xml",
+            "<!-- this shared include has no <catalog-metadata> block -->\n"
+            '<manifest><remote name="r" fetch="https://example.com" /></manifest>',
+        )
+        assert find_catalog_entry_files(tmp_path) == []

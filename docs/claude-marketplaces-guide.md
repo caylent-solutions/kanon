@@ -18,10 +18,13 @@ composition. Currently marketplace manifests use a flat structure (each includes
 
 ### Naming Convention
 
-Marketplace manifest files must follow the `*-marketplace.xml` naming pattern.
-The `kanon validate marketplace` command discovers files matching this pattern
-under `repo-specs/`. Files that do not match (e.g., `remote.xml`, `packages.xml`)
-are not validated as marketplace manifests.
+A catalog entry is any `*.xml` file under `repo-specs/` that contains a
+`<catalog-metadata>` block. The filename is unrestricted: `*-marketplace.xml`
+is a common convention, but `widget.xml` or `my-tool.xml` work equally well.
+The `kanon validate marketplace` command discovers every such entry under
+`repo-specs/`. Files with no `<catalog-metadata>` block (e.g., shared includes
+like `remote.xml`, `packages.xml`) are not entries and are not validated as
+marketplace manifests -- they are still checked by `kanon validate xml`.
 
 ### Example Manifest
 

@@ -4,8 +4,9 @@ A **manifest repo** is a git repository whose `repo-specs/` directory contains
 installable kanon dependency definitions. When you point kanon at a manifest
 repo via `--catalog-source`, you are pointing it at the catalog itself -- there
 is no separate "catalog" entity inside the repository, and no `catalog/<name>/`
-subdirectory model. The repository is the catalog; each `*-marketplace.xml`
-file under `repo-specs/**` is a catalog entry.
+subdirectory model. The repository is the catalog; each `repo-specs/**/*.xml`
+file that contains a `<catalog-metadata>` block is a catalog entry (any
+filename; the `-marketplace.xml` suffix is a convention, not a requirement).
 
 ## What is a manifest repo?
 
@@ -19,7 +20,7 @@ repo-specs/
   ...
 ```
 
-Each `*-marketplace.xml` file is a **catalog entry** -- a single dependency
+Each XML file with a `<catalog-metadata>` block is a **catalog entry** -- a single dependency
 definition identified by the `<name>` child of its `<catalog-metadata>` block.
 The `<name>` value is the **entry name**. There is exactly one
 `<catalog-metadata>` block per XML file, and entry names must be unique across

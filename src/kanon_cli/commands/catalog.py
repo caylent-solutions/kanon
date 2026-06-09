@@ -65,8 +65,8 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_VALID_CHECKS,
     KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE,
 )
-from kanon_cli.core.manifest import _iter_marketplace_xml_paths, collect_remote_url_findings
-from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name
+from kanon_cli.core.manifest import collect_remote_url_findings
+from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name, find_catalog_entry_files
 from kanon_cli.core.url import canonicalize_repo_url
 
 # Alias for the XML parse error type from defusedxml to avoid importing from the
@@ -379,10 +379,11 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
 def _iter_entry_names(
     target_path: pathlib.Path,
 ) -> Iterator[tuple[pathlib.Path, str]]:
-    """Yield ``(xml_file, entry_name)`` pairs for every parseable marketplace XML.
+    """Yield ``(xml_file, entry_name)`` pairs for every parseable catalog entry.
 
-    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
-    :func:`kanon_cli.core.manifest._iter_marketplace_xml_paths`.  For each file the function:
+    Walks every catalog entry manifest (any ``repo-specs/**/*.xml`` that carries a
+    ``<catalog-metadata>`` block) via
+    :func:`kanon_cli.core.metadata.find_catalog_entry_files`.  For each file the function:
 
     1. Parses the XML, silently skipping files that raise
        :exc:`XMLParseError` (malformed-XML errors are the ``metadata``
@@ -403,7 +404,7 @@ def _iter_entry_names(
         Tuples of ``(xml_file, entry_name)`` where ``entry_name`` is the
         stripped text content of the ``<name>`` element.
     """
-    for xml_file in _iter_marketplace_xml_paths(target_path):
+    for xml_file in find_catalog_entry_files(target_path):
         try:
             tree = ET.parse(xml_file)
         except XMLParseError:
@@ -431,10 +432,11 @@ def _iter_entry_names(
 
 
 def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
-    """Check every ``*-marketplace.xml`` under ``repo-specs/`` for metadata issues.
+    """Check every catalog entry manifest under ``repo-specs/`` for metadata issues.
 
-    Walks ``<target_path>/repo-specs/**/*-marketplace.xml`` via
-    :func:`kanon_cli.core.manifest._iter_marketplace_xml_paths` and calls
+    Walks every catalog entry manifest (any ``repo-specs/**/*.xml`` that carries a
+    ``<catalog-metadata>`` block) via
+    :func:`kanon_cli.core.metadata.find_catalog_entry_files` and calls
     :func:`kanon_cli.core.metadata.audit_catalog_metadata` on each file.
 
     Converts each :class:`MetadataAuditIssue` returned into an
@@ -449,7 +451,7 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
     """
     findings: list[AuditFinding] = []
 
-    for xml_file in _iter_marketplace_xml_paths(target_path):
+    for xml_file in find_catalog_entry_files(target_path):
         for issue in audit_catalog_metadata(xml_file):
             findings.append(
                 AuditFinding(

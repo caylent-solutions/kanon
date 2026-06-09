@@ -1,7 +1,11 @@
 """Shared catalog-metadata reader for kanon commands.
 
-Parses the ``<catalog-metadata>`` block from ``*-marketplace.xml`` files and
-returns a :class:`CatalogMetadata` dataclass.
+Parses the ``<catalog-metadata>`` block from catalog entry manifests and
+returns a :class:`CatalogMetadata` dataclass. A *catalog entry* is any
+``repo-specs/**/*.xml`` manifest that declares a ``<catalog-metadata>`` block
+(see :func:`find_catalog_entry_files`); the entry's filename is unrestricted.
+Every entry -- whether a packaged Claude marketplace or a plain package --
+carries the same required metadata fields.
 
 Every command that consumes marketplace metadata (``kanon list``,
 ``kanon add``, ``kanon outdated``, ``kanon why``, ``kanon catalog audit``,
@@ -31,6 +35,7 @@ deterministic, pure, and idempotent. Downstream consumers include
 ``kanon install --refresh-lock-source``.
 """
 
+import re
 import sys
 from typing import cast
 
@@ -44,6 +49,57 @@ from kanon_cli.constants import (
     KANON_CATALOG_METADATA_REQUIRED_FIELDS,
     RECOMMENDED_CHAR_RE,
 )
+
+# A catalog *entry* is any manifest that declares a <catalog-metadata> block.
+# Entries are identified by this content marker rather than by a filename
+# convention: an entry manifest may use ANY name (e.g. widget-pkg.xml,
+# my-tool.xml, foo-marketplace.xml). Manifests without the marker -- shared
+# <include> targets such as remote.xml -- are not entries (but remain valid
+# manifests: `validate xml` still checks them and entries still <include> them).
+_CATALOG_METADATA_MARKER = "<catalog-metadata"
+
+# The marker is ignored when it appears only inside an XML comment -- e.g. an
+# <include> file (remote.xml) whose comment documents the scheme in prose. Such
+# a file is not a catalog entry, so comments are stripped before the check.
+_XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def find_catalog_entry_files(repo_root: Path) -> list[Path]:
+    """Return the sorted catalog-entry manifests under ``repo_root/repo-specs/``.
+
+    A *catalog entry* is any ``*.xml`` manifest under ``repo-specs/`` whose text
+    contains a ``<catalog-metadata>`` element. Manifests without that block --
+    shared ``<include>`` targets such as ``remote.xml`` -- are excluded from the
+    entry set (they are still validated by ``kanon validate xml`` and are still
+    resolved when an entry ``<include>``\\ s them). Entry manifests may use any
+    filename; the legacy ``*-marketplace.xml`` suffix is no longer required
+    (files so named still match because they carry the block).
+
+    Files that cannot be read are skipped. A file that contains the marker but
+    is otherwise malformed is still returned, so downstream parsing surfaces the
+    error rather than silently dropping an intended entry.
+
+    Args:
+        repo_root: Root of the manifest repo (the directory that contains
+            ``repo-specs/``).
+
+    Returns:
+        Sorted list of entry-manifest paths. Empty when ``repo-specs/`` is
+        absent or contains no entry manifests.
+    """
+    repo_specs = repo_root / "repo-specs"
+    if not repo_specs.is_dir():
+        return []
+    entries: list[Path] = []
+    for xml_path in repo_specs.rglob("*.xml"):
+        try:
+            text = xml_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if _CATALOG_METADATA_MARKER in _XML_COMMENT_RE.sub("", text):
+            entries.append(xml_path)
+    return sorted(entries)
+
 
 # New-scheme-only: catalog metadata MUST be carried as nested child elements of
 # <catalog-metadata>. The legacy "flat-attribute" scheme put these fields as

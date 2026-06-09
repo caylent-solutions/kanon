@@ -49,7 +49,12 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.catalog import _parse_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
-from kanon_cli.core.metadata import CatalogMetadata, CatalogMetadataParseError, _parse_catalog_metadata
+from kanon_cli.core.metadata import (
+    CatalogMetadata,
+    CatalogMetadataParseError,
+    _parse_catalog_metadata,
+    find_catalog_entry_files,
+)
 from kanon_cli.version import is_version_constraint, resolve_version
 
 # -- Detail formatter private constants --
@@ -412,7 +417,7 @@ def _walk_all_versions(
             )
             sys.exit(1)
 
-        xml_paths = _walk_marketplace_xmls(repo_dir)
+        xml_paths = find_catalog_entry_files(repo_dir)
         version_names: list[str] = []
         legacy_skipped_count = 0
         for xml_path in xml_paths:
@@ -512,26 +517,6 @@ def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
     return repo_dir
 
 
-def _walk_marketplace_xmls(manifest_root: pathlib.Path) -> list[pathlib.Path]:
-    """Walk ``repo-specs/**/*-marketplace.xml`` under manifest_root.
-
-    Reads ONLY files under the ``repo-specs/`` directory. The legacy
-    ``catalog/<name>/`` directory is explicitly excluded per spec Section 4.1.
-
-    Args:
-        manifest_root: Root directory of the cloned manifest repo.
-
-    Returns:
-        List of :class:`pathlib.Path` objects pointing to discovered XML
-        files. Empty when ``repo-specs/`` is absent or contains no
-        ``*-marketplace.xml`` files.
-    """
-    repo_specs = manifest_root / "repo-specs"
-    if not repo_specs.is_dir():
-        return []
-    return list(repo_specs.rglob("*-marketplace.xml"))
-
-
 def _build_sorted_index(manifest_root: pathlib.Path) -> list[str]:
     """Build a lexicographically sorted list of catalog entry names.
 
@@ -546,7 +531,7 @@ def _build_sorted_index(manifest_root: pathlib.Path) -> list[str]:
         Sorted list of entry name strings. Empty when the catalog has no
         ``*-marketplace.xml`` files.
     """
-    xml_paths = _walk_marketplace_xmls(manifest_root)
+    xml_paths = find_catalog_entry_files(manifest_root)
     names: list[str] = []
     for xml_path in xml_paths:
         metadata = _parse_catalog_metadata(xml_path)
@@ -573,7 +558,7 @@ def _build_sorted_metadata(manifest_root: pathlib.Path) -> list[CatalogMetadata]
         Sorted list of :class:`CatalogMetadata` instances. Empty when the
         catalog has no ``*-marketplace.xml`` files.
     """
-    xml_paths = _walk_marketplace_xmls(manifest_root)
+    xml_paths = find_catalog_entry_files(manifest_root)
     entries: list[CatalogMetadata] = []
     for xml_path in xml_paths:
         metadata = _parse_catalog_metadata(xml_path)
@@ -866,7 +851,7 @@ def _render_tree(
         FileNotFoundError: When no ``*-marketplace.xml`` for ``entry_name``
             is found under ``repo-specs/``.
     """
-    xml_files = _walk_marketplace_xmls(manifest_root)
+    xml_files = find_catalog_entry_files(manifest_root)
     entry_xml: pathlib.Path | None = None
     entry_version = "unknown"
 
@@ -882,7 +867,7 @@ def _render_tree(
 
     if entry_xml is None:
         raise FileNotFoundError(
-            f"No *-marketplace.xml found for entry '{entry_name}' under {manifest_root / 'repo-specs'}"
+            f"No catalog entry manifest found for entry '{entry_name}' under {manifest_root / 'repo-specs'}"
         )
 
     sha = _sha12_from_path(entry_xml)

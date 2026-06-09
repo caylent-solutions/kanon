@@ -53,7 +53,7 @@ from kanon_cli.constants import (
     KANON_COMPLETION_TIMEOUT,
 )
 from kanon_cli.core.catalog import _parse_catalog_source
-from kanon_cli.core.metadata import CatalogMetadataParseError, _parse_catalog_metadata
+from kanon_cli.core.metadata import CatalogMetadataParseError, _parse_catalog_metadata, find_catalog_entry_files
 
 _COMPLETER_NAME = "__complete_catalog_entries"
 
@@ -116,12 +116,8 @@ def _build_index(repo_dir: Path) -> list[str]:
     Returns:
         Sorted list of safe catalog entry names found in repo-specs/.
     """
-    specs_root = repo_dir / "repo-specs"
-    if not specs_root.is_dir():
-        return []
-
     names: list[str] = []
-    for xml_path in specs_root.rglob("*-marketplace.xml"):
+    for xml_path in find_catalog_entry_files(repo_dir):
         try:
             metadata = _parse_catalog_metadata(xml_path)
         except CatalogMetadataParseError:

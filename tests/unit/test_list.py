@@ -14,7 +14,6 @@ import pytest
 from kanon_cli.commands.list import (
     _build_sorted_index,
     _resolve_manifest_repo,
-    _walk_marketplace_xmls,
     register,
     run_list,
 )
@@ -166,72 +165,6 @@ class TestResolveManifestRepo:
             _resolve_manifest_repo("https://example.com/repo.git@>=1.0.0")
 
         mock_rv.assert_called_once_with("https://example.com/repo.git", ">=1.0.0")
-
-
-# ---------------------------------------------------------------------------
-# Tests for _walk_marketplace_xmls
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestWalkMarketplaceXmls:
-    """Tests for the _walk_marketplace_xmls() walker helper."""
-
-    def test_returns_xml_files_in_repo_specs(self, tmp_path: Path) -> None:
-        """Walker discovers *-marketplace.xml files under repo-specs/."""
-        repo_specs = tmp_path / "repo-specs"
-        _write_marketplace_xml(repo_specs, "alpha")
-        _write_marketplace_xml(repo_specs, "beta")
-
-        results = list(_walk_marketplace_xmls(tmp_path))
-        names = {p.name for p in results}
-        assert "alpha-marketplace.xml" in names
-        assert "beta-marketplace.xml" in names
-
-    def test_discovers_nested_subdirectories(self, tmp_path: Path) -> None:
-        """Walker recurses into subdirectories of repo-specs/."""
-        nested = tmp_path / "repo-specs" / "team-a" / "subgroup"
-        _write_marketplace_xml(nested, "nested-entry")
-
-        results = list(_walk_marketplace_xmls(tmp_path))
-        assert any(p.name == "nested-entry-marketplace.xml" for p in results)
-
-    def test_ignores_catalog_directory(self, tmp_path: Path) -> None:
-        """Walker does NOT return files under catalog/<name>/ (legacy path)."""
-        legacy_dir = tmp_path / "catalog" / "some-entry"
-        _write_marketplace_xml(legacy_dir, "legacy")
-
-        results = list(_walk_marketplace_xmls(tmp_path))
-        assert all("catalog" not in str(p) for p in results), (
-            "Walker must not return files from the legacy catalog/ directory"
-        )
-
-    def test_returns_empty_when_no_xml_files(self, tmp_path: Path) -> None:
-        """Walker returns no results when repo-specs/ has no XML files."""
-        repo_specs = tmp_path / "repo-specs"
-        repo_specs.mkdir()
-        # Non-XML file should not be returned
-        (repo_specs / "README.txt").write_text("not xml")
-
-        results = list(_walk_marketplace_xmls(tmp_path))
-        assert results == []
-
-    def test_returns_empty_when_repo_specs_missing(self, tmp_path: Path) -> None:
-        """Walker returns no results when repo-specs/ directory is absent."""
-        results = list(_walk_marketplace_xmls(tmp_path))
-        assert results == []
-
-    def test_only_matches_marketplace_xml_suffix(self, tmp_path: Path) -> None:
-        """Walker only matches files ending in -marketplace.xml, not generic .xml."""
-        repo_specs = tmp_path / "repo-specs"
-        repo_specs.mkdir()
-        (repo_specs / "default.xml").write_text("<manifest/>")
-        _write_marketplace_xml(repo_specs, "correct")
-
-        results = list(_walk_marketplace_xmls(tmp_path))
-        names = [p.name for p in results]
-        assert "correct-marketplace.xml" in names
-        assert "default.xml" not in names
 
 
 # ---------------------------------------------------------------------------

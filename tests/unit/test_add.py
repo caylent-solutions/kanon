@@ -421,7 +421,7 @@ class TestSoftSpotHardError:
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
         bad_xml = repo_specs / "bad-marketplace.xml"
-        bad_xml.write_text("NOT VALID XML <<<<<")
+        bad_xml.write_text("<catalog-metadata>NOT VALID XML <<<<<")
 
         with pytest.raises(SystemExit) as exc_info:
             _build_entry_catalog(tmp_path, url="https://example.com/repo.git")
@@ -436,7 +436,7 @@ class TestSoftSpotHardError:
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
         bad_xml = repo_specs / "bad-marketplace.xml"
-        bad_xml.write_text("NOT VALID XML <<<<<")
+        bad_xml.write_text("<catalog-metadata>NOT VALID XML <<<<<")
 
         with pytest.raises(SystemExit):
             _build_entry_catalog(tmp_path, url="https://example.com/repo.git")

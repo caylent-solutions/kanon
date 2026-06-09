@@ -75,6 +75,11 @@ def _valid_marketplace_xml(
     root = ET.Element("manifest")
     project = ET.SubElement(root, "project", name=name, path=path, remote="r", revision=revision)
     ET.SubElement(project, "linkfile", src="s", dest=dest)
+    meta = ET.SubElement(root, "catalog-metadata")
+    ET.SubElement(meta, "name").text = name
+    ET.SubElement(meta, "display-name").text = name
+    ET.SubElement(meta, "description").text = "d"
+    ET.SubElement(meta, "version").text = "1.0.0"
     return ET.tostring(root, encoding="unicode")
 
 
@@ -158,6 +163,12 @@ class TestLinkfileDestValidation:
               <project name="bad" path=".packages/bad" remote="r" revision="refs/tags/ex/bad/1.0.0">
                 <linkfile src="s" dest="/absolute/bad" />
               </project>
+              <catalog-metadata>
+                <name>mixed</name>
+                <display-name>Mixed</display-name>
+                <description>d</description>
+                <version>1.0.0</version>
+              </catalog-metadata>
             </manifest>
         """)
         _write_xml(repo_root / "repo-specs" / "mixed-marketplace.xml", content)
@@ -200,6 +211,12 @@ class TestIncludeChainCycleDetection:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -225,6 +242,12 @@ class TestIncludeChainCycleDetection:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -263,6 +286,12 @@ class TestIncludeChainCycleDetection:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )

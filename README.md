@@ -301,8 +301,9 @@ kanon list --detail          # human-readable record per entry
 kanon list my-tool --detail  # narrow to entries matching a substring
 ```
 
-`kanon list` reads the `*-marketplace.xml` files under `repo-specs/` in the
-manifest repo and prints one catalog entry name per line.
+`kanon list` reads the catalog entry manifests (any `repo-specs/**/*.xml`
+file with a `<catalog-metadata>` block) in the manifest repo and prints one
+catalog entry name per line.
 
 **2. Add entries to `.kanon`:**
 
@@ -830,8 +831,8 @@ For full documentation, see [docs/how-it-works.md](docs/how-it-works.md).
 A manifest repository contains `repo-specs/` with XML manifests that define
 what packages to sync, from which repositories, and at which versions. **The
 manifest repo IS the catalog** -- there is no separate `catalog/` directory.
-Each catalog entry is a single `*-marketplace.xml` file under `repo-specs/`
-that carries a nested `<catalog-metadata>` block; the
+Each catalog entry is a single `*.xml` file under `repo-specs/` (any
+filename) that carries a nested `<catalog-metadata>` block; the
 `<catalog-metadata><name>` child is the entry name consumers pass to
 `kanon add <name>`. See
 [docs/creating-manifest-repos.md](docs/creating-manifest-repos.md) for the
@@ -851,10 +852,10 @@ my-manifest-repo/
       packages.xml           # Package repos with pinned versions
 ```
 
-### Catalog entry (-marketplace.xml)
+### Catalog entry
 
-Each catalog entry is a `*-marketplace.xml` file containing exactly one
-nested `<catalog-metadata>` block. Required fields are `name`,
+Each catalog entry is an XML file under `repo-specs/` (any filename)
+containing exactly one nested `<catalog-metadata>` block. Required fields are `name`,
 `display-name`, `description`, and `version`; recommended fields are `type`,
 `owner-name`, `owner-email`, and `keywords` (comma-separated). The legacy
 flat-attribute scheme (metadata as XML attributes) is rejected.

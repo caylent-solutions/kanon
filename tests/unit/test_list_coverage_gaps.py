@@ -378,7 +378,7 @@ class TestWalkAllVersions:
         with (
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list._walk_marketplace_xmls", return_value=[fake_xml]),
+            patch("kanon_cli.commands.list.find_catalog_entry_files", return_value=[fake_xml]),
             patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
@@ -422,7 +422,7 @@ class TestWalkAllVersions:
         with (
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list._walk_marketplace_xmls", return_value=[fake_xml]),
+            patch("kanon_cli.commands.list.find_catalog_entry_files", return_value=[fake_xml]),
             patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
@@ -564,7 +564,7 @@ class TestWalkAllVersions:
             patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
             patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
             patch(
-                "kanon_cli.commands.list._walk_marketplace_xmls",
+                "kanon_cli.commands.list.find_catalog_entry_files",
                 return_value=[fake_xml_alpha, fake_xml_beta],
             ),
             patch("kanon_cli.commands.list._parse_catalog_metadata", side_effect=fake_parse),

@@ -78,7 +78,7 @@ _MALFORMED_XML_NO_NAME_TEMPLATE = textwrap.dedent("""\
 # Genuinely non-well-formed XML -- the parser raises XMLParseError (not just a
 # missing-name validation error). This template triggers the skip-with-warning
 # path regardless of any name-derivation logic.
-_UNPARSEABLE_XML_CONTENT = "<<not valid xml at all>>"
+_UNPARSEABLE_XML_CONTENT = "<catalog-metadata><<not valid xml at all>>"
 
 
 # ---------------------------------------------------------------------------

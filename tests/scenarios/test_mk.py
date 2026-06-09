@@ -735,6 +735,12 @@ class TestMK:
             f'  <project name="{plugin_name}" path=".packages/{plugin_name}" remote="local" revision="main">\n'
             '    <linkfile src="." dest="/tmp/somewhere-bad" />\n'
             "  </project>\n"
+            "  <catalog-metadata>\n"
+            f"    <name>{plugin_name}</name>\n"
+            f"    <display-name>{plugin_name}</display-name>\n"
+            "    <description>d</description>\n"
+            "    <version>1.0.0</version>\n"
+            "  </catalog-metadata>\n"
             "</manifest>\n"
         )
 

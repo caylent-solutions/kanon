@@ -44,6 +44,12 @@ _VALID_MARKETPLACE_MANIFEST = (
     ' revision="refs/tags/ex/mk19/1.0.0">\n'
     '    <linkfile src="." dest="${CLAUDE_MARKETPLACES_DIR}/mk19" />\n'
     "  </project>\n"
+    "  <catalog-metadata>\n"
+    "    <name>mk19</name>\n"
+    "    <display-name>Mk19</display-name>\n"
+    "    <description>d</description>\n"
+    "    <version>1.0.0</version>\n"
+    "  </catalog-metadata>\n"
     "</manifest>\n"
 )
 

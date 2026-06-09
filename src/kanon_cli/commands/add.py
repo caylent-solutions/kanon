@@ -41,6 +41,7 @@ from kanon_cli.core.metadata import (
     CatalogMetadataParseError,
     _parse_catalog_metadata,
     derive_source_name,
+    find_catalog_entry_files,
 )
 from kanon_cli.version import _list_tags, _resolve_constraint_from_tags, is_version_constraint, resolve_version
 
@@ -400,11 +401,7 @@ def _build_entry_catalog(
     Returns:
         List of (CatalogMetadata, xml_path, url) triples for every entry found.
     """
-    repo_specs = manifest_root / "repo-specs"
-    if not repo_specs.is_dir():
-        return []
-
-    xml_paths = list(repo_specs.rglob("*-marketplace.xml"))
+    xml_paths = find_catalog_entry_files(manifest_root)
     entries: list[tuple[CatalogMetadata, pathlib.Path, str]] = []
     error_paths: list[str] = []
 

@@ -39,6 +39,12 @@ def _valid_marketplace_xml() -> str:
           <project name="proj" path=".packages/proj" remote="r" revision="main">
             <linkfile src="proj" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
           </project>
+          <catalog-metadata>
+            <name>proj</name>
+            <display-name>Proj</display-name>
+            <description>d</description>
+            <version>1.0.0</version>
+          </catalog-metadata>
         </manifest>
     """)
 
@@ -200,6 +206,12 @@ class TestValidateMarketplaceFunction:
                   <project name="proj" path=".packages/proj" remote="r" revision="main">
                     <linkfile src="proj" dest="/absolute/bad" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )
@@ -213,6 +225,12 @@ class TestValidateMarketplaceFunction:
                   <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/1.0.0">
                     <linkfile src="proj" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
+                  <catalog-metadata>
+                    <name>proj</name>
+                    <display-name>Proj</display-name>
+                    <description>d</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
                 </manifest>
             """),
         )

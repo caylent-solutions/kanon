@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Fixture: legacy-catalog-dir -- valid manifest repo with a legacy catalog/ subtree.
+<!-- Fixture: legacy-catalog-dir. A valid manifest repo with a legacy catalog/ subtree.
      The repo-specs/ directory makes this a valid audit target.
      The catalog/sample-entry/ directory triggers the unconditional legacy-dir WARN. -->
 <manifest>

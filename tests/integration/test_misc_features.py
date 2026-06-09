@@ -23,7 +23,6 @@ from kanon_cli.constants import (
     KANONENV_FILENAME,
     KANON_REPO_DIR_ENV,
     MARKETPLACE_DIR_PREFIX,
-    MARKETPLACE_FILE_GLOB,
     PEP440_OPERATORS,
     REFS_TAGS_RE,
     SELFUPDATE_EMBEDDED_MESSAGE,
@@ -83,9 +82,6 @@ class TestConstantsModule:
 
     def test_marketplace_dir_prefix(self) -> None:
         assert MARKETPLACE_DIR_PREFIX.startswith("${CLAUDE_MARKETPLACES_DIR}")
-
-    def test_marketplace_file_glob(self) -> None:
-        assert MARKETPLACE_FILE_GLOB == "*-marketplace.xml"
 
     def test_pep440_operators(self) -> None:
         assert "~=" in PEP440_OPERATORS

@@ -14,7 +14,6 @@ EXIT_CODE_DEPRECATED = 3
 
 # -- Marketplace validation --
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
-MARKETPLACE_FILE_GLOB = "*-marketplace.xml"
 ALLOWED_BRANCHES = frozenset({"main"})
 REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
 CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")

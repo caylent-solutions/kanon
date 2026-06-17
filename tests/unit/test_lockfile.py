@@ -19,10 +19,12 @@ from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
+    LockfileConsistencyError,
     LockfileSchemaError,
     LockfileValidationError,
     ProjectEntry,
     SourceEntry,
+    check_lockfile_consistency,
     read_lockfile,
     write_lockfile,
 )
@@ -1014,3 +1016,84 @@ class TestRegisteredMarketplacesField:
         p.write_text(bad_toml)
         with pytest.raises(LockfileValidationError, match=r"sources\[0\].registered_marketplaces"):
             read_lockfile(p)
+
+
+# ---------------------------------------------------------------------------
+# check_lockfile_consistency -- .kanon <-> .kanon.lock drift (spec FR-24, Section 4.5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCheckLockfileConsistency:
+    """The shared .kanon <-> .kanon.lock consistency check (alias uniqueness, alias-set, ref-specs)."""
+
+    def test_consistent_pair_passes(self) -> None:
+        """A .kanon and lock with the same alias set and ref-specs raises nothing."""
+        lockfile = _make_lockfile(
+            sources=[
+                _make_source(alias="alpha", ref_spec="main"),
+                _make_source(alias="beta", ref_spec="==1.2.3"),
+            ],
+        )
+        kanon_aliases = ["alpha", "beta"]
+        kanon_ref_specs = {"alpha": "main", "beta": "==1.2.3"}
+
+        # No exception means the pair is consistent.
+        assert check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile) is None
+
+    def test_duplicate_alias_raises(self) -> None:
+        """A duplicate alias in the .kanon declarations raises naming the alias."""
+        lockfile = _make_lockfile(sources=[_make_source(alias="alpha", ref_spec="main")])
+        kanon_aliases = ["alpha", "alpha"]
+        kanon_ref_specs = {"alpha": "main"}
+
+        with pytest.raises(LockfileConsistencyError, match=r"duplicate source alias in \.kanon: alpha"):
+            check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile)
+
+    def test_alias_added_in_kanon_but_missing_from_lock_raises(self) -> None:
+        """An alias declared in .kanon but absent from the lock raises naming it as missing."""
+        lockfile = _make_lockfile(sources=[_make_source(alias="alpha", ref_spec="main")])
+        kanon_aliases = ["alpha", "beta"]
+        kanon_ref_specs = {"alpha": "main", "beta": "main"}
+
+        with pytest.raises(LockfileConsistencyError) as exc_info:
+            check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile)
+        message = str(exc_info.value)
+        assert "alias sets differ" in message
+        assert "missing from .kanon.lock: beta" in message
+
+    def test_alias_orphaned_in_lock_but_absent_from_kanon_raises(self) -> None:
+        """An alias present in the lock but not declared in .kanon raises naming it as orphaned."""
+        lockfile = _make_lockfile(
+            sources=[
+                _make_source(alias="alpha", ref_spec="main"),
+                _make_source(alias="gamma", ref_spec="main"),
+            ],
+        )
+        kanon_aliases = ["alpha"]
+        kanon_ref_specs = {"alpha": "main"}
+
+        with pytest.raises(LockfileConsistencyError) as exc_info:
+            check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile)
+        message = str(exc_info.value)
+        assert "alias sets differ" in message
+        assert "not declared in .kanon: gamma" in message
+
+    def test_ref_spec_drift_raises(self) -> None:
+        """A per-alias ref-spec that differs between .kanon and the lock raises naming the alias."""
+        lockfile = _make_lockfile(sources=[_make_source(alias="alpha", ref_spec="main")])
+        kanon_aliases = ["alpha"]
+        kanon_ref_specs = {"alpha": "==2.0.0"}
+
+        with pytest.raises(LockfileConsistencyError) as exc_info:
+            check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile)
+        message = str(exc_info.value)
+        assert "ref-specs differ" in message
+        assert "alpha" in message
+        assert "==2.0.0" in message
+        assert "main" in message
+
+    def test_empty_pair_passes(self) -> None:
+        """A .kanon with no sources and an empty lock is consistent (no aliases either side)."""
+        lockfile = _make_lockfile(sources=[])
+        assert check_lockfile_consistency([], {}, lockfile) is None

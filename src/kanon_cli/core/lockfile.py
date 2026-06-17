@@ -6,11 +6,18 @@ Public entry points:
     from CURRENT_SCHEMA_VERSION.
   - ``write_lockfile(lockfile: Lockfile, path: Path) -> None``: atomically serialise
     a Lockfile to disk using a write-temp-then-rename pattern.
+  - ``check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile) -> None``:
+    verify the ``.kanon`` alias declarations agree with the ``.kanon.lock`` entries
+    (alias uniqueness, alias-set parity, per-alias ref-spec parity; spec FR-24,
+    Section 4.5).  ``kanon validate lockfile`` runs this check, and ``kanon install``
+    runs it implicitly before resolving (spec Section 4.3).
 
 Exception hierarchy:
   - ``LockfileSchemaError``: raised when the schema_version is not supported or has
     no upgrade path to the current schema.
   - ``LockfileValidationError``: raised when a field value violates a validation rule.
+  - ``LockfileConsistencyError``: raised when ``.kanon`` and ``.kanon.lock`` have
+    drifted apart (duplicate alias, alias-set drift, or per-alias ref-spec drift).
 
 Schema migration registry (spec Section 5.2):
   - ``_register_upgrader(from_version, to_version, fn)``: register an upgrader function.
@@ -264,6 +271,26 @@ class LockfileValidationError(Exception):
       - Names the offending field path (e.g., ``sources[0].projects[2].resolved_sha``).
       - Includes the offending value.
       - Suggests the operator's likely remediation step.
+    """
+
+
+class LockfileConsistencyError(Exception):
+    """Raised when ``.kanon`` and ``.kanon.lock`` have drifted apart (spec FR-24).
+
+    Distinct from ``LockfileValidationError`` (a single lock field is malformed)
+    and ``LockfileSchemaError`` (the lock schema version is unsupported): this
+    exception signals that the lock no longer agrees with the consumer ``.kanon``
+    declarations, which is the condition ``kanon validate lockfile`` flags and
+    ``kanon install`` rejects before it resolves (spec Section 4.3 / Section 4.5).
+
+    The three drift conditions, each producing a specific message:
+      - a duplicate alias in the ``.kanon`` declarations,
+      - the alias set in ``.kanon.lock`` differs from the alias set in ``.kanon``,
+      - a per-alias ``ref_spec`` in ``.kanon.lock`` differs from the matching
+        ``.kanon`` revision.
+
+    The message always names the offending alias(es) and the operator's likely
+    remediation step.
     """
 
 
@@ -945,3 +972,99 @@ def write_lockfile(lockfile: Lockfile, path: Path) -> None:
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def check_lockfile_consistency(
+    kanon_aliases: list[str],
+    kanon_ref_specs: dict[str, str],
+    lockfile: Lockfile,
+) -> None:
+    """Verify ``.kanon`` and ``.kanon.lock`` agree (spec FR-24, Section 4.5).
+
+    The shared consistency check that ``kanon validate lockfile`` runs and that
+    ``kanon install`` runs implicitly before it resolves (spec Section 4.3).  It
+    operates on already-parsed inputs so this module stays a pure lockfile
+    component and does not depend on the ``.kanon`` parser.
+
+    Three independent drift conditions are checked, each raising a
+    ``LockfileConsistencyError`` naming the offending alias(es):
+
+      1. Alias uniqueness -- ``kanon_aliases`` must contain no duplicate alias.
+         A duplicate means two source declarations in ``.kanon`` share an alias,
+         which makes the alias-keyed lock ambiguous.
+      2. Alias-set parity -- the set of aliases in ``.kanon.lock`` must equal the
+         set of aliases declared in ``.kanon``.  An alias present in only one of
+         the two files is reported (added in ``.kanon`` but missing from the lock,
+         or orphaned in the lock but removed from ``.kanon``).
+      3. Per-alias ref-spec parity -- for every shared alias, the ``ref_spec``
+         recorded in ``.kanon.lock`` must equal the revision declared for that
+         alias in ``.kanon``.
+
+    Args:
+        kanon_aliases: The ordered list of source aliases declared in ``.kanon``.
+            Passed as a list (not a set) so duplicates are visible and condition
+            (1) is checkable.  Every alias must have a matching key in
+            ``kanon_ref_specs``.
+        kanon_ref_specs: Mapping of each ``.kanon`` alias to its declared revision
+            (the ref-spec). The revision is the value compared against the lock
+            entry's ``ref_spec`` field.
+        lockfile: The parsed ``.kanon.lock`` whose ``sources`` carry the
+            alias-keyed entries (schema v4).
+
+    Raises:
+        LockfileConsistencyError: If a ``.kanon`` alias is duplicated, if the
+            ``.kanon`` and ``.kanon.lock`` alias sets differ, or if any shared
+            alias has a mismatched ref-spec.
+    """
+    # Condition 1: alias uniqueness within .kanon.  A list (not a set) is
+    # supplied so a duplicate alias is detectable here rather than silently
+    # collapsed.
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for alias in kanon_aliases:
+        if alias in seen and alias not in duplicates:
+            duplicates.append(alias)
+        seen.add(alias)
+    if duplicates:
+        raise LockfileConsistencyError(
+            f"ERROR: duplicate source alias in .kanon: {', '.join(sorted(duplicates))}.\n"
+            f"  Each source alias in .kanon must be unique; the alias keys the entry "
+            f"in .kanon.lock.\n"
+            f"  Remediation: rename the conflicting KANON_SOURCE_<alias>_* declarations "
+            f"in .kanon so every alias is distinct, then re-run 'kanon install'."
+        )
+
+    # Condition 2: alias-set parity between .kanon and .kanon.lock.
+    kanon_alias_set = set(kanon_aliases)
+    lock_alias_set = {source.alias for source in lockfile.sources}
+
+    missing_in_lock = sorted(kanon_alias_set - lock_alias_set)
+    orphaned_in_lock = sorted(lock_alias_set - kanon_alias_set)
+    if missing_in_lock or orphaned_in_lock:
+        raise LockfileConsistencyError(
+            f"ERROR: .kanon and .kanon.lock alias sets differ.\n"
+            f"  Declared in .kanon but missing from .kanon.lock: "
+            f"{', '.join(missing_in_lock) if missing_in_lock else '(none)'}\n"
+            f"  Present in .kanon.lock but not declared in .kanon: "
+            f"{', '.join(orphaned_in_lock) if orphaned_in_lock else '(none)'}\n"
+            f"  Remediation: run 'kanon install' to reconcile .kanon.lock with the "
+            f"current .kanon declarations."
+        )
+
+    # Condition 3: per-alias ref-spec parity for every shared alias.
+    mismatches: list[str] = []
+    for source in lockfile.sources:
+        declared_ref_spec = kanon_ref_specs[source.alias]
+        if source.ref_spec != declared_ref_spec:
+            mismatches.append(
+                f"    alias {source.alias!r}: .kanon revision={declared_ref_spec!r} "
+                f"!= .kanon.lock ref_spec={source.ref_spec!r}"
+            )
+    if mismatches:
+        joined = "\n".join(sorted(mismatches))
+        raise LockfileConsistencyError(
+            f"ERROR: .kanon and .kanon.lock ref-specs differ for one or more aliases.\n"
+            f"{joined}\n"
+            f"  Remediation: run 'kanon install' to re-resolve and rewrite .kanon.lock "
+            f"with the current .kanon revisions."
+        )

@@ -7,6 +7,24 @@ scattered across source files.
 import os
 import re
 
+
+def _env_int(var: str, default: int) -> int:
+    """Read *var* from the environment and return it as an integer.
+
+    Returns *default* when the variable is unset (absent from the environment).
+    Raises ``SystemExit`` with a clear, actionable message naming the offending
+    variable when the value is present but cannot be parsed as an integer
+    (including an empty string).
+    """
+    raw = os.environ.get(var)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise SystemExit(f"ERROR: {var} must be an integer; got {raw!r}")
+
+
 # -- Exit codes --
 # Reserved exit code for deprecated-invocation paths (e.g. kanon bootstrap).
 # 0 = success, 1 = runtime/usage error, 2 = argparse usage error, 3 = deprecated invocation.
@@ -103,22 +121,12 @@ KANON_COMPLETION_CACHE_DIR = "completion-cache"
 # Number of recent lines to display from the completion-errors log during
 # `kanon doctor` subcheck 7. Overridable via the
 # KANON_COMPLETION_ERRORS_REPORT_LIMIT environment variable.
-_raw_completion_errors_limit = os.environ.get("KANON_COMPLETION_ERRORS_REPORT_LIMIT")
-if _raw_completion_errors_limit is not None:
-    try:
-        KANON_COMPLETION_ERRORS_REPORT_LIMIT: int = int(_raw_completion_errors_limit)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_COMPLETION_ERRORS_REPORT_LIMIT must be a positive integer; "
-            f"got {_raw_completion_errors_limit!r}"
-        )
-    if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_COMPLETION_ERRORS_REPORT_LIMIT must be a positive integer; "
-            f"got {KANON_COMPLETION_ERRORS_REPORT_LIMIT}"
-        )
-else:
-    KANON_COMPLETION_ERRORS_REPORT_LIMIT = 5
+KANON_COMPLETION_ERRORS_REPORT_LIMIT: int = _env_int("KANON_COMPLETION_ERRORS_REPORT_LIMIT", 5)
+if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_COMPLETION_ERRORS_REPORT_LIMIT must be a positive integer; "
+        f"got {KANON_COMPLETION_ERRORS_REPORT_LIMIT}"
+    )
 
 # Name of the environment variable that specifies the kanon cache directory.
 # The cache directory holds the completion-errors log and other cache files
@@ -199,81 +207,40 @@ KANON_CACHE_DIR_MODE = 0o700
 # Age threshold in days for the cache prune operation (subcheck 10).
 # Files whose atime is older than this many days are removed by
 # 'kanon doctor --prune-cache'. Overridable via KANON_CACHE_PRUNE_AGE_DAYS.
-_raw_cache_prune_age_days = os.environ.get("KANON_CACHE_PRUNE_AGE_DAYS")
-if _raw_cache_prune_age_days is not None:
-    try:
-        KANON_CACHE_PRUNE_AGE_DAYS: int = int(_raw_cache_prune_age_days)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {_raw_cache_prune_age_days!r}"
-        )
-    if KANON_CACHE_PRUNE_AGE_DAYS <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {KANON_CACHE_PRUNE_AGE_DAYS}"
-        )
-else:
-    KANON_CACHE_PRUNE_AGE_DAYS = 30
+KANON_CACHE_PRUNE_AGE_DAYS: int = _env_int("KANON_CACHE_PRUNE_AGE_DAYS", 30)
+if KANON_CACHE_PRUNE_AGE_DAYS <= 0:
+    raise SystemExit(f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {KANON_CACHE_PRUNE_AGE_DAYS}")
 
 # Maximum directory depth for the stale install-lock scan (subcheck 10).
 # The scan walks .kanon-data/.kanon-install.lock files under the current
 # working directory but stops at this depth to bound filesystem traversal.
 # Overridable via KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH.
-_raw_stale_lock_scan_max_depth = os.environ.get("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH")
-if _raw_stale_lock_scan_max_depth is not None:
-    try:
-        KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH: int = int(_raw_stale_lock_scan_max_depth)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer; "
-            f"got {_raw_stale_lock_scan_max_depth!r}"
-        )
-    if KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer; "
-            f"got {KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH}"
-        )
-else:
-    KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH = 4
+KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH: int = _env_int("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", 4)
+if KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH must be a positive integer; "
+        f"got {KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH}"
+    )
 
 # Age threshold in hours beyond which a .kanon-install.lock file is considered
 # stale (subcheck 10 advisory). Doctor does NOT delete stale locks; it only
 # reports them. Overridable via KANON_DOCTOR_STALE_LOCK_AGE_HOURS.
-_raw_stale_lock_age_hours = os.environ.get("KANON_DOCTOR_STALE_LOCK_AGE_HOURS")
-if _raw_stale_lock_age_hours is not None:
-    try:
-        KANON_DOCTOR_STALE_LOCK_AGE_HOURS: int = int(_raw_stale_lock_age_hours)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; got {_raw_stale_lock_age_hours!r}"
-        )
-    if KANON_DOCTOR_STALE_LOCK_AGE_HOURS <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; "
-            f"got {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}"
-        )
-else:
-    KANON_DOCTOR_STALE_LOCK_AGE_HOURS = 1
+KANON_DOCTOR_STALE_LOCK_AGE_HOURS: int = _env_int("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", 1)
+if KANON_DOCTOR_STALE_LOCK_AGE_HOURS <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; got {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}"
+    )
 
 # Maximum number of characters from the first line of stderr to include in a
 # remote-reachability warning finding (subcheck 11). Keeps error output bounded
 # when a git server returns a long diagnostics message.
 # Overridable via the KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS environment variable.
-_raw_remote_stderr_preview = os.environ.get("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS")
-if _raw_remote_stderr_preview is not None:
-    try:
-        KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS: int = int(_raw_remote_stderr_preview)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS must be a positive integer; "
-            f"got {_raw_remote_stderr_preview!r}"
-        )
-    if KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS must be a positive integer; "
-            f"got {KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS}"
-        )
-else:
-    KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS = 160
+KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS: int = _env_int("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", 160)
+if KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS must be a positive integer; "
+        f"got {KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS}"
+    )
 
 # Environment variable name for the git ls-remote / resolve timeout (seconds).
 # Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
@@ -328,21 +295,13 @@ KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE = RECOMMENDED_CHAR_RE
 # requires the operator to supply a filter (positional substring, --regex,
 # --max-depth 0) or override with --no-filter-required.
 # Overridable via the KANON_TREE_NO_FILTER_THRESHOLD environment variable.
-_raw_threshold = os.environ.get("KANON_TREE_NO_FILTER_THRESHOLD")
-if _raw_threshold is not None:
-    KANON_TREE_NO_FILTER_THRESHOLD: int = int(_raw_threshold)
-else:
-    KANON_TREE_NO_FILTER_THRESHOLD = 20
+KANON_TREE_NO_FILTER_THRESHOLD: int = _env_int("KANON_TREE_NO_FILTER_THRESHOLD", 20)
 
 # -- kanon list --all-versions cap --
 # Maximum number of catalog versions walked when --all-versions is given and
 # neither --limit N nor --no-limit is explicitly passed.
 # Overridable via the KANON_LIST_LIMIT environment variable.
-_raw_list_limit = os.environ.get("KANON_LIST_LIMIT")
-if _raw_list_limit is not None:
-    KANON_LIST_LIMIT: int = int(_raw_list_limit)
-else:
-    KANON_LIST_LIMIT = 50
+KANON_LIST_LIMIT: int = _env_int("KANON_LIST_LIMIT", 50)
 
 # -- kanon add --
 # Environment variable name for the destination .kanon file path.
@@ -418,11 +377,7 @@ KANON_WHY_FORMAT_JSON = "json"
 # Indentation level (in spaces) used by json.dumps when --format json is selected.
 # Controls pretty-print depth without requiring source edits.
 # Overridable via the KANON_OUTDATED_JSON_INDENT environment variable.
-_raw_json_indent = os.environ.get("KANON_OUTDATED_JSON_INDENT")
-if _raw_json_indent is not None:
-    KANON_OUTDATED_JSON_INDENT: int = int(_raw_json_indent)
-else:
-    KANON_OUTDATED_JSON_INDENT = 2
+KANON_OUTDATED_JSON_INDENT: int = _env_int("KANON_OUTDATED_JSON_INDENT", 2)
 
 # -- Branch-pinned SHA truncation (spec Section 4.4) --
 # Number of leading hex characters used for the short-SHA display in the
@@ -450,16 +405,9 @@ KANON_WHY_FORMAT_DEFAULT = "text"
 # Indentation level (in spaces) used by json.dumps when --format json is selected.
 # Controls pretty-print depth without requiring source edits.
 # Overridable via the KANON_WHY_JSON_INDENT environment variable.
-_raw_why_json_indent = os.environ.get("KANON_WHY_JSON_INDENT")
-if _raw_why_json_indent is not None:
-    try:
-        KANON_WHY_JSON_INDENT: int = int(_raw_why_json_indent)
-    except ValueError:
-        raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {_raw_why_json_indent!r}")
-    if KANON_WHY_JSON_INDENT < 0:
-        raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {KANON_WHY_JSON_INDENT}")
-else:
-    KANON_WHY_JSON_INDENT = 2
+KANON_WHY_JSON_INDENT: int = _env_int("KANON_WHY_JSON_INDENT", 2)
+if KANON_WHY_JSON_INDENT < 0:
+    raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {KANON_WHY_JSON_INDENT}")
 
 # -- kanon catalog audit --
 # The five valid subset names for the --check flag of kanon catalog audit.
@@ -478,22 +426,12 @@ KANON_CATALOG_AUDIT_VALID_CHECKS: frozenset[str] = frozenset(
 # Cache TTL (in seconds) for cloned catalog-audit target repos.
 # A cached clone is reused if its mtime is within this many seconds of now.
 # Overridable via the KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS environment variable.
-_raw_catalog_audit_cache_ttl = os.environ.get("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS")
-if _raw_catalog_audit_cache_ttl is not None:
-    try:
-        KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS: int = int(_raw_catalog_audit_cache_ttl)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS must be a positive integer; "
-            f"got {_raw_catalog_audit_cache_ttl!r}"
-        )
-    if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS must be a positive integer; "
-            f"got {KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS}"
-        )
-else:
-    KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS = 3600
+KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS: int = _env_int("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", 3600)
+if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS must be a positive integer; "
+        f"got {KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS}"
+    )
 
 # Subdirectory name under KANON_CACHE_DIR for catalog-audit cloned repos.
 # Full path: ${KANON_CACHE_DIR}/catalog-audit/<sha256-of-canonicalized-url-at-ref>/
@@ -536,21 +474,12 @@ KANON_CATALOG_METADATA_RECOMMENDED_FIELDS: tuple[str, ...] = (
 # first KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT findings are emitted per-tag;
 # a single additional summary WARN names the remaining count.
 # Overridable via the KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT environment variable.
-_raw_tag_report_limit = os.environ.get("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT")
-if _raw_tag_report_limit is not None:
-    try:
-        KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT: int = int(_raw_tag_report_limit)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT must be a positive integer; got {_raw_tag_report_limit!r}"
-        )
-    if KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT <= 0:
-        raise SystemExit(
-            f"ERROR: KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT must be a positive integer; "
-            f"got {KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT}"
-        )
-else:
-    KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT = 50
+KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT: int = _env_int("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", 50)
+if KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT must be a positive integer; "
+        f"got {KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT}"
+    )
 
 # Summary-text template for the tag-format check when the number of non-PEP-440
 # tags exceeds KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT.
@@ -603,37 +532,15 @@ WHY_SCOPE_TRANSITIVE = "transitive"
 # Maximum Levenshtein edit distance for a candidate to be considered a close
 # match during not-found suggestion. Only candidates with distance <= this
 # value are eligible. Overridable via the KANON_WHY_SUGGEST_MAX_DISTANCE env var.
-_raw_why_suggest_max_distance = os.environ.get("KANON_WHY_SUGGEST_MAX_DISTANCE")
-if _raw_why_suggest_max_distance is not None:
-    try:
-        KANON_WHY_SUGGEST_MAX_DISTANCE: int = int(_raw_why_suggest_max_distance)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; "
-            f"got {_raw_why_suggest_max_distance!r}"
-        )
-    if KANON_WHY_SUGGEST_MAX_DISTANCE < 0:
-        raise SystemExit(
-            f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; "
-            f"got {KANON_WHY_SUGGEST_MAX_DISTANCE}"
-        )
-else:
-    KANON_WHY_SUGGEST_MAX_DISTANCE = 3
+KANON_WHY_SUGGEST_MAX_DISTANCE: int = _env_int("KANON_WHY_SUGGEST_MAX_DISTANCE", 3)
+if KANON_WHY_SUGGEST_MAX_DISTANCE < 0:
+    raise SystemExit(
+        f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; got {KANON_WHY_SUGGEST_MAX_DISTANCE}"
+    )
 
 # Maximum number of close-match suggestions to include in the not-found error
 # message. Suggestions are sorted ascending by (distance, value) and truncated
 # to this count. Overridable via the KANON_WHY_SUGGEST_TOP_N env var.
-_raw_why_suggest_top_n = os.environ.get("KANON_WHY_SUGGEST_TOP_N")
-if _raw_why_suggest_top_n is not None:
-    try:
-        KANON_WHY_SUGGEST_TOP_N: int = int(_raw_why_suggest_top_n)
-    except ValueError:
-        raise SystemExit(
-            f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {_raw_why_suggest_top_n!r}"
-        )
-    if KANON_WHY_SUGGEST_TOP_N < 0:
-        raise SystemExit(
-            f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {KANON_WHY_SUGGEST_TOP_N}"
-        )
-else:
-    KANON_WHY_SUGGEST_TOP_N = 3
+KANON_WHY_SUGGEST_TOP_N: int = _env_int("KANON_WHY_SUGGEST_TOP_N", 3)
+if KANON_WHY_SUGGEST_TOP_N < 0:
+    raise SystemExit(f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {KANON_WHY_SUGGEST_TOP_N}")

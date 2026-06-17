@@ -279,22 +279,16 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = ">=1.0.0"\n'
+            'ref_spec = ">=1.0.0"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./foo"\n'
@@ -389,30 +383,25 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             f"url = {foo_url!r}\n"
-            'revision_spec = ">=1.0.0"\n'
+            'ref_spec = ">=1.0.0"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./foo"\n'
             "\n"
             "[[sources]]\n"
+            'alias = "MYLIB"\n'
             'name = "MYLIB"\n'
             f"url = {mylib_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./mylib"\n'
@@ -566,22 +555,16 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "QUX"\n'
             'name = "QUX"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = ">=1.0.0,<1.1"\n'
+            'ref_spec = ">=1.0.0,<1.1"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./qux"\n'

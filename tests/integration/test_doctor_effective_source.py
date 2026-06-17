@@ -19,6 +19,7 @@ import pytest
 
 from tests.conftest import (
     write_kanon_doctor_integration as _write_kanon,
+    write_lockfile_doctor_integration as _write_lockfile,
 )
 
 
@@ -157,80 +158,81 @@ class TestDoctorEffectiveSourceCliWins:
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-003: Lockfile [catalog].source is used when no CLI flag and no env var.
+# AC-FUNC-003: A schema-v4 lockfile no longer contributes a catalog source.
+#
+# Schema v4 (spec Section 5.2 / FR-7) removed the lockfile [catalog] block, so
+# the lockfile no longer participates in the effective-source precedence chain.
+# The chain is now: --catalog-source CLI flag -> KANON_CATALOG_SOURCE env var ->
+# none. When a v4 lockfile is the only thing present (no CLI flag, no env var),
+# the effective source is "(none configured)" -- the lockfile does NOT supply
+# a catalog source the way the removed [catalog].source tier used to.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-class TestDoctorEffectiveSourceLockfileOnly:
-    """kanon doctor uses lockfile [catalog].source when CLI flag and env var are absent."""
+class TestDoctorEffectiveSourceLockfilePresent:
+    """A present v4 lockfile does not contribute a catalog source to provenance."""
 
-    def _write_lockfile_with_catalog(
-        self,
-        directory: pathlib.Path,
-        kanon_hash_val: str,
-        catalog_source: str,
-    ) -> pathlib.Path:
-        """Write a .kanon.lock file with a specific catalog source value."""
-        from kanon_cli.core.lockfile import (
-            CatalogBlock,
-            Lockfile,
-            SourceEntry,
-            write_lockfile,
+    def _write_v4_lockfile(self, directory: pathlib.Path, kanon_hash_val: str) -> pathlib.Path:
+        """Write a schema-v4 .kanon.lock with one source and no [catalog] block."""
+        return _write_lockfile(
+            directory,
+            kanon_hash_val=kanon_hash_val,
+            source_name="src",
+            url="https://example.com/org/repo.git",
+            revision_spec="main",
+            resolved_sha="a" * 40,
         )
 
-        lockfile = Lockfile(
-            schema_version=1,
-            generated_at="2024-01-01T00:00:00Z",
-            generator="kanon-test",
-            kanon_hash=kanon_hash_val,
-            catalog=CatalogBlock(
-                source=catalog_source,
-                url="https://example.com/org/catalog.git",
-                revision_spec="main",
-                resolved_ref="main",
-                resolved_sha="a" * 40,
-            ),
-            sources=[
-                SourceEntry(
-                    name="src",
-                    url="https://example.com/org/repo.git",
-                    revision_spec="main",
-                    resolved_ref="main",
-                    resolved_sha="a" * 40,
-                    path="repo-specs/meta.xml",
-                )
-            ],
-        )
-        lock_path = directory / ".kanon.lock"
-        write_lockfile(lockfile, lock_path)
-        return lock_path
+    def test_lockfile_present_reports_none_configured(self, tmp_path: pathlib.Path) -> None:
+        """With only a v4 lockfile (no CLI flag, no env var), doctor reports none configured.
 
-    def test_lockfile_catalog_source_in_stdout(self, tmp_path: pathlib.Path) -> None:
-        """Stdout contains the lockfile [catalog].source value."""
+        Under schema v4 the lockfile carries no catalog source, so it cannot stand
+        in for the removed [catalog].source tier: the effective source is none.
+        """
         from kanon_cli.core.kanon_hash import kanon_hash
 
-        lock_value = "https://lock.example.com/repo.git@v1.0.0"
         kanon_file = _write_minimal_kanon(tmp_path)
         real_hash = kanon_hash(kanon_file)
-        self._write_lockfile_with_catalog(tmp_path, real_hash, lock_value)
+        self._write_v4_lockfile(tmp_path, real_hash)
 
         result = _run_kanon_doctor(kanon_file)
 
-        assert lock_value in result.stdout
+        assert "(none configured)" in result.stdout
 
-    def test_lockfile_provenance_suffix_in_stdout(self, tmp_path: pathlib.Path) -> None:
-        """Stdout contains the lockfile provenance suffix."""
+    def test_lockfile_present_no_lockfile_catalog_provenance(self, tmp_path: pathlib.Path) -> None:
+        """The removed lockfile-catalog provenance suffix never appears with a v4 lock."""
         from kanon_cli.core.kanon_hash import kanon_hash
 
-        lock_value = "https://lock.example.com/repo.git@v1.0.0"
         kanon_file = _write_minimal_kanon(tmp_path)
         real_hash = kanon_hash(kanon_file)
-        self._write_lockfile_with_catalog(tmp_path, real_hash, lock_value)
+        self._write_v4_lockfile(tmp_path, real_hash)
 
         result = _run_kanon_doctor(kanon_file)
 
-        assert "(from .kanon.lock [catalog].source)" in result.stdout
+        assert "(from .kanon.lock [catalog].source)" not in result.stdout
+
+    def test_env_var_wins_over_present_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """KANON_CATALOG_SOURCE supplies the effective source even when a v4 lockfile is present.
+
+        Confirms the lockfile does not pre-empt the env-var tier: with a v4 lock on
+        disk and KANON_CATALOG_SOURCE set, the env-var value (and its provenance
+        suffix) is what doctor reports.
+        """
+        from kanon_cli.core.kanon_hash import kanon_hash
+
+        env_value = "https://env.example.com/repo.git@main"
+        kanon_file = _write_minimal_kanon(tmp_path)
+        real_hash = kanon_hash(kanon_file)
+        self._write_v4_lockfile(tmp_path, real_hash)
+
+        result = _run_kanon_doctor(
+            kanon_file,
+            extra_env={"KANON_CATALOG_SOURCE": env_value},
+        )
+
+        assert env_value in result.stdout
+        assert "(from KANON_CATALOG_SOURCE env var)" in result.stdout
 
 
 # ---------------------------------------------------------------------------

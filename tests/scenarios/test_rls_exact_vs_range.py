@@ -183,14 +183,12 @@ def _advance_manifest_branch(work_root: pathlib.Path, manifest_bare: pathlib.Pat
 def _write_kanon(
     project_dir: pathlib.Path,
     sources: list[tuple[str, pathlib.Path, str]],
-    catalog_bare: pathlib.Path,
 ) -> pathlib.Path:
     """Write a .kanon file declaring the given sources and return its path.
 
     Args:
         project_dir: Directory where .kanon is written.
         sources: List of ``(name, manifest_bare_path, revision_spec)`` triples.
-        catalog_bare: Bare manifest repo used as the catalog source.
 
     Returns:
         Path to the written .kanon file.
@@ -213,15 +211,20 @@ def _write_kanon(
 
 def _run_kanon_install(
     project_dir: pathlib.Path,
-    catalog_uri: str,
     *,
     refresh_lock_source: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Invoke ``kanon install`` as a subprocess and return the result.
 
+    ``kanon install`` is hermetic (schema v4 / FR-7): it installs exactly the
+    sources declared in ``.kanon`` and pinned in ``.kanon.lock`` and never resolves
+    a remote catalog. The subprocess is therefore run with ``KANON_CATALOG_SOURCE``
+    scrubbed and no ``--catalog-source`` flag; supplying either would be rejected
+    fail-fast by ``HermeticInstallCatalogSourceError``. The ``--refresh-lock-source``
+    path is likewise hermetic and needs no catalog source.
+
     Args:
         project_dir: Working directory for the kanon invocation.
-        catalog_uri: Catalog source URI passed via KANON_CATALOG_SOURCE.
         refresh_lock_source: When set, passes ``--refresh-lock-source <name>``.
 
     Returns:
@@ -234,9 +237,9 @@ def _run_kanon_install(
         cmd += ["--refresh-lock-source", refresh_lock_source]
     env = {
         **os.environ,
-        "KANON_CATALOG_SOURCE": catalog_uri,
         "KANON_ALLOW_INSECURE_REMOTES": "1",
     }
+    env.pop("KANON_CATALOG_SOURCE", None)
     return subprocess.run(
         cmd,
         cwd=str(project_dir),
@@ -307,7 +310,6 @@ class TestRlsExactVsRange:
         """
         _, rangesrc_bare = _build_source_fixture(tmp_path / "rangesrc-fix", "rangesrc")
         _, exactsrc_bare = _build_source_fixture(tmp_path / "exactsrc-fix", "exactsrc")
-        _, catalog_bare = _build_source_fixture(tmp_path / "catalog-fix", "catalog")
 
         # Record the 1.0.0 SHAs from the manifest bare repos.
         rangesrc_sha_v1 = _sha_from_manifest_bare(rangesrc_bare, "refs/tags/1.0.0")
@@ -320,12 +322,10 @@ class TestRlsExactVsRange:
                 ("rangesrc", rangesrc_bare, ">=1.0.0"),
                 ("exactsrc", exactsrc_bare, "==1.0.0"),
             ],
-            catalog_bare=catalog_bare,
         )
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         # Baseline install -- writes lockfile with both sources at 1.0.0.
-        baseline = _run_kanon_install(project_dir, catalog_uri)
+        baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, "baseline install")
         lock_path = project_dir / ".kanon.lock"
         assert lock_path.exists(), "baseline install must write a lockfile"
@@ -343,7 +343,7 @@ class TestRlsExactVsRange:
         _advance_manifest_bare(scratch, exactsrc_bare, "1.1.0")
 
         # Run --refresh-lock-source rangesrc.  Range spec >=1.0.0 should advance to 1.1.0.
-        refresh_result = _run_kanon_install(project_dir, catalog_uri, refresh_lock_source="rangesrc")
+        refresh_result = _run_kanon_install(project_dir, refresh_lock_source="rangesrc")
         _assert_install_ok(refresh_result, "--refresh-lock-source rangesrc")
 
         sha_rangesrc_after = _resolved_sha(lock_path, "rangesrc")
@@ -379,7 +379,6 @@ class TestRlsExactVsRange:
         """
         _, exactsrc_bare = _build_source_fixture(tmp_path / "exactsrc-fix", "exactsrc")
         _, other_bare = _build_source_fixture(tmp_path / "other-fix", "other")
-        _, catalog_bare = _build_source_fixture(tmp_path / "catalog-fix", "catalog")
 
         exactsrc_sha_v1 = _sha_from_manifest_bare(exactsrc_bare, "refs/tags/1.0.0")
 
@@ -391,12 +390,10 @@ class TestRlsExactVsRange:
                 ("exactsrc", exactsrc_bare, "==1.0.0"),
                 ("other", other_bare, ">=1.0.0"),
             ],
-            catalog_bare=catalog_bare,
         )
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         # Baseline install.
-        baseline = _run_kanon_install(project_dir, catalog_uri)
+        baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, "baseline install")
         lock_path = project_dir / ".kanon.lock"
         assert lock_path.exists(), "baseline install must write a lockfile"
@@ -413,7 +410,7 @@ class TestRlsExactVsRange:
         _advance_manifest_bare(scratch, other_bare, "1.1.0")
 
         # Run --refresh-lock-source exactsrc.  Exact pin ==1.0.0 must stay at 1.0.0.
-        refresh_result = _run_kanon_install(project_dir, catalog_uri, refresh_lock_source="exactsrc")
+        refresh_result = _run_kanon_install(project_dir, refresh_lock_source="exactsrc")
         _assert_install_ok(refresh_result, "--refresh-lock-source exactsrc")
 
         sha_exact_after = _resolved_sha(lock_path, "exactsrc")
@@ -449,7 +446,6 @@ class TestRlsExactVsRange:
         """
         _, branchsrc_bare = _build_source_fixture(tmp_path / "branchsrc-fix", "branchsrc")
         _, exact_bare = _build_source_fixture(tmp_path / "exact-fix", "exact")
-        _, catalog_bare = _build_source_fixture(tmp_path / "catalog-fix", "catalog")
 
         # Capture the branch tip SHA before advancing.
         sha_branch_v1 = _sha_from_manifest_bare(branchsrc_bare, "HEAD")
@@ -462,12 +458,10 @@ class TestRlsExactVsRange:
                 ("branchsrc", branchsrc_bare, branch_ref),
                 ("exact", exact_bare, "==1.0.0"),
             ],
-            catalog_bare=catalog_bare,
         )
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         # Baseline install.
-        baseline = _run_kanon_install(project_dir, catalog_uri)
+        baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, f"baseline install (branch_ref={branch_ref!r})")
         lock_path = project_dir / ".kanon.lock"
         assert lock_path.exists(), "baseline install must write a lockfile"
@@ -483,7 +477,7 @@ class TestRlsExactVsRange:
         sha_branch_v2 = _advance_manifest_branch(scratch, branchsrc_bare)
 
         # Run --refresh-lock-source branchsrc.  Branch tip must advance.
-        refresh_result = _run_kanon_install(project_dir, catalog_uri, refresh_lock_source="branchsrc")
+        refresh_result = _run_kanon_install(project_dir, refresh_lock_source="branchsrc")
         _assert_install_ok(refresh_result, f"--refresh-lock-source branchsrc (branch_ref={branch_ref!r})")
 
         sha_branch_after = _resolved_sha(lock_path, "branchsrc")

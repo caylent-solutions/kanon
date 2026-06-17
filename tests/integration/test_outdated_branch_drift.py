@@ -252,22 +252,16 @@ class TestOutdatedBranchDrift:
         # Write a lockfile with SHA A (the older commit)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "MYLIB"\n'
             'name = "MYLIB"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./mylib"\n'
@@ -330,22 +324,16 @@ class TestOutdatedBranchDrift:
         # Write lockfile with the current HEAD SHA (no drift)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "STABLE"\n'
             'name = "STABLE"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_b}"\n'
             'path = "./stable"\n'
@@ -446,22 +434,16 @@ class TestOutdatedBranchDrift:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "EQUAL"\n'
             'name = "EQUAL"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./equal"\n'

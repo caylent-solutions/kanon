@@ -24,7 +24,6 @@ import pytest
 
 from kanon_cli.core.lockfile import read_lockfile
 from tests.scenarios.test_lockfile_lifecycle import (
-    _build_catalog_bare,
     _build_manifest_repo_with_tags,
     _run_install,
 )
@@ -94,19 +93,18 @@ class TestRcReconcile:
 
         url_a = _build_source(fixtures, "alpha")
         url_b = _build_source(fixtures, "beta")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
         lock_path = project / ".kanon.lock"
 
-        # Install A only -> lock = {ALPHA}.
+        # Install A only -> lock = {ALPHA}.  install is hermetic: the .kanon is
+        # written directly and install needs no catalog source.
         _write_kanon_two_optional(project, [("ALPHA", url_a, "==1.0.0")])
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         assert sorted(e.name for e in read_lockfile(lock_path).sources) == ["ALPHA"]
 
         # Remove A, add B (orphan + addition).
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
-        r2 = _run_install(project, catalog_uri)
+        r2 = _run_install(project)
         assert r2.returncode == 0, (
             f"reconcile install must succeed (no BUG/traceback):\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
@@ -120,7 +118,7 @@ class TestRcReconcile:
         lock_after_reconcile = lock_path.read_bytes()
 
         # Second plain install: CONSISTENT, byte-stable lockfile.
-        r3 = _run_install(project, catalog_uri)
+        r3 = _run_install(project)
         assert r3.returncode == 0, f"second install failed:\nstdout={r3.stdout!r}\nstderr={r3.stderr!r}"
         assert lock_path.read_bytes() == lock_after_reconcile, (
             "second plain install must be idempotent (CONSISTENT replay); lockfile must not change"
@@ -141,19 +139,17 @@ class TestRcReconcile:
 
         url_a = _build_source(fixtures, "alpha")
         url_b = _build_source(fixtures, "beta")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
         lock_path = project / ".kanon.lock"
 
         _write_kanon_two_optional(project, [("ALPHA", url_a, "==1.0.0")])
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         lock_before = lock_path.read_bytes()
 
         # Drift: remove ALPHA, add BETA.
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
 
-        r2 = _run_install(project, catalog_uri, strict_lock=True)
+        r2 = _run_install(project, strict_lock=True)
         assert r2.returncode != 0, f"--strict-lock must error on drift.\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         combined = r2.stdout + r2.stderr
         assert "BUG:" not in combined, f"--strict-lock must not emit an internal BUG: line.\n{combined!r}"

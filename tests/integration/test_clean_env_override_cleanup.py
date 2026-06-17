@@ -56,7 +56,6 @@ def _write_kanonenv(
     return kanonenv.resolve()
 
 
-_FAKE_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 _FAKE_SHA40 = "a" * 40
 _FAKE_RESOLVED_REF = "refs/heads/main"
 
@@ -106,7 +105,7 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv_install,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=_FAKE_CATALOG_SOURCE,
+                catalog_source=None,
             )
 
         # Verify the lockfile records marketplace_registered=true.
@@ -157,7 +156,7 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=_FAKE_CATALOG_SOURCE,
+                catalog_source=None,
             )
 
         lf = read_lockfile(tmp_path / ".kanon.lock")
@@ -194,27 +193,30 @@ class TestCleanBackCompatOldLockfile:
             "clean with no lockfile and KANON_MARKETPLACE_INSTALL=true must still call uninstall"
         )
 
-    def test_clean_with_old_lockfile_missing_marketplace_field_falls_back_to_kanon_flag(
+    def test_clean_with_lockfile_missing_marketplace_field_falls_back_to_kanon_flag(
         self, tmp_path: pathlib.Path
     ) -> None:
-        """AC-8: a lockfile that predates marketplace_registered falls back to .kanon flag (no crash)."""
+        """AC-8: a v4 lockfile that omits marketplace_registered falls back to .kanon flag (no crash)."""
         mp_dir = tmp_path / ".claude-mp"
         mp_dir.mkdir()
 
-        # Write an old-style lockfile (schema v1, no marketplace_registered field).
+        # Write a v4 lockfile that omits the marketplace_registered field; the
+        # reader defaults it to False, so clean falls back to the .kanon flag.
         old_lockfile = tmp_path / ".kanon.lock"
         old_lockfile.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2025-01-01T00:00:00Z"\n'
-            'generator = "kanon-cli/1.0.0"\n'
+            'generator = "kanon-cli/2.0.0"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "https://example.com/catalog.git@main"\n'
-            'url = "https://example.com/catalog.git"\n'
-            'revision_spec = "main"\n'
+            "[[sources]]\n"
+            'alias = "primary"\n'
+            'name = "primary"\n'
+            'url = "https://example.com/primary.git"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{"a" * 40}"\n'
+            'path = "meta.xml"\n'
         )
 
         kanonenv = _write_kanonenv(tmp_path, marketplace_install=True, marketplace_dir=mp_dir)
@@ -229,26 +231,28 @@ class TestCleanBackCompatOldLockfile:
             clean(kanonenv)
 
         assert len(uninstall_calls) == 1, (
-            "clean with old lockfile (no marketplace_registered) and KANON_MARKETPLACE_INSTALL=true "
+            "clean with a lockfile that omits marketplace_registered and KANON_MARKETPLACE_INSTALL=true "
             "must fall back to .kanon flag and call uninstall"
         )
 
-    def test_clean_with_old_lockfile_and_kanon_flag_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
-        """AC-8: old lockfile + .kanon KANON_MARKETPLACE_INSTALL=false => no uninstall."""
-        # Write an old-style lockfile (schema v1, no marketplace_registered field).
+    def test_clean_with_lockfile_and_kanon_flag_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
+        """AC-8: lockfile omitting marketplace_registered + .kanon KANON_MARKETPLACE_INSTALL=false => no uninstall."""
+        # Write a v4 lockfile that omits the marketplace_registered field.
         old_lockfile = tmp_path / ".kanon.lock"
         old_lockfile.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2025-01-01T00:00:00Z"\n'
-            'generator = "kanon-cli/1.0.0"\n'
+            'generator = "kanon-cli/2.0.0"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "https://example.com/catalog.git@main"\n'
-            'url = "https://example.com/catalog.git"\n'
-            'revision_spec = "main"\n'
+            "[[sources]]\n"
+            'alias = "primary"\n'
+            'name = "primary"\n'
+            'url = "https://example.com/primary.git"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{"a" * 40}"\n'
+            'path = "meta.xml"\n'
         )
 
         kanonenv = _write_kanonenv(tmp_path, marketplace_install=False)
@@ -262,7 +266,7 @@ class TestCleanBackCompatOldLockfile:
             clean(kanonenv)
 
         assert len(uninstall_calls) == 0, (
-            "clean with old lockfile (no marketplace_registered) and KANON_MARKETPLACE_INSTALL=false "
+            "clean with a lockfile that omits marketplace_registered and KANON_MARKETPLACE_INSTALL=false "
             "must skip uninstall"
         )
 

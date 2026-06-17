@@ -19,18 +19,17 @@ import pytest
 
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
-    CatalogSourceMismatchError,
+    HermeticInstallCatalogSourceError,
     InstallClassification,
     InstallError,
     InstallState,
     KanonHashMismatchError,
     LockfileUnreachableShaError,
-    MissingCatalogSourceError,
     _RefResolution,
     _check_sha_reachable,
     _classify_install_state,
     _emit_install_state,
-    _resolve_catalog_source,
+    _reject_catalog_source_on_install,
     _resolve_ref_to_sha,
     install,
     read_lockfile_if_present,
@@ -75,27 +74,25 @@ def _write_kanon(directory: pathlib.Path, content: str = _KANON_SINGLE_SOURCE) -
 def _write_lockfile(
     directory: pathlib.Path,
     kanon_hash: str,
-    catalog_source: str = "https://git.example.com/catalog.git@main",
 ) -> pathlib.Path:
-    """Write a minimal valid .kanon.lock TOML file and return its path."""
+    """Write a minimal valid schema-v4 .kanon.lock TOML file and return its path.
+
+    The v4 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
+    """
     lock_path = directory / ".kanon.lock"
     content = f"""\
-schema_version = 1
+schema_version = 4
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{kanon_hash}"
-
-[catalog]
-source = "{catalog_source}"
-url = "https://git.example.com/catalog.git"
-revision_spec = "main"
-resolved_ref = "refs/heads/main"
-resolved_sha = "{_VALID_SHA40}"
+marketplace_registered = false
+marketplace_dir = ""
 
 [[sources]]
+alias = "alpha"
 name = "alpha"
 url = "https://git.example.com/alpha.git"
-revision_spec = "main"
+ref_spec = "main"
 resolved_ref = "refs/heads/main"
 resolved_sha = "{_VALID_SHA40}"
 path = "manifest.xml"
@@ -230,105 +227,54 @@ class TestExceptionHierarchy:
         assert "https://git.example.com/alpha.git" in msg
         assert "--refresh-lock-source" in msg
 
-    def test_catalog_source_mismatch_is_install_error(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://git.example.com/old.git@main",
-            cli_env_source="https://git.example.com/new.git@main",
-        )
+    def test_hermetic_install_catalog_source_error_is_install_error(self) -> None:
+        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
         assert isinstance(err, InstallError)
         msg = str(err)
-        assert "https://git.example.com/old.git@main" in msg
-        assert "https://git.example.com/new.git@main" in msg
-        assert "--refresh-lock" in msg
-
-    def test_missing_catalog_source_error_is_install_error(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert isinstance(err, InstallError)
-        msg = str(err)
-        assert "catalog source" in msg.lower()
-        assert "docs/catalogs-explained.md" in msg
+        assert "does not accept a catalog source" in msg
+        assert "the --catalog-source flag" in msg
 
 
 # ===========================================================================
-# AC-TEST-001: _resolve_catalog_source
+# Hermetic install: _reject_catalog_source_on_install (spec Section 5.2 / FR-7)
 # ===========================================================================
 
 
 @pytest.mark.unit
-class TestResolveCatalogSource:
-    """Verify the three-tier precedence rule (AC-FUNC-006)."""
+class TestRejectCatalogSourceOnInstall:
+    """kanon install is hermetic: a supplied catalog source is rejected fail-fast."""
 
-    def test_cli_wins_over_env(self) -> None:
-        """When both CLI and env are set, CLI arg wins over env var.
+    def test_cli_arg_rejected(self) -> None:
+        """A non-None cli_arg raises HermeticInstallCatalogSourceError naming the flag."""
+        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+            _reject_catalog_source_on_install(
+                cli_arg="https://cli.example.com/repo.git@main",
+                env_value=None,
+            )
+        assert "--catalog-source" in str(exc_info.value)
 
-        The lockfile source matches the CLI arg (no mismatch error).
-        """
-        cli_source = "https://cli.example.com/repo.git@main"
-        result = _resolve_catalog_source(
-            cli_arg=cli_source,
-            env_value="https://env.example.com/repo.git@main",
-            lockfile_catalog_source=cli_source,  # matches CLI -- no error
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == cli_source
-
-    def test_env_used_when_no_cli_arg(self) -> None:
-        """When only env var is set and lockfile agrees, env var is returned.
-
-        The lockfile source matches the env value (no mismatch error).
-        """
-        env_source = "https://env.example.com/repo.git@main"
-        result = _resolve_catalog_source(
-            cli_arg=None,
-            env_value=env_source,
-            lockfile_catalog_source=env_source,  # matches env -- no error
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == env_source
-
-    def test_lockfile_fallback_only_in_consistent_state(self) -> None:
-        """Lockfile fallback applies ONLY in the consistent state (AC-FUNC-006)."""
-        result = _resolve_catalog_source(
-            cli_arg=None,
-            env_value=None,
-            lockfile_catalog_source="https://lock.example.com/repo.git@main",
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == "https://lock.example.com/repo.git@main"
-
-    def test_lockfile_fallback_not_in_absent_state(self) -> None:
-        """Lockfile fallback must NOT be used in lockfile-absent state (AC-FUNC-006)."""
-        with pytest.raises(MissingCatalogSourceError):
-            _resolve_catalog_source(
+    def test_env_value_rejected(self) -> None:
+        """A set KANON_CATALOG_SOURCE env value raises HermeticInstallCatalogSourceError."""
+        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+            _reject_catalog_source_on_install(
                 cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
+                env_value="https://env.example.com/repo.git@main",
             )
+        assert "KANON_CATALOG_SOURCE" in str(exc_info.value)
 
-    def test_missing_all_sources_raises(self) -> None:
-        """AC-FUNC-007: all three unset -> MissingCatalogSourceError."""
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
+    def test_cli_arg_takes_precedence_in_origin_message(self) -> None:
+        """When both are set, the CLI flag is named as the origin."""
+        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+            _reject_catalog_source_on_install(
+                cli_arg="https://cli.example.com/repo.git@main",
+                env_value="https://env.example.com/repo.git@main",
             )
-        assert "catalog source" in str(exc_info.value).lower()
+        assert "--catalog-source" in str(exc_info.value)
 
-    def test_catalog_source_mismatch_raises(self) -> None:
-        """AC-FUNC-005: cli/env source differs from lockfile -> CatalogSourceMismatchError."""
-        with pytest.raises(CatalogSourceMismatchError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg="https://new.example.com/repo.git@main",
-                env_value=None,
-                lockfile_catalog_source="https://old.example.com/repo.git@main",
-                install_state=InstallState.LOCKFILE_CONSISTENT,
-            )
-        err = exc_info.value
-        assert "https://new.example.com/repo.git@main" in str(err)
-        assert "https://old.example.com/repo.git@main" in str(err)
+    def test_both_unset_is_accepted(self) -> None:
+        """When neither a CLI flag nor the env var is set, no error is raised (the happy path)."""
+        # Must not raise.
+        _reject_catalog_source_on_install(cli_arg=None, env_value=None)
 
 
 # ===========================================================================
@@ -423,43 +369,31 @@ class TestLockfileUnreachableSha:
 
 
 # ===========================================================================
-# AC-FUNC-005: CatalogSourceMismatchError
+# Hermetic install: HermeticInstallCatalogSourceError message content
 # ===========================================================================
 
 
 @pytest.mark.unit
-class TestCatalogSourceMismatch:
-    def test_error_names_both_sources(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://lock.example.com/repo.git@v1",
-            cli_env_source="https://new.example.com/repo.git@v2",
-        )
+class TestHermeticInstallCatalogSourceError:
+    """HermeticInstallCatalogSourceError names the origin and the remediation."""
+
+    def test_error_names_flag_origin(self) -> None:
+        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
         msg = str(err)
-        assert "https://lock.example.com/repo.git@v1" in msg
-        assert "https://new.example.com/repo.git@v2" in msg
+        assert "the --catalog-source flag" in msg
+        assert "does not accept a catalog source" in msg
 
-    def test_remediation_names_refresh_lock(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://lock.example.com/repo.git@main",
-            cli_env_source="https://new.example.com/repo.git@main",
-        )
-        assert "--refresh-lock" in str(err)
+    def test_error_names_env_origin(self) -> None:
+        err = HermeticInstallCatalogSourceError(origin="the KANON_CATALOG_SOURCE environment variable")
+        msg = str(err)
+        assert "the KANON_CATALOG_SOURCE environment variable" in msg
 
-
-# ===========================================================================
-# AC-FUNC-007: MissingCatalogSourceError links to docs
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestMissingCatalogSourceError:
-    def test_error_links_to_docs(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert "docs/catalogs-explained.md" in str(err)
-
-    def test_error_names_command(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert "install" in str(err)
+    def test_remediation_points_to_other_commands(self) -> None:
+        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
+        msg = str(err)
+        # The remediation directs the operator to the catalog-querying commands.
+        assert "kanon add" in msg
+        assert "kanon list" in msg
 
 
 # ===========================================================================
@@ -501,44 +435,23 @@ class TestInstallRaisesLockfileUnreachableShaError:
 
 
 # ===========================================================================
-# AC-FUNC-007: _resolve_catalog_source raises MissingCatalogSourceError
+# Hermetic install: install() rejects a supplied catalog source (spec Section 5.2 / FR-7)
 # ===========================================================================
 
 
 @pytest.mark.unit
-class TestResolveCatalogSourceRaisesMissingCatalogSourceError:
-    """AC-FUNC-007: _resolve_catalog_source raises MissingCatalogSourceError
-    when all three catalog-source tiers (CLI arg, env var, lockfile fallback)
-    are unset.
-
-    install() always calls _resolve_catalog_source regardless of which tiers
-    are set.  When all three are simultaneously unset, _resolve_catalog_source
-    raises MissingCatalogSourceError (AC-FUNC-007).  install() propagates the
-    error unconditionally (fail-fast; no silent degradation).
+class TestInstallRejectsCatalogSource:
+    """install() is hermetic: a --catalog-source flag or KANON_CATALOG_SOURCE env var
+    reaching install raises HermeticInstallCatalogSourceError fail-fast and writes no
+    lockfile.  install() no longer resolves or records a catalog source (schema v4).
     """
 
-    def test_resolve_catalog_source_raises_when_all_unset(self) -> None:
-        """_resolve_catalog_source raises MissingCatalogSourceError when all
-        three sources are unset."""
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
-            )
-        err = exc_info.value
-        assert isinstance(err, InstallError)
-        assert "catalog source" in str(err).lower()
-
-    def test_install_absent_no_catalog_raises_missing_catalog_source_error(
+    def test_install_absent_with_cli_catalog_source_rejected(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() in LOCKFILE_ABSENT state with no catalog source raises
-        MissingCatalogSourceError (AC-FUNC-007): all three catalog-source tiers
-        (CLI arg, KANON_CATALOG_SOURCE env var, lockfile fallback) are unset."""
+        """install() raises HermeticInstallCatalogSourceError when a --catalog-source value is passed."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
 
         kanon_path = _write_kanon(tmp_path)
@@ -552,18 +465,47 @@ class TestResolveCatalogSourceRaisesMissingCatalogSourceError:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
         ):
-            with pytest.raises(MissingCatalogSourceError) as exc_info:
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+                install(
+                    kanonenv_path=kanon_path,
+                    lock_file_path=kanon_path.parent / ".kanon.lock",
+                    catalog_source="https://git.example.com/catalog.git@main",
+                )
+
+        err = exc_info.value
+        assert isinstance(err, InstallError)
+        assert "--catalog-source" in str(err)
+        # Lockfile must NOT be written when the error fires.
+        assert not lock_path.exists(), "install() must not write a lockfile when the catalog source is rejected"
+
+    def test_install_absent_with_env_catalog_source_rejected(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """install() raises HermeticInstallCatalogSourceError when KANON_CATALOG_SOURCE is set."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env.example.com/catalog.git@main")
+
+        kanon_path = _write_kanon(tmp_path)
+        lock_path = tmp_path / ".kanon.lock"
+        assert not lock_path.exists()
+
+        mock_ref = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+        ):
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
                 install(
                     kanonenv_path=kanon_path,
                     lock_file_path=kanon_path.parent / ".kanon.lock",
                     catalog_source=None,
                 )
 
-        err = exc_info.value
-        assert isinstance(err, InstallError)
-        assert "catalog source" in str(err).lower()
-        # Lockfile must NOT be written when the error fires.
-        assert not lock_path.exists(), "install() must not write a lockfile when MissingCatalogSourceError is raised"
+        assert "KANON_CATALOG_SOURCE" in str(exc_info.value)
+        assert not lock_path.exists(), "install() must not write a lockfile when the catalog source is rejected"
 
 
 # ===========================================================================
@@ -643,37 +585,31 @@ class TestInstallRaisesLockfileUnreachableShaErrorEndToEnd:
         when the pinned SHA is not present in git ls-remote output (simulating
         the SHA having been force-pushed away or garbage-collected on remote).
         """
-        # Clear conftest default so the lockfile fallback source is used.
+        # install is hermetic; ensure no catalog source leaks in from the env.
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
 
         from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 
-        # The lockfile fixture uses "https://git.example.com/catalog.git@main" as source.
-        _lockfile_catalog_source = "https://git.example.com/catalog.git@main"
         kanon_path = _write_kanon(tmp_path)
         real_hash = compute_kanon_hash(kanon_path)
-        # Write a lockfile with a tag-shaped revision_spec (==1.0.0) so that
+        # Write a v4 lockfile with a tag-shaped ref_spec (==1.0.0) so that
         # _detect_branch_drift skips this source (tags are immutable; drift is
         # not a concept for them) and _check_sha_reachable fires as intended.
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
             f"""\
-schema_version = 1
+schema_version = 4
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{real_hash}"
-
-[catalog]
-source = "{_lockfile_catalog_source}"
-url = "https://git.example.com/catalog.git"
-revision_spec = "main"
-resolved_ref = "refs/heads/main"
-resolved_sha = "{_VALID_SHA40}"
+marketplace_registered = false
+marketplace_dir = ""
 
 [[sources]]
+alias = "alpha"
 name = "alpha"
 url = "https://git.example.com/alpha.git"
-revision_spec = "==1.0.0"
+ref_spec = "==1.0.0"
 resolved_ref = "refs/tags/v1.0.0"
 resolved_sha = "{_VALID_SHA40}"
 path = "manifest.xml"
@@ -716,15 +652,14 @@ path = "manifest.xml"
         """install() in LOCKFILE_CONSISTENT state does NOT raise LockfileUnreachableShaError
         when the pinned SHA IS present in git ls-remote output (SHA is reachable).
         """
-        # Clear conftest default so the lockfile fallback source is used.
+        # install is hermetic; ensure no catalog source leaks in from the env.
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
 
         from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 
-        _lockfile_catalog_source = "https://git.example.com/catalog.git@main"
         kanon_path = _write_kanon(tmp_path)
         real_hash = compute_kanon_hash(kanon_path)
-        lock_path = _write_lockfile(tmp_path, real_hash, catalog_source=_lockfile_catalog_source)
+        lock_path = _write_lockfile(tmp_path, real_hash)
 
         # The lockfile contains _VALID_SHA40 ("a" * 40) as resolved_sha for "alpha".
         # Return ls-remote output that DOES contain this SHA.
@@ -831,23 +766,23 @@ class TestResolveRefToSha:
 
 
 # ---------------------------------------------------------------------------
-# Malformed catalog source format (line 905 in install.py)
+# Hermetic install rejects any catalog source value, including a malformed one
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestMalformedCatalogSource:
-    """install() raises ValueError when catalog source lacks the @<ref> separator."""
+class TestHermeticInstallRejectsAnyCatalogSourceValue:
+    """install() is hermetic: it rejects a supplied catalog source before any format check."""
 
-    def test_catalog_source_without_at_raises_value_error(
+    def test_malformed_catalog_source_is_rejected_hermetically(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() raises ValueError when catalog_source has no '@' separator.
+        """install() raises HermeticInstallCatalogSourceError even when the value is malformed.
 
-        The catalog source format check happens after source resolution, so we
-        mock out the source-level git calls to avoid real network access.
+        The hermetic guard fires on presence alone (no format validation), so a
+        value missing the '@<ref>' separator is still rejected with the hermetic error.
         """
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_path = _write_kanon(tmp_path)
@@ -860,9 +795,10 @@ class TestMalformedCatalogSource:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
-            with pytest.raises(ValueError, match="<url>@<ref>"):
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
                 install(
                     kanonenv_path=kanon_path,
                     lock_file_path=kanon_path.parent / ".kanon.lock",
-                    catalog_source="https://example.com/catalog.git",  # missing @ref
+                    catalog_source="https://example.com/catalog.git",  # malformed (no @ref)
                 )
+        assert "--catalog-source" in str(exc_info.value)

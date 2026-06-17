@@ -45,7 +45,6 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
     _run_kanon,
@@ -300,9 +299,9 @@ class TestFullLifecycleSynthetic:
             # ------------------------------------------------------------------
             add_args = ["add", entry_name]
             if idx == 0:
-                # First entry: pass --catalog-source via the CLI flag. This
-                # writes the [catalog] block into .kanon so that kanon install
-                # can read the catalog URL back without --catalog-source (E22).
+                # First entry: pass --catalog-source via the CLI flag so kanon
+                # add can resolve the entry from the manifest repo. kanon install
+                # is hermetic and does not re-read a catalog source (E22).
                 add_args += ["--catalog-source", catalog_source]
 
             # For entries 2-6: no --catalog-source flag (AC-FUNC-004).
@@ -314,9 +313,8 @@ class TestFullLifecycleSynthetic:
             if idx > 0:
                 # Entries 2-6 omit the --catalog-source flag; the catalog
                 # source is supplied via env var so kanon add can find the
-                # manifest repo. The install step (called without the
-                # catalog_source env var) reads the [catalog] block that
-                # kanon add wrote into .kanon -- this is the E22 composition.
+                # manifest repo. The install step is hermetic (no catalog
+                # source) and installs the sources kanon add wrote into .kanon.
                 add_env["KANON_CATALOG_SOURCE"] = catalog_source
 
             add_result = _run_kanon(add_args, cwd=workspace_dir, extra_env=add_env)
@@ -353,10 +351,14 @@ class TestFullLifecycleSynthetic:
                     side_effect=recording_run_install,
                 ),
             ):
+                # kanon install is hermetic: it installs the sources declared in
+                # .kanon (written by kanon add) and pinned in .kanon.lock without
+                # resolving a catalog source.  Passing a catalog source here would
+                # raise HermeticInstallCatalogSourceError.
                 install(
                     kanon_path,
                     lock_file_path=workspace_dir / ".kanon.lock",
-                    catalog_source=DEFAULT_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
             # ------------------------------------------------------------------

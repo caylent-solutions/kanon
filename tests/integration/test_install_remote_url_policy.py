@@ -97,7 +97,6 @@ def _write_https_kanonenv(directory: pathlib.Path) -> pathlib.Path:
 
 _MOCK_SHA = "a" * 40
 _MOCK_REF = "refs/heads/main"
-_CATALOG_SOURCE = "https://cat.example.com/cat.git@main"
 
 
 @pytest.mark.integration
@@ -124,7 +123,7 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
         error_text = str(exc_info.value)
@@ -151,7 +150,7 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
         # The error must name the source so the operator can trace it
@@ -178,7 +177,7 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
         assert "KANON_ALLOW_INSECURE_REMOTES" in str(exc_info.value)
@@ -218,7 +217,7 @@ class TestInstallHttpRemoteAllowedWithOverride:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=_CATALOG_SOURCE,
+                catalog_source=None,
             )
 
     @pytest.mark.parametrize("env_val", ["0", "true", "yes", "on", "2"])
@@ -243,7 +242,7 @@ class TestInstallHttpRemoteAllowedWithOverride:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
 
@@ -281,7 +280,7 @@ class TestInstallHttpsUrlNoError:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=_CATALOG_SOURCE,
+                catalog_source=None,
             )
 
 
@@ -306,7 +305,6 @@ class TestInstallReplayPathEnforcesPolicy:
         )
         from kanon_cli.core.lockfile import (
             CURRENT_SCHEMA_VERSION,
-            CatalogBlock,
             Lockfile,
             SourceEntry,
             write_lockfile,
@@ -321,18 +319,12 @@ class TestInstallReplayPathEnforcesPolicy:
             generated_at="2026-01-01T00:00:00Z",
             generator="kanon-cli/test",
             kanon_hash=kanon_hash_val,
-            catalog=CatalogBlock(
-                source=_CATALOG_SOURCE,
-                url="https://cat.example.com/cat.git",
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha=_MOCK_SHA,
-            ),
             sources=[
                 SourceEntry(
+                    alias="mysource",
                     name="mysource",
                     url="http://example.com/repo.git",
-                    revision_spec="main",
+                    ref_spec="main",
                     resolved_ref="refs/heads/main",
                     resolved_sha=_MOCK_SHA,
                     path="repo-specs/manifest.xml",
@@ -350,15 +342,13 @@ class TestInstallReplayPathEnforcesPolicy:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=_CATALOG_SOURCE,
+                    catalog_source=None,
                 )
 
 
 # ---------------------------------------------------------------------------
 # Subprocess CLI exit-code tests (AC-CYCLE-001)
 # ---------------------------------------------------------------------------
-
-_DUMMY_CATALOG_SOURCE = "https://cat.example.com/cat.git@main"
 
 
 @pytest.mark.integration
@@ -433,8 +423,6 @@ class TestInstallCliExitCodes:
                 "-m",
                 "kanon_cli",
                 "install",
-                "--catalog-source",
-                _DUMMY_CATALOG_SOURCE,
                 str(kanon_file),
             ],
             capture_output=True,
@@ -477,8 +465,6 @@ class TestInstallCliExitCodes:
                 "-m",
                 "kanon_cli",
                 "install",
-                "--catalog-source",
-                _DUMMY_CATALOG_SOURCE,
                 str(kanon_file),
             ],
             capture_output=True,
@@ -519,8 +505,6 @@ class TestInstallCliExitCodes:
                 "-m",
                 "kanon_cli",
                 "install",
-                "--catalog-source",
-                _DUMMY_CATALOG_SOURCE,
                 str(kanon_file),
             ],
             capture_output=True,
@@ -565,8 +549,6 @@ class TestInstallCliExitCodes:
                 "-m",
                 "kanon_cli",
                 "install",
-                "--catalog-source",
-                _DUMMY_CATALOG_SOURCE,
                 str(kanon_file),
             ],
             capture_output=True,
@@ -596,8 +578,6 @@ class TestInstallCliExitCodes:
                 "-m",
                 "kanon_cli",
                 "install",
-                "--catalog-source",
-                _DUMMY_CATALOG_SOURCE,
                 str(kanon_file),
             ],
             capture_output=True,

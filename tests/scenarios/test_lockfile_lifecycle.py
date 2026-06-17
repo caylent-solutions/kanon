@@ -123,7 +123,6 @@ def _sha_for_ref(repo: pathlib.Path, ref: str) -> str:
 
 def _run_install(
     project_dir: pathlib.Path,
-    catalog_uri: str,
     *,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
@@ -131,12 +130,17 @@ def _run_install(
 ) -> subprocess.CompletedProcess:
     """Invoke ``kanon install [--refresh-lock[--source <name>]] [--strict-lock]`` as a subprocess.
 
+    ``kanon install`` is hermetic (schema v4 / FR-7): it installs exactly the
+    sources declared in ``.kanon`` and pinned in ``.kanon.lock`` and never resolves
+    a remote catalog. The subprocess is therefore run with ``KANON_CATALOG_SOURCE``
+    scrubbed and no ``--catalog-source`` flag; supplying either would be rejected
+    fail-fast by ``HermeticInstallCatalogSourceError``.
+
     ``KANON_ALLOW_INSECURE_REMOTES=1`` is set per-test so ``file://`` fixture URLs
     pass the HTTPS enforcement gate (AC-FUNC-005 / AC-SEC-001).
 
     Args:
         project_dir: Working directory for the subprocess.
-        catalog_uri: Catalog source URI passed via ``KANON_CATALOG_SOURCE``.
         refresh_lock: When True, passes ``--refresh-lock``.
         refresh_lock_source: When set, passes ``--refresh-lock-source <name>``.
         strict_lock: When True, passes ``--strict-lock`` (npm-ci: error on any drift).
@@ -156,8 +160,8 @@ def _run_install(
     env = {
         **os.environ,
         "KANON_ALLOW_INSECURE_REMOTES": "1",
-        "KANON_CATALOG_SOURCE": catalog_uri,
     }
+    env.pop("KANON_CATALOG_SOURCE", None)
     return subprocess.run(
         cmd,
         cwd=str(project_dir),
@@ -291,31 +295,6 @@ def _add_tag_to_manifest_bare(
     _git_capturing(["tag", "-a", new_tag, "-m", f"Release {new_tag}"], clone)
     _git_capturing(["push", "origin", "HEAD:main", "--tags"], clone)
     return _git_capturing(["rev-parse", f"refs/tags/{new_tag}"], clone)
-
-
-def _build_catalog_bare(base_dir: pathlib.Path) -> pathlib.Path:
-    """Build a minimal bare catalog repo with a tagged commit on ``main``.
-
-    The catalog repo only needs to be fetchable; no actual entry XML files are
-    required for these tests (marketplace install is disabled).
-
-    Args:
-        base_dir: Parent directory where the catalog bare repo is created.
-
-    Returns:
-        Absolute path to the bare catalog repo.
-    """
-    work = base_dir / "catalog-work"
-    work.mkdir(parents=True, exist_ok=True)
-    init_git_work_dir(work)
-    (work / "repo-specs" / ".gitkeep").parent.mkdir(parents=True)
-    (work / "repo-specs" / ".gitkeep").write_text("")
-    run_git(["add", "repo-specs"], work)
-    run_git(["commit", "-m", "Initial catalog"], work)
-    run_git(["tag", "-a", "1.0.0", "-m", "Release 1.0.0"], work)
-    bare = base_dir / "catalog.git"
-    run_git(["clone", "--bare", str(work), str(bare)], base_dir)
-    return bare.resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -548,15 +527,11 @@ class TestPinRetention:
             content_bare_dir,
         )
 
-        # Build the catalog bare repo (required by kanon install).
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
-
         # Write .kanon with the PEP 440 constraint.
         _write_kanon_for_source(project, constraint_id.upper(), manifest_bare.as_uri(), revision_spec)
 
         # Step 1: initial install -- resolves the constraint and writes .kanon.lock.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"[{constraint_id}] Initial kanon install failed (exit {r1.returncode}):"
             f"\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
@@ -578,7 +553,7 @@ class TestPinRetention:
 
             shutil.rmtree(str(kanon_data))
 
-        r2 = _run_install(project, catalog_uri)
+        r2 = _run_install(project)
         assert r2.returncode == 0, (
             f"[{constraint_id}] Fresh plain install failed (exit {r2.returncode}):"
             f"\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
@@ -638,14 +613,11 @@ class TestPinRetention:
             content_bare_dir,
         )
 
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
-
         # Track the floating branch "main".
         _write_kanon_for_source(project, "BRANCHREF", manifest_bare.as_uri(), "main")
 
         # Initial install: records branch tip SHA.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -674,7 +646,7 @@ class TestPinRetention:
 
             shutil.rmtree(str(kanon_data))
 
-        r2 = _run_install(project, catalog_uri)
+        r2 = _run_install(project)
         assert r2.returncode == 0, (
             f"Fresh plain install failed (exit {r2.returncode}):\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
@@ -736,13 +708,11 @@ class TestRefreshRegression:
         project.mkdir()
 
         _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         _write_kanon_for_refresh(project, "SRC", manifest_bare, "main")
 
         # Step 4: initial install.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -759,7 +729,7 @@ class TestRefreshRegression:
         # Step 6: refresh-lock over the existing .kanon-data.
         # Before the fix: exits 1 with unhandled GitCommandError.
         # After the fix: exits 0 and the lockfile pin advances to sha_new_tip.
-        r2 = _run_install(project, catalog_uri, refresh_lock=True)
+        r2 = _run_install(project, refresh_lock=True)
         assert r2.returncode == 0, (
             f"ERROR: kanon install --refresh-lock failed (exit {r2.returncode}) over existing checkout.\n"
             f"  If E51-F1-S1-T1 has landed, this is a real regression of the BUG-1 fix.\n"
@@ -791,13 +761,11 @@ class TestRefreshRegression:
         project.mkdir()
 
         _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         _write_kanon_for_refresh(project, "SRC", manifest_bare, "main")
 
         # Initial install.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -814,7 +782,7 @@ class TestRefreshRegression:
         # Refresh-lock-source over the existing .kanon-data.
         # Before the fix: exits 1 with unhandled GitCommandError.
         # After the fix: exits 0 and the lockfile pin for SRC advances.
-        r2 = _run_install(project, catalog_uri, refresh_lock_source="SRC")
+        r2 = _run_install(project, refresh_lock_source="SRC")
         assert r2.returncode == 0, (
             f"ERROR: kanon install --refresh-lock-source SRC failed (exit {r2.returncode}) "
             f"over existing checkout.\n"

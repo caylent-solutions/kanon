@@ -227,7 +227,9 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_REVISION=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", self._CATALOG_SOURCE)
+        # install is hermetic: a set KANON_CATALOG_SOURCE would be rejected, so
+        # ensure it is unset; this test exercises the OSError -> SystemExit path.
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         args = argparse.Namespace(
             kanonenv_path=kanonenv,
             lock_file=None,
@@ -260,7 +262,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             pytest.raises(ValueError),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
     def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / ".claude-mp"
@@ -283,7 +285,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         assert mp_dir.is_dir()
         assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
@@ -321,7 +323,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         assert mock_reg.called, (
             "register_direct_checkout_marketplaces must be called when KANON_MARKETPLACE_INSTALL=true"
@@ -354,7 +356,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         assert not mock_reg.called, (
             "register_direct_checkout_marketplaces must NOT be called when KANON_MARKETPLACE_INSTALL is false/absent"
@@ -380,7 +382,7 @@ class TestInstallLifecycle:
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
             manager.attach_mock(mock_sync, "repo_sync")
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         call_names = [c[0] for c in manager.mock_calls]
         assert call_names == ["repo_init", "repo_envsubst", "repo_sync"], (
@@ -404,7 +406,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
         args, kwargs = mock_init.call_args
@@ -458,7 +460,7 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         assert (tmp_path / ".kanon-data").is_dir(), (
             "install() must create .kanon-data/ as a side effect of kanon_workspace_lock eager-create"
@@ -493,7 +495,7 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=None)
 
         lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
         assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"
@@ -739,7 +741,7 @@ class TestInstallMarketplaceLockfileState:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path, catalog_source=None)
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is True, (
@@ -771,7 +773,7 @@ class TestInstallMarketplaceLockfileState:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path, catalog_source=None)
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is False, (
@@ -824,7 +826,7 @@ class TestInstallWorkspaceDirEnvVar:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path, catalog_source=None)
 
         assert (alt_workspace / ".kanon-data").exists(), (
             "KANON_WORKSPACE_DIR set: .kanon-data/ must be created under the alt workspace"
@@ -861,7 +863,7 @@ class TestInstallWorkspaceDirEnvVar:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path, catalog_source=None)
 
         assert (alt_workspace / ".packages").exists(), (
             "KANON_WORKSPACE_DIR set: .packages/ must be created under the alt workspace"
@@ -896,7 +898,7 @@ class TestInstallWorkspaceDirEnvVar:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path, catalog_source=None)
 
         assert alt_workspace.exists(), "install must create KANON_WORKSPACE_DIR if it does not exist"
 
@@ -925,7 +927,7 @@ class TestInstallWorkspaceDirEnvVar:
 
         try:
             with pytest.raises(SystemExit) as exc_info:
-                install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+                install(kanonenv, lock_file_path=lock_path, catalog_source=None)
             assert exc_info.value.code != 0, "unwritable KANON_WORKSPACE_DIR must exit non-zero"
             assert not (cwd_dir / ".kanon-data").exists(), (
                 "on unwritable KANON_WORKSPACE_DIR, no artifacts must be written to cwd (no fallback)"

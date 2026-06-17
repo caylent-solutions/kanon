@@ -1,14 +1,15 @@
 """Unit tests for the --refresh-lock flag in kanon install.
 
-AC-TEST-001: Parametrises the three accept-and-reject paths:
+AC-TEST-001: Parametrises the accept paths:
   (a) --refresh-lock with a present lockfile produces InstallState.REFRESH_LOCK
       and is processed like LOCKFILE_ABSENT (info-line, lockfile rewrite).
-  (b) --refresh-lock with no CLI/env catalog source raises MissingCatalogSourceError
-      with the refresh-specific remediation text.
+  (b) --refresh-lock is hermetic: it rebuilds the lock from .kanon without
+      resolving a catalog source, and rejects a supplied --catalog-source.
   (c) --refresh-lock plus --refresh-lock-source raises SystemExit(2) due to
       mutual-exclusion group (AC-FUNC-004; group registered in T2 for T3 to join).
 
-AC-FUNC-003 through AC-FUNC-006 verified by these unit tests.
+Schema v4 (spec Section 5.2 / FR-7): the lock has no [catalog] block and install
+is hermetic, so --refresh-lock no longer resolves or requires a catalog source.
 """
 
 from __future__ import annotations
@@ -20,12 +21,11 @@ import pytest
 
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
+    HermeticInstallCatalogSourceError,
     InstallState,
-    MissingCatalogSourceError,
     _RefResolution,
     _classify_install_state,
     _emit_install_state,
-    _resolve_catalog_source,
     install,
 )
 
@@ -56,27 +56,25 @@ def _write_kanon(directory: pathlib.Path, content: str = _KANON_SINGLE_SOURCE) -
 def _write_lockfile(
     directory: pathlib.Path,
     kanon_hash: str,
-    catalog_source: str = "https://git.example.com/catalog.git@main",
 ) -> pathlib.Path:
-    """Write a minimal valid .kanon.lock TOML file and return its path."""
+    """Write a minimal valid schema-v4 .kanon.lock TOML file and return its path.
+
+    The v4 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
+    """
     lock_path = directory / ".kanon.lock"
     content = f"""\
-schema_version = 1
+schema_version = 4
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{kanon_hash}"
-
-[catalog]
-source = "{catalog_source}"
-url = "https://git.example.com/catalog.git"
-revision_spec = "main"
-resolved_ref = "refs/heads/main"
-resolved_sha = "{_VALID_SHA40}"
+marketplace_registered = false
+marketplace_dir = ""
 
 [[sources]]
+alias = "alpha"
 name = "alpha"
 url = "https://git.example.com/alpha.git"
-revision_spec = "main"
+ref_spec = "main"
 resolved_ref = "refs/heads/main"
 resolved_sha = "{_VALID_SHA40}"
 path = "manifest.xml"
@@ -106,7 +104,6 @@ class TestRefreshLockInstallState:
             InstallState.LOCKFILE_CONSISTENT,
             InstallState.LOCKFILE_HASH_MISMATCH,
             InstallState.LOCKFILE_UNREACHABLE,
-            InstallState.LOCKFILE_SOURCE_MISMATCH,
         ]
         for other in other_states:
             assert InstallState.REFRESH_LOCK is not other
@@ -163,69 +160,93 @@ class TestClassifyInstallStateRefreshLock:
 
 
 # ===========================================================================
-# AC-FUNC-003: _resolve_catalog_source disables lockfile fallback on refresh
+# Hermetic refresh-lock: --refresh-lock does not resolve or require a catalog source
 # ===========================================================================
 
 
 @pytest.mark.unit
-class TestResolveCatalogSourceRefreshLock:
-    """AC-FUNC-003: lockfile fallback is disabled in REFRESH_LOCK state."""
+class TestRefreshLockIsHermetic:
+    """Schema v4 (spec Section 5.2 / FR-7): --refresh-lock rebuilds the lock from
+    .kanon hermetically.  It neither resolves nor requires a catalog source, and a
+    supplied --catalog-source / KANON_CATALOG_SOURCE is rejected fail-fast.
+    """
 
-    def test_no_cli_no_env_refresh_lock_raises(self) -> None:
-        """REFRESH_LOCK state with no CLI/env source raises MissingCatalogSourceError."""
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source="https://lock.example.com/repo.git@main",
-                install_state=InstallState.REFRESH_LOCK,
-            )
-        msg = str(exc_info.value)
-        assert "--refresh-lock requires a CLI or env-var catalog source" in msg
-        assert "lockfile fallback is disabled" in msg
-
-    def test_cli_arg_succeeds_in_refresh_lock_state(self) -> None:
-        """REFRESH_LOCK state with a CLI source returns that source."""
-        result = _resolve_catalog_source(
-            cli_arg="https://cli.example.com/repo.git@main",
-            env_value=None,
-            lockfile_catalog_source="https://lock.example.com/repo.git@main",
-            install_state=InstallState.REFRESH_LOCK,
-        )
-        assert result == "https://cli.example.com/repo.git@main"
-
-    def test_env_var_succeeds_in_refresh_lock_state(self) -> None:
-        """REFRESH_LOCK state with an env source returns that source."""
-        result = _resolve_catalog_source(
-            cli_arg=None,
-            env_value="https://env.example.com/repo.git@main",
-            lockfile_catalog_source=None,
-            install_state=InstallState.REFRESH_LOCK,
-        )
-        assert result == "https://env.example.com/repo.git@main"
-
-    @pytest.mark.parametrize(
-        "cli_arg,env_value",
-        [
-            ("https://example.com/repo.git@v1", None),
-            (None, "https://example.com/repo.git@v1"),
-            ("https://example.com/repo.git@v1", "https://example.com/other.git@v2"),
-        ],
-    )
-    def test_parametrised_refresh_lock_source_resolution(
+    def test_refresh_lock_no_catalog_source_succeeds(
         self,
-        cli_arg: str | None,
-        env_value: str | None,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Parametrised: CLI/env source always wins in REFRESH_LOCK state."""
-        result = _resolve_catalog_source(
-            cli_arg=cli_arg,
-            env_value=env_value,
-            lockfile_catalog_source="https://lock.example.com/repo.git@stale",
-            install_state=InstallState.REFRESH_LOCK,
-        )
-        expected = cli_arg if cli_arg is not None else env_value
-        assert result == expected
+        """install(refresh_lock=True) with NO catalog source rebuilds the lock (no error)."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        kanon_path = _write_kanon(tmp_path)
+        lock_path = kanon_path.parent / ".kanon.lock"
+
+        mock_ref = _RefResolution(sha="b" * 40, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
+        ):
+            install(
+                kanonenv_path=kanon_path,
+                lock_file_path=lock_path,
+                catalog_source=None,
+                refresh_lock=True,
+            )
+        # The lock was (re)built hermetically.
+        assert lock_path.exists()
+
+    def test_refresh_lock_with_cli_catalog_source_rejected(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """install(refresh_lock=True, catalog_source=...) is rejected hermetically."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        kanon_path = _write_kanon(tmp_path)
+
+        mock_ref = _RefResolution(sha="b" * 40, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+        ):
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+                install(
+                    kanonenv_path=kanon_path,
+                    lock_file_path=kanon_path.parent / ".kanon.lock",
+                    catalog_source="https://cli.example.com/repo.git@main",
+                    refresh_lock=True,
+                )
+        assert "--catalog-source" in str(exc_info.value)
+
+    def test_refresh_lock_with_env_catalog_source_rejected(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """install(refresh_lock=True) with KANON_CATALOG_SOURCE set is rejected hermetically."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env.example.com/repo.git@main")
+        kanon_path = _write_kanon(tmp_path)
+
+        mock_ref = _RefResolution(sha="b" * 40, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+        ):
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+                install(
+                    kanonenv_path=kanon_path,
+                    lock_file_path=kanon_path.parent / ".kanon.lock",
+                    catalog_source=None,
+                    refresh_lock=True,
+                )
+        assert "KANON_CATALOG_SOURCE" in str(exc_info.value)
 
 
 # ===========================================================================
@@ -277,17 +298,15 @@ class TestInstallRefreshLockKwarg:
         param = sig.parameters["refresh_lock"]
         assert param.default is False
 
-    def test_install_refresh_lock_missing_catalog_raises(
+    def test_install_refresh_lock_rejects_cli_catalog_source(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock=True) with no catalog source raises MissingCatalogSourceError
-        with the refresh-specific remediation text (AC-FUNC-003)."""
+        """install(refresh_lock=True, catalog_source=...) is rejected hermetically (FR-7)."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
-        # Write a lockfile to prove the lockfile fallback is disabled on this path.
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
 
         real_hash = compute_hash(kanon_path)
@@ -300,24 +319,22 @@ class TestInstallRefreshLockKwarg:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
         ):
-            with pytest.raises(MissingCatalogSourceError) as exc_info:
+            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
                 install(
                     kanonenv_path=kanon_path,
                     lock_file_path=kanon_path.parent / ".kanon.lock",
-                    catalog_source=None,
+                    catalog_source="https://cli.example.com/repo.git@main",
                     refresh_lock=True,
                 )
 
-        msg = str(exc_info.value)
-        assert "--refresh-lock requires a CLI or env-var catalog source" in msg
-        assert "lockfile fallback is disabled" in msg
+        assert "--catalog-source" in str(exc_info.value)
 
-    def test_install_refresh_lock_with_catalog_rewrites_lockfile(
+    def test_install_refresh_lock_rewrites_lockfile_hermetically(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock=True) with a catalog source rewrites the lockfile
+        """install(refresh_lock=True) with no catalog source rewrites the lockfile
         even when a consistent lockfile is already present (AC-FUNC-001)."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_path = _write_kanon(tmp_path)
@@ -340,7 +357,7 @@ class TestInstallRefreshLockKwarg:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source="https://catalog.example.com/repo.git@main",
+                catalog_source=None,
                 refresh_lock=True,
             )
 
@@ -380,7 +397,7 @@ class TestRefreshLockDoesNotTouchKanonFile:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source="https://catalog.example.com/repo.git@main",
+                catalog_source=None,
                 refresh_lock=True,
             )
 

@@ -20,7 +20,7 @@ from kanon_cli.completions.lockfile_names import (
 )
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -37,25 +37,16 @@ _DUMMY_SHA = "a" * 40
 _DUMMY_SHA2 = "b" * 40
 _DUMMY_SHA3 = "c" * 40
 
-_MINIMAL_CATALOG = CatalogBlock(
-    source="",
-    url="",
-    revision_spec="",
-    resolved_ref="",
-    resolved_sha="",
-)
-
 
 def _make_lockfile(
     sources: list[SourceEntry] | None = None,
 ) -> Lockfile:
-    """Build a minimal valid Lockfile with the supplied sources."""
+    """Build a minimal valid schema-v4 Lockfile with the supplied sources."""
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=_MINIMAL_CATALOG,
         sources=sources or [],
     )
 
@@ -66,9 +57,10 @@ def _make_source(
     projects: list[ProjectEntry] | None = None,
 ) -> SourceEntry:
     return SourceEntry(
+        alias=name,
         name=name,
         url="https://github.com/org/repo",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
         path=f"vendor/{name}",
@@ -102,7 +94,7 @@ def _make_project(
         name=name,
         url=url,
         canonical_url=canonical,
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
     )
@@ -538,8 +530,8 @@ class TestCompleteMalformedLockfile:
     def test_valid_toml_invalid_lockfile_schema_returns_empty(self, tmp_path: Path) -> None:
         """Valid TOML that fails lockfile schema validation -> empty + log entry."""
         lock_path = tmp_path / ".kanon.lock"
-        # Valid TOML but missing required lockfile fields
-        lock_path.write_text("schema_version = 1\nfoo = 'bar'\n")
+        # Valid TOML, current schema_version, but missing required lockfile fields
+        lock_path.write_text("schema_version = 4\nfoo = 'bar'\n")
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,

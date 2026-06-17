@@ -549,14 +549,14 @@ def _check_branch_drift(
 ) -> list[DoctorFinding]:
     """Check branch-pinned sources for drift between locked SHA and current tip.
 
-    Subcheck 4 in spec Section 4.6: For every lockfile entry whose revision_spec
+    Subcheck 4 in spec Section 4.6: For every lockfile entry whose ref_spec
     resolves to a branch ref (not a SHA, not refs/...), query
     ``git ls-remote refs/heads/<branch>`` against the source URL. When the
     branch tip SHA differs from the lockfile-recorded SHA:
     - Without ``--strict-drift``: emit an info-level finding.
     - With ``--strict-drift``: emit an error-level finding.
 
-    SHA-pinned sources (40/64 hex-char revision_spec) are skipped.
+    SHA-pinned sources (40/64 hex-char ref_spec) are skipped.
 
     This function is pure: no stdout/stderr side effects.
 
@@ -571,10 +571,10 @@ def _check_branch_drift(
 
     findings: list[DoctorFinding] = []
     for source in lockfile.sources:
-        if not _is_branch_revision(source.revision_spec):
+        if not _is_branch_revision(source.ref_spec):
             continue
 
-        branch = source.revision_spec
+        branch = source.ref_spec
         ref = f"refs/heads/{branch}"
         returncode, stdout, stderr = _run_ls_remote(
             url=source.url,
@@ -658,9 +658,9 @@ def _check_dangling_shas(
         # may no longer be referenced by any remote ref even though the commit
         # still exists in the repo. Branch drift (subcheck 4) already covers
         # this case. The dangling SHA check is meaningful only for SHA-pinned
-        # sources (40/64 hex-char revision_spec) where the operator intended to
+        # sources (40/64 hex-char ref_spec) where the operator intended to
         # lock a specific commit that must remain accessible.
-        if _is_branch_revision(source.revision_spec):
+        if _is_branch_revision(source.ref_spec):
             continue
 
         # Pass empty ref to list all refs -- needed because ls-remote only
@@ -824,8 +824,13 @@ def _check_effective_catalog_source(
 
       1. ``--catalog-source`` CLI flag (highest precedence).
       2. ``KANON_CATALOG_SOURCE`` env var.
-      3. Lockfile ``[catalog].source`` field (when a lockfile is provided).
-      4. None (no catalog source configured).
+      3. None (no catalog source configured).
+
+    Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block,
+    so the lockfile no longer participates in catalog-source provenance.  The
+    catalog source for ``kanon add`` / ``kanon list`` / ``kanon outdated`` /
+    ``kanon why`` is supplied only by the CLI flag or the env var; ``kanon
+    install`` is hermetic and does not consult a catalog source at all.
 
     This function is pure: it reads no global state directly. All inputs are
     passed as parameters to enable unit testing without environment mutation.
@@ -847,8 +852,9 @@ def _check_effective_catalog_source(
             user-supplied string when it was.
         env: The process environment dict (pass ``dict(os.environ)`` or a test
             substitute). Read-only: this function never mutates the dict.
-        lockfile: Optional Lockfile object. When provided, its
-            ``catalog.source`` field participates in the precedence chain.
+        lockfile: Optional Lockfile object. Accepted for call-site symmetry with
+            the other subchecks; the v4 lock carries no catalog source, so it does
+            not participate in the precedence chain.
 
     Returns:
         A DoctorFinding with kind="info" whose message contains both the
@@ -868,10 +874,6 @@ def _check_effective_catalog_source(
     elif env_value is not None:
         effective = env_value
         provenance = "(from KANON_CATALOG_SOURCE env var)"
-        message = f"Effective catalog source: {effective} {provenance}"
-    elif lockfile is not None and lockfile.catalog.source:
-        effective = lockfile.catalog.source
-        provenance = "(from .kanon.lock [catalog].source)"
         message = f"Effective catalog source: {effective} {provenance}"
     else:
         provenance = "(none configured)"

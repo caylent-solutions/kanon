@@ -147,12 +147,12 @@ def _run_install_with_fake_catalog(
     baseline_sha: str,
     **kwargs,
 ) -> None:
-    """Run install() with patched catalog resolution and repo operations.
+    """Run install() hermetically against a local fixture source repo.
 
-    The catalog resolution is mocked because the test fixture repos are not
-    real catalog repos. The _resolve_ref_to_sha for the catalog source is
-    intercepted; _resolve_ref_to_sha for SOURCE repos uses the real git binary
-    (the fixture repos are local paths on disk).
+    install() is hermetic (schema v4, spec Section 5.2 / FR-7): it resolves no
+    catalog source, so ``catalog_source`` is always None.  _resolve_ref_to_sha
+    for the local fixture SOURCE repo uses the real git binary (the fixture repos
+    are local paths on disk); any unexpected URL is a fail-fast error.
 
     The repo init/envsubst/sync operations are patched to no-ops because the
     fixture repos are minimal git repos without real manifest files.
@@ -160,14 +160,13 @@ def _run_install_with_fake_catalog(
     Args:
         kanon_path: Path to the .kanon file.
         fixture_repo: Path to the fixture source repository.
-        baseline_sha: The SHA to use for the catalog mock.
+        baseline_sha: Unused for catalog resolution (retained for call-site
+            readability); the source SHA comes from the real fixture repo.
         **kwargs: Additional keyword arguments forwarded to install().
     """
-    catalog_source = f"{fixture_repo}@main"
-    catalog_fake_ref = _RefResolution(sha=baseline_sha, resolved_ref="refs/heads/main")
 
     def _resolve_ref_to_sha_side_effect(url: str, ref: str) -> _RefResolution:
-        # For source URLs that are local paths, use the real git binary.
+        # Only the local fixture SOURCE repo is expected; resolve via real git.
         if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo), ref],
@@ -184,8 +183,7 @@ def _run_install_with_fake_catalog(
                     if matched_ref == ref or matched_ref.endswith(f"/{ref}"):
                         return _RefResolution(sha=matched_sha, resolved_ref=matched_ref)
             raise ValueError(f"ref {ref!r} not found in {fixture_repo}")
-        # For catalog and other URLs use the fake
-        return catalog_fake_ref
+        raise ValueError(f"unexpected URL passed to _resolve_ref_to_sha: {url!r}")
 
     def _check_sha_reachable_side_effect(url: str, sha: str, source_name: str) -> None:
         # Use real git ls-remote for local fixture repos; others are no-ops.
@@ -220,7 +218,7 @@ def _run_install_with_fake_catalog(
         patch("kanon_cli.core.install.run_repo_envsubst"),
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
-        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=catalog_source, **kwargs)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +380,6 @@ class TestStrictLockEndToEnd:
         self,
         lock_path: pathlib.Path,
         kanon_hash: str,
-        catalog_source: str,
         active_name: str,
         active_url: str,
         active_sha: str,
@@ -390,8 +387,9 @@ class TestStrictLockEndToEnd:
         orphan_url: str,
         orphan_sha: str,
     ) -> None:
-        """Write a lockfile with one active source and one orphaned source.
+        """Write a schema-v4 lockfile with one active source and one orphaned source.
 
+        The v4 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
         Bare filesystem paths are coerced to ``file://`` URLs so the URL parser
         introduced by E1-F2-S1-T1 accepts the locked URLs when the install
         engine re-validates them.
@@ -401,30 +399,27 @@ class TestStrictLockEndToEnd:
         if orphan_url.startswith("/"):
             orphan_url = f"file://{orphan_url}"
         lock_path.write_text(
-            f"schema_version = 1\n"
+            f"schema_version = 4\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{kanon_hash}"\n'
-            f"\n"
-            f"[catalog]\n"
-            f'source = "{catalog_source}"\n'
-            f'url = "{catalog_source.rsplit("@", 1)[0]}"\n'
-            f'revision_spec = "main"\n'
-            f'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{active_sha}"\n'
+            f"marketplace_registered = false\n"
+            f'marketplace_dir = ""\n'
             f"\n"
             f"[[sources]]\n"
+            f'alias = "{active_name}"\n'
             f'name = "{active_name}"\n'
             f'url = "{active_url}"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{active_sha}"\n'
             f'path = "manifest.xml"\n'
             f"\n"
             f"[[sources]]\n"
+            f'alias = "{orphan_name}"\n'
             f'name = "{orphan_name}"\n'
             f'url = "{orphan_url}"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{orphan_sha}"\n'
             f'path = "manifest.xml"\n'
@@ -458,7 +453,6 @@ class TestStrictLockEndToEnd:
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
 
         real_hash = compute_hash(kanon_path)
-        catalog_source = f"{fixture_alpha}@main"
 
         # Write a lockfile that is CONSISTENT (correct kanon_hash) but contains
         # an extra orphaned source entry for "ghost"
@@ -466,7 +460,6 @@ class TestStrictLockEndToEnd:
         self._write_lockfile_with_orphan(
             lock_path,
             kanon_hash=real_hash,
-            catalog_source=catalog_source,
             active_name="alpha",
             active_url=str(fixture_alpha),
             active_sha=sha_alpha,
@@ -478,8 +471,8 @@ class TestStrictLockEndToEnd:
         fake_ref = _RefResolution(sha=sha_alpha, resolved_ref="refs/heads/main")
 
         def _check_reachable(url: str, sha: str, source_name: str) -> None:
-            # Only alpha is in the .kanon, and its SHA is reachable
-            pass  # always pass for this test
+            # Only alpha is in the .kanon, and its SHA is reachable: a no-op mock.
+            return None
 
         with (
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_ref),
@@ -495,7 +488,7 @@ class TestStrictLockEndToEnd:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=catalog_source,
+                catalog_source=None,
                 strict_lock=True,
             )
 
@@ -526,13 +519,11 @@ class TestStrictLockEndToEnd:
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
 
         real_hash = compute_hash(kanon_path)
-        catalog_source = f"{fixture_alpha}@main"
 
         lock_path = project_dir / ".kanon.lock"
         self._write_lockfile_with_orphan(
             lock_path,
             kanon_hash=real_hash,
-            catalog_source=catalog_source,
             active_name="alpha",
             active_url=str(fixture_alpha),
             active_sha=sha_alpha,
@@ -555,7 +546,7 @@ class TestStrictLockEndToEnd:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=catalog_source,
+                catalog_source=None,
                 strict_lock=False,
             )
 
@@ -618,22 +609,21 @@ class TestStrictLockOrphanErrorMessage:
         self,
         lock_path: pathlib.Path,
         kanon_hash: str,
-        catalog_source: str,
         active_name: str,
         active_url: str,
         active_sha: str,
         orphan_entries: list[tuple[str, str, str]],
     ) -> None:
-        """Write a lockfile with correct kanon_hash but extra orphaned source entries.
+        """Write a schema-v4 lockfile with correct kanon_hash but extra orphaned source entries.
 
         The lockfile is in the LOCKFILE_CONSISTENT state (hash matches the current
-        .kanon) but contains additional [[sources]] entries that are absent from
-        the current .kanon, making them orphans detectable by --strict-lock.
+        .kanon) but contains additional alias-keyed [[sources]] entries that are
+        absent from the current .kanon, making them orphans detectable by
+        --strict-lock.  The v4 lock carries no [catalog] block (spec Section 5.2).
 
         Args:
             lock_path: Path at which to write the lockfile.
             kanon_hash: The kanon_hash that matches the current .kanon content.
-            catalog_source: The catalog source URL@ref used in the lockfile header.
             active_name: Source name for the non-orphaned active entry.
             active_url: URL for the active source; bare paths coerced to file://.
             active_sha: Resolved SHA for the active source.
@@ -644,9 +634,10 @@ class TestStrictLockOrphanErrorMessage:
 
         active_block = (
             f"[[sources]]\n"
+            f'alias = "{active_name}"\n'
             f'name = "{active_name}"\n'
             f'url = "{active_url}"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{active_sha}"\n'
             f'path = "manifest.xml"\n'
@@ -658,27 +649,22 @@ class TestStrictLockOrphanErrorMessage:
                 orphan_url = f"file://{orphan_url}"
             orphan_blocks.append(
                 f"[[sources]]\n"
+                f'alias = "{orphan_name}"\n'
                 f'name = "{orphan_name}"\n'
                 f'url = "{orphan_url}"\n'
-                f'revision_spec = "main"\n'
+                f'ref_spec = "main"\n'
                 f'resolved_ref = "refs/heads/main"\n'
                 f'resolved_sha = "{orphan_sha}"\n'
                 f'path = "manifest.xml"\n'
             )
 
-        catalog_url = catalog_source.rsplit("@", 1)[0]
         body = (
-            f"schema_version = 1\n"
+            f"schema_version = 4\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{kanon_hash}"\n'
-            f"\n"
-            f"[catalog]\n"
-            f'source = "{catalog_source}"\n'
-            f'url = "{catalog_url}"\n'
-            f'revision_spec = "main"\n'
-            f'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{active_sha}"\n'
+            f"marketplace_registered = false\n"
+            f'marketplace_dir = ""\n'
             f"\n" + active_block
         )
         for block in orphan_blocks:
@@ -700,6 +686,9 @@ class TestStrictLockOrphanErrorMessage:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
+        # install is hermetic: a leaked KANON_CATALOG_SOURCE would trip the
+        # hermetic-rejection guard before orphan detection.
+        env.pop("KANON_CATALOG_SOURCE", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", "--strict-lock"],
             capture_output=True,
@@ -762,14 +751,12 @@ class TestStrictLockOrphanErrorMessage:
 
         # Compute kanon_hash for the single-source .kanon so the lockfile is CONSISTENT.
         real_hash = _compute_kanon_hash(kanon_path)
-        catalog_source = f"file://{cat_a_bare}@main"
 
         # Write lockfile: consistent hash, active entry, plus orphaned source-echo.
         lock_path = project_dir / ".kanon.lock"
         self._write_lockfile_with_orphans(
             lock_path,
             kanon_hash=real_hash,
-            catalog_source=catalog_source,
             active_name=active_source_key,
             active_url=str(cat_a_bare),
             active_sha=placeholder_sha,
@@ -846,13 +833,11 @@ class TestStrictLockOrphanErrorMessage:
         )
 
         real_hash = _compute_kanon_hash(kanon_path)
-        catalog_source = f"file://{cat_active_bare}@main"
 
         lock_path = project_dir / ".kanon.lock"
         self._write_lockfile_with_orphans(
             lock_path,
             kanon_hash=real_hash,
-            catalog_source=catalog_source,
             active_name=active_source_key,
             active_url=str(cat_active_bare),
             active_sha=placeholder_active_sha,
@@ -914,6 +899,10 @@ class TestStrictLockDefaultAutoPrune:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
+        # install is hermetic: a leaked KANON_CATALOG_SOURCE would trip the
+        # hermetic-rejection guard.  'kanon add' passes --catalog-source
+        # explicitly, so popping the env var is safe for both add and install.
+        env.pop("KANON_CATALOG_SOURCE", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli"] + args,
             capture_output=True,

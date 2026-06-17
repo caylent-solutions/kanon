@@ -73,7 +73,7 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
+                catalog_source=None,
             )
 
         mock_policy.assert_called()
@@ -108,7 +108,7 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
+                catalog_source=None,
             )
 
         # Verify all calls had allow_insecure=False
@@ -145,7 +145,7 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
+                catalog_source=None,
             )
 
         # Verify at least one call had allow_insecure=True
@@ -181,7 +181,7 @@ class TestInstallEnforcesHttpsPolicy:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source="https://cat.example.com/cat.git@main",
+                    catalog_source=None,
                 )
 
     def test_http_url_allowed_when_env_var_set_to_one(
@@ -214,7 +214,7 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
+                catalog_source=None,
             )
 
 
@@ -242,7 +242,6 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
         from kanon_cli.core.install import _kanon_hash
         from kanon_cli.core.lockfile import (
             CURRENT_SCHEMA_VERSION,
-            CatalogBlock,
             Lockfile,
             write_lockfile,
         )
@@ -250,19 +249,11 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
         # Build a lockfile whose kanon_hash matches (so state == LOCKFILE_CONSISTENT)
         # but whose sources list is EMPTY (no entry for 'mysource').
         kanon_hash_val = _kanon_hash(kanonenv)
-        catalog_source = "https://cat.example.com/cat.git@main"
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2026-01-01T00:00:00Z",
             generator="kanon-cli/test",
             kanon_hash=kanon_hash_val,
-            catalog=CatalogBlock(
-                source=catalog_source,
-                url="https://cat.example.com/cat.git",
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha="a" * 40,
-            ),
             sources=[],  # deliberately empty -- 'mysource' is absent
         )
         write_lockfile(lf, lockfile_path)
@@ -271,5 +262,5 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=catalog_source,
+                catalog_source=None,
             )

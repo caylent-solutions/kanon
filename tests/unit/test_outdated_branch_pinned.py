@@ -475,22 +475,16 @@ class TestResolveLockSha:
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./foo"\n'
@@ -505,22 +499,16 @@ class TestResolveLockSha:
         sha = "b" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "BAR"\n'
             'name = "BAR"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./bar"\n'

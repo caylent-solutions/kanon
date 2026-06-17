@@ -224,9 +224,8 @@ def _run(args) -> int | None:
         # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt,
         # lockfile-sha-unreachable.txt, conflict-detected.txt.
         # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
-        # Covers MissingCatalogSourceError (no source in the four-tier precedence
-        # chain), CatalogSourceMismatchError (lockfile source differs from CLI/env),
-        # and CatalogBlockParseError (malformed [catalog] block in .kanon -- E22).
+        # Covers HermeticInstallCatalogSourceError (a catalog source was supplied to
+        # the hermetic install via --catalog-source or KANON_CATALOG_SOURCE).
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:

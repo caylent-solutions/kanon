@@ -1,10 +1,15 @@
 """Unit tests for kanon_cli.commands.doctor._check_effective_catalog_source.
 
-Covers all precedence permutations for catalog source resolution:
+Covers all precedence permutations for catalog source resolution (schema v4):
   1. CLI flag (--catalog-source) takes highest precedence.
   2. KANON_CATALOG_SOURCE env var wins when CLI flag is absent.
-  3. Lockfile [catalog].source wins when neither CLI flag nor env var is set.
-  4. When none of the above is present, a "none configured" message is returned.
+  3. When neither CLI flag nor env var is set, a "none configured" message is
+     returned.
+
+Schema v4 (FR-7) removed the lockfile [catalog] block, so the lockfile no longer
+participates in catalog-source provenance.  The function still accepts a
+``lockfile`` parameter for call-site symmetry, but it is unused: a lockfile
+present with no CLI flag and no env var yields "(none configured)".
 
 AC-TEST-001: Every parametrized case asserts DoctorFinding.message contains
 the expected provenance suffix.
@@ -21,7 +26,7 @@ import pytest
 
 from kanon_cli.commands.doctor import DoctorFinding, _UNSET, _check_effective_catalog_source
 from kanon_cli.constants import CATALOG_ENV_VAR
-from kanon_cli.core.lockfile import CatalogBlock, Lockfile
+from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
 # ---------------------------------------------------------------------------
@@ -42,39 +47,30 @@ def _make_args(catalog_source: str | None) -> argparse.Namespace:
     return argparse.Namespace(catalog_source=catalog_source)
 
 
-def _make_lockfile_with_catalog(catalog_source: str) -> Lockfile:
-    """Return a minimal Lockfile with the given catalog source value."""
+def _make_lockfile() -> Lockfile:
+    """Return a minimal valid schema-v4 Lockfile with a single source.
+
+    The v4 lock carries no [catalog] block, so this lockfile contributes nothing
+    to the catalog-source precedence chain. It exists to verify that an
+    otherwise-valid lockfile present in the workspace does NOT supply a catalog
+    source (the provenance must fall through to "(none configured)").
+    """
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source=catalog_source,
-            url="https://example.com/org/catalog.git",
-            revision_spec="main",
-            resolved_ref="main",
-            resolved_sha="a" * 40,
-        ),
-        sources=[],
-    )
-
-
-def _make_lockfile_empty_catalog() -> Lockfile:
-    """Return a Lockfile whose catalog.source is an empty string."""
-    return Lockfile(
-        schema_version=1,
-        generated_at="2024-01-01T00:00:00Z",
-        generator="kanon-test",
-        kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
-        sources=[],
+        sources=[
+            SourceEntry(
+                alias="src",
+                name="src",
+                url="https://example.com/org/catalog.git",
+                ref_spec="main",
+                resolved_ref="refs/heads/main",
+                resolved_sha="a" * 40,
+                path="repo-specs/meta.xml",
+            )
+        ],
     )
 
 
@@ -103,13 +99,12 @@ class TestCheckEffectiveCatalogSource:
         assert "(from --catalog-source CLI flag)" in finding.message
         assert env_value not in finding.message
 
-    # AC-FUNC-001: CLI flag wins when env var differs.
-    def test_cli_flag_overrides_different_lockfile_value(self) -> None:
-        """CLI flag takes precedence over a lockfile catalog source."""
+    # AC-FUNC-001: CLI flag wins even when a v4 lockfile is present.
+    def test_cli_flag_used_when_lockfile_present(self) -> None:
+        """CLI flag is reported even when a v4 lockfile (which carries no catalog) is present."""
         cli_value = "https://cli.example.com/repo.git@main"
-        lock_value = "https://lock.example.com/repo.git@v1.0.0"
         args = _make_args(catalog_source=cli_value)
-        lockfile = _make_lockfile_with_catalog(lock_value)
+        lockfile = _make_lockfile()
         env: dict[str, str] = {}
 
         finding = _check_effective_catalog_source(args, env, lockfile)
@@ -118,7 +113,6 @@ class TestCheckEffectiveCatalogSource:
         assert finding.kind == "info"
         assert cli_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
-        assert lock_value not in finding.message
 
     # AC-FUNC-002: env var wins when CLI is absent.
     def test_env_var_wins_when_cli_absent(self) -> None:
@@ -134,20 +128,24 @@ class TestCheckEffectiveCatalogSource:
         assert env_value in finding.message
         assert "(from KANON_CATALOG_SOURCE env var)" in finding.message
 
-    # AC-FUNC-003: lockfile wins when no CLI flag and no env var.
-    def test_lockfile_wins_when_no_cli_and_no_env(self) -> None:
-        """Lockfile [catalog].source is used when CLI flag and env var are absent."""
-        lock_value = "https://lock.example.com/repo.git@v1.0.0"
+    # FR-7: the v4 lockfile no longer supplies a catalog source.
+    def test_lockfile_present_no_cli_no_env_yields_none_configured(self) -> None:
+        """A v4 lockfile present with no CLI flag and no env var yields "(none configured)".
+
+        Schema v4 removed the lockfile [catalog] block, so a lockfile that exists
+        in the workspace contributes nothing to the catalog-source provenance: the
+        chain falls through to "(none configured)".
+        """
         args = _make_args(catalog_source=None)
         env: dict[str, str] = {}
-        lockfile = _make_lockfile_with_catalog(lock_value)
+        lockfile = _make_lockfile()
 
         finding = _check_effective_catalog_source(args, env, lockfile)
 
         assert isinstance(finding, DoctorFinding)
         assert finding.kind == "info"
-        assert lock_value in finding.message
-        assert "(from .kanon.lock [catalog].source)" in finding.message
+        assert "(none configured)" in finding.message
+        assert "commands requiring" in finding.message
 
     # AC-FUNC-004: none configured when no CLI, no env, and no lockfile.
     def test_none_configured_when_no_source(self) -> None:
@@ -161,19 +159,6 @@ class TestCheckEffectiveCatalogSource:
         assert finding.kind == "info"
         assert "(none configured)" in finding.message
         assert "commands requiring" in finding.message
-
-    # AC-FUNC-004 variant: no CLI, no env, lockfile present but catalog.source empty.
-    def test_none_configured_when_lockfile_empty_catalog(self) -> None:
-        """Returns 'none configured' when lockfile is present but catalog.source is empty."""
-        args = _make_args(catalog_source=None)
-        env: dict[str, str] = {}
-        lockfile = _make_lockfile_empty_catalog()
-
-        finding = _check_effective_catalog_source(args, env, lockfile)
-
-        assert isinstance(finding, DoctorFinding)
-        assert finding.kind == "info"
-        assert "(none configured)" in finding.message
 
     # AC-FUNC-005: return type is always DoctorFinding.
     @pytest.mark.parametrize(
@@ -193,7 +178,7 @@ class TestCheckEffectiveCatalogSource:
     ) -> None:
         """_check_effective_catalog_source always returns a DoctorFinding instance."""
         args = _make_args(catalog_source=catalog_source)
-        lockfile = _make_lockfile_with_catalog("https://lock.example.com/r.git@main") if has_lockfile else None
+        lockfile = _make_lockfile() if has_lockfile else None
 
         finding = _check_effective_catalog_source(args, env, lockfile)
 
@@ -220,7 +205,7 @@ class TestCheckEffectiveCatalogSource:
                 None,
                 {},
                 True,
-                "(from .kanon.lock [catalog].source)",
+                "(none configured)",
             ),
             (
                 None,
@@ -239,7 +224,7 @@ class TestCheckEffectiveCatalogSource:
     ) -> None:
         """Provenance suffix is present in every output path (AC-FUNC-006)."""
         args = _make_args(catalog_source=catalog_source)
-        lockfile = _make_lockfile_with_catalog("https://lock.example.com/r.git@main") if has_lockfile else None
+        lockfile = _make_lockfile() if has_lockfile else None
 
         finding = _check_effective_catalog_source(args, env, lockfile)
 
@@ -275,15 +260,14 @@ class TestCheckEffectiveCatalogSource:
         assert cli_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
 
-    # Additional: CLI wins over both env and lockfile.
+    # Additional: CLI wins over both env and a present lockfile.
     def test_cli_wins_over_env_and_lockfile(self) -> None:
-        """CLI flag overrides env var AND lockfile simultaneously."""
+        """CLI flag overrides env var AND is reported even when a lockfile is present."""
         cli_value = "https://cli.example.com/repo.git@main"
         env_value = "https://env.example.com/repo.git@main"
-        lock_value = "https://lock.example.com/repo.git@v1.0.0"
         args = _make_args(catalog_source=cli_value)
         env = {CATALOG_ENV_VAR: env_value}
-        lockfile = _make_lockfile_with_catalog(lock_value)
+        lockfile = _make_lockfile()
 
         finding = _check_effective_catalog_source(args, env, lockfile)
 

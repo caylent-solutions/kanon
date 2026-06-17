@@ -25,8 +25,12 @@ Every ``kanon install`` invocation inspects the state matrix:
                             fresh, replay unchanged sources, rebuild + write the lock
                             once at the end on success only.
   LOCKFILE_UNREACHABLE   -- lockfile SHA no longer reachable on remote; hard error.
-  LOCKFILE_SOURCE_MISMATCH -- lockfile catalog source differs from CLI/env; hard error.
   REFRESH_LOCK_SOURCE    -- operator requested partial lockfile rebuild via --refresh-lock-source.
+
+``kanon install`` is hermetic (spec Section 5.2 / FR-7): the schema-v4 lock carries
+no ``[catalog]`` block, so install neither resolves nor records a catalog source.  A
+``--catalog-source`` CLI flag or ``KANON_CATALOG_SOURCE`` env var reaching install is
+rejected fail-fast via ``HermeticInstallCatalogSourceError``.
 
 Exception hierarchy:
 
@@ -34,8 +38,7 @@ Exception hierarchy:
                                  core/include_walker.py; re-exported here for backwards compatibility).
   KanonHashMismatchError      -- kanon_hash in lockfile != freshly-computed hash.
   LockfileUnreachableShaError -- a lockfile SHA is no longer reachable on remote.
-  CatalogSourceMismatchError  -- lockfile catalog source differs from CLI/env source.
-  MissingCatalogSourceError   -- no catalog source from CLI, env, or lockfile fallback.
+  HermeticInstallCatalogSourceError -- a catalog source was supplied to hermetic install.
   UnknownSourceError          -- --refresh-lock-source name does not match any source.
   OrphanedLockEntryError      -- --strict-lock: lockfile source absent from .kanon.
   BranchDriftError            -- --strict-drift: branch tip differs from locked SHA.
@@ -72,15 +75,11 @@ from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
     KANON_ALLOW_INSECURE_REMOTES,
-    KANON_CATALOG_BLOCK_HEADER,
-    KANON_CATALOG_BLOCK_KEY,
-    MISSING_CATALOG_ERROR_TEMPLATE,
     WORKSPACE_DIR_ENV_VAR,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
-    CatalogBlock,
     IncludeEntry,
     Lockfile,
     SourceEntry,
@@ -133,18 +132,6 @@ __all__ = [
 # a module-private constant is used here to avoid the merge surface.
 _GIT_LS_REMOTE_TIMEOUT: int = int(
     os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
-)
-
-# Remediation text appended to MissingCatalogSourceError when --refresh-lock is
-# the active install state.  The lockfile fallback is disabled on the refresh path
-# because the operator is explicitly rebuilding the lockfile.
-_REFRESH_LOCK_MISSING_CATALOG_REMEDIATION = (
-    "--refresh-lock requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
-)
-
-# Remediation text for --refresh-lock-source missing catalog (same constraint).
-_REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION = (
-    "--refresh-lock-source requires a CLI or env-var catalog source; the lockfile fallback is disabled on this path."
 )
 
 # ---------------------------------------------------------------------------
@@ -233,7 +220,6 @@ class InstallState(enum.Enum):
                                 npm-style (prune orphans, resolve added/changed sources fresh,
                                 replay unchanged sources, rebuild + write the lock once on success).
     - LOCKFILE_UNREACHABLE:     lockfile SHA no longer reachable on remote; hard error.
-    - LOCKFILE_SOURCE_MISMATCH: lockfile catalog source differs from CLI/env; hard error.
     - REFRESH_LOCK:             operator requested a full lockfile rebuild via --refresh-lock;
                                 short-circuits the normal state classification.
     - REFRESH_LOCK_SOURCE:      operator requested partial rebuild via --refresh-lock-source;
@@ -245,7 +231,6 @@ class InstallState(enum.Enum):
     LOCKFILE_HASH_MISMATCH = "lockfile-hash-mismatch"
     RECONCILE = "reconcile"
     LOCKFILE_UNREACHABLE = "lockfile-unreachable"
-    LOCKFILE_SOURCE_MISMATCH = "lockfile-catalog-source-mismatch"
     REFRESH_LOCK = "refresh-lock"
     REFRESH_LOCK_SOURCE = "refresh-lock-source"
 
@@ -317,84 +302,36 @@ class LockfileUnreachableShaError(InstallError):
         )
 
 
-class CatalogSourceMismatchError(InstallError):
-    """Raised when the lockfile's [catalog].source differs from the CLI/env source.
+class HermeticInstallCatalogSourceError(InstallError):
+    """Raised when a catalog source is supplied to the hermetic ``kanon install``.
 
-    Spec row: ``.kanon.lock records a different [catalog].source than the CLI/env source``.
-    Remediation: ``kanon install --refresh-lock``.
+    Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block,
+    so ``kanon install`` is hermetic: it reads ``.kanon`` and ``.kanon.lock`` and
+    reconciles sources without resolving or recording any catalog source.  A
+    ``--catalog-source`` CLI flag or a ``KANON_CATALOG_SOURCE`` environment
+    variable reaching install is therefore rejected fail-fast rather than silently
+    ignored.  The catalog source belongs to the catalog-querying commands
+    (``kanon add`` / ``kanon list`` / ``kanon outdated`` / ``kanon why``).
 
     Args:
-        lockfile_source: The ``[catalog].source`` value from the lockfile.
-        cli_env_source: The catalog source resolved from the CLI flag or env var.
+        origin: A short description of where the offending value came from
+            (e.g. ``"the --catalog-source flag"`` or
+            ``"the KANON_CATALOG_SOURCE environment variable"``).
     """
 
-    def __init__(self, lockfile_source: str, cli_env_source: str) -> None:
-        self.lockfile_source = lockfile_source
-        self.cli_env_source = cli_env_source
+    def __init__(self, origin: str) -> None:
+        self.origin = origin
         super().__init__(str(self))
 
     def __str__(self) -> str:
         return (
-            "ERROR: Catalog source in lockfile does not match the CLI/env catalog source.\n"
-            f"  Lockfile [catalog].source : {self.lockfile_source}\n"
-            f"  CLI/env catalog source    : {self.cli_env_source}\n"
-            "  The lockfile is authoritative; if you intentionally changed catalogs,\n"
-            "  run 'kanon install --refresh-lock' to rebuild the lockfile from the new source."
-        )
-
-
-class MissingCatalogSourceError(InstallError):
-    """Raised when no catalog source is available from CLI, env var, or lockfile fallback.
-
-    Spec reference: Section 4 header -- canonical missing-catalog error.
-
-    Args:
-        command: The command name to embed in the error message (e.g. ``"install"``).
-        remediation: Optional override for the remediation line.  When set,
-            this text is appended to the standard error body.  Used by the
-            ``--refresh-lock`` path to explain that the lockfile fallback is
-            disabled on the rebuild path.
-    """
-
-    def __init__(self, command: str, remediation: str | None = None) -> None:
-        self.command = command
-        self.remediation = remediation
-        super().__init__(str(self))
-
-    def __str__(self) -> str:
-        base = MISSING_CATALOG_ERROR_TEMPLATE.format(command=self.command)
-        if self.remediation is not None:
-            return base + "\n" + self.remediation
-        return base
-
-
-class CatalogBlockParseError(InstallError):
-    """Raised when a .kanon [catalog] block is present but malformed.
-
-    A malformed block is one where the ``[catalog]`` header is present but
-    the immediately-following line is not a valid
-    ``KANON_CATALOG_SOURCE=<value>`` assignment, or the value is empty.
-
-    This is a hard error: the operator must fix the block rather than having
-    the CLI silently fall back to the next precedence layer.
-
-    Args:
-        line_number: 1-based line number of the offending line in .kanon.
-        reason: Human-readable description of what is wrong with the line.
-        kanon_path: Path to the .kanon file containing the malformed block.
-    """
-
-    def __init__(self, line_number: int, reason: str, kanon_path: pathlib.Path) -> None:
-        self.line_number = line_number
-        self.reason = reason
-        self.kanon_path = kanon_path
-        super().__init__(str(self))
-
-    def __str__(self) -> str:
-        return (
-            f"ERROR: malformed [catalog] block at {self.kanon_path}:{self.line_number}: {self.reason}\n"
-            f"Remove the block or supply a value of the form "
-            f"`{KANON_CATALOG_BLOCK_KEY}=<url>@<ref>`."
+            f"ERROR: 'kanon install' does not accept a catalog source, but one was supplied via "
+            f"{self.origin}.\n"
+            "  'kanon install' is hermetic: it installs exactly the sources declared in .kanon\n"
+            "  and pinned in .kanon.lock, and never resolves a remote catalog.\n"
+            "  Remediation: re-run 'kanon install' without --catalog-source and with\n"
+            "  KANON_CATALOG_SOURCE unset. Use --catalog-source with 'kanon add', 'kanon list',\n"
+            "  'kanon outdated', or 'kanon why' instead."
         )
 
 
@@ -921,9 +858,8 @@ def _classify_install_state(
       freshly-computed hash of the ``.kanon`` file.
     - LOCKFILE_HASH_MISMATCH: lockfile exists but hashes differ.
 
-    The LOCKFILE_UNREACHABLE and LOCKFILE_SOURCE_MISMATCH rows require
-    resolver output (live git ls-remote results) and are detected elsewhere
-    in the install pipeline.
+    The LOCKFILE_UNREACHABLE row requires resolver output (live git ls-remote
+    results) and is detected elsewhere in the install pipeline.
 
     The returned ``InstallClassification`` carries the pre-computed hash and the
     parsed lockfile so the caller (``_run_install``) does not need to recompute
@@ -975,171 +911,30 @@ def _classify_install_state(
     )
 
 
-def _parse_catalog_block(kanon_path: pathlib.Path) -> str | None:
-    """Parse the optional ``[catalog]`` block from a ``.kanon`` file.
+def _reject_catalog_source_on_install(cli_arg: str | None, env_value: str | None) -> None:
+    """Fail fast if a catalog source was supplied to the hermetic ``kanon install``.
 
-    Scans the file for a line equal to ``KANON_CATALOG_BLOCK_HEADER`` (``[catalog]``).
-    When found, reads the immediately-following non-blank line and expects it to
-    be a ``KANON_CATALOG_BLOCK_KEY=<value>`` assignment with a non-empty value.
-
-    Returns ``None`` when no ``[catalog]`` header is present -- absence of the
-    block is a normal condition on projects that were created before E22 and does
-    NOT trigger a fallback error.
-
-    Raises:
-        CatalogBlockParseError: When the ``[catalog]`` header is present but the
-            follow-up assignment is missing, malformed, or has an empty value.
-            The error includes the 1-based line number of the offending line.
+    Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block, so
+    ``kanon install`` is hermetic and never resolves a remote catalog source: it
+    installs exactly the sources declared in ``.kanon`` and pinned in ``.kanon.lock``.
+    A ``--catalog-source`` CLI flag or a ``KANON_CATALOG_SOURCE`` environment
+    variable is therefore an operator error on this command and is rejected rather
+    than silently ignored.  The CLI flag takes precedence over the env var when
+    attributing the origin in the error message.
 
     Args:
-        kanon_path: Path to the ``.kanon`` file to read.
-
-    Returns:
-        The catalog source value string (``<url>@<ref>`` form), or ``None`` when
-        the block is absent.
-    """
-    if not kanon_path.exists():
-        return None
-
-    lines = kanon_path.read_text().splitlines()
-    expected_key_prefix = f"{KANON_CATALOG_BLOCK_KEY}="
-
-    for idx, line in enumerate(lines):
-        if line.strip() == KANON_CATALOG_BLOCK_HEADER:
-            header_line_number = idx + 1  # 1-based
-
-            # Find the immediately-following non-blank line.
-            next_idx = idx + 1
-            while next_idx < len(lines) and lines[next_idx].strip() == "":
-                next_idx += 1
-
-            if next_idx >= len(lines):
-                # Header at end of file with no follow-up line.
-                raise CatalogBlockParseError(
-                    line_number=header_line_number,
-                    reason=f"[catalog] header at line {header_line_number} has no following {KANON_CATALOG_BLOCK_KEY}= line",
-                    kanon_path=kanon_path,
-                )
-
-            follow_line = lines[next_idx].strip()
-            follow_line_number = next_idx + 1  # 1-based
-
-            if not follow_line.startswith(expected_key_prefix):
-                raise CatalogBlockParseError(
-                    line_number=follow_line_number,
-                    reason=f"expected {KANON_CATALOG_BLOCK_KEY}=<url>@<ref>, got {follow_line!r}",
-                    kanon_path=kanon_path,
-                )
-
-            value = follow_line[len(expected_key_prefix) :]
-            if not value:
-                raise CatalogBlockParseError(
-                    line_number=follow_line_number,
-                    reason=f"{KANON_CATALOG_BLOCK_KEY} value is empty; expected <url>@<ref>",
-                    kanon_path=kanon_path,
-                )
-
-            return value
-
-    return None
-
-
-def _resolve_catalog_source(
-    cli_arg: str | None,
-    env_value: str | None,
-    lockfile_catalog_source: str | None,
-    install_state: InstallState,
-    kanon_path: pathlib.Path | None = None,
-) -> str:
-    """Resolve the effective catalog source following the spec's precedence rule.
-
-    Precedence (highest to lowest, spec Section 4 header):
-    1. ``cli_arg`` -- the ``--catalog-source`` CLI flag value.
-    2. ``env_value`` -- the ``KANON_CATALOG_SOURCE`` environment variable.
-    3. ``lockfile_catalog_source`` -- the ``[catalog].source`` field from the
-       lockfile. This fallback applies ONLY in the ``LOCKFILE_CONSISTENT`` state
-       and ONLY when both ``cli_arg`` and ``env_value`` are unset.
-    4. ``kanon_path`` -- the ``[catalog]`` block inside the ``.kanon`` file
-       written by ``kanon add``. This fallback applies when the block is present
-       and the three higher-priority layers all return ``None``. The refresh-lock
-       paths disable this fallback (same constraint as the lockfile fallback).
-
-    When ``cli_arg`` or ``env_value`` is set and the lockfile's source differs,
-    ``CatalogSourceMismatchError`` is raised (spec Section 4.7 -- the lockfile
-    is authoritative; a deliberate catalog change requires ``--refresh-lock``).
-
-    When all four sources are unset (or their fallbacks are not applicable
-    for the current state), ``MissingCatalogSourceError`` is raised.
-
-    Args:
-        cli_arg: The ``--catalog-source`` CLI argument value, or ``None``.
-        env_value: The ``KANON_CATALOG_SOURCE`` env var value, or ``None``.
-        lockfile_catalog_source: The ``[catalog].source`` from a parsed lockfile,
-            or ``None`` when no lockfile is available.
-        install_state: The ``InstallState`` returned by ``_classify_install_state``.
-        kanon_path: Path to the ``.kanon`` file for the fourth fallback layer.
-            When ``None``, the ``.kanon`` block fallback is skipped.
-
-    Returns:
-        The effective catalog source string (``<url>@<ref>`` form).
+        cli_arg: The ``--catalog-source`` CLI flag value, or ``None``.
+        env_value: The ``KANON_CATALOG_SOURCE`` environment-variable value, or ``None``.
 
     Raises:
-        CatalogBlockParseError: If the .kanon [catalog] block is malformed.
-        CatalogSourceMismatchError: If CLI/env source differs from the lockfile source
-            in the consistent state (AC-FUNC-005).
-        MissingCatalogSourceError: If no catalog source can be resolved (AC-FUNC-007).
+        HermeticInstallCatalogSourceError: If either ``cli_arg`` or ``env_value`` is set.
     """
-    # Determine the effective CLI/env source (highest priority wins)
-    cli_env_source: str | None = cli_arg if cli_arg is not None else env_value
-
-    if cli_env_source is not None:
-        # In the consistent state, validate that lockfile source agrees (if present).
-        if (
-            install_state in (InstallState.LOCKFILE_CONSISTENT, InstallState.RECONCILE)
-            and lockfile_catalog_source is not None
-            and lockfile_catalog_source != cli_env_source
-        ):
-            raise CatalogSourceMismatchError(
-                lockfile_source=lockfile_catalog_source,
-                cli_env_source=cli_env_source,
-            )
-        return cli_env_source
-
-    # On the refresh-lock and refresh-lock-source paths the lockfile fallback is
-    # DISABLED.  The operator is explicitly rebuilding (part of) the lockfile and
-    # must supply a source via CLI or env var; falling back to a stale lockfile
-    # entry would silently reuse the old catalog, defeating the purpose of the flag.
-    if install_state is InstallState.REFRESH_LOCK:
-        raise MissingCatalogSourceError(
-            command="install",
-            remediation=_REFRESH_LOCK_MISSING_CATALOG_REMEDIATION,
+    if cli_arg is not None:
+        raise HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
+    if env_value is not None:
+        raise HermeticInstallCatalogSourceError(
+            origin="the KANON_CATALOG_SOURCE environment variable",
         )
-    if install_state is InstallState.REFRESH_LOCK_SOURCE:
-        raise MissingCatalogSourceError(
-            command="install",
-            remediation=_REFRESH_LOCK_SOURCE_MISSING_CATALOG_REMEDIATION,
-        )
-
-    # No CLI/env source -- use the lockfile fallback in the consistent state and on
-    # the reconcile path.  Reconcile keeps the existing lockfile for replay, so its
-    # recorded catalog source is still authoritative provenance (the operator
-    # changed source declarations, not the catalog).
-    if (
-        install_state in (InstallState.LOCKFILE_CONSISTENT, InstallState.RECONCILE)
-        and lockfile_catalog_source is not None
-    ):
-        return lockfile_catalog_source
-
-    # Fourth precedence layer: read the [catalog] block from the .kanon file.
-    # This block is written by `kanon add` when creating a fresh .kanon file.
-    # _parse_catalog_block returns None when the block is absent (not an error),
-    # and raises CatalogBlockParseError when the block is present but malformed.
-    if kanon_path is not None:
-        kanon_block_source = _parse_catalog_block(kanon_path)
-        if kanon_block_source is not None:
-            return kanon_block_source
-
-    raise MissingCatalogSourceError(command="install")
 
 
 def _emit_install_state(
@@ -1271,9 +1066,10 @@ def _refresh_one_source(
     resolved_revision = resolve_version(source_data["url"], source_data["revision"])
     ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
     return SourceEntry(
+        alias=source_name,
         name=source_name,
         url=source_data["url"],
-        revision_spec=source_data["revision"],
+        ref_spec=source_data["revision"],
         resolved_ref=ref_resolution.resolved_ref,
         resolved_sha=ref_resolution.sha,
         path=source_data["path"],
@@ -1288,10 +1084,10 @@ def _merge_partial_lockfile(
 ) -> Lockfile:
     """Replace exactly one ``SourceEntry`` in the lockfile, preserving all others.
 
-    The ``[catalog]`` block and all other ``SourceEntry`` objects are carried
-    over verbatim from ``old_lockfile``.  The top-level ``kanon_hash`` is
-    updated to the freshly-computed value so the rewritten lockfile passes the
-    consistency check on the next ``kanon install``.
+    All other ``SourceEntry`` objects are carried over verbatim from
+    ``old_lockfile``.  The top-level ``kanon_hash`` is updated to the
+    freshly-computed value so the rewritten lockfile passes the consistency check
+    on the next ``kanon install``.
 
     Every source's per-source ``registered_marketplaces`` ledger is refreshed
     from ``attributed_marketplaces``: install wiped and repopulated
@@ -1310,7 +1106,7 @@ def _merge_partial_lockfile(
 
     Returns:
         A new ``Lockfile`` instance with the refreshed source replaced and all
-        other fields (including ``catalog``) preserved from ``old_lockfile``.
+        other fields preserved from ``old_lockfile``.
 
     Raises:
         UnknownSourceError: If ``refreshed_source.name`` is not found in
@@ -1329,7 +1125,6 @@ def _merge_partial_lockfile(
         generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         generator=old_lockfile.generator,
         kanon_hash=new_kanon_hash,
-        catalog=old_lockfile.catalog,
         sources=new_sources,
         marketplace_registered=old_lockfile.marketplace_registered,
         marketplace_dir=old_lockfile.marketplace_dir,
@@ -1873,7 +1668,7 @@ def _should_replay_source(
     pinned = next((entry for entry in lockfile.sources if entry.name == name), None)
     if pinned is None:
         return False
-    return pinned.revision_spec == kanon_revision_spec
+    return pinned.ref_spec == kanon_revision_spec
 
 
 def _detect_branch_drift(
@@ -1900,11 +1695,11 @@ def _detect_branch_drift(
     """
     reports: list[BranchDriftReport] = []
     for entry in lockfile.sources:
-        if not _is_branch_shaped_spec(entry.revision_spec):
+        if not _is_branch_shaped_spec(entry.ref_spec):
             continue
         # Determine the ref to query.  Use resolved_ref when available;
-        # fall back to revision_spec for plain branch names.
-        ref_to_query = entry.resolved_ref if entry.resolved_ref else entry.revision_spec
+        # fall back to ref_spec for plain branch names.
+        ref_to_query = entry.resolved_ref if entry.resolved_ref else entry.ref_spec
 
         result = subprocess.run(
             ["git", "ls-remote", entry.url, ref_to_query],
@@ -2014,13 +1809,13 @@ def _run_install(
         kanonenv_path: Resolved absolute path to the .kanon configuration file.
         lockfile_path: Path to the .kanon.lock file (may or may not exist).
         catalog_source: Catalog source string from the CLI flag, or None when
-            the caller did not provide one (the env var is consulted automatically).
+            the caller did not provide one.  ``kanon install`` is hermetic, so a
+            non-None value (or a set ``KANON_CATALOG_SOURCE`` env var) is rejected
+            fail-fast via ``HermeticInstallCatalogSourceError``.
         refresh_lock: When ``True``, short-circuit to ``InstallState.REFRESH_LOCK``
-            regardless of lockfile presence or hash state.  The lockfile fallback
-            in ``_resolve_catalog_source`` is disabled on this path.
+            regardless of lockfile presence or hash state.
         refresh_lock_source: When set, re-resolve exactly the named source chain
-            while preserving all other lockfile entries.  The lockfile fallback
-            in ``_resolve_catalog_source`` is disabled on this path.
+            while preserving all other lockfile entries.
         strict_lock: When ``True``, upgrade orphaned lock entries (sources in the
             lockfile but absent from ``.kanon``) to ``OrphanedLockEntryError``
             instead of pruning with an info-line.  Only applies in the consistent state.
@@ -2033,12 +1828,9 @@ def _run_install(
             kanon_hash differs from the freshly-computed hash for a reason other
             than a pure source removal (an addition or a changed revision spec).
             Default install reconciles instead of raising.
-        MissingCatalogSourceError: If no catalog source can be resolved from
-            cli arg, env var, or lockfile fallback (AC-FUNC-007). Always raised;
-            never swallowed.  On the REFRESH_LOCK path, the lockfile fallback is
-            disabled and the remediation text explains this constraint.
-        CatalogSourceMismatchError: If the resolved catalog source differs from
-            the lockfile's recorded source in the consistent state.
+        HermeticInstallCatalogSourceError: If a catalog source is supplied via the
+            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCE`` env var, which
+            the hermetic install does not accept.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name (by literal or derive_source_name match).
         OrphanedLockEntryError: If ``strict_lock=True`` and the lockfile contains
@@ -2137,23 +1929,12 @@ def _run_install(
         existing_lockfile = existing_lockfile_nn
         reconcile_computed_hash = computed_hash_nn
 
-    # Step 3: Read catalog source from env var if not supplied by caller.
-    env_catalog = os.environ.get(CATALOG_ENV_VAR)
-    lockfile_catalog_source: str | None = existing_lockfile.catalog.source if existing_lockfile is not None else None
-
-    # Step 4: Resolve the effective catalog source following precedence rules.
-    # _resolve_catalog_source enforces the four-tier precedence (CLI > env > lockfile
-    # fallback > .kanon [catalog] block) and raises MissingCatalogSourceError when
-    # all tiers are unset (AC-FUNC-007). The lockfile fallback applies only in
-    # LOCKFILE_CONSISTENT state. The .kanon block fallback applies in LOCKFILE_ABSENT
-    # state when the block was written by a preceding `kanon add` invocation.
-    effective_catalog_source: str = _resolve_catalog_source(
-        cli_arg=catalog_source,
-        env_value=env_catalog,
-        lockfile_catalog_source=lockfile_catalog_source,
-        install_state=install_state,
-        kanon_path=kanonenv_path,
-    )
+    # Step 3: kanon install is hermetic (spec Section 5.2 / FR-7).  The v4 lock
+    # carries no [catalog] block, so install neither resolves nor records a catalog
+    # source: it reads .kanon + .kanon.lock and reconciles sources only.  A
+    # --catalog-source value (CLI flag or KANON_CATALOG_SOURCE env var) reaching
+    # install is rejected fail-fast, never silently ignored.
+    _reject_catalog_source_on_install(catalog_source, os.environ.get(CATALOG_ENV_VAR))
 
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
@@ -2419,9 +2200,10 @@ def _run_install(
                 ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
                 resolved_entries.append(
                     SourceEntry(
+                        alias=name,
                         name=name,
                         url=source_data["url"],
-                        revision_spec=source_data["revision"],
+                        ref_spec=source_data["revision"],
                         resolved_ref=ref_resolution.resolved_ref,
                         resolved_sha=ref_resolution.sha,
                         path=source_data["path"],
@@ -2434,9 +2216,10 @@ def _run_install(
             ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
             resolved_entries.append(
                 SourceEntry(
+                    alias=name,
                     name=name,
                     url=source_data["url"],
-                    revision_spec=source_data["revision"],
+                    ref_spec=source_data["revision"],
                     resolved_ref=ref_resolution.resolved_ref,
                     resolved_sha=ref_resolution.sha,
                     path=source_data["path"],
@@ -2612,13 +2395,14 @@ def _run_install(
             print(f"  - unregistering marketplace: {name}")
             remove_marketplace(claude_bin, name)
 
-    # Step 7: Write the lockfile.
+    # Step 7: Write the lockfile.  Schema v4 (spec Section 5.2 / FR-7) has no
+    # [catalog] block, so no write path resolves or records a catalog source.
     # - LOCKFILE_ABSENT: write fresh lockfile.
     # - REFRESH_LOCK: full rebuild; overwrite lockfile.
     # - RECONCILE: full rebuild from the resolved+replayed entries (orphans dropped,
-    #   added/changed resolved fresh, unchanged replayed), preserving the existing
-    #   lockfile's [catalog] block and recording the new kanon_hash.  Written once,
-    #   on success only -- nothing was written earlier on this path.
+    #   added/changed resolved fresh, unchanged replayed), recording the new
+    #   kanon_hash.  Written once, on success only -- nothing was written earlier
+    #   on this path.
     # - REFRESH_LOCK_SOURCE: partial rebuild; merge one source into old lockfile.
     # - LOCKFILE_CONSISTENT with orphans pruned: rewrite without orphaned entries.
     # - LOCKFILE_CONSISTENT (no orphans): lockfile is authoritative; do NOT rewrite.
@@ -2628,31 +2412,11 @@ def _run_install(
         # lockfile to compare against. Compute it now.
         computed_hash = _kanon_hash(kanonenv_path)
 
-        # Build the catalog block.  effective_catalog_source is always a non-empty
-        # string here: _resolve_catalog_source raised MissingCatalogSourceError above
-        # when all tiers were unset.  Fail fast if the value lacks the '@' separator.
-        if "@" not in effective_catalog_source:
-            raise ValueError(
-                f"catalog source must be in <url>@<ref> form; got: {effective_catalog_source!r}",
-            )
-        catalog_url, catalog_ref = effective_catalog_source.rsplit("@", 1)
-
-        # Resolve the catalog ref to a SHA and its fully-qualified ref string.
-        catalog_resolution = _resolve_ref_to_sha(catalog_url, catalog_ref)
-        catalog_block = CatalogBlock(
-            source=effective_catalog_source,
-            url=catalog_url,
-            revision_spec=catalog_ref,
-            resolved_ref=catalog_resolution.resolved_ref,
-            resolved_sha=catalog_resolution.sha,
-        )
-
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             generator=f"kanon-cli/{__version__}",
             kanon_hash=computed_hash,
-            catalog=catalog_block,
             sources=resolved_entries,
             marketplace_registered=marketplace_install,
             marketplace_dir=marketplace_dir_str if marketplace_install else "",
@@ -2660,18 +2424,14 @@ def _run_install(
         write_lockfile(lf, lockfile_path)
 
     elif install_state is InstallState.RECONCILE:
-        # Full rebuild from the reconciled source set.  The existing lockfile's
-        # [catalog] block is preserved verbatim (the catalog did not change; the
-        # operator only edited source declarations), and the new kanon_hash is the
+        # Full rebuild from the reconciled source set.  The new kanon_hash is the
         # value computed during Step 2 classification.
-        existing_lockfile_for_reconcile = cast(Lockfile, existing_lockfile)
         reconcile_hash_nn = cast(str, reconcile_computed_hash)
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             generator=f"kanon-cli/{__version__}",
             kanon_hash=reconcile_hash_nn,
-            catalog=existing_lockfile_for_reconcile.catalog,
             sources=resolved_entries,
             marketplace_registered=marketplace_install,
             marketplace_dir=marketplace_dir_str if marketplace_install else "",
@@ -2701,25 +2461,11 @@ def _run_install(
             write_lockfile(merged_lf, lockfile_path)
         else:
             # No existing lockfile -- write a full lockfile as if LOCKFILE_ABSENT.
-            if "@" not in effective_catalog_source:
-                raise ValueError(
-                    f"catalog source must be in <url>@<ref> form; got: {effective_catalog_source!r}",
-                )
-            catalog_url, catalog_ref = effective_catalog_source.rsplit("@", 1)
-            catalog_resolution = _resolve_ref_to_sha(catalog_url, catalog_ref)
-            catalog_block = CatalogBlock(
-                source=effective_catalog_source,
-                url=catalog_url,
-                revision_spec=catalog_ref,
-                resolved_ref=catalog_resolution.resolved_ref,
-                resolved_sha=catalog_resolution.sha,
-            )
             lf = Lockfile(
                 schema_version=CURRENT_SCHEMA_VERSION,
                 generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 generator=f"kanon-cli/{__version__}",
                 kanon_hash=new_kanon_hash,
-                catalog=catalog_block,
                 sources=resolved_entries,
                 marketplace_registered=marketplace_install,
                 marketplace_dir=marketplace_dir_str if marketplace_install else "",
@@ -2729,8 +2475,8 @@ def _run_install(
     elif install_state is InstallState.LOCKFILE_CONSISTENT and _consistent_has_orphans:
         # Orphans were pruned from the consistent-state run.  Rewrite the lockfile
         # without the orphaned entries so subsequent installs do not re-detect them.
-        # The kanon_hash, catalog block, and all non-orphan source entries are
-        # preserved verbatim from the existing lockfile (it is still consistent).
+        # The kanon_hash and all non-orphan source entries are preserved verbatim
+        # from the existing lockfile (it is still consistent).
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
         # These entry objects were appended to resolved_entries as ``pinned`` and
@@ -2742,7 +2488,6 @@ def _run_install(
             generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             generator=pruned_lf_nn.generator,
             kanon_hash=pruned_lf_nn.kanon_hash,
-            catalog=pruned_lf_nn.catalog,
             sources=pruned_sources,
             marketplace_registered=marketplace_install,
             marketplace_dir=marketplace_dir_str if marketplace_install else "",
@@ -2780,9 +2525,9 @@ def install(
       2. Classify the lockfile state via _classify_install_state.
          When refresh_lock=True, short-circuits to InstallState.REFRESH_LOCK.
          When refresh_lock_source is set, uses InstallState.REFRESH_LOCK_SOURCE.
-      3. Resolve the effective catalog source via _resolve_catalog_source.
-         On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths, the lockfile
-         fallback is disabled.
+      3. Reject a supplied catalog source: install is hermetic and does not
+         resolve one (HermeticInstallCatalogSourceError if --catalog-source or
+         KANON_CATALOG_SOURCE is set).
       4. Parse .kanon and validate sources.
       4a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
          Prune orphans (or raise OrphanedLockEntryError with --strict-lock).
@@ -2806,20 +2551,16 @@ def install(
         lock_file_path: Pre-resolved path to the .kanon.lock file. The caller
             is responsible for resolution via ``derive_lock_file_path``; this
             function does not apply any fallback or derivation.
-        catalog_source: Effective catalog source (cli flag value takes
-            precedence over the KANON_CATALOG_SOURCE env var, which is read
-            automatically inside _run_install). Pass None when no CLI flag
-            is present; the env var will be consulted automatically.
+        catalog_source: The ``--catalog-source`` CLI flag value, or None when no
+            flag is present.  ``kanon install`` is hermetic, so a non-None value
+            (or a set ``KANON_CATALOG_SOURCE`` env var) is rejected fail-fast.
         refresh_lock: When ``True``, ignore the existing lockfile entirely and
-            rebuild it from scratch.  The lockfile fallback for catalog source
-            resolution is disabled on this path.  Default ``False`` preserves
-            prior behaviour.
+            rebuild it from scratch.  Default ``False`` preserves prior behaviour.
         refresh_lock_source: When set to a source name or catalog entry name,
             re-resolve exactly that source's chain while preserving every other
             lockfile entry verbatim.  Mutually exclusive with ``refresh_lock``
-            (enforced at the CLI level by argparse).  The lockfile fallback for
-            catalog source resolution is disabled on this path.  Default ``None``
-            preserves prior behaviour.
+            (enforced at the CLI level by argparse).  Default ``None`` preserves
+            prior behaviour.
         strict_lock: When ``True``, upgrade orphaned lock entries to
             ``OrphanedLockEntryError`` instead of pruning with an info-line.  Only
             applies in the ``LOCKFILE_CONSISTENT`` state.  Default ``False``
@@ -2834,13 +2575,9 @@ def install(
             kanon_hash differs from the freshly-computed hash for a reason other
             than a pure source removal (an addition or a changed revision spec).
             Default install reconciles instead of raising.
-        MissingCatalogSourceError: If the consistent state requires a catalog
-            source but none can be resolved from cli arg, env var, or lockfile.
-            On the REFRESH_LOCK and REFRESH_LOCK_SOURCE paths the lockfile
-            fallback is disabled and the error message includes the
-            refresh-specific remediation text.
-        CatalogSourceMismatchError: If the CLI/env catalog source differs from
-            the lockfile's recorded source in the consistent state.
+        HermeticInstallCatalogSourceError: If a catalog source is supplied via the
+            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCE`` env var, which
+            the hermetic install does not accept.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name by direct lookup or via ``derive_source_name``.
         OrphanedLockEntryError: If ``strict_lock=True`` and the lockfile has

@@ -20,7 +20,7 @@ import textwrap
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -44,7 +44,6 @@ _INCLUDE_PATH = "repo-specs/bar.xml"
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
-_CATALOG_SHA = "f" * 40
 _KANON_HASH = "sha256:" + "a" * 64
 
 
@@ -97,22 +96,16 @@ def why_json_fixture(tmp_path: pathlib.Path):
     kanon_file.chmod(0o644)
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=_KANON_HASH,
-        catalog=CatalogBlock(
-            source="https://github.com/org/catalog@main",
-            url="https://github.com/org/catalog",
-            revision_spec="main",
-            resolved_ref="refs/heads/main",
-            resolved_sha=_CATALOG_SHA,
-        ),
         sources=[
             SourceEntry(
+                alias=_SOURCE_NAME,
                 name=_SOURCE_NAME,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_SOURCE_SHA,
                 path="./foo",
@@ -130,7 +123,7 @@ def why_json_fixture(tmp_path: pathlib.Path):
                         name=_PROJECT_NAME,
                         url=_PROJECT_URL,
                         canonical_url=canonicalize_repo_url(_PROJECT_URL),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="refs/heads/main",
                         resolved_sha=_PROJECT_SHA,
                     )
@@ -380,22 +373,16 @@ class TestWhyFormatJsonIntegration:
         kanon_file.chmod(0o644)
 
         lockfile = Lockfile(
-            schema_version=1,
+            schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2024-01-01T00:00:00Z",
             generator="kanon-test",
             kanon_hash=_KANON_HASH,
-            catalog=CatalogBlock(
-                source="https://github.com/org/catalog@main",
-                url="https://github.com/org/catalog",
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha=_CATALOG_SHA,
-            ),
             sources=[
                 SourceEntry(
+                    alias="FOO",
                     name="FOO",
                     url="https://github.com/org/catalog",
-                    revision_spec="main",
+                    ref_spec="main",
                     resolved_ref="refs/heads/main",
                     resolved_sha=_SOURCE_SHA,
                     path="./foo",
@@ -405,7 +392,7 @@ class TestWhyFormatJsonIntegration:
                             name="baz",
                             url=raw_url,
                             canonical_url=expected_canonical,
-                            revision_spec="main",
+                            ref_spec="main",
                             resolved_ref="refs/heads/main",
                             resolved_sha=_PROJECT_SHA,
                         )

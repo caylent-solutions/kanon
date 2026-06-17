@@ -13,7 +13,7 @@ from kanon_cli.core.clean import (
     remove_packages_dir,
 )
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
     SourceEntry,
     write_lockfile,
@@ -274,9 +274,10 @@ class TestCleanWorkspaceDirEnvVar:
 def _make_source(name: str, *, registered_marketplaces: list[str]) -> SourceEntry:
     """Build a valid SourceEntry carrying a per-source marketplace ledger."""
     return SourceEntry(
+        alias=name,
         name=name,
         url=f"https://example.com/{name}.git",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha="a" * 40,
         path=f"repo-specs/{name}.xml",
@@ -284,29 +285,22 @@ def _make_source(name: str, *, registered_marketplaces: list[str]) -> SourceEntr
     )
 
 
-def _write_v3_lock(
+def _write_lock(
     base_dir: pathlib.Path,
     *,
     marketplace_dir: pathlib.Path,
     sources: list[SourceEntry],
 ) -> pathlib.Path:
-    """Write a real schema-v3 .kanon.lock with per-source marketplace ledgers.
+    """Write a real schema-v4 .kanon.lock with per-source marketplace ledgers.
 
-    The catalog block and hash are synthetic-but-valid so read_lockfile parses
-    the file without raising. Returns the lockfile path.
+    Schema v4 carries no [catalog] block; the hash is synthetic-but-valid so
+    read_lockfile parses the file without raising. Returns the lockfile path.
     """
     lockfile = Lockfile(
-        schema_version=3,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         generator="kanon-cli/test",
         kanon_hash="sha256:" + ("a" * 64),
-        catalog=CatalogBlock(
-            source="https://catalog.example.com/repo.git@main",
-            url="https://catalog.example.com/repo.git",
-            revision_spec="main",
-            resolved_ref="refs/heads/main",
-            resolved_sha="b" * 40,
-        ),
         sources=sources,
         marketplace_registered=True,
         marketplace_dir=str(marketplace_dir),
@@ -363,7 +357,7 @@ class TestCleanOrphansSourcePrune:
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 
-        _write_v3_lock(
+        _write_lock(
             tmp_path,
             marketplace_dir=marketplace_dir,
             sources=[
@@ -408,7 +402,7 @@ class TestCleanOrphansSourcePrune:
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 
-        _write_v3_lock(
+        _write_lock(
             tmp_path,
             marketplace_dir=marketplace_dir,
             sources=[
@@ -438,7 +432,7 @@ class TestCleanOrphansSourcePrune:
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 
-        _write_v3_lock(
+        _write_lock(
             tmp_path,
             marketplace_dir=marketplace_dir,
             sources=[_make_source("bravo", registered_marketplaces=["bravo-mp"])],
@@ -466,7 +460,7 @@ class TestCleanOrphansSourcePrune:
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 
-        _write_v3_lock(
+        _write_lock(
             tmp_path,
             marketplace_dir=marketplace_dir,
             sources=[
@@ -493,7 +487,7 @@ class TestCleanOrphansSourcePrune:
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 
-        _write_v3_lock(
+        _write_lock(
             tmp_path,
             marketplace_dir=marketplace_dir,
             sources=[

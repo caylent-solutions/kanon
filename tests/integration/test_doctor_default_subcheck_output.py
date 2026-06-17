@@ -63,7 +63,8 @@ class TestDoctorDefaultSubcheckOutput:
         Steps:
         1. Create a synthetic catalog bare repo with a `foo` entry tagged 1.0.0.
         2. Run `kanon add foo --catalog-source <synthetic-url>` (writes .kanon).
-        3. Run `kanon install` (writes .kanon.lock using [catalog].source).
+        3. Run `kanon install` (hermetic: installs the sources declared in .kanon
+           and writes the schema-v4 .kanon.lock; no catalog source is consulted).
         4. Run `kanon doctor` (no flags) in the workspace.
         5. Assert exit code is 0.
         6. For each name in EXPECTED_DOCTOR_SUBCHECK_NAMES, assert that at least
@@ -92,7 +93,9 @@ class TestDoctorDefaultSubcheckOutput:
             f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
         )
 
-        # Step 3: kanon install (reads [catalog].source from .kanon file)
+        # Step 3: kanon install is hermetic -- it installs exactly the sources
+        # declared in .kanon and never resolves a catalog source. Strip
+        # KANON_CATALOG_SOURCE so install's hermetic guard does not reject the run.
         env_without_catalog = dict(os.environ)
         env_without_catalog.pop("KANON_CATALOG_SOURCE", None)
 

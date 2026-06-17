@@ -13,7 +13,7 @@ import unittest.mock
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -51,14 +51,6 @@ def _make_include_chain(depth: int, prefix: str) -> list[IncludeEntry]:
 
 def _build_deep_lockfile() -> Lockfile:
     """Build a Lockfile with two sources, 3-level nested includes, 2 projects each."""
-    catalog = CatalogBlock(
-        source="https://example.com/catalog.git@main",
-        url="https://example.com/catalog.git",
-        revision_spec="main",
-        resolved_ref="refs/heads/main",
-        resolved_sha=_SHA40,
-    )
-
     sources = []
     for src_idx in range(2):
         src_name = f"source{src_idx}"
@@ -68,7 +60,7 @@ def _build_deep_lockfile() -> Lockfile:
                 name=f"{src_name}-proj{proj_idx}",
                 url=f"https://example.com/{src_name}/proj{proj_idx}.git",
                 canonical_url=f"https://example.com/{src_name}/proj{proj_idx}",
-                revision_spec="==1.2.3",
+                ref_spec="==1.2.3",
                 resolved_ref="refs/tags/1.2.3",
                 resolved_sha=_SHA40_B,
             )
@@ -76,9 +68,10 @@ def _build_deep_lockfile() -> Lockfile:
         ]
         sources.append(
             SourceEntry(
+                alias=src_name,
                 name=src_name,
                 url=f"https://example.com/{src_name}.git",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_SHA64,
                 path=f"repo-specs/{src_name}/meta.xml",
@@ -88,11 +81,10 @@ def _build_deep_lockfile() -> Lockfile:
         )
 
     return Lockfile(
-        schema_version=3,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2026-01-01T00:00:00Z",
-        generator="kanon-cli/1.4.0",
+        generator="kanon-cli/2.0.0",
         kanon_hash=_KANON_HASH,
-        catalog=catalog,
         sources=sources,
         marketplace_registered=False,
         marketplace_dir="",
@@ -122,7 +114,7 @@ class TestLockfileRoundtrip:
         write_lockfile(lf, lock_path)
         with open(lock_path, "rb") as f:
             data = tomllib.load(f)
-        assert data["schema_version"] == 3
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
         assert len(data["sources"]) == 2
 
     def test_roundtrip_preserves_nested_includes(self, tmp_path):
@@ -191,10 +183,12 @@ class TestLockfileRoundtrip:
         stripped_content = "\n".join(stripped_lines)
 
         # The stripped content must contain the key structural markers
-        assert "schema_version = 3" in stripped_content
-        assert 'generator = "kanon-cli/1.4.0"' in stripped_content
-        assert "[catalog]" in stripped_content
+        assert f"schema_version = {CURRENT_SCHEMA_VERSION}" in stripped_content
+        assert 'generator = "kanon-cli/2.0.0"' in stripped_content
+        # Schema v4 removed the global [catalog] block entirely.
+        assert "[catalog]" not in stripped_content
         assert "[[sources]]" in stripped_content
+        assert 'alias = "source0"' in stripped_content
         assert "[[sources.includes]]" in stripped_content
         assert "[[sources.projects]]" in stripped_content
 

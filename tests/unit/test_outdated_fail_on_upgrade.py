@@ -173,22 +173,16 @@ class TestRunExitCodeWithUpgradeTypes:
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             'url = "file:///some/repo"\n'
-            f'revision_spec = "{revision}"\n'
+            f'ref_spec = "{revision}"\n'
             f'resolved_ref = "{lock_ref}"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./foo"\n'
@@ -235,22 +229,16 @@ class TestDriftUpgradeTypeWithFlag:
         # Write a lockfile with resolved_sha = old_sha; HEAD will return new_sha -> drift
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{old_sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "DRIFT"\n'
             'name = "DRIFT"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "main"\n'
             f'resolved_sha = "{old_sha}"\n'
             'path = "./drift"\n'
@@ -284,22 +272,16 @@ class TestDriftUpgradeTypeWithFlag:
 
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{old_sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "DRIFT"\n'
             'name = "DRIFT"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "main"\n'
             f'resolved_sha = "{old_sha}"\n'
             'path = "./drift"\n'
@@ -342,22 +324,16 @@ class TestRowContentUnchangedByFlag:
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 4\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = ">=1.0.0,<1.1"\n'
+            'ref_spec = ">=1.0.0,<1.1"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./foo"\n'

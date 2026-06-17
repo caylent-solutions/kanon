@@ -207,38 +207,31 @@ def _run_kanon(
 
 def _write_lockfile(
     lock_file: pathlib.Path,
-    catalog_source: str,
-    catalog_url: str,
     sources: list[dict[str, str]],
 ) -> None:
-    """Write a minimal .kanon.lock file.
+    """Write a minimal schema-v4 .kanon.lock file.
+
+    Schema v4 removed the global [catalog] block; the lock is alias-keyed and
+    each [[sources]] entry carries the per-entry ref_spec field.
 
     Args:
         lock_file: Path to write the lockfile.
-        catalog_source: The full catalog source string (url@ref).
-        catalog_url: The bare catalog URL (without @ref).
-        sources: List of dicts with keys: name, url, revision_spec,
+        sources: List of dicts with keys: name, url, ref_spec,
             resolved_ref, resolved_sha, path.
     """
     lines = [
-        "schema_version = 1",
+        "schema_version = 4",
         'generated_at = "2026-01-01T00:00:00Z"',
         'generator = "kanon-cli/test"',
         f'kanon_hash = "sha256:{"a" * 64}"',
-        "",
-        "[catalog]",
-        f"source = {catalog_source!r}",
-        f"url = {catalog_url!r}",
-        'revision_spec = "main"',
-        'resolved_ref = "main"',
-        f'resolved_sha = "{"b" * 40}"',
     ]
     for source in sources:
         lines.append("")
         lines.append("[[sources]]")
+        lines.append(f"alias = {source['name']!r}")
         lines.append(f"name = {source['name']!r}")
         lines.append(f"url = {source['url']!r}")
-        lines.append(f"revision_spec = {source['revision_spec']!r}")
+        lines.append(f"ref_spec = {source['ref_spec']!r}")
         lines.append(f"resolved_ref = {source['resolved_ref']!r}")
         lines.append(f"resolved_sha = {source['resolved_sha']!r}")
         lines.append(f"path = {source['path']!r}")
@@ -290,13 +283,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "ALPHA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./alpha",
@@ -356,13 +347,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "BETA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./beta",
@@ -422,13 +411,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "GAMMA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_101,
                     "path": "./gamma",
@@ -497,13 +484,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "SRCA",
                     "url": url_a,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_a,
                     "path": "./srcA",
@@ -511,7 +496,7 @@ class TestOutdatedFailOnUpgradeFlag:
                 {
                     "name": "SRCB",
                     "url": url_b,
-                    "revision_spec": ">=2.0.0",
+                    "ref_spec": ">=2.0.0",
                     "resolved_ref": "refs/tags/2.0.0",
                     "resolved_sha": sha_b,
                     "path": "./srcB",
@@ -594,13 +579,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "DELTA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./delta",
@@ -673,13 +656,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "LATA",
                     "url": url_a,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_a,
                     "path": "./latA",
@@ -687,7 +668,7 @@ class TestOutdatedFailOnUpgradeFlag:
                 {
                     "name": "LATB",
                     "url": url_b,
-                    "revision_spec": ">=2.0.0,<2.1",
+                    "ref_spec": ">=2.0.0,<2.1",
                     "resolved_ref": "refs/tags/2.0.1",
                     "resolved_sha": sha_b,
                     "path": "./latB",
@@ -770,13 +751,11 @@ class TestFailOnUpgradeFail:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "EPSILON",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0",
+                    "ref_spec": ">=1.0.0",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./epsilon",

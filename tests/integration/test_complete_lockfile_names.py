@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -32,13 +32,6 @@ from kanon_cli.core.url import canonicalize_repo_url
 # ---------------------------------------------------------------------------
 
 _DUMMY_SHA = "a" * 40
-_MINIMAL_CATALOG = CatalogBlock(
-    source="",
-    url="",
-    revision_spec="",
-    resolved_ref="",
-    resolved_sha="",
-)
 
 
 def _make_lockfile_with_nested_includes(lock_path: Path) -> None:
@@ -74,7 +67,7 @@ def _make_lockfile_with_nested_includes(lock_path: Path) -> None:
             name=name,
             url=url,
             canonical_url=canonicalize_repo_url(url),
-            revision_spec="main",
+            ref_spec="main",
             resolved_ref="refs/heads/main",
             resolved_sha=_DUMMY_SHA,
         )
@@ -101,9 +94,10 @@ def _make_lockfile_with_nested_includes(lock_path: Path) -> None:
         includes=[include_l2],
     )
     source_alpha = SourceEntry(
+        alias="alpha",
         name="alpha",
         url="https://github.com/org/repo-alpha",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
         path="vendor/alpha",
@@ -111,9 +105,10 @@ def _make_lockfile_with_nested_includes(lock_path: Path) -> None:
         projects=[_make_project("p_alpha", "https://example.com/proj-alpha.git")],
     )
     source_zulu = SourceEntry(
+        alias="zulu",
         name="zulu",
         url="https://github.com/org/repo-zulu",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
         path="vendor/zulu",
@@ -121,11 +116,10 @@ def _make_lockfile_with_nested_includes(lock_path: Path) -> None:
         projects=[_make_project("p_zulu", "https://example.com/proj-zulu.git")],
     )
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=_MINIMAL_CATALOG,
         sources=[source_alpha, source_zulu],
     )
     write_lockfile(lockfile, lock_path)

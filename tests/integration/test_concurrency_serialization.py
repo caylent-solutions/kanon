@@ -95,31 +95,24 @@ def _write_lockfile_fixture(kanonenv: pathlib.Path) -> pathlib.Path:
         Absolute path to the written .kanon.lock file.
     """
     from kanon_cli.core.kanon_hash import kanon_hash
-    from kanon_cli.core.lockfile import CatalogBlock, Lockfile, SourceEntry, write_lockfile
+    from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry, write_lockfile
 
     h = kanon_hash(kanonenv)
     sha = "a" * 40
     src = SourceEntry(
+        alias="primary",
         name="primary",
         url="https://example.com/primary.git",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=sha,
         path="repo-specs/manifest.xml",
     )
-    cat = CatalogBlock(
-        source="https://example.com/catalog.git@main",
-        url="https://example.com/catalog.git",
-        revision_spec="main",
-        resolved_ref="refs/heads/main",
-        resolved_sha=sha,
-    )
     lf = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         generator="kanon 0.0.0",
         kanon_hash=h,
-        catalog=cat,
         sources=[src],
     )
     lock_path = kanonenv.parent / (kanonenv.name + ".lock")

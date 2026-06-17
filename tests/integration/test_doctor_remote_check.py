@@ -24,7 +24,7 @@ import pytest
 
 from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
     SourceEntry,
     write_lockfile,
@@ -181,9 +181,10 @@ def _build_workspace(
 
     entries = [
         SourceEntry(
+            alias=s["name"],
             name=s["name"],
             url=s["url"],
-            revision_spec=s["revision_spec"],
+            ref_spec=s["revision_spec"],
             resolved_ref=s["revision_spec"],
             resolved_sha=s["resolved_sha"],
             path="repo-specs/meta.xml",
@@ -191,17 +192,10 @@ def _build_workspace(
         for s in sources
     ]
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=computed_hash,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=entries,
     )
     lock_path = workspace / ".kanon.lock"

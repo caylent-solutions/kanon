@@ -26,7 +26,7 @@ from kanon_cli.core.install import (
     _should_replay_source,
     _strict_lock_drift_error,
 )
-from kanon_cli.core.lockfile import CatalogBlock, Lockfile, SourceEntry
+from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
 _SHA = "a" * 40
@@ -34,12 +34,13 @@ _HASH_OLD = "sha256:" + "1" * 64
 _HASH_NEW = "sha256:" + "2" * 64
 
 
-def _entry(name: str, revision_spec: str, sha: str = _SHA) -> SourceEntry:
+def _entry(name: str, ref_spec: str, sha: str = _SHA) -> SourceEntry:
     return SourceEntry(
+        alias=name,
         name=name,
         url=f"https://git.example.com/{name}.git",
-        revision_spec=revision_spec,
-        resolved_ref=f"refs/tags/{revision_spec}",
+        ref_spec=ref_spec,
+        resolved_ref=f"refs/tags/{ref_spec}",
         resolved_sha=sha,
         path="manifest.xml",
     )
@@ -47,17 +48,10 @@ def _entry(name: str, revision_spec: str, sha: str = _SHA) -> SourceEntry:
 
 def _lockfile(*entries: SourceEntry) -> Lockfile:
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash=_HASH_OLD,
-        catalog=CatalogBlock(
-            source="https://git.example.com/catalog.git@main",
-            url="https://git.example.com/catalog.git",
-            revision_spec="main",
-            resolved_ref="refs/heads/main",
-            resolved_sha=_SHA,
-        ),
         sources=list(entries),
     )
 

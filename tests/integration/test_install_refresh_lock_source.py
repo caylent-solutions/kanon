@@ -33,7 +33,6 @@ import pytest
 
 from kanon_cli.core.install import (
     UnknownSourceError,
-    _RefResolution,
     install,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
@@ -151,45 +150,27 @@ def _write_two_source_kanon(
     return kanon_path
 
 
-# Catalog source used across all tests -- a synthetic url@ref value.
-_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
-# Fake catalog SHA returned when the catalog URL is not a real git repo.
-_FAKE_CATALOG_SHA = "c" * 40
-
-
 def _run_install_with_real_sources(
     kanon_path: pathlib.Path,
-    catalog_source: str = _CATALOG_SOURCE,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
 ) -> None:
     """Call install() with repo tool calls mocked out, but real git ls-remote for sources.
 
-    _resolve_ref_to_sha is patched only for the catalog URL; calls for real
-    local source repos pass through so SHA values from the fixture git repos
-    are recorded in the lockfile.
+    install() is hermetic (schema v4, spec Section 5.2 / FR-7): it resolves no
+    catalog source, so ``catalog_source`` is always None here and the real
+    ``_resolve_ref_to_sha`` runs against the local fixture source repos so their
+    SHA values from the fixture git repos are recorded in the lockfile.
     """
-    import kanon_cli.core.install as _install_mod
-
-    original_resolve_ref = _install_mod._resolve_ref_to_sha
-
-    catalog_url = catalog_source.rsplit("@", 1)[0] if "@" in catalog_source else catalog_source
-
-    def _resolve_ref_patched(url: str, ref: str) -> _RefResolution:
-        if url == catalog_url:
-            return _RefResolution(sha=_FAKE_CATALOG_SHA, resolved_ref=f"refs/heads/{ref}")
-        return original_resolve_ref(url, ref)
-
     with (
         patch("kanon_cli.repo.repo_init"),
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
-        patch("kanon_cli.core.install._resolve_ref_to_sha", side_effect=_resolve_ref_patched),
     ):
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=catalog_source,
+            catalog_source=None,
             refresh_lock=refresh_lock,
             refresh_lock_source=refresh_lock_source,
         )
@@ -262,7 +243,7 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
         # and generated_at, which are not in SourceEntry).
         assert beta_after.resolved_sha == beta_sha_v1
         assert beta_after.url == beta_baseline.url
-        assert beta_after.revision_spec == beta_baseline.revision_spec
+        assert beta_after.ref_spec == beta_baseline.ref_spec
         assert beta_after.resolved_ref == beta_baseline.resolved_ref
         assert beta_after.path == beta_baseline.path
 
@@ -503,18 +484,17 @@ def _write_two_source_kanon_for_bare(
 def _run_install_capturing_stdout(
     kanon_path: pathlib.Path,
     capsys: pytest.CaptureFixture,
-    catalog_source: str = _CATALOG_SOURCE,
     refresh_lock_source: str | None = None,
 ) -> str:
     """Call install() with real-source patches and return captured stdout.
 
     Wraps ``_run_install_with_real_sources`` and captures the stdout emitted
-    by install() using pytest's capsys fixture.
+    by install() using pytest's capsys fixture.  install() is hermetic, so no
+    catalog source is passed.
 
     Args:
         kanon_path: Path to the .kanon configuration file.
         capsys: The pytest capture fixture for the calling test.
-        catalog_source: Catalog source string passed to install().
         refresh_lock_source: Optional --refresh-lock-source value.
 
     Returns:
@@ -522,7 +502,6 @@ def _run_install_capturing_stdout(
     """
     _run_install_with_real_sources(
         kanon_path,
-        catalog_source=catalog_source,
         refresh_lock_source=refresh_lock_source,
     )
     captured = capsys.readouterr()

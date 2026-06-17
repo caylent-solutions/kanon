@@ -313,7 +313,7 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 1\n"
+        "schema_version = 4\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
         f'kanon_hash = "{wrong_hash}"\n',
@@ -352,15 +352,16 @@ def _build_lockfile_sha_unreachable(tmp_path: pathlib.Path) -> pathlib.Path:
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 1\n"
+        "schema_version = 4\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
         f'kanon_hash = "{actual_hash}"\n'
         "\n"
         "[[sources]]\n"
+        'alias = "example_pkg"\n'
         'name = "example_pkg"\n'
         'url = "https://example.com/org/manifest-repo.git"\n'
-        'revision_spec = "main"\n'
+        'ref_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{fake_sha}"\n'
         'path = "repo-specs/example-pkg-marketplace.xml"\n',
@@ -463,23 +464,25 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
     # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 1\n"
+        "schema_version = 4\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
         f'kanon_hash = "{actual_hash}"\n'
         "\n"
         "[[sources]]\n"
+        'alias = "source_a"\n'
         'name = "source_a"\n'
         'url = "https://example.com/vendor/shared-lib.git"\n'
-        'revision_spec = "main"\n'
+        'ref_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_a}"\n'
         'path = "repo-specs/shared-lib-marketplace.xml"\n'
         "\n"
         "[[sources]]\n"
+        'alias = "source_b"\n'
         'name = "source_b"\n'
         'url = "https://example.com/vendor/shared-lib.git"\n'
-        'revision_spec = "main"\n'
+        'ref_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_b}"\n'
         'path = "repo-specs/shared-lib-marketplace.xml"\n',

@@ -62,10 +62,6 @@ def _mock_walk_includes():
 # Helpers
 # ---------------------------------------------------------------------------
 
-_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
-_FAKE_CATALOG_SHA = "c" * 40
-_FAKE_CATALOG_REF = "refs/heads/main"
-
 
 def _write_two_source_kanon(
     project_dir: pathlib.Path,
@@ -127,26 +123,23 @@ def _write_single_source_kanon(
 def _run_install_mocked(
     kanon_path: pathlib.Path,
     sha_map: dict[str, tuple[str, str]],
-    catalog_source: str = _CATALOG_SOURCE,
 ) -> None:
     """Run install() with repo tool calls mocked out.
 
     ``_resolve_ref_to_sha`` is patched so that each URL in ``sha_map`` resolves
     to the corresponding (sha, ref) pair. ``resolve_version`` is patched to
     return the ref portion of the resolved pair directly (so no live git
-    ls-remote call is made for version-constraint resolution). Catalog
-    resolution uses ``_FAKE_CATALOG_SHA``.
+    ls-remote call is made for version-constraint resolution).
+
+    ``kanon install`` is hermetic (spec Section 5.2 / FR-7): it resolves no
+    catalog source, so ``catalog_source`` is left ``None``.
 
     Args:
         kanon_path: Path to the .kanon configuration file.
         sha_map: Maps source URL to (sha, resolved_ref) pair.
-        catalog_source: Catalog source string in url@ref form.
     """
-    catalog_url = catalog_source.rsplit("@", 1)[0]
 
     def _fake_resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
-        if url == catalog_url:
-            return _RefResolution(sha=_FAKE_CATALOG_SHA, resolved_ref=_FAKE_CATALOG_REF)
         if url in sha_map:
             sha, resolved_ref = sha_map[url]
             return _RefResolution(sha=sha, resolved_ref=resolved_ref)
@@ -167,7 +160,7 @@ def _run_install_mocked(
         patch("kanon_cli.core.install.run_repo_envsubst"),
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
-        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=catalog_source)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None)
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +318,6 @@ class TestInstallConflictUrlNormalization:
 
         from kanon_cli.core.lockfile import (
             CURRENT_SCHEMA_VERSION,
-            CatalogBlock,
             Lockfile,
             SourceEntry,
             write_lockfile,
@@ -355,26 +347,21 @@ class TestInstallConflictUrlNormalization:
             generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             generator="kanon-cli/test",
             kanon_hash=computed_hash,
-            catalog=CatalogBlock(
-                source=_CATALOG_SOURCE,
-                url=_CATALOG_SOURCE.rsplit("@", 1)[0],
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha=_FAKE_CATALOG_SHA,
-            ),
             sources=[
                 SourceEntry(
+                    alias="alpha",
                     name="alpha",
                     url=source_a_url,
-                    revision_spec="==1.0.0",
+                    ref_spec="==1.0.0",
                     resolved_ref="refs/tags/1.0.0",
                     resolved_sha=sha_a,
                     path="manifest.xml",
                 ),
                 SourceEntry(
+                    alias="bravo",
                     name="bravo",
                     url=source_b_url,
-                    revision_spec="==2.0.0",
+                    ref_spec="==2.0.0",
                     resolved_ref="refs/tags/2.0.0",
                     resolved_sha=sha_b,
                     path="manifest.xml",
@@ -391,7 +378,7 @@ class TestInstallConflictUrlNormalization:
             patch("kanon_cli.core.install.run_repo_sync"),
         ):
             with pytest.raises(CanonicalUrlConflictError) as exc_info:
-                install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=_CATALOG_SOURCE)
+                install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None)
 
         error_msg = str(exc_info.value)
         assert source_a_url in error_msg

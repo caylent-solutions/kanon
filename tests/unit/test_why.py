@@ -160,7 +160,7 @@ def _make_minimal_lockfile(
         A Lockfile dataclass instance.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         ProjectEntry,
         SourceEntry,
@@ -168,22 +168,16 @@ def _make_minimal_lockfile(
     from kanon_cli.core.url import canonicalize_repo_url
 
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="catalog@HEAD",
-            url="https://github.com/org/catalog",
-            revision_spec="HEAD",
-            resolved_ref="HEAD",
-            resolved_sha="f" * 40,
-        ),
         sources=[
             SourceEntry(
+                alias=source_name,
                 name=source_name,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="main",
                 resolved_sha="a" * 40,
                 path="./foo",
@@ -193,7 +187,7 @@ def _make_minimal_lockfile(
                         name=project_name,
                         url=project_url,
                         canonical_url=canonicalize_repo_url(project_url),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="main",
                         resolved_sha=project_sha,
                     )

@@ -1,4 +1,4 @@
-"""TOML lockfile parser and atomic writer -- schema v3.
+"""TOML lockfile parser and atomic writer -- schema v4.
 
 Public entry points:
   - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
@@ -28,8 +28,17 @@ Schema changelog:
     ``[[sources]]`` table -- the sorted set of marketplace names THAT source
     registered during install.  ``kanon clean --orphans`` and the install
     auto-prune consult these per-source ledgers to attribute and prune the
-    marketplaces of a removed source.  Old v2 lockfiles are migrated transparently
-    by defaulting each source's field to an empty list.
+    marketplaces of a removed source.
+  - v4 (spec Section 5.2, Section 13 FLAG-C, FR-7 / FR-21): the breaking major.
+    Each ``[[sources]]`` lock entry is re-keyed BY ALIAS and carries the per-entry
+    fields ``alias, name, url, ref_spec, resolved_ref, resolved_sha, path``.  The
+    per-entry version-constraint field (named ``ref_spec`` from v4 onward) is the
+    rename of the former v3 field name on every lock entry (source and project).
+    The global ``[catalog]`` block is removed
+    entirely: the lock no longer serialises or parses a ``[catalog]`` inline table.
+    There is NO silent v3 -> v4 upgrader: a loaded v3 (or older) lock fails fast
+    with an actionable ``LockfileSchemaError`` instructing the operator to
+    regenerate the lock via ``kanon add`` / ``kanon install``.
 
 Spec source: spec Section 5 (Lockfile format and validation rules),
 Section 4.7.1 (atomicity contract for the lockfile writer), and
@@ -59,7 +68,7 @@ from kanon_cli.core.url import canonicalize_repo_url
 # ---------------------------------------------------------------------------
 
 #: The schema version this kanon version reads and writes.
-CURRENT_SCHEMA_VERSION: int = 3
+CURRENT_SCHEMA_VERSION: int = 4
 
 #: Registry of upgrader functions keyed by (from_version, to_version).
 #: Each upgrader receives a raw dict and returns a raw dict with the schema
@@ -115,7 +124,7 @@ _TOML_CONTROL_ESCAPES: dict[str, str] = {
     "\x7f": "\\u007F",
 }
 
-# branch-name charset for the third accept rule of revision_spec validation.
+# branch-name charset for the third accept rule of ref_spec validation.
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9_./+-]+$")
 
 # Characters forbidden in path / path_in_repo fields.
@@ -226,60 +235,13 @@ def _dispatch_migration(data: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Schema upgraders
 # ---------------------------------------------------------------------------
-
-
-def _upgrade_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade a schema-v1 lockfile dict to schema-v2.
-
-    v2 adds ``marketplace_registered`` (bool, default False) and
-    ``marketplace_dir`` (str, default "") to the top-level dict.  Old lockfiles
-    predate marketplace tracking, so both fields default to their not-registered
-    values, which preserves the pre-v2 behavior (kanon clean falls back to the
-    .kanon flag when neither field is set to a registered state).
-
-    Args:
-        data: Raw TOML dict with schema_version == 1.
-
-    Returns:
-        Raw TOML dict with schema_version == 2 and the two new fields populated.
-    """
-    upgraded = dict(data)
-    upgraded["schema_version"] = 2
-    upgraded.setdefault("marketplace_registered", False)
-    upgraded.setdefault("marketplace_dir", "")
-    return upgraded
-
-
-_register_upgrader(1, 2, _upgrade_v1_to_v2)
-
-
-def _upgrade_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade a schema-v2 lockfile dict to schema-v3.
-
-    v3 adds a PER-SOURCE ``registered_marketplaces`` (list[str], default empty)
-    field to each ``[[sources]]`` table -- the marketplace names that source
-    registered.  Old v2 lockfiles predate the field, so each source defaults to an
-    empty list, which preserves the pre-v3 behavior (no marketplaces are
-    considered owned/pruneable).
-
-    Args:
-        data: Raw TOML dict with schema_version == 2.
-
-    Returns:
-        Raw TOML dict with schema_version == 3 and each source's new field
-        defaulted to an empty list.
-    """
-    upgraded = dict(data)
-    upgraded["schema_version"] = 3
-    raw_sources = upgraded.get("sources", [])
-    if isinstance(raw_sources, list):
-        for source in raw_sources:
-            if isinstance(source, dict):
-                source.setdefault("registered_marketplaces", [])
-    return upgraded
-
-
-_register_upgrader(2, 3, _upgrade_v2_to_v3)
+#
+# Schema v4 (spec Section 5.2, Section 13 FLAG-C) is the breaking major: there is
+# NO silent upgrader from any older schema (v1, v2, v3) to v4.  An older lock is a
+# hard fail-fast regenerate (see ``read_lockfile``), so no upgrader functions are
+# registered here.  The migration registry below remains the documented extension
+# point for any future NON-breaking schema bump (v4 -> v5): such a bump would add a
+# single ``_register_upgrader(4, 5, fn)`` entry rather than a refactor.
 
 
 # ---------------------------------------------------------------------------
@@ -312,12 +274,16 @@ class LockfileValidationError(Exception):
 
 @dataclass
 class ProjectEntry:
-    """A single row under ``[[sources.projects]]``."""
+    """A single row under ``[[sources.projects]]``.
+
+    Schema v4 renamed the per-entry version-constraint field to ``ref_spec`` (spec
+    Section 5.2); the attribute and the on-disk TOML key are both ``ref_spec``.
+    """
 
     name: str
     url: str
     canonical_url: str
-    revision_spec: str
+    ref_spec: str
     resolved_ref: str
     resolved_sha: str
 
@@ -342,28 +308,28 @@ class SourceEntry:
         source registered during install.  Defaults to an empty list.  ``kanon
         clean --orphans`` and the install auto-prune consult this per-source
         ledger to attribute and prune the marketplaces of a removed source.
+
+    Schema v4 (spec Section 5.2, FR-7 / FR-21) re-keys each ``[[sources]]`` entry
+    BY ALIAS and renames the per-source version-constraint field to ``ref_spec``:
+      - ``alias``: the local alias the source is keyed by in the alias-keyed
+        ``.kanon`` / ``.kanon.lock``.  It is the lock key and is written first in
+        the serialised entry.
+      - ``ref_spec``: the version / ref constraint (PEP 440 specifier, the ``*``
+        wildcard, a ``refs/...`` ref, or a branch name).  This is the v4 rename of
+        the former v3 version-constraint field; both the attribute and the on-disk
+        TOML key are ``ref_spec``.
     """
 
+    alias: str
     name: str
     url: str
-    revision_spec: str
+    ref_spec: str
     resolved_ref: str
     resolved_sha: str
     path: str
     includes: list[IncludeEntry] = field(default_factory=list)
     projects: list[ProjectEntry] = field(default_factory=list)
     registered_marketplaces: list[str] = field(default_factory=list)
-
-
-@dataclass
-class CatalogBlock:
-    """The ``[catalog]`` block."""
-
-    source: str
-    url: str
-    revision_spec: str
-    resolved_ref: str
-    resolved_sha: str
 
 
 @dataclass
@@ -378,13 +344,17 @@ class Lockfile:
     Schema v3 added a PER-SOURCE ``registered_marketplaces`` field to each
     ``SourceEntry`` (see :class:`SourceEntry`); the root lockfile carries no
     marketplace ownership ledger of its own.
+
+    Schema v4 (spec Section 5.2, FR-7 / FR-21) removed the global ``[catalog]``
+    block entirely: the lockfile no longer carries a catalog field and the lock
+    neither serialises nor parses a ``[catalog]`` inline table.  The ``[[sources]]``
+    entries are alias-keyed (see :class:`SourceEntry`).
     """
 
     schema_version: int
     generated_at: str
     generator: str
     kanon_hash: str
-    catalog: CatalogBlock
     sources: list[SourceEntry] = field(default_factory=list)
     marketplace_registered: bool = False
     marketplace_dir: str = ""
@@ -439,7 +409,7 @@ def _validate_resolved_sha(sha: str, field_path: str) -> None:
         )
 
 
-def _validate_revision_spec(spec: str, field_path: str) -> None:
+def _validate_ref_spec(spec: str, field_path: str) -> None:
     """Raise ``LockfileValidationError`` if ``spec`` fails all accept rules.
 
     Accept rules (any one suffices):
@@ -450,7 +420,7 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
       3. Matches the branch-charset regex ``^[a-zA-Z0-9_./+-]+$``.
 
     Args:
-        spec: The revision_spec value to validate.
+        spec: The ref_spec value to validate.
         field_path: Dot-path of the field for the error message.
 
     Raises:
@@ -458,12 +428,12 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
     """
     if not spec:
         raise LockfileValidationError(
-            f"ERROR: Empty revision_spec at '{field_path}'.\n"
+            f"ERROR: Empty ref_spec at '{field_path}'.\n"
             f"  Value: {spec!r}\n"
             f"  Expected: a PEP 440 specifier (e.g. '==1.0.0'), the wildcard '*' "
             f"(any version), a git ref (e.g. 'refs/heads/main'), or a branch name "
             f"(e.g. 'main').\n"
-            f"  Remediation: update the revision_spec in your .kanon file and re-lock."
+            f"  Remediation: update the ref_spec in your .kanon file and re-lock."
         )
 
     # Rule 0: bare wildcard "*" -- the "any version" constraint, written verbatim into
@@ -496,7 +466,7 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
         pass
 
     raise LockfileValidationError(
-        f"ERROR: Invalid revision_spec at '{field_path}'.\n"
+        f"ERROR: Invalid ref_spec at '{field_path}'.\n"
         f"  Value: {spec!r}\n"
         f"  Expected one of:\n"
         f"    - PEP 440 SpecifierSet (e.g. '==1.0.0', '~=2.0.0', '>=1.0,<2.0')\n"
@@ -504,7 +474,7 @@ def _validate_revision_spec(spec: str, field_path: str) -> None:
         f"    - Optional monorepo prefix: 'subpackage/==1.0.0'\n"
         f"    - Git ref: 'refs/heads/main'\n"
         f"    - Branch name matching ^[a-zA-Z0-9_./+-]+$\n"
-        f"  Remediation: update the revision_spec in your .kanon file and re-lock."
+        f"  Remediation: update the ref_spec in your .kanon file and re-lock."
     )
 
 
@@ -645,8 +615,8 @@ def _parse_project_entry(raw: dict[str, Any], field_path: str) -> ProjectEntry:
     resolved_sha = raw["resolved_sha"]
     _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
 
-    revision_spec = raw["revision_spec"]
-    _validate_revision_spec(revision_spec, f"{field_path}.revision_spec")
+    ref_spec = raw["ref_spec"]
+    _validate_ref_spec(ref_spec, f"{field_path}.ref_spec")
 
     url = raw["url"]
     canonical_url = raw["canonical_url"]
@@ -656,14 +626,18 @@ def _parse_project_entry(raw: dict[str, Any], field_path: str) -> ProjectEntry:
         name=raw["name"],
         url=url,
         canonical_url=canonical_url,
-        revision_spec=revision_spec,
+        ref_spec=ref_spec,
         resolved_ref=raw["resolved_ref"],
         resolved_sha=resolved_sha,
     )
 
 
 def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
-    """Parse a raw TOML dict into a ``SourceEntry``, validating all fields.
+    """Parse a raw schema-v4 ``[[sources]]`` TOML dict into a ``SourceEntry``.
+
+    Validates every field.  The v4 on-disk source carries the alias-keyed per-entry
+    fields ``alias, name, url, ref_spec, resolved_ref, resolved_sha, path`` (spec
+    Section 5.2).
 
     Args:
         raw: A dict from the TOML parser representing one source entry.
@@ -681,8 +655,8 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
     resolved_sha = raw["resolved_sha"]
     _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
 
-    revision_spec = raw["revision_spec"]
-    _validate_revision_spec(revision_spec, f"{field_path}.revision_spec")
+    ref_spec = raw["ref_spec"]
+    _validate_ref_spec(ref_spec, f"{field_path}.ref_spec")
 
     path = raw["path"]
     _validate_path_chars(path, f"{field_path}.path")
@@ -699,42 +673,16 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
     )
 
     return SourceEntry(
+        alias=raw["alias"],
         name=raw["name"],
         url=raw["url"],
-        revision_spec=revision_spec,
+        ref_spec=ref_spec,
         resolved_ref=raw["resolved_ref"],
         resolved_sha=resolved_sha,
         path=path,
         includes=includes,
         projects=projects,
         registered_marketplaces=registered_marketplaces,
-    )
-
-
-def _parse_catalog_block(raw: dict[str, Any]) -> CatalogBlock:
-    """Parse the ``[catalog]`` TOML block into a ``CatalogBlock``, validating all fields.
-
-    Args:
-        raw: The TOML dict for the ``[catalog]`` block.
-
-    Returns:
-        A validated ``CatalogBlock`` dataclass instance.
-
-    Raises:
-        LockfileValidationError: If any field fails validation.
-    """
-    resolved_sha = raw["resolved_sha"]
-    _validate_resolved_sha(resolved_sha, "catalog.resolved_sha")
-
-    revision_spec = raw["revision_spec"]
-    _validate_revision_spec(revision_spec, "catalog.revision_spec")
-
-    return CatalogBlock(
-        source=raw["source"],
-        url=raw["url"],
-        revision_spec=revision_spec,
-        resolved_ref=raw["resolved_ref"],
-        resolved_sha=resolved_sha,
     )
 
 
@@ -812,15 +760,19 @@ def _serialize_include_entries(
 def _serialize_toml(lockfile: Lockfile) -> str:
     """Serialise a ``Lockfile`` to a TOML string without any third-party library.
 
-    The output format matches the fixed schema v3 structure exactly:
+    The output format matches the fixed schema v4 structure exactly (spec
+    Section 5.2):
 
     - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash,
       marketplace_registered, marketplace_dir)
-    - ``[catalog]`` inline table block
-    - ``[[sources]]`` array-of-tables entries, each carrying a per-source
-      ``registered_marketplaces`` array (written sorted for deterministic,
-      byte-stable output) and followed by ``[[sources.includes]]`` chains
-      (recursively) and ``[[sources.projects]]`` entries
+    - NO ``[catalog]`` block: the global ``[catalog]`` block was removed in v4
+      (spec Section 5.2 / FR-7), so the lock never serialises a ``[catalog]``
+      inline table.
+    - ``[[sources]]`` array-of-tables entries keyed by alias, each written with the
+      per-entry fields ``alias, name, url, ref_spec, resolved_ref, resolved_sha,
+      path`` plus a per-source ``registered_marketplaces`` array (written sorted
+      for deterministic, byte-stable output) and followed by ``[[sources.includes]]``
+      chains (recursively) and ``[[sources.projects]]`` entries.
 
     String values are encoded as TOML basic strings with all required control-
     character escapes applied.
@@ -841,23 +793,15 @@ def _serialize_toml(lockfile: Lockfile) -> str:
     lines.append(f"marketplace_registered = {str(lockfile.marketplace_registered).lower()}")
     lines.append(f"marketplace_dir = {_toml_str(lockfile.marketplace_dir)}")
 
-    # [catalog] block -- omitted when no catalog source was configured.
-    if lockfile.catalog.source:
-        lines.append("")
-        lines.append("[catalog]")
-        lines.append(f"source = {_toml_str(lockfile.catalog.source)}")
-        lines.append(f"url = {_toml_str(lockfile.catalog.url)}")
-        lines.append(f"revision_spec = {_toml_str(lockfile.catalog.revision_spec)}")
-        lines.append(f"resolved_ref = {_toml_str(lockfile.catalog.resolved_ref)}")
-        lines.append(f"resolved_sha = {_toml_str(lockfile.catalog.resolved_sha)}")
-
-    # [[sources]] array-of-tables
+    # [[sources]] array-of-tables, alias-keyed (schema v4).  ``alias`` is the lock
+    # key and is written first in every entry.
     for source in lockfile.sources:
         lines.append("")
         lines.append("[[sources]]")
+        lines.append(f"alias = {_toml_str(source.alias)}")
         lines.append(f"name = {_toml_str(source.name)}")
         lines.append(f"url = {_toml_str(source.url)}")
-        lines.append(f"revision_spec = {_toml_str(source.revision_spec)}")
+        lines.append(f"ref_spec = {_toml_str(source.ref_spec)}")
         lines.append(f"resolved_ref = {_toml_str(source.resolved_ref)}")
         lines.append(f"resolved_sha = {_toml_str(source.resolved_sha)}")
         lines.append(f"path = {_toml_str(source.path)}")
@@ -874,7 +818,7 @@ def _serialize_toml(lockfile: Lockfile) -> str:
             lines.append(f"name = {_toml_str(project.name)}")
             lines.append(f"url = {_toml_str(project.url)}")
             lines.append(f"canonical_url = {_toml_str(project.canonical_url)}")
-            lines.append(f"revision_spec = {_toml_str(project.revision_spec)}")
+            lines.append(f"ref_spec = {_toml_str(project.ref_spec)}")
             lines.append(f"resolved_ref = {_toml_str(project.resolved_ref)}")
             lines.append(f"resolved_sha = {_toml_str(project.resolved_sha)}")
 
@@ -892,15 +836,19 @@ def read_lockfile(path: Path) -> Lockfile:
     Applies every validation rule from spec Section 5 and the migration policy
     from spec Section 5.2:
       - ``resolved_sha``: exactly 40 or 64 lowercase hex digits.
-      - ``revision_spec``: PEP 440 SpecifierSet, ``refs/...`` prefix, or
-        branch-charset regex -- with optional monorepo path prefix.
+      - ``ref_spec`` (per source and per project): PEP 440 SpecifierSet,
+        ``refs/...`` prefix, or branch-charset regex -- with optional monorepo
+        path prefix.
       - ``canonical_url`` on every ``ProjectEntry``: must equal
         ``canonicalize_repo_url(entry.url)``.
       - ``path`` and ``path_in_repo``: must not contain NUL, newline, or tab.
       - ``schema_version > CURRENT_SCHEMA_VERSION``: raises ``LockfileSchemaError``
         with message "lockfile schema v<N> written by newer kanon; upgrade kanon-cli."
-      - ``schema_version < CURRENT_SCHEMA_VERSION``: applies the registered upgrader
-        chain; raises ``LockfileSchemaError`` if no chain exists.
+      - ``schema_version < CURRENT_SCHEMA_VERSION``: schema v4 (spec Section 13
+        FLAG-C) is a breaking major, so there is no silent upgrader.  Any older
+        lock (v1, v2, v3) fails fast with an actionable ``LockfileSchemaError``
+        instructing the operator to regenerate the lock via ``kanon add`` /
+        ``kanon install``.
       - ``schema_version == CURRENT_SCHEMA_VERSION``: parsed and validated directly.
 
     Args:
@@ -912,8 +860,8 @@ def read_lockfile(path: Path) -> Lockfile:
     Raises:
         FileNotFoundError: If ``path`` does not exist.
         LockfileSchemaError: If ``schema_version > CURRENT_SCHEMA_VERSION`` (forward-
-            incompatible) or if ``schema_version < CURRENT_SCHEMA_VERSION`` with no
-            registered upgrader chain (backward-incompatible, missing upgrader).
+            incompatible) or if ``schema_version < CURRENT_SCHEMA_VERSION`` (an older
+            lock under the v4 breaking major, which is a hard fail-fast regenerate).
         LockfileValidationError: If any field value violates a validation rule,
             with an error message naming the offending field path and value.
     """
@@ -924,26 +872,25 @@ def read_lockfile(path: Path) -> Lockfile:
     if schema_version > CURRENT_SCHEMA_VERSION:
         raise LockfileSchemaError(f"lockfile schema v{schema_version} written by newer kanon; upgrade kanon-cli.")
     if schema_version < CURRENT_SCHEMA_VERSION:
-        data = _dispatch_migration(data)
-        schema_version = data["schema_version"]
+        # Schema v4 (spec Section 13, FLAG-C) is the breaking major: no silent
+        # upgrader re-keys an older lock by alias, renames the per-entry version
+        # field to ref_spec, or drops the [catalog] block.  Fail fast with an
+        # actionable regenerate message instead.
+        raise LockfileSchemaError(
+            f"ERROR: lockfile schema v{schema_version} is incompatible with this kanon "
+            f"version (schema v{CURRENT_SCHEMA_VERSION}).\n"
+            f"  Path: {path}\n"
+            f"  Schema v{CURRENT_SCHEMA_VERSION} is a breaking change: source entries are now "
+            f"keyed by alias, the per-entry version-constraint field was renamed to 'ref_spec', "
+            f"and the global [catalog] block was removed.\n"
+            f"  There is no automatic upgrade from schema v{schema_version}.\n"
+            f"  Remediation: regenerate the lockfile by running 'kanon add' to refresh the "
+            f"alias-keyed declarations, then 'kanon install' to rewrite the lock at schema "
+            f"v{CURRENT_SCHEMA_VERSION}."
+        )
 
     kanon_hash = data["kanon_hash"]
     _validate_kanon_hash(kanon_hash)
-
-    # The [catalog] section is optional: lockfiles written without a catalog
-    # source (e.g. when KANON_CATALOG_SOURCE is unset) omit it.
-    raw_catalog = data.get("catalog")
-    catalog = (
-        _parse_catalog_block(raw_catalog)
-        if raw_catalog is not None
-        else CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        )
-    )
 
     raw_sources: list[dict[str, Any]] = data.get("sources", [])
     sources = [_parse_source_entry(raw, i) for i, raw in enumerate(raw_sources)]
@@ -953,7 +900,6 @@ def read_lockfile(path: Path) -> Lockfile:
         generated_at=data["generated_at"],
         generator=data["generator"],
         kanon_hash=kanon_hash,
-        catalog=catalog,
         sources=sources,
         marketplace_registered=bool(data.get("marketplace_registered", False)),
         marketplace_dir=str(data.get("marketplace_dir", "")),

@@ -1,7 +1,7 @@
 # Known-Bad Markdown File
 
 This file intentionally contains markdownlint violations.
-DO NOT fix these — they exist to verify the linter config works.
+DO NOT fix these -- they exist to verify the linter config works.
 
 ## Heading with trailing spaces
 

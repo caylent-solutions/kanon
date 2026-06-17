@@ -34,6 +34,7 @@ Failure contract (spec Section 11.3):
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import subprocess
 import sys
@@ -311,13 +312,16 @@ def complete(repo_url: str, current_token: str) -> list[str]:
             # Cache stale
             versions = read_entries(tags_path)
             if refresh_bg == 1:
-                _repo_url_for_bg = repo_url
-                _entry_dir_for_bg = entry_dir
-
-                def _refresh_fn() -> None:
-                    _fetch_and_cache_versions(_repo_url_for_bg, _entry_dir_for_bg)
-
-                fork_background_refresh(_refresh_fn)
+                # The refresh callable MUST be picklable: on Windows the spawn
+                # path serialises it via pickle to pass it to the child
+                # interpreter (see kanon_cli.utils.spawn.spawn_detached). A
+                # nested closure is NOT picklable, so we bind the module-level
+                # _fetch_and_cache_versions to its arguments via
+                # functools.partial. The ORIGINAL repo_url is passed (not the
+                # canonical form) so the git transport is preserved in the
+                # background fetch.
+                refresh_fn = functools.partial(_fetch_and_cache_versions, repo_url, entry_dir)
+                fork_background_refresh(refresh_fn)
             else:
                 versions = _inline_fetch(repo_url, entry_dir, timeout)
     else:

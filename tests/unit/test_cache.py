@@ -5,6 +5,8 @@ TDD-paired test file covering:
 - write_entries sanitization integration (introduced by E7-F3-S1-T4):
   write_entries now calls sanitize_entries internally and logs dropped
   entries via log_completion_error.
+- fork_background_refresh (E2-F1-S2-T1): routes through spawn_detached
+  instead of os.fork/setsid/dup2 directly.
 
 All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
@@ -272,12 +274,12 @@ def test_fork_background_refresh_importable() -> None:
 
 
 @pytest.mark.unit
-def test_fork_background_refresh_disabled_by_env_does_not_fork(
+def test_fork_background_refresh_disabled_by_env_does_not_spawn(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When KANON_COMPLETION_REFRESH_BG=0, fork_background_refresh returns
-    without calling os.fork.
+    without calling spawn_detached.
 
     This test covers the fast-return branch of the function defined in cache.py
     and satisfies source-test atomicity for the fork_background_refresh symbol.
@@ -290,8 +292,35 @@ def test_fork_background_refresh_disabled_by_env_does_not_fork(
     def refresh_fn() -> None:
         called.append("called")
 
-    with patch("os.fork") as mock_fork:
+    with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
         fork_background_refresh(refresh_fn)
-        mock_fork.assert_not_called()
+        mock_spawn.assert_not_called()
 
     assert called == [], "refresh_fn must not be invoked when forking is disabled"
+
+
+@pytest.mark.unit
+def test_fork_background_refresh_routes_through_spawn_detached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fork_background_refresh calls spawn_detached (not os.fork directly)
+    when the background refresh is enabled.
+
+    This test verifies AC-9: the os.fork/setsid/dup2 sequence has been
+    replaced by the spawn_detached helper.
+    """
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
+
+    called: list[str] = []
+
+    def refresh_fn() -> None:
+        called.append("called")
+
+    with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
+        fork_background_refresh(refresh_fn)
+        mock_spawn.assert_called_once()
+        # Verify a callable was passed as the first positional argument (the
+        # logging wrapper around refresh_fn, not refresh_fn itself).
+        assert callable(mock_spawn.call_args[0][0]), "spawn_detached must receive a callable as its first argument"

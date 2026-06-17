@@ -1,19 +1,35 @@
 """Unit tests for kanon_cli.completions.cache.fork_background_refresh.
 
-Parametrized cases:
-- KANON_COMPLETION_REFRESH_BG=0: returns without calling os.fork, no warning.
-- KANON_COMPLETION_REFRESH_BG=<non-integer>: returns without forking AND emits
-  a warning to stderr naming the invalid value.
-- KANON_COMPLETION_REFRESH_BG=1 (or unset): os.fork called exactly once.
-- Parent path (fork returns non-zero pid): returns immediately; no waitpid.
-- Child path (fork returns 0): os.setsid called, refresh_fn invoked, exit 0.
-- Child path exception: log_completion_error called, exit non-zero.
+After E2-F1-S2-T1, fork_background_refresh no longer drives os.fork / setsid /
+dup2 directly: it delegates the detached-spawn mechanics to
+kanon_cli.utils.spawn.spawn_detached. These tests therefore patch
+spawn_detached (the seam fork_background_refresh now depends on) rather than
+os.fork. The child-execution behaviour (setsid, /dev/null redirection,
+os._exit on success/failure) is exercised against spawn_detached itself in
+tests/unit/test_spawn.py and is intentionally NOT duplicated here.
 
-All cases set KANON_CACHE_DIR to tmp_path to avoid touching the real cache.
+Cases covered:
+- KANON_COMPLETION_REFRESH_BG=0 (integer zero): spawn_detached NOT called, no
+  warning emitted.
+- KANON_COMPLETION_REFRESH_BG=<non-integer>: spawn_detached NOT called AND a
+  warning naming the invalid value is written to stderr (fail-loud, no spawn).
+- KANON_COMPLETION_REFRESH_BG=1: spawn_detached called exactly once.
+- KANON_COMPLETION_REFRESH_BG unset: defaults to enabled (spawn_detached called).
+- Parent does not block: fork_background_refresh returns after spawn_detached
+  without invoking refresh_fn in-process.
+- Spawn-failure propagation: when spawn_detached raises RuntimeError,
+  fork_background_refresh propagates it (fail-fast, no silent fallback).
+- The callable handed to spawn_detached is a picklable functools.partial
+  wrapping the module-level _run_refresh_with_logging (required for the Windows
+  spawn path).
+- KANON_COMPLETION_LOG selects the log path forwarded to spawn_detached.
+
+All cases set KANON_CACHE_DIR to tmp_path so the real cache is never touched.
 """
 
 from __future__ import annotations
 
+import functools
 import sys
 from io import StringIO
 from pathlib import Path
@@ -21,7 +37,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.completions.cache import fork_background_refresh
+from kanon_cli.completions.cache import _run_refresh_with_logging, fork_background_refresh
 
 
 # ---------------------------------------------------------------------------
@@ -39,18 +55,21 @@ def _noop() -> None:
 
 
 @pytest.mark.unit
-def test_refresh_bg_disabled_integer_zero_does_not_fork(
+def test_refresh_bg_disabled_integer_zero_does_not_spawn(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KANON_COMPLETION_REFRESH_BG=0 (integer zero): fork not called, no warning."""
+    """KANON_COMPLETION_REFRESH_BG=0 (integer zero): spawn_detached not called, no warning."""
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
 
     fake_stderr = StringIO()
-    with patch("os.fork") as mock_fork, patch.object(sys, "stderr", fake_stderr):
+    with (
+        patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn,
+        patch.object(sys, "stderr", fake_stderr),
+    ):
         fork_background_refresh(_noop)
-        mock_fork.assert_not_called()
+        mock_spawn.assert_not_called()
 
     assert fake_stderr.getvalue() == "", "KANON_COMPLETION_REFRESH_BG=0 must not emit any warning"
 
@@ -62,20 +81,23 @@ def test_refresh_bg_disabled_integer_zero_does_not_fork(
 
 @pytest.mark.unit
 @pytest.mark.parametrize("env_value", ["false", "no", "off", ""])
-def test_refresh_bg_non_integer_does_not_fork_and_warns(
+def test_refresh_bg_non_integer_does_not_spawn_and_warns(
     env_value: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KANON_COMPLETION_REFRESH_BG=<non-integer>: fork not called AND a warning
-    identifying the invalid value and expected format is written to stderr."""
+    """KANON_COMPLETION_REFRESH_BG=<non-integer>: spawn_detached not called AND a
+    warning identifying the invalid value and expected format is written to stderr."""
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", env_value)
 
     fake_stderr = StringIO()
-    with patch("os.fork") as mock_fork, patch.object(sys, "stderr", fake_stderr):
+    with (
+        patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn,
+        patch.object(sys, "stderr", fake_stderr),
+    ):
         fork_background_refresh(_noop)
-        mock_fork.assert_not_called()
+        mock_spawn.assert_not_called()
 
     warning = fake_stderr.getvalue()
     assert warning, f"KANON_COMPLETION_REFRESH_BG={env_value!r}: expected a warning on stderr but got none"
@@ -85,53 +107,55 @@ def test_refresh_bg_non_integer_does_not_fork_and_warns(
     )
 
 
+# ---------------------------------------------------------------------------
+# AC-FUNC-002 / AC-TEST-001: env-var-on, spawn_detached called exactly once
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_refresh_bg_enabled_calls_spawn_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KANON_COMPLETION_REFRESH_BG=1: spawn_detached called exactly once."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
+
+    with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
+        fork_background_refresh(_noop)
+        assert mock_spawn.call_count == 1
+
+
 @pytest.mark.unit
 def test_refresh_bg_unset_defaults_to_enabled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KANON_COMPLETION_REFRESH_BG unset: os.fork IS called (default 1)."""
+    """KANON_COMPLETION_REFRESH_BG unset: spawn_detached IS called (default 1)."""
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
 
-    # Simulate the parent path (fork returns non-zero pid) so we do not
-    # actually fork. os.waitpid must NOT be called.
-    with patch("os.fork", return_value=42) as mock_fork, patch("os.waitpid") as mock_waitpid:
+    with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
         fork_background_refresh(_noop)
-        mock_fork.assert_called_once()
-        mock_waitpid.assert_not_called()
+        mock_spawn.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-002 / AC-TEST-001: env-var-on, os.fork called exactly once
+# AC-FUNC-003 / AC-TEST-001: parent-return-path -- no blocking, no in-process run
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_refresh_bg_enabled_calls_fork_once(
+def test_parent_returns_without_running_refresh_fn_in_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KANON_COMPLETION_REFRESH_BG=1: os.fork called exactly once."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
+    """fork_background_refresh delegates to spawn_detached and returns without
+    invoking refresh_fn in the calling (parent) process.
 
-    with patch("os.fork", return_value=1234) as mock_fork:
-        fork_background_refresh(_noop)
-        assert mock_fork.call_count == 1
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-TEST-001: parent-return-path (fork returns non-zero pid)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_parent_path_returns_immediately_no_waitpid(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Parent path (fork returns non-zero): returns immediately, no waitpid."""
+    spawn_detached is responsible for running refresh_fn in the detached child;
+    the parent must never execute it itself.
+    """
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
@@ -140,215 +164,98 @@ def test_parent_path_returns_immediately_no_waitpid(
     def refresh_fn() -> None:
         called.append("refresh")
 
-    with patch("os.fork", return_value=9999), patch("os.waitpid") as mock_waitpid:
+    # spawn_detached is patched to a no-op stand-in: it must NOT execute the
+    # wrapped callable, modelling the detached child that runs elsewhere.
+    with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
         fork_background_refresh(refresh_fn)
-        mock_waitpid.assert_not_called()
-        # The parent must NOT call refresh_fn
-        assert called == []
+        mock_spawn.assert_called_once()
+
+    assert called == [], "refresh_fn must not run in the parent process"
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-TEST-001: child-exec-path (fork returns 0)
+# AC-TEST-001: the callable handed to spawn_detached is a picklable partial
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_child_path_calls_setsid_and_refresh_fn_then_exits_zero(
+def test_spawn_detached_receives_picklable_partial_wrapper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Child path (fork returns 0): setsid called, refresh_fn invoked, exits 0."""
+    """The callable fork_background_refresh passes to spawn_detached is a
+    functools.partial of the module-level _run_refresh_with_logging, NOT a
+    nested closure.
+
+    A functools.partial of a module-level function is picklable, which the
+    Windows spawn path requires. A nested closure would be unpicklable.
+    """
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
-    call_log: list[str] = []
+    captured: list[object] = []
 
-    def refresh_fn() -> None:
-        call_log.append("refresh")
+    def capturing_spawn(fn: object, *, log_path: object) -> None:
+        captured.append(fn)
 
-    mock_devnull_fd = 5
-
-    def fake_open(path: str, flags: int, mode: int = 0) -> int:
-        return mock_devnull_fd
-
-    with (
-        patch("os.fork", return_value=0),
-        patch("os.setsid") as mock_setsid,
-        patch("os.open", side_effect=fake_open),
-        patch("os.dup2"),
-        patch("os.close"),
-        patch("os._exit") as mock_exit,
-    ):
-        fork_background_refresh(refresh_fn)
-        mock_setsid.assert_called_once()
-        assert "refresh" in call_log
-        mock_exit.assert_called_once_with(0)
-
-
-@pytest.mark.unit
-def test_child_path_redirects_stdin_stdout_to_devnull(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Child path: stdin (fd 0) and stdout (fd 1) are redirected to /dev/null."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
-
-    dup2_calls: list[tuple[int, int]] = []
-
-    def capture_dup2(fd1: int, fd2: int) -> None:
-        dup2_calls.append((fd1, fd2))
-
-    devnull_fd = 77
-
-    def fake_open(path: str, flags: int, mode: int = 0) -> int:
-        return devnull_fd
-
-    with (
-        patch("os.fork", return_value=0),
-        patch("os.setsid"),
-        patch("os.open", side_effect=fake_open),
-        patch("os.dup2", side_effect=capture_dup2),
-        patch("os.close"),
-        patch("os._exit"),
-    ):
+    with patch("kanon_cli.completions.cache.spawn_detached", side_effect=capturing_spawn):
         fork_background_refresh(_noop)
 
-    # stdin=0 and stdout=1 must be redirected to /dev/null (devnull_fd)
-    redirected_fds = {dst for _src, dst in dup2_calls if _src == devnull_fd}
-    assert 0 in redirected_fds, "stdin (fd 0) must be redirected to /dev/null"
-    assert 1 in redirected_fds, "stdout (fd 1) must be redirected to /dev/null"
+    assert len(captured) == 1
+    passed = captured[0]
+    assert isinstance(passed, functools.partial), "wrapper must be a functools.partial (picklable)"
+    assert passed.func is _run_refresh_with_logging, "wrapper must bind the module-level logging helper"
+    assert passed.args[0] is _noop, "wrapper must bind the caller's refresh_fn"
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-005 / AC-TEST-001: child-exception-path
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_child_exception_logs_and_exits_nonzero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Child path: if refresh_fn raises, log_completion_error is called, exit non-zero."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
-
-    class RefreshError(RuntimeError):
-        pass
-
-    def bad_refresh() -> None:
-        raise RefreshError("simulated refresh failure")
-
-    devnull_fd = 42
-
-    def fake_open(path: str, flags: int, mode: int = 0) -> int:
-        return devnull_fd
-
-    with (
-        patch("os.fork", return_value=0),
-        patch("os.setsid"),
-        patch("os.open", side_effect=fake_open),
-        patch("os.dup2"),
-        patch("os.close"),
-        patch("os._exit") as mock_exit,
-        patch("kanon_cli.completions.cache.log_completion_error") as mock_log,
-    ):
-        fork_background_refresh(bad_refresh)
-        # log_completion_error must be called with the raised exception
-        assert mock_log.call_count == 1
-        logged_exc = mock_log.call_args[0][1]
-        assert isinstance(logged_exc, RefreshError)
-        # exit must be called with a non-zero code
-        assert mock_exit.call_count == 1
-        exit_code = mock_exit.call_args[0][0]
-        assert exit_code != 0
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006 / AC-TEST-001: child must NOT write to parent's stdout (fd 1)
+# Fail-fast: spawn-failure propagation (no silent fallback)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_child_stdout_redirected_before_refresh_fn_called(
+def test_spawn_failure_propagates_runtimeerror(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Child path: stdout (fd 1) is redirected to /dev/null BEFORE refresh_fn is called."""
+    """When spawn_detached raises RuntimeError, fork_background_refresh
+    propagates it unchanged (fail-fast, no silent fallback).
+    """
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
-    event_log: list[str] = []
-
-    def capture_dup2(fd1: int, fd2: int) -> None:
-        event_log.append(f"dup2({fd1},{fd2})")
-
-    def refresh_fn() -> None:
-        event_log.append("refresh")
-
-    devnull_fd = 55
-
-    def fake_open(path: str, flags: int, mode: int = 0) -> int:
-        return devnull_fd
-
-    with (
-        patch("os.fork", return_value=0),
-        patch("os.setsid"),
-        patch("os.open", side_effect=fake_open),
-        patch("os.dup2", side_effect=capture_dup2),
-        patch("os.close"),
-        patch("os._exit"),
+    with patch(
+        "kanon_cli.completions.cache.spawn_detached",
+        side_effect=RuntimeError("spawn_detached: failed to fork background refresh child"),
     ):
-        fork_background_refresh(refresh_fn)
-
-    # Find the index of stdout redirect and refresh call in event_log
-    stdout_redirect_index: int | None = None
-    refresh_index: int | None = None
-    for idx, ev in enumerate(event_log):
-        if ev == f"dup2({devnull_fd},1)":
-            stdout_redirect_index = idx
-        if ev == "refresh":
-            refresh_index = idx
-
-    assert stdout_redirect_index is not None, "stdout (fd 1) was never redirected to /dev/null"
-    assert refresh_index is not None, "refresh_fn was never called"
-    assert stdout_redirect_index < refresh_index, "stdout must be redirected BEFORE refresh_fn is called"
+        with pytest.raises(RuntimeError, match="failed to fork background refresh child"):
+            fork_background_refresh(_noop)
 
 
 # ---------------------------------------------------------------------------
-# Coverage: KANON_COMPLETION_LOG env var path in child
+# Coverage: KANON_COMPLETION_LOG env var selects the spawn log path
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_child_uses_kanon_completion_log_env_for_stderr(
+def test_kanon_completion_log_env_selects_spawn_log_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Child path: KANON_COMPLETION_LOG env var is used for stderr redirection."""
-    custom_log = str(tmp_path / "custom-errors.log")
+    """KANON_COMPLETION_LOG, when set, is forwarded to spawn_detached as log_path."""
+    custom_log = tmp_path / "custom-errors.log"
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
-    monkeypatch.setenv("KANON_COMPLETION_LOG", custom_log)
+    monkeypatch.setenv("KANON_COMPLETION_LOG", str(custom_log))
 
-    opened_paths: list[str] = []
+    captured_log_paths: list[object] = []
 
-    def fake_open(path: str, flags: int, mode: int = 0) -> int:
-        opened_paths.append(path)
-        return 99
+    def capturing_spawn(fn: object, *, log_path: object) -> None:
+        captured_log_paths.append(log_path)
 
-    with (
-        patch("os.fork", return_value=0),
-        patch("os.setsid"),
-        patch("os.open", side_effect=fake_open),
-        patch("os.dup2"),
-        patch("os.close"),
-        patch("os._exit"),
-    ):
+    with patch("kanon_cli.completions.cache.spawn_detached", side_effect=capturing_spawn):
         fork_background_refresh(_noop)
 
-    # The custom log path must appear in the opened paths.
-    assert custom_log in opened_paths, (
-        f"Expected KANON_COMPLETION_LOG path {custom_log!r} to be opened; got {opened_paths!r}"
+    assert captured_log_paths == [Path(str(custom_log))], (
+        f"Expected log_path {custom_log!r} forwarded to spawn_detached; got {captured_log_paths!r}"
     )

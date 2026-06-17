@@ -44,6 +44,7 @@ Security: spec Section 3.6 -- cache files are user-private.
 from __future__ import annotations
 
 import enum
+import functools
 import hashlib
 import os
 import sys
@@ -60,6 +61,7 @@ from kanon_cli.constants import (
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_REFRESH_BG_ENV,
 )
+from kanon_cli.utils.spawn import spawn_detached
 
 # ---------------------------------------------------------------------------
 # Permission constants
@@ -372,8 +374,27 @@ def maybe_update_accessed_at(
 _FORK_COMPLETER_NAME = "fork_background_refresh"
 
 
+def _run_refresh_with_logging(refresh_fn: Callable[[], None], completer_name: str) -> None:
+    """Call *refresh_fn* and log any exception via *log_completion_error*.
+
+    This is a module-level function (not a nested closure) so that
+    ``functools.partial(_run_refresh_with_logging, refresh_fn, completer_name)``
+    is picklable.  Picklability is required for the Windows spawn path, which
+    serialises the callable via ``pickle`` to pass it to a child interpreter.
+
+    Args:
+        refresh_fn: Zero-argument callable that performs the cache refresh.
+        completer_name: Name used in the error log entry on exception.
+    """
+    try:
+        refresh_fn()
+    except Exception as exc:
+        log_completion_error(completer_name, exc)
+        raise
+
+
 def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
-    """Fork a detached child process to run *refresh_fn* in the background.
+    """Spawn a detached child process to run *refresh_fn* in the background.
 
     Implements spec Section 11.4 cache lifecycle bullet 2: when a cache entry
     is STALE, the caller returns the stale data immediately and calls this
@@ -382,23 +403,23 @@ def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
     Behavior:
 
     - If ``${KANON_COMPLETION_REFRESH_BG}`` is ``0``, this function returns
-      immediately without forking.
+      immediately without spawning.
     - If ``${KANON_COMPLETION_REFRESH_BG}`` is set to a value that cannot be
       parsed as an integer, a diagnostic message is written to stderr naming
       the invalid value and the expected format, and the function returns
-      immediately without forking.
-    - Otherwise, ``os.fork()`` is called once.  The parent returns immediately
-      (no ``os.waitpid``; the child is fully detached).
+      immediately without spawning.
+    - Otherwise, ``spawn_detached`` is called.  The parent returns immediately
+      (no blocking wait; the child is fully detached).
     - In the child process:
-      1. ``os.setsid()`` detaches from the controlling terminal.
+      1. The controlling terminal is detached (POSIX: ``os.setsid()``; Windows:
+         ``DETACHED_PROCESS`` flag).
       2. stdin (fd 0) and stdout (fd 1) are redirected to ``/dev/null`` so
          the refresh process cannot write to the operator's terminal.
       3. stderr (fd 2) is redirected to append to ``completion-errors.log``
          so refresh-time errors are captured without touching the terminal.
       4. ``refresh_fn()`` is called.
       5. On success the child exits 0 via ``os._exit``.
-      6. On any exception, the error is logged via ``log_completion_error``
-         and the child exits 1 via ``os._exit``.
+      6. On any exception the child exits 1 via ``os._exit``.
 
     The child process MUST NOT write to the parent's stdout (the completer
     is writing completion candidates there).
@@ -406,6 +427,11 @@ def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
     Args:
         refresh_fn: Zero-argument callable that performs the cache refresh.
             Called only in the child process.
+
+    Raises:
+        RuntimeError: If the underlying spawn mechanism fails (propagated from
+            ``spawn_detached``); the refresh is lost but the parent process
+            continues normally.
     """
     raw_env = os.environ.get(KANON_COMPLETION_REFRESH_BG_ENV)
     if raw_env is not None:
@@ -425,45 +451,19 @@ def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
     if enabled == 0:
         return
 
-    pid = os.fork()
-    if pid != 0:
-        # Parent: return immediately; do NOT call os.waitpid.
-        return
+    log_env = os.environ.get(KANON_COMPLETION_LOG_ENV)
+    if log_env:
+        log_path = Path(log_env)
+    else:
+        log_path = cache_dir() / KANON_COMPLETION_ERRORS_LOG_FILENAME
 
-    # Child process: detach, redirect I/O, run refresh_fn, exit.
-    # os._exit is always called (success or failure) so the child never
-    # falls through to the parent's code path.
-    try:
-        os.setsid()
+    # Build a picklable callable by binding refresh_fn to the module-level
+    # _run_refresh_with_logging helper via functools.partial.  A nested closure
+    # would not be picklable, which would break the Windows spawn path that
+    # serialises the callable via pickle to pass it to the child interpreter.
+    refresh_with_logging = functools.partial(_run_refresh_with_logging, refresh_fn, _FORK_COMPLETER_NAME)
 
-        # Redirect stdin and stdout to /dev/null.
-        devnull_fd = os.open(os.devnull, os.O_RDWR)
-        os.dup2(devnull_fd, 0)  # stdin
-        os.dup2(devnull_fd, 1)  # stdout
-
-        # Redirect stderr to completion-errors.log (append mode).
-        log_env = os.environ.get(KANON_COMPLETION_LOG_ENV)
-        if log_env:
-            log_path = log_env
-        else:
-            log_path = str(cache_dir() / KANON_COMPLETION_ERRORS_LOG_FILENAME)
-
-        # Ensure the log directory exists before opening.
-        _mkdir_secure(Path(log_path).parent)
-
-        log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, _FILE_MODE)
-        os.dup2(log_fd, 2)  # stderr
-
-        # Close the extra file descriptors (devnull_fd and log_fd) now that
-        # they have been duplicated onto 0, 1, and 2.
-        os.close(devnull_fd)
-        os.close(log_fd)
-
-        refresh_fn()
-        os._exit(0)
-    except Exception as exc:
-        log_completion_error(_FORK_COMPLETER_NAME, exc)
-        os._exit(1)
+    spawn_detached(refresh_with_logging, log_path=log_path)
 
 
 def log_completion_error(completer_name: str, exc: Exception) -> None:

@@ -270,17 +270,17 @@ When a source is resolved:
 
 ```text
 [OK]  effective catalog source: https://example.com/org/manifest-repo.git@main
-        (resolved from: KANON_CATALOG_SOURCE)
+        (resolved from: KANON_CATALOG_SOURCES)
 ```
 
 The parenthetical names the resolution tier: `--catalog-source flag`,
-`KANON_CATALOG_SOURCE env var`, or `lockfile [catalog].source`.
+`KANON_CATALOG_SOURCES env var`, or `lockfile [catalog].source`.
 
 When no source is configured:
 
 ```text
 [WARN] no catalog source configured; commands requiring one will fail.
-  Set KANON_CATALOG_SOURCE or pass --catalog-source <git-url>@<ref>.
+  Set KANON_CATALOG_SOURCES or pass --catalog-source <git-url>@<ref>.
 ```
 
 #### Fail message
@@ -302,7 +302,7 @@ kanon doctor --no-color 2>&1 | grep "effective catalog source"
 #### What it inspects
 
 The N most recent structured errors written to
-`${KANON_CACHE_DIR}/completion-errors.log` by the completion engine. Default
+`${KANON_HOME}/completion-errors.log` by the completion engine. Default
 N is `5`. These errors are non-blocking at the shell but are surfaced here so
 operators can diagnose completion failures.
 
@@ -319,8 +319,8 @@ When errors are present:
 ```text
 [WARN] 2 recent completion error(s):
   2026-05-01T12:00:00Z  __complete_kanon_add: git ls-remote timed out
-                        (KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main)
-  2026-04-30T18:00:00Z  __complete_kanon_list: no catalog source configured
+                        (KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main)
+  2026-04-30T18:00:00Z  __complete_kanon_search: no catalog source configured
   Run `kanon doctor --refresh-completion-cache` to clear and rebuild the cache.
 ```
 
@@ -358,7 +358,7 @@ is printed.
 #### Fail message
 
 ```text
-ERROR: failed to invalidate completion cache at <KANON_CACHE_DIR>:
+ERROR: failed to invalidate completion cache at <KANON_HOME>:
   <OS error details>
 ```
 
@@ -416,7 +416,7 @@ kanon doctor
 
 #### What it inspects
 
-When `--prune-cache` is passed, removes `${KANON_CACHE_DIR}` entries whose
+When `--prune-cache` is passed, removes `${KANON_HOME}` entries whose
 `accessed_at` timestamp is older than `KANON_CACHE_PRUNE_AGE_DAYS` days
 (default `30`). Also reports any stale `.kanon-data/.kanon-install.lock` files
 that are held by no live process (advisory only; `kanon doctor` does not
@@ -440,7 +440,7 @@ When no entries qualify:
 #### Fail message
 
 ```text
-ERROR: failed to prune cache at <KANON_CACHE_DIR>:
+ERROR: failed to prune cache at <KANON_HOME>:
   <OS error details>
 ```
 
@@ -523,14 +523,14 @@ branch-pinned dependencies are refreshed before merging.
 
 ### --prune-cache
 
-Triggers subcheck 10: removes cache entries in `${KANON_CACHE_DIR}` whose
+Triggers subcheck 10: removes cache entries in `${KANON_HOME}` whose
 `accessed_at` timestamp is older than `KANON_CACHE_PRUNE_AGE_DAYS` days
 (default `30`). Pruning is opt-in; without this flag the cache is never
 modified by `kanon doctor`.
 
 **Default behaviour:** cache is not touched.
 
-**Side effect:** may delete files under `${KANON_CACHE_DIR}`. Reports each
+**Side effect:** may delete files under `${KANON_HOME}`. Reports each
 removed entry to stdout. Also reports stale `.kanon-install.lock` files
 (advisory; does not delete them).
 
@@ -572,7 +572,7 @@ kanon doctor --refresh-completion-cache \
 precedence (highest wins):
 
 1. `--catalog-source <git-url>@<ref>` CLI flag.
-2. `KANON_CATALOG_SOURCE` environment variable.
+2. `KANON_CATALOG_SOURCES` environment variable.
 3. `[catalog].source` field in `.kanon.lock` (lockfile fallback -- see below).
 4. None configured -- prints a warning; no exit-1 from this condition alone.
 
@@ -581,7 +581,7 @@ verify which catalog source is active before running side-effecting commands.
 
 ### Why this matters: shell-profile leakage
 
-`KANON_CATALOG_SOURCE` is commonly set in shell profiles (`~/.bashrc`,
+`KANON_CATALOG_SOURCES` is commonly set in shell profiles (`~/.bashrc`,
 `~/.zshrc`, `~/.profile`) to avoid typing `--catalog-source` on every
 invocation. This convenience creates a risk: if you `cd` into an unrelated
 workspace and run `kanon install`, the shell-profile value silently overrides
@@ -592,17 +592,17 @@ class of mistake before it causes a silent mismatch:
 
 ```text
 [OK]  effective catalog source: https://example.com/org/manifest-repo.git@main
-        (resolved from: KANON_CATALOG_SOURCE)
+        (resolved from: KANON_CATALOG_SOURCES)
 ```
 
 If the printed source does not match the one your workspace expects, unset
-`KANON_CATALOG_SOURCE` and pass `--catalog-source` explicitly.
+`KANON_CATALOG_SOURCES` and pass `--catalog-source` explicitly.
 
 ### Lockfile fallback
 
 `kanon doctor` (and `kanon install`) are the only two commands that fall back
 to the lockfile's `[catalog].source` field when neither `--catalog-source` nor
-`KANON_CATALOG_SOURCE` is set. All other commands (`kanon list`, `kanon add`,
+`KANON_CATALOG_SOURCES` is set. All other commands (`kanon search`, `kanon add`,
 `kanon outdated`, `kanon why`, `kanon catalog audit`) hard-error on a missing
 catalog source.
 
@@ -795,7 +795,7 @@ $ kanon doctor
 [OK]  no orphaned lock entries
 ...
 [WARN] no catalog source configured; commands requiring one will fail.
-  Set KANON_CATALOG_SOURCE or pass --catalog-source <git-url>@<ref>.
+  Set KANON_CATALOG_SOURCES or pass --catalog-source <git-url>@<ref>.
 ...
 ```
 
@@ -824,7 +824,7 @@ Exit code: `0` (reachability errors are advisory)
 - [docs/exit-codes.md](exit-codes.md) -- exit-code matrix for all
   subcommands, including `kanon doctor`
 - [docs/configuration.md](configuration.md) -- all environment variables
-  (`KANON_CATALOG_SOURCE`, `KANON_CACHE_DIR`, `KANON_CACHE_PRUNE_AGE_DAYS`,
+  (`KANON_CATALOG_SOURCES`, `KANON_HOME`, `KANON_CACHE_PRUNE_AGE_DAYS`,
   `KANON_RESOLVE_TIMEOUT`, `KANON_GIT_RETRY_COUNT`, `KANON_KANON_FILE`,
   `KANON_LOCK_FILE`)
 - [docs/lockfile.md](lockfile.md) -- `.kanon.lock` format, `kanon_hash`

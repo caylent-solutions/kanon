@@ -42,14 +42,14 @@ full CLI documentation.
 > commands below instead. See
 > [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
 
-Search the catalog and add an entry to your `.kanon` with `kanon list` and
+Search the catalog and add an entry to your `.kanon` with `kanon search` and
 `kanon add`. A catalog source is required, supplied via `--catalog-source
-'<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable (ref can
+'<git_url>@<ref>'` or the `KANON_CATALOG_SOURCES` environment variable (ref can
 be a branch, tag, `latest`, or a PEP 440 version constraint such as
 `>=2.0.0,<3.0.0`):
 
 ```bash
-kanon list --catalog-source '<git_url>@<ref>'        # search the catalog
+kanon search --catalog-source '<git_url>@<ref>'        # search the catalog
 kanon add kanon --catalog-source '<git_url>@<ref>'   # add an entry to .kanon
 ```
 

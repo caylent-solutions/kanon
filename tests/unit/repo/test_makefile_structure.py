@@ -106,18 +106,20 @@ def test_make_help_prints_output(repo_root):
 
 @pytest.mark.unit
 def test_validate_depends_on_check_and_test(makefile_content):
-    """Validate that the validate target depends on check and test.
+    """Validate that the validate target depends on check and the unit-test gate.
 
     Given: The Makefile exists
     When: We inspect the validate target
-    Then: It lists check and test as prerequisites
+    Then: It lists check and test-unit as prerequisites (per-unit validation runs
+        lint + unit tests; the full suite + coverage are enforced in CI via the
+        test / test-integration / test-functional / test-scenarios targets)
     Spec: Plan: Makefile
     """
     match = re.search(r"^validate:\s*(.+)", makefile_content, re.MULTILINE)
     assert match, "validate target not found"
     deps = match.group(1).split("##")[0].split()
     assert "check" in deps, "validate must depend on check"
-    assert "test" in deps, "validate must depend on test"
+    assert "test-unit" in deps, "validate must depend on test-unit"
 
 
 @pytest.mark.unit

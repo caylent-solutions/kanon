@@ -26,7 +26,7 @@ format-check: ## Verify formatting without modifying files (ruff format --check)
 
 check: lint ## Run all static analysis checks
 
-validate: check test ## Run full validation pipeline (lint + tests)
+validate: check test-unit ## Run per-unit validation (lint + unit tests). Full suite + coverage are enforced in CI (test / test-integration / test-functional / test-scenarios).
 
 test: ## Run full test suite with coverage
 	uv run pytest --cov=kanon_cli --cov-report=term-missing

@@ -2264,3 +2264,48 @@ class TestWorkspaceDirEnvVar:
         from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
 
         assert len(WORKSPACE_DIR_ENV_VAR) > 0
+
+
+# ---------------------------------------------------------------------------
+# KANON_GIT_LS_REMOTE_TIMEOUT (E1-F1-S2-T1: per-attempt git ls-remote timeout)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestKanonGitLsRemoteTimeoutConstant:
+    """KANON_GIT_LS_REMOTE_TIMEOUT constant is defined in constants.py via _env_int."""
+
+    def test_constant_is_importable(self) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT is importable from kanon_cli.constants."""
+        from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
+
+        assert KANON_GIT_LS_REMOTE_TIMEOUT is not None
+
+    def test_constant_is_positive_integer(self) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT is a positive integer."""
+        from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
+
+        assert isinstance(KANON_GIT_LS_REMOTE_TIMEOUT, int)
+        assert KANON_GIT_LS_REMOTE_TIMEOUT > 0
+
+    def test_constant_default_is_30(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT defaults to 30 when env var is unset."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.delenv("KANON_GIT_LS_REMOTE_TIMEOUT", raising=False)
+        importlib.reload(constants)
+
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 30
+
+    def test_constant_reads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT reflects the KANON_GIT_LS_REMOTE_TIMEOUT env var."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_GIT_LS_REMOTE_TIMEOUT", "45")
+        importlib.reload(constants)
+
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 45

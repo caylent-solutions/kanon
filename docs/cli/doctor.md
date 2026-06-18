@@ -309,7 +309,7 @@ subcheck 1 short-circuits and subcheck 11 is skipped.
 | What it checks | Whether a specific locked SHA is still reachable at the remote | Whether the remote URL itself is reachable at all |
 | What triggers it | Non-zero `git ls-remote` exit OR SHA not in any ref's first column | Non-zero `git ls-remote --exit-code <url> HEAD` for any reason |
 | Severity | **error** (exit 1) | **warning** (exit 0) |
-| Retries | Subject to `KANON_GIT_RETRY_COUNT` / `KANON_GIT_RETRY_DELAY` | Same retry policy; auth-error patterns skip retries |
+| Retries | Subject to `KANON_GIT_RETRY_COUNT` (immediate, no inter-attempt delay) | Same retry policy; auth-error patterns skip retries |
 
 Remote-reachability failures are deliberately warnings rather than errors.
 Network connectivity is transient: a `kanon doctor` run that fails with exit 1
@@ -394,7 +394,7 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 | `KANON_CATALOG_SOURCE` | (none) | Catalog source as `<git-url>@<ref>`; overridden by `--catalog-source` CLI flag |
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
-| `KANON_GIT_RETRY_DELAY` | `1` | Seconds to wait between retry attempts |
+| `KANON_GIT_RETRY_DELAY` | `1` | Inter-attempt delay in seconds (read by doctor; not applied to the `git ls-remote` retry path, which delegates to `git_runner.run_git_ls_remote` and uses immediate retries with no time-based delay) |
 | `KANON_CACHE_DIR` | (none) | Directory where cache files are stored; when unset, subchecks 7, 8, and 10's cache prune are skipped |
 | `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
 | `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |

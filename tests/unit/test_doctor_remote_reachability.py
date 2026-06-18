@@ -30,8 +30,8 @@ from kanon_cli.commands.doctor import (
     _check_remote_reachability,
     _read_retry_policy,
     _run_ls_remote_exit_code,
-    _run_ls_remote_impl,
 )
+from kanon_cli.core.git_runner import run_git_ls_remote as _run_ls_remote_impl
 from kanon_cli.constants import (
     GIT_RETRY_COUNT_DEFAULT,
     GIT_RETRY_DELAY_DEFAULT,
@@ -929,7 +929,7 @@ class TestRunLsRemoteImpl:
         )
         monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
 
-        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 1, 0.0)
+        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 1)
 
         assert code == 0
         assert out == "abc\trefs/heads/main\n"
@@ -942,7 +942,7 @@ class TestRunLsRemoteImpl:
         )
         monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
 
-        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 1, 0.0)
+        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 1)
 
         assert code == 128
         assert err == "repository not found"
@@ -960,7 +960,7 @@ class TestRunLsRemoteImpl:
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
 
-        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 3, 0.0)
+        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 3)
 
         # Auth errors must not be retried -- only one subprocess call despite retry_count=3
         assert call_count == 1
@@ -975,7 +975,7 @@ class TestRunLsRemoteImpl:
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
 
-        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 1, 1, 0.0)
+        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 1, 1)
 
         assert code == 124
         assert "timed out" in err
@@ -991,7 +991,7 @@ class TestRunLsRemoteImpl:
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
 
-        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 3, 0.0)
+        code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 3)
 
         assert call_count == 3
         assert code == 1

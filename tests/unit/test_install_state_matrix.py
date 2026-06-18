@@ -622,6 +622,7 @@ path = "manifest.xml"
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = absent_sha_output
+        mock_result.stderr = ""
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -667,6 +668,7 @@ path = "manifest.xml"
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = reachable_sha_output
+        mock_result.stderr = ""
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -684,7 +686,7 @@ path = "manifest.xml"
 
 
 # ---------------------------------------------------------------------------
-# Environment variable override for _GIT_LS_REMOTE_TIMEOUT
+# Environment variable override for KANON_GIT_LS_REMOTE_TIMEOUT
 # ---------------------------------------------------------------------------
 
 
@@ -693,19 +695,21 @@ class TestGitLsRemoteTimeoutEnvVar:
     """KANON_GIT_LS_REMOTE_TIMEOUT env var overrides the default timeout."""
 
     def test_default_timeout_is_30(self) -> None:
-        from kanon_cli.core import install as _mod
+        import importlib
+
+        import kanon_cli.constants as constants
 
         # When KANON_GIT_LS_REMOTE_TIMEOUT is unset, the default is 30.
-        assert _mod._GIT_LS_REMOTE_TIMEOUT == int(
-            __import__("os").environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
-        )
+        importlib.reload(constants)
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 30
 
     def test_check_sha_reachable_passes_timeout_to_subprocess(self) -> None:
-        """Verify _check_sha_reachable passes _GIT_LS_REMOTE_TIMEOUT to
+        """Verify _check_sha_reachable passes KANON_GIT_LS_REMOTE_TIMEOUT to
         subprocess.run as the timeout kwarg."""
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = f"{'a' * 40}\trefs/heads/main\n"
+        mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             _check_sha_reachable(
@@ -716,9 +720,9 @@ class TestGitLsRemoteTimeoutEnvVar:
             # Verify timeout kwarg was passed
             call_kwargs = mock_run.call_args.kwargs
             assert "timeout" in call_kwargs
-            from kanon_cli.core.install import _GIT_LS_REMOTE_TIMEOUT
+            from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
 
-            assert call_kwargs["timeout"] == _GIT_LS_REMOTE_TIMEOUT
+            assert call_kwargs["timeout"] == KANON_GIT_LS_REMOTE_TIMEOUT
 
 
 # ---------------------------------------------------------------------------

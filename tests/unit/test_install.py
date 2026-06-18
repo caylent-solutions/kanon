@@ -937,3 +937,34 @@ class TestInstallWorkspaceDirEnvVar:
             )
         finally:
             locked_parent.chmod(stat.S_IRWXU)
+
+
+# ---------------------------------------------------------------------------
+# E1-F1-S2-T1: install.py imports run_git_ls_remote from core.git_runner
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInstallImportsGitRunner:
+    """install.py imports run_git_ls_remote from kanon_cli.core.git_runner (AC-4)."""
+
+    def test_run_git_ls_remote_importable_from_install_module(self) -> None:
+        """run_git_ls_remote is accessible in the install module namespace."""
+        import kanon_cli.core.install as install_mod
+
+        assert hasattr(install_mod, "run_git_ls_remote")
+
+    def test_install_uses_kanon_git_ls_remote_timeout_constant(self) -> None:
+        """install.py references KANON_GIT_LS_REMOTE_TIMEOUT from constants (not inline literal)."""
+        import inspect
+
+        import kanon_cli.core.install as install_mod
+
+        source = inspect.getsource(install_mod)
+        assert "KANON_GIT_LS_REMOTE_TIMEOUT" in source, (
+            "install.py must reference KANON_GIT_LS_REMOTE_TIMEOUT from constants"
+        )
+        # The old inline literal must no longer appear
+        assert 'os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT"' not in source, (
+            "install.py must not contain inline os.environ.get KANON_GIT_LS_REMOTE_TIMEOUT literal"
+        )

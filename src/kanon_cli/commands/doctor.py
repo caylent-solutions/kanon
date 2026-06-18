@@ -22,9 +22,7 @@ import os
 import pathlib
 import re
 import shutil
-import subprocess
 import sys
-import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
@@ -40,7 +38,6 @@ from kanon_cli.constants import (
     FINDING_SEVERITY_FAIL,
     FINDING_SEVERITY_INFO,
     FINDING_SEVERITY_OK,
-    GIT_AUTH_ERROR_PATTERNS,
     GIT_RETRY_COUNT_DEFAULT,
     GIT_RETRY_COUNT_ENV_VAR,
     GIT_RETRY_DELAY_DEFAULT,
@@ -64,6 +61,7 @@ from kanon_cli.constants import (
     _KANON_RESOLVE_TIMEOUT_ENV,
 )
 from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.git_runner import run_git_ls_remote
 
 # Sentinel for detecting whether --catalog-source was explicitly supplied on the
 # command line versus left at the argparse default.  argparse sets catalog_source
@@ -237,72 +235,6 @@ def _is_branch_revision(revision_spec: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _run_ls_remote_impl(
-    cmd: list[str],
-    timeout: int,
-    retry_count: int,
-    retry_delay: float,
-) -> tuple[int, str, str]:
-    """Execute a ``git ls-remote`` command with retry and timeout policy.
-
-    Shared implementation used by both ``_run_ls_remote`` and
-    ``_run_ls_remote_exit_code``.  Callers build the full ``cmd`` list
-    (including any ``--exit-code`` flag and URL/ref arguments) and delegate
-    the retry loop here.
-
-    Retry semantics:
-    - Retries up to ``retry_count`` times on transient non-zero exits.
-    - Does NOT retry on auth-error patterns (to avoid credential lockouts).
-    - Enforces ``timeout`` seconds per attempt via ``subprocess.run`` timeout.
-    - Returns a timeout pseudo-exit-code of 124 (POSIX convention) on
-      ``subprocess.TimeoutExpired``.
-
-    Args:
-        cmd: Full command list, e.g. ``["git", "ls-remote", url, ref]``.
-        timeout: Per-attempt timeout in seconds.
-        retry_count: Maximum number of attempts (1 means no retries).
-        retry_delay: Seconds to wait between retries.
-
-    Returns:
-        A tuple (returncode, stdout, stderr) from the final attempt.
-    """
-    last_returncode = -1
-    last_stdout = ""
-    last_stderr = ""
-
-    for attempt in range(retry_count):
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            last_returncode = result.returncode
-            last_stdout = result.stdout
-            last_stderr = result.stderr
-
-            if result.returncode == 0:
-                return (result.returncode, result.stdout, result.stderr)
-
-            # Do not retry auth errors
-            if any(pat in result.stderr for pat in GIT_AUTH_ERROR_PATTERNS):
-                return (result.returncode, result.stdout, result.stderr)
-
-            # On non-zero but non-auth exit, retry if attempts remain
-            if attempt < retry_count - 1:
-                time.sleep(retry_delay)
-
-        except subprocess.TimeoutExpired:
-            last_returncode = 124  # POSIX convention for timeout
-            last_stdout = ""
-            last_stderr = f"git ls-remote timed out after {timeout}s"
-            if attempt < retry_count - 1:
-                time.sleep(retry_delay)
-
-    return (last_returncode, last_stdout, last_stderr)
-
-
 def _run_ls_remote(
     url: str,
     ref: str,
@@ -312,10 +244,7 @@ def _run_ls_remote(
 ) -> tuple[int, str, str]:
     """Run ``git ls-remote <url> <ref>`` with retry and timeout policy.
 
-    Implements the same retry policy as the existing git_runner module:
-    - Retries up to ``retry_count`` times on transient failures.
-    - Does NOT retry on auth-error patterns (to avoid credential lockouts).
-    - Enforces ``timeout`` seconds per attempt via the ``timeout`` kwarg.
+    Delegates to ``kanon_cli.core.git_runner.run_git_ls_remote``.
 
     When ``ref`` is an empty string, runs ``git ls-remote <url>`` (no ref
     pattern) to list all refs. This is required for SHA reachability checks
@@ -328,7 +257,9 @@ def _run_ls_remote(
             string to list all refs without filtering.
         timeout: Per-attempt timeout in seconds.
         retry_count: Maximum number of attempts (1 means no retries).
-        retry_delay: Seconds to wait between retries.
+        retry_delay: Unused. Retained for call-site compatibility while
+            existing callers are migrated. The retry loop in git_runner uses
+            no time-based delay (spec Section 3.5 / issue #64).
 
     Returns:
         A tuple (returncode, stdout, stderr) from the final attempt.
@@ -337,7 +268,7 @@ def _run_ls_remote(
         cmd = ["git", "ls-remote", url, ref]
     else:
         cmd = ["git", "ls-remote", url]
-    return _run_ls_remote_impl(cmd, timeout, retry_count, retry_delay)
+    return run_git_ls_remote(cmd, timeout, retry_count)
 
 
 def _run_ls_remote_exit_code(
@@ -354,18 +285,22 @@ def _run_ls_remote_exit_code(
     addition to the normal non-zero on network/auth failures).  Used by
     subcheck 11 (remote reachability) per spec Section 4.6.
 
+    Delegates to ``kanon_cli.core.git_runner.run_git_ls_remote``.
+
     Args:
         url: The git remote URL to query.
         ref: The ref to look up (e.g. ``HEAD``).
         timeout: Per-attempt timeout in seconds.
         retry_count: Maximum number of attempts (1 means no retries).
-        retry_delay: Seconds to wait between retries.
+        retry_delay: Unused. Retained for call-site compatibility while
+            existing callers are migrated. The retry loop in git_runner uses
+            no time-based delay (spec Section 3.5 / issue #64).
 
     Returns:
         A tuple (returncode, stdout, stderr) from the final attempt.
     """
     cmd = ["git", "ls-remote", "--exit-code", url, ref]
-    return _run_ls_remote_impl(cmd, timeout, retry_count, retry_delay)
+    return run_git_ls_remote(cmd, timeout, retry_count)
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +440,11 @@ class RetryPolicy(NamedTuple):
     Attributes:
         timeout: Per-attempt timeout in seconds.
         retry_count: Maximum number of attempts (1 means no retries).
-        retry_delay: Seconds to wait between retries.
+        retry_delay: Value read from ``KANON_GIT_RETRY_DELAY`` (seconds).
+            Not applied to the ``git ls-remote`` retry path: the doctor
+            delegates those calls to ``kanon_cli.core.git_runner.run_git_ls_remote``,
+            which uses immediate retries with no inter-attempt delay (spec 3.5 /
+            issue #64).
     """
 
     timeout: int
@@ -523,8 +462,11 @@ def _read_retry_policy() -> RetryPolicy:
       ``_KANON_RESOLVE_TIMEOUT_DEFAULT``).
     - ``KANON_GIT_RETRY_COUNT`` -- maximum number of attempts, 1 means no
       retries (default ``GIT_RETRY_COUNT_DEFAULT``).
-    - ``KANON_GIT_RETRY_DELAY`` -- seconds to wait between retries (default
-      ``GIT_RETRY_DELAY_DEFAULT``).
+    - ``KANON_GIT_RETRY_DELAY`` -- read from the environment (default
+      ``GIT_RETRY_DELAY_DEFAULT``). Stored in ``RetryPolicy.retry_delay`` but
+      NOT applied to the ``git ls-remote`` retry path: those calls delegate to
+      ``kanon_cli.core.git_runner.run_git_ls_remote``, which performs immediate
+      retries with no inter-attempt delay (spec 3.5 / issue #64).
 
     Extracting this into a factory keeps each call site DRY and makes it easy
     to override all three values in a single place for testing.

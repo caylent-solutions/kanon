@@ -450,3 +450,30 @@ class TestRefreshCompletionCacheErrors:
                 _refresh_completion_cache(cache_dir)
         finally:
             tmp_path.chmod(0o755)
+
+
+# ---------------------------------------------------------------------------
+# E1-F1-S2-T1: doctor.py imports run_git_ls_remote from core.git_runner
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDoctorImportsGitRunner:
+    """doctor.py imports run_git_ls_remote from kanon_cli.core.git_runner (AC-4)."""
+
+    def test_run_git_ls_remote_importable_from_doctor_module(self) -> None:
+        """The run_git_ls_remote name is accessible via the doctor module namespace."""
+        import kanon_cli.commands.doctor as doctor_mod
+
+        assert hasattr(doctor_mod, "run_git_ls_remote")
+
+    def test_doctor_has_no_time_sleep(self) -> None:
+        """doctor.py source does not contain time.sleep calls (issue #64 / spec Section 3.5)."""
+        import inspect
+
+        import kanon_cli.commands.doctor as doctor_mod
+
+        source = inspect.getsource(doctor_mod)
+        assert "time.sleep" not in source, (
+            "doctor.py must not contain time.sleep calls; use the event-driven retry in git_runner"
+        )

@@ -395,7 +395,7 @@ resolution.
 **`KANON_GIT_LS_REMOTE_TIMEOUT`** (default: `30`) -- Timeout in
 seconds for `git ls-remote` calls used by SHA reachability checks and
 ref resolution in the install engine. Defined in
-`src/kanon_cli/core/install.py`.
+`src/kanon_cli/constants.py`.
 
 The `KANON_RESOLVE_TIMEOUT` variable (documented under
 [Resolver behavior](#resolver-behavior)) also governs `git ls-remote`

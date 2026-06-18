@@ -75,8 +75,10 @@ from kanon_cli import __version__
 from kanon_cli.constants import (
     CATALOG_ENV_VAR,
     KANON_ALLOW_INSECURE_REMOTES,
+    KANON_GIT_LS_REMOTE_TIMEOUT,
     WORKSPACE_DIR_ENV_VAR,
 )
+from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
@@ -121,18 +123,6 @@ __all__ = [
     "resolve_workspace_base_dir",
 ]
 
-
-# ---------------------------------------------------------------------------
-# Module-private constants
-# ---------------------------------------------------------------------------
-
-# Timeout (seconds) for git ls-remote calls in _check_sha_reachable and
-# _resolve_ref_to_sha.  Override via KANON_GIT_LS_REMOTE_TIMEOUT env var.
-# constants.py is claimed by multiple non-terminal tasks (PRE_CONFLICT);
-# a module-private constant is used here to avoid the merge surface.
-_GIT_LS_REMOTE_TIMEOUT: int = int(
-    os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
-)
 
 # ---------------------------------------------------------------------------
 # Unresolved-placeholder detection (spec Section 4 E28 Change (b))
@@ -1153,14 +1143,12 @@ def _check_sha_reachable(url: str, sha: str, source_name: str) -> None:
         LockfileUnreachableShaError: If the SHA is not found in any remote
             ref or if git ls-remote exits with a non-zero return code.
     """
-    result = subprocess.run(
+    returncode, stdout, _stderr = run_git_ls_remote(
         ["git", "ls-remote", url],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_LS_REMOTE_TIMEOUT,
-        check=False,
+        timeout=KANON_GIT_LS_REMOTE_TIMEOUT,
+        retry_count=1,
     )
-    if result.returncode != 0:
+    if returncode != 0:
         raise LockfileUnreachableShaError(
             source_name=source_name,
             sha=sha,
@@ -1169,7 +1157,7 @@ def _check_sha_reachable(url: str, sha: str, source_name: str) -> None:
     # Check the first column (SHA) of each tab-delimited line; a substring search
     # against the full stdout would produce false positives when a SHA appears in
     # a ref name (unlikely but possible with partial hashes or test fixtures).
-    sha_found = any(line.split("\t")[0] == sha for line in result.stdout.strip().splitlines() if "\t" in line)
+    sha_found = any(line.split("\t")[0] == sha for line in stdout.strip().splitlines() if "\t" in line)
     if not sha_found:
         raise LockfileUnreachableShaError(
             source_name=source_name,
@@ -1205,18 +1193,14 @@ def _resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
         ValueError: If the ref is not found in the remote or if git ls-remote
             fails.
     """
-    result = subprocess.run(
+    returncode, stdout, stderr = run_git_ls_remote(
         ["git", "ls-remote", url, ref],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_LS_REMOTE_TIMEOUT,
-        check=False,
+        timeout=KANON_GIT_LS_REMOTE_TIMEOUT,
+        retry_count=1,
     )
-    if result.returncode != 0:
-        raise ValueError(
-            f"ERROR: git ls-remote failed for url={url!r}, ref={ref!r}.\n  stderr: {result.stderr.strip()}"
-        )
-    for line in result.stdout.strip().splitlines():
+    if returncode != 0:
+        raise ValueError(f"ERROR: git ls-remote failed for url={url!r}, ref={ref!r}.\n  stderr: {stderr.strip()}")
+    for line in stdout.strip().splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
             matched_sha = parts[0]
@@ -1701,21 +1685,19 @@ def _detect_branch_drift(
         # fall back to ref_spec for plain branch names.
         ref_to_query = entry.resolved_ref if entry.resolved_ref else entry.ref_spec
 
-        result = subprocess.run(
+        returncode, stdout, _stderr = run_git_ls_remote(
             ["git", "ls-remote", entry.url, ref_to_query],
-            capture_output=True,
-            text=True,
-            timeout=_GIT_LS_REMOTE_TIMEOUT,
-            check=False,
+            timeout=KANON_GIT_LS_REMOTE_TIMEOUT,
+            retry_count=1,
         )
-        if result.returncode != 0:
+        if returncode != 0:
             # ls-remote failure for drift check is non-fatal in strict-drift mode;
             # the caller handles BranchDriftError based on the reports list.
             # A reachability failure will surface separately via _check_sha_reachable.
             continue
 
         current_sha: str | None = None
-        for line in result.stdout.strip().splitlines():
+        for line in stdout.strip().splitlines():
             parts = line.split("\t")
             if len(parts) >= 2:
                 matched_sha = parts[0]

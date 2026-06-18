@@ -110,6 +110,13 @@ GIT_RETRY_DELAY_DEFAULT = 1
 # These errors must not be retried to avoid credential lockouts.
 GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")
 
+# -- git ls-remote per-attempt timeout --
+# Timeout in seconds applied to each individual git ls-remote subprocess call.
+# Used by both kanon doctor (subchecks 4, 5, 11) and kanon install
+# (_check_sha_reachable, _resolve_ref_to_sha, _collect_branch_drift_reports).
+# Override via the KANON_GIT_LS_REMOTE_TIMEOUT environment variable.
+KANON_GIT_LS_REMOTE_TIMEOUT: int = _env_int("KANON_GIT_LS_REMOTE_TIMEOUT", 30)
+
 # -- Install concurrency lock --
 # File name for the per-project exclusive lock that serializes concurrent installs.
 INSTALL_LOCK_FILENAME = ".kanon-install.lock"

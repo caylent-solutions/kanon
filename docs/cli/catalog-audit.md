@@ -64,7 +64,7 @@ regardless of the `--check` value. It cannot be selected or deselected:
 **Finding message:**
 ```
 WARN: [L001] Legacy catalog/ directory detected; this directory is unused by
-kanon >= <version> and should be deleted; see docs/migration-bootstrap-to-add.md
+kanon >= <version> and should be deleted; see docs/migration-to-add.md
 ```
 
 where `<version>` is the running kanon CLI version.
@@ -73,7 +73,7 @@ where `<version>` is the running kanon CLI version.
 its own in default mode (exit 0). Under `--strict`, the WARN is treated as an
 error and the exit code becomes 1 (spec Section 15).
 
-See [docs/migration-bootstrap-to-add.md](../migration-bootstrap-to-add.md) for
+See [docs/migration-to-add.md](../migration-to-add.md) for
 migration instructions.
 
 ## Output formats

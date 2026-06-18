@@ -45,7 +45,7 @@ message to stderr and exits with code `3` (`EXIT_CODE_DEPRECATED`).
 Use `kanon list` to search a catalog, `kanon add <entry>
 --catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
 `kanon install` to fetch it. See
-[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md) for
+[docs/migration-to-add.md](migration-to-add.md) for
 the full migration guide.
 
 ## Install Lifecycle

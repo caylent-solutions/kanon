@@ -138,7 +138,7 @@ RELATED COMMANDS
   list  add  remove  install  clean  outdated  why  doctor  validate
   catalog  completion        (run `kanon <command> --help` for details)
 
-See docs/migration-bootstrap-to-add.md.
+See docs/migration-to-add.md.
 ```
 
 Example (`kanon bootstrap list`): identical to the above except the

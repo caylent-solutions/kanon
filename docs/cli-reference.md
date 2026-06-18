@@ -464,5 +464,5 @@ kanon add <entry> --catalog-source <git-url>@<ref>   # add an entry to .kanon
 kanon install                                    # fetch added entries
 ```
 
-See [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+See [docs/migration-to-add.md](migration-to-add.md)
 for the full migration guide.

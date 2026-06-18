@@ -40,7 +40,7 @@ full CLI documentation.
 > **Note:** `kanon bootstrap` was removed in a major release (a breaking
 > change). It performs no work and exits 3 on every invocation. Use the
 > commands below instead. See
-> [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+> [docs/migration-to-add.md](migration-to-add.md).
 
 Search the catalog and add an entry to your `.kanon` with `kanon search` and
 `kanon add`. A catalog source is required, supplied via `--catalog-source

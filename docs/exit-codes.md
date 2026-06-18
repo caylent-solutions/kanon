@@ -38,7 +38,7 @@ value fails type conversion. Correct the invocation and retry.
 The command was invoked via a deprecated interface. No work was
 performed. The WARN message on stderr names the exact replacement
 command. See
-[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+[docs/migration-to-add.md](migration-to-add.md).
 
 ## Per-subcommand reference
 
@@ -91,7 +91,7 @@ The message includes a per-invocation "CLOSEST REPLACEMENT" line:
 `kanon list --catalog-source <git-url>@<ref>`, and any other entry maps
 to `kanon add <entry> --catalog-source <git-url>@<ref>`.
 
-See [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+See [docs/migration-to-add.md](migration-to-add.md)
 for the full migration guide.
 
 ## Using this table in CI
@@ -106,7 +106,7 @@ running silently.
 If your CI pipeline surfaces exit `3`, update the script to use the
 replacement command (`kanon add` or `kanon list`). Follow the migration
 guide at
-[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+[docs/migration-to-add.md](migration-to-add.md).
 
 Example -- GitHub Actions step that detects exit `3` and fails with a
 diagnostic message:
@@ -120,7 +120,7 @@ diagnostic message:
     if [ "$exit_code" -eq 3 ]; then
       echo "ERROR: 'kanon bootstrap' is deprecated." >&2
       echo "Replace with 'kanon add mypackage'." >&2
-      echo "See docs/migration-bootstrap-to-add.md." >&2
+      echo "See docs/migration-to-add.md." >&2
       exit 1
     fi
     exit "$exit_code"
@@ -194,5 +194,5 @@ to stderr.
 - [docs/cli/validate.md](cli/validate.md) -- `kanon validate`
 - [docs/lockfile.md](lockfile.md) -- lockfile format consumed by
   `kanon install`, `kanon doctor`, `kanon outdated`, `kanon why`
-- [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+- [docs/migration-to-add.md](migration-to-add.md)
   -- full migration guide for `kanon bootstrap` users

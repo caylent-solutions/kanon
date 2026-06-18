@@ -177,7 +177,7 @@ system-wide setup, see [docs/shell-completion.md](docs/shell-completion.md).
 | `kanon clean` | Remove synced packages and Kanon state (`--orphans` also prunes unreferenced marketplaces) | [docs/lifecycle.md](docs/lifecycle.md) |
 | `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
 | `kanon completion` | Emit a shell completion script for bash or zsh | [docs/shell-completion.md](docs/shell-completion.md) |
-| `kanon bootstrap` | **deprecated (removed in 2.0; exits 3)** -- use `kanon list` / `kanon add` instead | [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md) |
+| `kanon bootstrap` | **deprecated (removed in 2.0; exits 3)** -- use `kanon list` / `kanon add` instead | [docs/migration-to-add.md](docs/migration-to-add.md) |
 
 ---
 
@@ -198,7 +198,7 @@ The `kanon bootstrap` subcommand is deprecated. Its catalog-discovery and
 project-scaffolding responsibilities have been replaced by `kanon list`
 (discover and inspect packages) and `kanon add` (add a pinned dependency to
 `.kanon`). If your workflow currently uses `kanon bootstrap <entry>`, the
-[docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md)
+[docs/migration-to-add.md](docs/migration-to-add.md)
 guide walks through the equivalent `kanon list` + `kanon add` + `kanon
 install` steps and explains the lockfile model that replaces hand-editing
 `.kanon`.
@@ -631,7 +631,7 @@ performs any work and exits with code `3`, directing you to `kanon add` /
 `kanon list`. The catalog model changed: a manifest repo no longer has a
 separate `catalog/<name>/` location and the kanon wheel no longer bundles a
 catalog. Use `kanon list` to discover entries and `kanon add` to add them.
-See [docs/migration-bootstrap-to-add.md](docs/migration-bootstrap-to-add.md).
+See [docs/migration-to-add.md](docs/migration-to-add.md).
 
 ---
 

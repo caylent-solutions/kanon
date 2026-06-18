@@ -97,6 +97,7 @@ from kanon_cli.core.include_walker import (
     _walk_includes,
 )
 from kanon_cli.core.marketplace import (
+    create_dirsymlink,
     discover_registered_marketplace_names,
     install_marketplace_plugins,
     locate_claude_binary,
@@ -1390,7 +1391,7 @@ def aggregate_symlinks(
             link_path = packages_dir / pkg_name
             if link_path.exists() or link_path.is_symlink():
                 link_path.unlink()
-            link_path.symlink_to(pkg.resolve())
+            create_dirsymlink(link_path, pkg.resolve())
 
     return package_owners
 

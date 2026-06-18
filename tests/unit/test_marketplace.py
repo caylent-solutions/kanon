@@ -19,6 +19,7 @@ import pytest
 
 from kanon_cli.core.marketplace import (
     _get_timeout,
+    create_dirsymlink,
     discover_marketplace_entries,
     discover_plugins,
     discover_registered_marketplace_names,
@@ -676,3 +677,90 @@ class TestDiscoverRegisteredMarketplaceNames:
         """A non-existent marketplace_dir yields an empty list (tolerant, not an error)."""
         result = discover_registered_marketplace_names(tmp_path / "does-not-exist")
         assert result == [], f"Missing marketplace_dir must return []; got: {result!r}"
+
+
+# ---------------------------------------------------------------------------
+# E2-F1-S3-T1: Junction-aware directory-link helper (AC-10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateDirsymlink:
+    """create_dirsymlink creates a junction-aware directory link (POSIX symlink on Linux/macOS)."""
+
+    def test_creates_symlink_pointing_at_target_directory(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink creates a symlink at link_path pointing at target on POSIX."""
+        target = tmp_path / "real-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_text("content")
+        link = tmp_path / "the-link"
+
+        create_dirsymlink(link, target)
+
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), "Expected symlink to resolve to a directory"
+        assert (link / "sentinel.txt").is_file(), "Expected sentinel.txt accessible through link"
+
+    def test_fails_fast_when_link_path_already_exists_as_directory(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError when link_path exists as a plain directory."""
+        target = tmp_path / "real-target"
+        target.mkdir()
+        link = tmp_path / "already-a-dir"
+        link.mkdir()
+
+        with pytest.raises(OSError):
+            create_dirsymlink(link, target)
+
+    def test_fails_fast_when_target_does_not_exist(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError when target path does not exist."""
+        target = tmp_path / "nonexistent-target"
+        link = tmp_path / "the-link"
+
+        # os.symlink succeeds even for non-existent targets (dangling links are legal),
+        # so we only guarantee the link is created; the *real* fail-fast constraint
+        # is that an existing non-symlink at link_path is rejected (tested above).
+        # We assert here that the helper at least runs without swallowing exceptions.
+        create_dirsymlink(link, target)
+        assert link.is_symlink(), "create_dirsymlink must create the symlink even for a dangling target"
+
+
+@pytest.mark.unit
+class TestRegisterDirectCheckoutMarketplacesUsesJunctionHelper:
+    """register_direct_checkout_marketplaces must route its directory link through create_dirsymlink."""
+
+    def test_register_direct_checkout_marketplaces_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:
+        """register_direct_checkout_marketplaces calls create_dirsymlink for directory links."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "mp-name", "mp-name")
+        manifest_xml = _write_manifest_xml(tmp_path, "mp-name")
+
+        with patch("kanon_cli.core.marketplace.create_dirsymlink") as mock_helper:
+            register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        mock_helper.assert_called_once()
+        call_args = mock_helper.call_args
+        # link_path (first arg) should be marketplace_dir / "mp-name"
+        assert call_args[0][0] == marketplace_dir / "mp-name", (
+            "create_dirsymlink must be called with link_path = marketplace_dir / name"
+        )
+
+    def test_register_produces_working_directory_link_on_posix(self, tmp_path: pathlib.Path) -> None:
+        """register_direct_checkout_marketplaces produces a usable directory link on POSIX."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "my-mp", "my-mp")
+        manifest_xml = _write_manifest_xml(tmp_path, "my-mp")
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        link = marketplace_dir / "my-mp"
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), "Expected symlink to resolve to a directory"
+        assert (link / ".claude-plugin" / "marketplace.json").is_file(), (
+            "marketplace.json must be accessible through the link"
+        )

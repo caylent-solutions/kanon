@@ -22,6 +22,7 @@ from kanon_cli.core.install import (
     run_repo_sync,
     update_gitignore,
 )
+from kanon_cli.core.marketplace import create_dirsymlink
 from kanon_cli.repo import RepoCommandError
 
 
@@ -968,3 +969,56 @@ class TestInstallImportsGitRunner:
         assert 'os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT"' not in source, (
             "install.py must not contain inline os.environ.get KANON_GIT_LS_REMOTE_TIMEOUT literal"
         )
+
+
+# ---------------------------------------------------------------------------
+# E2-F1-S3-T1: aggregate_symlinks routes directory links through create_dirsymlink
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAggregateSymlinksUsesJunctionHelper:
+    """aggregate_symlinks must route its directory link through create_dirsymlink (AC-10)."""
+
+    def test_aggregate_symlinks_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:
+        """aggregate_symlinks calls create_dirsymlink for each package link."""
+        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg.mkdir(parents=True)
+        (build_pkg / "test-lint").mkdir()
+
+        with patch("kanon_cli.core.install.create_dirsymlink") as mock_helper:
+            aggregate_symlinks(["build"], tmp_path)
+
+        mock_helper.assert_called_once()
+        call_args = mock_helper.call_args
+        # First arg is link_path (in .packages/), second is target (resolved pkg)
+        assert call_args[0][0].name == "test-lint", (
+            "create_dirsymlink must be called with link_path named after the package"
+        )
+
+    def test_aggregate_symlinks_produces_directory_link_on_posix(self, tmp_path: pathlib.Path) -> None:
+        """aggregate_symlinks produces a working directory link on POSIX (not a mock)."""
+        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg.mkdir(parents=True)
+        pkg_dir = build_pkg / "my-tool"
+        pkg_dir.mkdir()
+        (pkg_dir / "tool.sh").write_text("#!/bin/sh\necho hi\n")
+
+        aggregate_symlinks(["build"], tmp_path)
+
+        link = tmp_path / ".packages" / "my-tool"
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), f"Expected symlink to resolve to a directory at {link}"
+        assert (link / "tool.sh").is_file(), "Expected tool.sh accessible through the link"
+
+    def test_create_dirsymlink_fails_fast_on_error(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError with an actionable message when link creation fails."""
+        target = tmp_path / "real-dir"
+        target.mkdir()
+        link = tmp_path / "the-link"
+
+        # Create an unwritable directory to force symlink failure
+        link.mkdir()  # link is a directory -- symlink_to will fail since path exists and is not a symlink
+
+        with pytest.raises(OSError):
+            create_dirsymlink(link, target)

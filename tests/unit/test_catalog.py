@@ -7,11 +7,16 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.catalog import AuditFinding, _build_findings_payload
+from kanon_cli.constants import (
+    CATALOG_DEFAULT_BRANCH_ENV_VAR,
+)
 from kanon_cli.core.catalog import (
+    DefaultBranchResolutionError,
     MissingCatalogSourceError,
     _clone_remote_catalog,
     _parse_catalog_source,
     resolve_catalog_dir,
+    resolve_default_branch,
 )
 
 
@@ -387,3 +392,171 @@ class TestBuildFindingsPayload:
         serialised = json.dumps(payload)
         parsed = json.loads(serialised)
         assert parsed["findings"][0]["code"] == "E001"
+
+
+_TEST_URL = "https://example.com/org/manifest-repo.git"
+_TEST_SHA = "abcdef1234567890abcdef1234567890abcdef12"
+
+
+@pytest.mark.unit
+class TestResolveDefaultBranchPrecedence:
+    """Verify the default-branch precedence (AC-15 / FR-26 / FR-27, spec Section 6)."""
+
+    def test_inline_ref_wins_over_flag_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An explicit inline @ref short-circuits the precedence verbatim."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "env-branch")
+        # No existence check / symref call should fire for a pinned inline ref.
+        with patch("kanon_cli.core.catalog._list_branch_head") as mock_exists:
+            with patch("kanon_cli.core.catalog._resolve_symref_default_branch") as mock_symref:
+                result = resolve_default_branch(_TEST_URL, inline_ref="v1.2.3", flag_value="flag-branch")
+        assert result == "v1.2.3"
+        mock_exists.assert_not_called()
+        mock_symref.assert_not_called()
+
+    def test_flag_beats_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The --catalog-default-branch flag value beats the env default."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "env-branch")
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA) as mock_exists:
+            result = resolve_default_branch(_TEST_URL, inline_ref=None, flag_value="flag-branch")
+        assert result == "flag-branch"
+        mock_exists.assert_called_once_with(_TEST_URL, "flag-branch")
+
+    def test_env_default_used_when_no_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When no inline ref and no flag, the env value is used."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "env-branch")
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA):
+            result = resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        assert result == "env-branch"
+
+    def test_falls_back_to_main_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With no inline ref, no flag, and no env, the default is 'main'."""
+        monkeypatch.delenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, raising=False)
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA) as mock_exists:
+            result = resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        assert result == "main"
+        mock_exists.assert_called_once_with(_TEST_URL, "main")
+
+    def test_auto_resolves_symref_advertised_branch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The literal 'auto' resolves the symref-advertised branch."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "auto")
+        with patch("kanon_cli.core.catalog._resolve_symref_default_branch", return_value="trunk") as mock_symref:
+            with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA) as mock_exists:
+                result = resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        assert result == "trunk"
+        mock_symref.assert_called_once_with(_TEST_URL)
+        mock_exists.assert_called_once_with(_TEST_URL, "trunk")
+
+    def test_auto_via_flag_resolves_symref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A --catalog-default-branch=auto flag also triggers symref resolution."""
+        monkeypatch.delenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, raising=False)
+        with patch("kanon_cli.core.catalog._resolve_symref_default_branch", return_value="main") as mock_symref:
+            with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA):
+                result = resolve_default_branch(_TEST_URL, inline_ref=None, flag_value="auto")
+        assert result == "main"
+        mock_symref.assert_called_once_with(_TEST_URL)
+
+
+@pytest.mark.unit
+class TestResolveDefaultBranchSymrefAbsent:
+    """Verify the symref-absent fail-fast (spec Section 6 error)."""
+
+    def test_symref_absent_raises_default_branch_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """auto with no advertised HEAD symref fails fast with the actionable error."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "auto")
+        with patch("kanon_cli.core.catalog._resolve_symref_default_branch", return_value=None):
+            with pytest.raises(DefaultBranchResolutionError) as exc_info:
+                resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        message = str(exc_info.value)
+        assert "cannot resolve the default branch" in message
+        assert _TEST_URL in message
+        assert "KANON_CATALOG_DEFAULT_BRANCH" in message
+        assert "--catalog-default-branch" in message
+        assert "@<ref>" in message
+
+    def test_symref_absent_skips_existence_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No branch-existence lookup is attempted when symref resolution fails."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "auto")
+        with patch("kanon_cli.core.catalog._resolve_symref_default_branch", return_value=None):
+            with patch("kanon_cli.core.catalog._list_branch_head") as mock_exists:
+                with pytest.raises(DefaultBranchResolutionError):
+                    resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        mock_exists.assert_not_called()
+
+
+@pytest.mark.unit
+class TestResolveDefaultBranchExistenceCheck:
+    """Verify a defaulted branch is verified to exist (spec Section 6)."""
+
+    def test_missing_defaulted_branch_fails_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A defaulted branch absent from the remote raises DefaultBranchResolutionError."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "nonexistent")
+        not_found = ValueError(
+            f"ERROR: Branch 'nonexistent' (refs/heads/nonexistent) not found on remote {_TEST_URL!r}."
+        )
+        with patch("kanon_cli.core.catalog._list_branch_head", side_effect=not_found):
+            with pytest.raises(DefaultBranchResolutionError) as exc_info:
+                resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        assert "not found on remote" in str(exc_info.value)
+
+    def test_ls_remote_failure_fails_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A ls-remote RuntimeError during existence verify is surfaced fail-fast."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "main")
+        runtime_err = RuntimeError("ERROR: git ls-remote failed for 'x': boom")
+        with patch("kanon_cli.core.catalog._list_branch_head", side_effect=runtime_err):
+            with pytest.raises(DefaultBranchResolutionError, match="git ls-remote failed"):
+                resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+
+
+@pytest.mark.unit
+class TestResolveDefaultBranchWarn:
+    """Verify the deduped yellow WARN to stderr (spec Section 6)."""
+
+    def test_defaulted_branch_emits_warn_to_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A defaulted branch writes a WARNING naming the branch to stderr only."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "develop")
+        monkeypatch.setenv("NO_COLOR", "1")
+        monkeypatch.setattr("kanon_cli.constants._NO_COLOR_ACTIVE", True)
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA):
+            resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "WARNING" in captured.err
+        assert "develop" in captured.err
+        assert _TEST_URL in captured.err
+
+    def test_inline_ref_emits_no_warn(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A pinned inline ref emits no WARN (the operator pinned it explicitly)."""
+        with patch("kanon_cli.core.catalog._list_branch_head"):
+            resolve_default_branch(_TEST_URL, inline_ref="v1.0.0", flag_value=None)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_warn_deduped_once_per_source(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """With a shared dedup set, the WARN fires once per defaulted source."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "main")
+        monkeypatch.setattr("kanon_cli.constants._NO_COLOR_ACTIVE", True)
+        warned: set[str] = set()
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA):
+            resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None, warned_urls=warned)
+            resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None, warned_urls=warned)
+        captured = capsys.readouterr()
+        assert captured.err.count("WARNING") == 1
+        assert warned == {_TEST_URL}
+
+    def test_warn_is_yellow_when_color_active(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The WARN is rendered in ANSI yellow when color is not suppressed."""
+        monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "main")
+        monkeypatch.setattr("kanon_cli.constants._NO_COLOR_ACTIVE", False)
+        with patch("kanon_cli.core.catalog._list_branch_head", return_value=_TEST_SHA):
+            resolve_default_branch(_TEST_URL, inline_ref=None, flag_value=None)
+        captured = capsys.readouterr()
+        assert "\033[33m" in captured.err
+        assert "\033[0m" in captured.err

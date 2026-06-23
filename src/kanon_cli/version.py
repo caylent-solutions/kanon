@@ -21,11 +21,15 @@ from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     BRANCH_SHA_TRUNCATION_LENGTH,
+    KANON_GIT_LS_REMOTE_TIMEOUT,
     PEP440_OPERATORS,
     SHA1_HEX_LENGTH,
     SHA256_HEX_LENGTH,
+    SYMREF_HEADS_PREFIX,
+    SYMREF_LINE_PREFIX,
     TAG_ERROR_DISPLAY_CAP,
 )
+from kanon_cli.core.git_runner import run_git_ls_remote
 
 
 def is_version_constraint(rev_spec: str) -> bool:
@@ -453,6 +457,51 @@ def _list_branch_head(url: str, branch: str) -> str:
         f"ERROR: Branch '{branch}' ({ref}) not found on remote {url!r}.\n"
         f"Check that the branch name is correct and that the remote is accessible."
     )
+
+
+def _resolve_symref_default_branch(url: str) -> str | None:
+    """Resolve the default branch advertised by a remote's HEAD symref.
+
+    Runs ``git ls-remote --symref <url> HEAD`` through the shared
+    :func:`kanon_cli.core.git_runner.run_git_ls_remote` runner (so the retry and
+    ``KANON_GIT_LS_REMOTE_TIMEOUT`` policy are not duplicated, spec Section 3 /
+    FR-27) and parses the advertised symref line of the form::
+
+        ref: refs/heads/<branch>\\tHEAD
+
+    The ``<branch>`` component is returned (the ``refs/heads/`` prefix stripped).
+
+    Args:
+        url: Git repository URL (any scheme accepted by ``git ls-remote``).
+
+    Returns:
+        The bare default-branch name advertised by the remote HEAD symref, or
+        ``None`` when the remote advertises no ``ref: refs/heads/...`` symref
+        line (the caller fails fast with the actionable symref-absent error).
+
+    Raises:
+        RuntimeError: If ``git ls-remote --symref`` exits with a non-zero return
+            code; the message names the URL and the git stderr.
+    """
+    returncode, stdout, stderr = run_git_ls_remote(
+        ["git", "ls-remote", "--symref", url, "HEAD"],
+        timeout=KANON_GIT_LS_REMOTE_TIMEOUT,
+        retry_count=1,
+    )
+    if returncode != 0:
+        raise RuntimeError(f"ERROR: git ls-remote --symref failed for {url!r}: {stderr.strip()}")
+
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(SYMREF_LINE_PREFIX):
+            continue
+        # Line shape: "ref: refs/heads/<branch>\tHEAD". Drop the "ref: " token,
+        # then split off the trailing "\tHEAD" symref-name column.
+        symref_target = stripped[len(SYMREF_LINE_PREFIX) :].split("\t", 1)[0].strip()
+        if symref_target.startswith(SYMREF_HEADS_PREFIX):
+            return symref_target[len(SYMREF_HEADS_PREFIX) :]
+
+    return None
 
 
 def _list_tags(url: str) -> list[str]:

@@ -29,8 +29,23 @@ import subprocess
 import sys
 import tempfile
 
-from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
-from kanon_cli.version import is_version_constraint, resolve_version
+from kanon_cli import constants
+from kanon_cli.constants import (
+    ANSI_RESET,
+    ANSI_YELLOW,
+    CATALOG_DEFAULT_BRANCH_AUTO,
+    CATALOG_DEFAULT_BRANCH_DEFAULT,
+    CATALOG_DEFAULT_BRANCH_ENV_VAR,
+    CATALOG_DEFAULT_BRANCH_SYMREF_ABSENT_ERROR_TEMPLATE,
+    CATALOG_DEFAULT_BRANCH_WARN_TEMPLATE,
+    CATALOG_SOURCES_ENV_VAR,
+)
+from kanon_cli.version import (
+    _list_branch_head,
+    _resolve_symref_default_branch,
+    is_version_constraint,
+    resolve_version,
+)
 
 
 class MissingCatalogSourceError(ValueError):
@@ -53,6 +68,140 @@ class MultipleCatalogSourcesError(ValueError):
     than silently picking one. The message names every configured source so the
     operator can re-run with an explicit ``--catalog-source``.
     """
+
+
+class DefaultBranchResolutionError(RuntimeError):
+    """Raised when the default-branch precedence cannot resolve a usable branch.
+
+    Covers two fail-fast cases (spec Section 6, no fallback):
+
+    - ``auto`` resolution found no ``ref: refs/heads/...`` HEAD symref advertised
+      by the remote (the symref-absent error names the operator's next step).
+    - A defaulted branch (chosen by precedence steps 2-4) does not exist on the
+      remote when its existence is verified.
+
+    The calling command writes ``str(exc)`` to stderr and exits non-zero.
+    """
+
+
+def resolve_default_branch(
+    url: str,
+    *,
+    inline_ref: str | None,
+    flag_value: str | None,
+    warned_urls: set[str] | None = None,
+) -> str:
+    """Resolve the ref for a catalog source via the default-branch precedence.
+
+    Implements the shared precedence used wherever a ref is omitted (spec
+    Section 6 / FR-26 / FR-27), first match wins:
+
+    1. Inline ``@ref`` on the source entry / command (``inline_ref``).
+    2. ``--catalog-default-branch`` flag value (``flag_value``).
+    3. ``KANON_CATALOG_DEFAULT_BRANCH`` env (default ``main``).
+    4. If the chosen default is the literal ``auto``, resolve the remote HEAD
+       symref via ``git ls-remote --symref <url> HEAD`` (routed through the
+       shared :func:`kanon_cli.version._resolve_symref_default_branch`); a remote
+       that advertises no HEAD symref fails fast with the actionable
+       symref-absent error.
+
+    When the ref comes from an explicit inline ``@ref`` (step 1) it is returned
+    verbatim with no existence check and no WARN: the operator pinned it. When
+    the ref is *defaulted* (any of steps 2-4) it is verified to exist on the
+    remote (reusing :func:`kanon_cli.version._list_branch_head`) and a single
+    yellow WARN naming the branch is written to stderr, deduped to once per
+    defaulted source per invocation via ``warned_urls`` so ``--format json`` and
+    piped stdout stay clean.
+
+    Args:
+        url: Git repository URL of the catalog source.
+        inline_ref: The inline ``@ref`` pinned on the source entry / command, or
+            ``None`` when the source omits a ref.
+        flag_value: The ``--catalog-default-branch`` flag value, or ``None`` when
+            the flag was not supplied.
+        warned_urls: Mutable set of URLs that have already emitted the
+            defaulted-branch WARN in this invocation. Each defaulted ``url`` is
+            added on first WARN so the warning fires once per defaulted source.
+            Pass a shared set across a multi-source ``search`` invocation; omit
+            (``None``) for a single-source ``add`` to warn unconditionally.
+
+    Returns:
+        The resolved ref: the verbatim ``inline_ref`` when pinned, otherwise the
+        verified defaulted branch name.
+
+    Raises:
+        DefaultBranchResolutionError: When ``auto`` resolution finds no HEAD
+            symref, or when a defaulted branch does not exist on the remote.
+    """
+    if inline_ref is not None:
+        return inline_ref
+
+    default = (
+        flag_value
+        if flag_value is not None
+        else os.environ.get(CATALOG_DEFAULT_BRANCH_ENV_VAR, CATALOG_DEFAULT_BRANCH_DEFAULT)
+    )
+
+    if default == CATALOG_DEFAULT_BRANCH_AUTO:
+        branch = _resolve_symref_default_branch(url)
+        if branch is None:
+            raise DefaultBranchResolutionError(CATALOG_DEFAULT_BRANCH_SYMREF_ABSENT_ERROR_TEMPLATE.format(url=url))
+    else:
+        branch = default
+
+    _verify_defaulted_branch_exists(url, branch)
+    _warn_defaulted_branch(url, branch, warned_urls)
+    return branch
+
+
+def _verify_defaulted_branch_exists(url: str, branch: str) -> None:
+    """Verify a defaulted branch exists on the remote, failing fast if absent.
+
+    Reuses :func:`kanon_cli.version._list_branch_head` (a single
+    ``git ls-remote refs/heads/<branch>`` lookup) so the branch-existence path is
+    not duplicated (DRY). A missing branch is re-raised as a
+    :class:`DefaultBranchResolutionError` so the calling command surfaces a
+    single actionable error type (spec Section 6 "verified to exist (fail fast)").
+
+    Args:
+        url: Git repository URL of the catalog source.
+        branch: The defaulted branch name (no ``refs/heads/`` prefix).
+
+    Raises:
+        DefaultBranchResolutionError: When the branch is not found on the remote,
+            or when the underlying ``git ls-remote`` lookup fails.
+    """
+    try:
+        _list_branch_head(url, branch)
+    except (ValueError, RuntimeError) as exc:
+        raise DefaultBranchResolutionError(str(exc)) from exc
+
+
+def _warn_defaulted_branch(url: str, branch: str, warned_urls: set[str] | None) -> None:
+    """Emit a single deduped yellow WARN naming the defaulted branch to stderr.
+
+    The WARN announces the branch chosen by the default-branch precedence for a
+    source that omitted its ``@ref`` (spec Section 6). It is written to stderr
+    only, so ``--format json`` / piped stdout is never corrupted, and is deduped
+    to once per defaulted ``url`` when ``warned_urls`` is supplied (a multi-source
+    ``search`` invocation). The text is rendered in ANSI yellow unless color is
+    suppressed via ``constants._NO_COLOR_ACTIVE`` (the ``--no-color`` flag or a
+    non-empty ``NO_COLOR`` env var).
+
+    Args:
+        url: Git repository URL of the defaulted source.
+        branch: The resolved defaulted branch name.
+        warned_urls: Mutable dedup set, or ``None`` to warn unconditionally.
+    """
+    if warned_urls is not None:
+        if url in warned_urls:
+            return
+        warned_urls.add(url)
+
+    message = CATALOG_DEFAULT_BRANCH_WARN_TEMPLATE.format(url=url, branch=branch)
+    if not constants._NO_COLOR_ACTIVE:
+        message = f"{ANSI_YELLOW}{message}{ANSI_RESET}"
+    print(message, file=sys.stderr)
 
 
 def parse_catalog_sources(raw: str | None) -> list[tuple[str, str]]:

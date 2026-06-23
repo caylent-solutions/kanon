@@ -64,6 +64,56 @@ WORKSPACE_DIR_ENV_VAR = "KANON_WORKSPACE_DIR"
 # malformed entry fails fast. Replaces the singular env var removed in 3.0.0.
 CATALOG_SOURCES_ENV_VAR = "KANON_CATALOG_SOURCES"
 
+# -- Catalog default-branch precedence (spec Section 6 / Section 7.1 / FR-26 / FR-27) --
+# Name of the environment variable that supplies the default branch used when a
+# catalog source entry / command omits an inline `@ref`. Default `main`. When set
+# to the literal `auto` (CATALOG_DEFAULT_BRANCH_AUTO), the default branch is
+# resolved per-remote via `git ls-remote --symref <url> HEAD`.
+CATALOG_DEFAULT_BRANCH_ENV_VAR = "KANON_CATALOG_DEFAULT_BRANCH"
+
+# Fallback default branch when neither an inline `@ref`, a
+# `--catalog-default-branch` flag value, nor CATALOG_DEFAULT_BRANCH_ENV_VAR is
+# supplied (spec Section 6 precedence step 3; Section 7.1 default `main`).
+CATALOG_DEFAULT_BRANCH_DEFAULT = "main"
+
+# Literal default-branch sentinel that triggers per-remote HEAD-symref resolution
+# via `git ls-remote --symref` (spec Section 6 precedence step 4; Section 7.1).
+CATALOG_DEFAULT_BRANCH_AUTO = "auto"
+
+# The `git ls-remote --symref` advertises the remote HEAD target on a line of the
+# form `ref: refs/heads/<branch>\tHEAD`. This is the literal `refs/heads/` prefix
+# stripped from the advertised symref target to recover the bare branch name.
+SYMREF_HEADS_PREFIX = "refs/heads/"
+
+# The leading token of the symref-advertisement line emitted by
+# `git ls-remote --symref <url> HEAD` (e.g. `ref: refs/heads/main\tHEAD`).
+SYMREF_LINE_PREFIX = "ref: "
+
+# Actionable error emitted when `auto` default-branch resolution finds no HEAD
+# symref advertised by the remote (spec Section 6 symref-absent error, verbatim).
+# Call with .format(url=<remote-url>) to produce the final error string.
+CATALOG_DEFAULT_BRANCH_SYMREF_ABSENT_ERROR_TEMPLATE = (
+    "ERROR: cannot resolve the default branch for {url}: the remote did not\n"
+    "advertise a HEAD symref (ls-remote --symref returned no 'ref: refs/heads/...'\n"
+    "line). Set KANON_CATALOG_DEFAULT_BRANCH or --catalog-default-branch to an\n"
+    "explicit branch, or pin @<ref> on the source."
+)
+
+# Yellow WARN announcing the branch chosen by the default-branch precedence for a
+# defaulted source (spec Section 6: "announced with a yellow WARN"). Emitted once
+# per defaulted source per invocation, to stderr only. Call with
+# .format(url=<remote-url>, branch=<resolved-branch>).
+CATALOG_DEFAULT_BRANCH_WARN_TEMPLATE = (
+    "WARNING: no ref pinned for {url}; using default branch '{branch}'. "
+    "Pin @<ref> on the source to silence this warning."
+)
+
+# ANSI SGR escape sequences used to render the yellow default-branch WARN. Color
+# is suppressed when constants._NO_COLOR_ACTIVE is True (the --no-color flag or a
+# non-empty NO_COLOR env var, per the no-color.org convention).
+ANSI_YELLOW = "\033[33m"
+ANSI_RESET = "\033[0m"
+
 # -- List command error and notice strings --
 # Canonical missing-catalog error template (spec Section 4 header, verbatim).
 # Call with .format(command=<command-name>) to produce the final error string.

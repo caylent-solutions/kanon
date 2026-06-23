@@ -12,6 +12,7 @@ from kanon_cli.version import (
     _list_tags,
     _normalize_bare_semver_to_tag,
     _resolve_constraint_from_tags,
+    _resolve_symref_default_branch,
     _truncate_sha,
     is_version_constraint,
     resolve_version,
@@ -665,3 +666,68 @@ class TestListBranchHead:
         with patch("kanon_cli.version.subprocess.run", return_value=mock_result):
             with pytest.raises(ValueError, match="not found on remote"):
                 _list_branch_head("file:///repo", "main")
+
+
+# ---------------------------------------------------------------------------
+# _resolve_symref_default_branch tests (AC-15: auto via git ls-remote --symref)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolveSymrefDefaultBranch:
+    """Unit tests for _resolve_symref_default_branch in version.py."""
+
+    @pytest.mark.parametrize(
+        "advertised_branch",
+        ["main", "master", "develop", "trunk"],
+    )
+    def test_parses_advertised_head_symref_branch(self, advertised_branch: str) -> None:
+        """The bare branch from the 'ref: refs/heads/<branch>\\tHEAD' line is returned."""
+        symref_line = f"ref: refs/heads/{advertised_branch}\tHEAD"
+        sha_line = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\tHEAD"
+        stdout = f"{symref_line}\n{sha_line}\n"
+        with patch(
+            "kanon_cli.version.run_git_ls_remote",
+            return_value=(0, stdout, ""),
+        ):
+            result = _resolve_symref_default_branch("file:///repo")
+        assert result == advertised_branch
+
+    def test_routes_through_shared_runner_with_symref_flag(self) -> None:
+        """The command issued through the shared runner includes --symref and HEAD."""
+        stdout = "ref: refs/heads/main\tHEAD\n"
+        with patch(
+            "kanon_cli.version.run_git_ls_remote",
+            return_value=(0, stdout, ""),
+        ) as mock_runner:
+            _resolve_symref_default_branch("https://example.com/repo.git")
+        called_cmd = mock_runner.call_args.args[0]
+        assert called_cmd == ["git", "ls-remote", "--symref", "https://example.com/repo.git", "HEAD"]
+
+    def test_no_head_symref_advertised_returns_none(self) -> None:
+        """When no 'ref: refs/heads/...' line is advertised, None is returned."""
+        # A remote that only advertises the HEAD SHA (no symref line).
+        stdout = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\tHEAD\n"
+        with patch(
+            "kanon_cli.version.run_git_ls_remote",
+            return_value=(0, stdout, ""),
+        ):
+            assert _resolve_symref_default_branch("file:///repo") is None
+
+    def test_symref_to_non_heads_ref_returns_none(self) -> None:
+        """A symref that does not target refs/heads/ is not a default branch -> None."""
+        stdout = "ref: refs/remotes/origin/main\tHEAD\n"
+        with patch(
+            "kanon_cli.version.run_git_ls_remote",
+            return_value=(0, stdout, ""),
+        ):
+            assert _resolve_symref_default_branch("file:///repo") is None
+
+    def test_nonzero_returncode_raises_runtime_error(self) -> None:
+        """A non-zero git exit raises RuntimeError naming the URL."""
+        with patch(
+            "kanon_cli.version.run_git_ls_remote",
+            return_value=(128, "", "fatal: repository not found"),
+        ):
+            with pytest.raises(RuntimeError, match="git ls-remote --symref failed"):
+                _resolve_symref_default_branch("file:///missing")

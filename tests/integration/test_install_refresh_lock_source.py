@@ -170,7 +170,6 @@ def _run_install_with_real_sources(
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=None,
             refresh_lock=refresh_lock,
             refresh_lock_source=refresh_lock_source,
         )

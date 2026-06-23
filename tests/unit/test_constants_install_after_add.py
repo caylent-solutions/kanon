@@ -1,100 +1,131 @@
-"""Unit tests for the hermetic install catalog-source rejection contract.
+"""Unit tests for the hermetic-install catalog-source contract.
 
-Schema 3.0.0 (FR-1 / FR-7) removed the global ``.kanon`` ``[catalog]`` block and
-the singular ``KANON_CATALOG_SOURCE`` env var.  ``kanon add`` no longer writes a
-``[catalog]`` block, and ``kanon install`` is HERMETIC: the install-side
-``_parse_catalog_block`` / ``CatalogBlockParseError`` were removed and replaced
-by ``_reject_catalog_source_on_install`` / ``HermeticInstallCatalogSourceError``.
-The catalog discovery set is now the plural ``KANON_CATALOG_SOURCES`` env var.
+``kanon install`` is hermetic (spec Section 4.3 / FR-14): it is driven solely by
+the committed ``.kanon`` (+ ``.kanon.lock``).  A populated ``KANON_CATALOG_SOURCES``
+env var has **no effect** on install (it is ignored, never read), and the install
+subparser does **not** register ``--catalog-source`` -- passing it exits non-zero.
 
-The tests below exercise the hermetic rejection contract against the plural
-mechanism.
+A prior schema iteration instead made install REJECT a catalog source via
+``_reject_catalog_source_on_install`` / ``HermeticInstallCatalogSourceError``;
+both are removed.  These tests pin the current ignore-the-env / reject-the-flag
+contract and assert the removed symbols are no longer importable.
 """
 
 from __future__ import annotations
 
+import argparse
+import pathlib
+from unittest.mock import patch
+
 import pytest
 
-from kanon_cli.core.install import (
-    HermeticInstallCatalogSourceError,
-    InstallError,
-    _reject_catalog_source_on_install,
-)
+import kanon_cli.core.install as install_module
+from kanon_cli.commands.install import register
+from kanon_cli.core.include_walker import IncludeTree
+from kanon_cli.core.install import _RefResolution, install
+
+_KANON_SINGLE_SOURCE = """\
+GITBASE=https://git.example.com
+CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
+KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
+KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_PATH=manifest.xml
+"""
+
+
+def _write_kanon(directory: pathlib.Path) -> pathlib.Path:
+    """Write a minimal single-source .kanon file and return its path."""
+    kanon_path = directory / ".kanon"
+    kanon_path.write_text(_KANON_SINGLE_SOURCE, encoding="utf-8")
+    return kanon_path
 
 
 @pytest.mark.unit
-class TestRejectCatalogSourceOnInstall:
-    """FR-7: hermetic install rejects a catalog source from the CLI flag or env var.
+class TestRemovedRejectSymbolsAreGone:
+    """The reject-the-catalog-source machinery was removed (complete replacement)."""
 
-    ``_reject_catalog_source_on_install(cli_arg, env_configured)`` is the
-    hermetic guard that replaced the removed install-side ``_parse_catalog_block``.
-    It raises ``HermeticInstallCatalogSourceError`` when the CLI flag is non-None
-    or ``KANON_CATALOG_SOURCES`` configures at least one source, attributing the
-    CLI flag in preference to the env var.
-    """
+    def test_reject_helper_is_not_importable(self) -> None:
+        """``_reject_catalog_source_on_install`` no longer exists on the install module."""
+        assert not hasattr(install_module, "_reject_catalog_source_on_install")
 
-    def test_no_source_does_not_raise(self) -> None:
-        """The hermetic happy path: no CLI flag and no configured env source -> no error."""
-        # Must complete without raising; returns None.
-        assert _reject_catalog_source_on_install(None, False) is None
+    def test_hermetic_error_class_is_not_importable(self) -> None:
+        """``HermeticInstallCatalogSourceError`` no longer exists on the install module."""
+        assert not hasattr(install_module, "HermeticInstallCatalogSourceError")
 
-    def test_cli_arg_set_raises(self) -> None:
-        """A non-None CLI flag value is rejected fail-fast."""
-        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
-            _reject_catalog_source_on_install("https://cli.example.com/repo.git@main", False)
-        assert exc_info.value.origin == "the --catalog-source flag"
+    def test_install_signature_has_no_catalog_source_param(self) -> None:
+        """``install()`` no longer threads a ``catalog_source`` parameter."""
+        import inspect
 
-    def test_env_configured_raises(self) -> None:
-        """A populated KANON_CATALOG_SOURCES env var is rejected fail-fast."""
-        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
-            _reject_catalog_source_on_install(None, True)
-        assert exc_info.value.origin == "the KANON_CATALOG_SOURCES environment variable"
+        params = inspect.signature(install).parameters
+        assert "catalog_source" not in params
 
-    def test_cli_arg_takes_precedence_over_env_in_origin(self) -> None:
-        """When BOTH are set, the error attributes the CLI flag, not the env var."""
-        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
-            _reject_catalog_source_on_install(
-                "https://cli.example.com/repo.git@main",
-                True,
+
+@pytest.mark.unit
+class TestInstallParserRejectsCatalogSourceFlag:
+    """The install subparser does not register --catalog-source (FR-14)."""
+
+    @pytest.mark.parametrize(
+        "catalog_value",
+        [
+            "https://cli.example.com/repo.git@main",
+            "https://example.com/catalog.git",  # malformed (no @ref) -- still rejected
+            "latest",
+        ],
+    )
+    def test_install_subparser_rejects_catalog_source(self, catalog_value: str) -> None:
+        """Passing --catalog-source to install exits non-zero (unrecognized argument)."""
+        parser = argparse.ArgumentParser(prog="kanon")
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["install", "--catalog-source", catalog_value])
+        assert exc_info.value.code != 0
+
+    def test_install_subparser_has_no_catalog_source_option(self) -> None:
+        """The install subparser exposes no --catalog-source option string."""
+        parser = argparse.ArgumentParser(prog="kanon")
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        install_parser = subparsers.choices["install"]
+        option_strings = {opt for action in install_parser._actions for opt in action.option_strings}
+        assert "--catalog-source" not in option_strings
+
+
+@pytest.mark.unit
+class TestInstallIgnoresCatalogSourceEnv:
+    """A populated KANON_CATALOG_SOURCES env var is ignored by install (FR-14)."""
+
+    def test_install_ignores_env_catalog_source_and_writes_lockfile(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """install() ignores KANON_CATALOG_SOURCES, resolves from .kanon, and writes the lock."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/catalog.git@main")
+
+        kanon_path = _write_kanon(tmp_path)
+        lock_path = tmp_path / ".kanon.lock"
+        assert not lock_path.exists()
+
+        mock_ref = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
+        ):
+            install(
+                kanonenv_path=kanon_path,
+                lock_file_path=lock_path,
             )
-        assert exc_info.value.origin == "the --catalog-source flag"
 
-    def test_empty_string_cli_arg_is_rejected(self) -> None:
-        """An empty-string CLI flag is still non-None and must be rejected.
-
-        Only ``None`` means "no catalog source supplied"; an empty string is a
-        supplied (if degenerate) value and must fail fast rather than be treated
-        as absent.
-        """
-        with pytest.raises(HermeticInstallCatalogSourceError):
-            _reject_catalog_source_on_install("", False)
-
-
-@pytest.mark.unit
-class TestHermeticInstallCatalogSourceError:
-    """AC-FUNC-005: HermeticInstallCatalogSourceError message and type contract."""
-
-    def test_is_install_error_subclass(self) -> None:
-        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
-        assert isinstance(err, InstallError)
-
-    def test_origin_attribute_accessible(self) -> None:
-        err = HermeticInstallCatalogSourceError(origin="the KANON_CATALOG_SOURCES environment variable")
-        assert err.origin == "the KANON_CATALOG_SOURCES environment variable"
-
-    def test_str_has_error_prefix(self) -> None:
-        """The rendered message starts with the verbatim ERROR header (spec text)."""
-        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
-        assert str(err).startswith("ERROR: 'kanon install' does not accept a catalog source")
-
-    def test_str_names_the_origin(self) -> None:
-        """The message includes the origin so the operator knows where the value came from."""
-        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
-        assert "the --catalog-source flag" in str(err)
-
-    def test_str_includes_remediation(self) -> None:
-        """The message tells the operator how to re-run install correctly."""
-        err = HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
-        text = str(err)
-        assert "Remediation" in text
-        assert "KANON_CATALOG_SOURCES unset" in text
+        # The env var did not abort install: the lockfile records the committed
+        # .kanon source, not the ignored env-var URL.
+        assert lock_path.exists()
+        lock_text = lock_path.read_text(encoding="utf-8")
+        assert "https://git.example.com/alpha.git" in lock_text
+        assert "https://env.example.com/catalog.git" not in lock_text

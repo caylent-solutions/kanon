@@ -160,7 +160,7 @@ def _run_install_mocked(
         patch("kanon_cli.core.install.run_repo_envsubst"),
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
-        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ class TestInstallConflictUrlNormalization:
             patch("kanon_cli.core.install.run_repo_sync"),
         ):
             with pytest.raises(CanonicalUrlConflictError) as exc_info:
-                install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None)
+                install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock")
 
         error_msg = str(exc_info.value)
         assert source_a_url in error_msg

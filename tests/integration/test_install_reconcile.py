@@ -170,7 +170,6 @@ def _run_install_mocked(
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=catalog_source,
             strict_lock=strict_lock,
         )
 
@@ -263,7 +262,7 @@ class TestPlainInstallReconcile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, lock_file_path=lock_path, catalog_source=_CATALOG_SOURCE)
+            install(kanon_path, lock_file_path=lock_path)
 
         assert resolve_calls == [], f"second plain install must be CONSISTENT (no re-resolve); got {resolve_calls!r}"
         assert lock_path.read_bytes() == lock_after_reconcile, "CONSISTENT install must not mutate the lockfile"
@@ -385,7 +384,7 @@ class TestPlainInstallReconcile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, lock_file_path=lock_path, catalog_source=_CATALOG_SOURCE)
+            install(kanon_path, lock_file_path=lock_path)
 
         assert resolve_calls == [], f"unchanged .kanon must replay (no re-resolve); got {resolve_calls!r}"
         assert lock_path.read_bytes() == lock_before, "CONSISTENT install must not mutate the lockfile"

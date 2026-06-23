@@ -19,7 +19,6 @@ from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +87,6 @@ def _install_with_synced_packages(
         install(
             kanonenv,
             lock_file_path=kanonenv.parent / ".kanon.lock",
-            catalog_source=DEFAULT_CATALOG_SOURCE,
             refresh_lock=refresh_lock,
         )
 
@@ -128,7 +126,7 @@ class TestInstallCrashCleanReinstall:
             ),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
-                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Step 2: Partial artifacts exist after crash
         source_dir = tmp_path / ".kanon-data" / "sources" / "crash"
@@ -253,8 +251,8 @@ class TestInstallIdempotency:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         gitignore_content = (tmp_path / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (

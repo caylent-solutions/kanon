@@ -5,10 +5,11 @@ AC-TEST-001: Parametrises the five paths:
   (b) refresh by catalog entry name (via derive_source_name).
   (c) unknown name raises UnknownSourceError.
   (d) mutual exclusion with --refresh-lock raises SystemExit(2).
-  (e) --refresh-lock-source is hermetic: a supplied catalog source is rejected
-      with HermeticInstallCatalogSourceError (schema v4 removed the lockfile
-      [catalog] block, so install -- including the refresh-lock-source path --
-      never resolves or requires a catalog source).
+  (e) --refresh-lock-source is hermetic: it re-resolves from the committed .kanon
+      and ignores a populated KANON_CATALOG_SOURCES env var (spec Section 4.3 /
+      FR-14, so install -- including the refresh-lock-source path -- never resolves
+      or requires a catalog source).  The install subparser does not register
+      --catalog-source.
 
 AC-FUNC-001 through AC-FUNC-007 verified by these unit tests.
 """
@@ -24,7 +25,6 @@ import pytest
 
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
-    HermeticInstallCatalogSourceError,
     InstallState,
     UnknownSourceError,
     _RefResolution,
@@ -373,67 +373,78 @@ class TestRefreshLockMutualExclusion:
 
 
 # ===========================================================================
-# AC-FUNC-005: --refresh-lock-source is hermetic -- a supplied catalog source
-# is rejected (schema v4 removed the lockfile [catalog] block, so install never
-# resolves or requires a catalog source on any path, including this one).
+# AC-FUNC-005: --refresh-lock-source is hermetic -- it re-resolves from the
+# committed .kanon and ignores a populated KANON_CATALOG_SOURCES env var
+# (spec Section 4.3 / FR-14); the install subparser does not accept
+# --catalog-source.
 # ===========================================================================
 
 
 @pytest.mark.unit
-class TestRefreshLockSourceHermeticCatalogRejection:
-    """AC-FUNC-005: a catalog source supplied to the refresh-lock-source path is rejected."""
+class TestRefreshLockSourceHermeticCatalogIgnored:
+    """AC-FUNC-005: the refresh-lock-source path ignores a populated catalog env
+    var and the install subparser does not register --catalog-source."""
 
-    def test_refresh_lock_source_rejects_cli_catalog_source(
+    def test_refresh_lock_source_ignores_env_catalog_source(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock_source='alpha', catalog_source=<value>) raises HermeticInstallCatalogSourceError."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+        """install(refresh_lock_source='alpha') ignores a populated KANON_CATALOG_SOURCES env var."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/catalog.git@main")
         kanon_path = _write_kanon(tmp_path)
 
-        alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
-        beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git")
+        alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git", sha=_VALID_SHA_A)
+        beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git", sha=_VALID_SHA_B)
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
-        _write_lockfile_file(tmp_path, lockfile)
+        lock_path = _write_lockfile_file(tmp_path, lockfile)
 
-        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
+        new_alpha_sha = "e" * 40
+        mock_ref = _RefResolution(sha=new_alpha_sha, resolved_ref="refs/heads/main")
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
+            # The env var must not abort the partial refresh.
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source="https://git.example.com/catalog.git@main",
                 refresh_lock_source="alpha",
             )
 
-        msg = str(exc_info.value)
-        assert "does not accept a catalog source" in msg
-        assert "--catalog-source" in msg
+        from kanon_cli.core.lockfile import read_lockfile
 
-    def test_refresh_lock_source_rejects_env_catalog_source(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """install(refresh_lock_source='alpha') with KANON_CATALOG_SOURCES set raises HermeticInstallCatalogSourceError."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://git.example.com/catalog.git@main")
-        kanon_path = _write_kanon(tmp_path)
+        new_lf = read_lockfile(lock_path)
+        alpha_new = next(e for e in new_lf.sources if e.name == "alpha")
+        # alpha was refreshed from .kanon; the ignored env-var URL is not used.
+        assert alpha_new.resolved_sha == new_alpha_sha
+        assert alpha_new.url == "https://git.example.com/alpha.git"
+        lock_text = lock_path.read_text(encoding="utf-8")
+        assert "https://env.example.com/catalog.git" not in lock_text
 
-        alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
-        beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git")
-        lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
-        _write_lockfile_file(tmp_path, lockfile)
+    def test_install_subparser_rejects_catalog_source_flag(self) -> None:
+        """The install subparser does not register --catalog-source (FR-14): passing it exits non-zero."""
+        from kanon_cli.commands import install as install_cmd
 
-        with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
-            install(
-                kanonenv_path=kanon_path,
-                lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
-                refresh_lock_source="alpha",
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        install_cmd.register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                [
+                    "install",
+                    "--refresh-lock-source",
+                    "alpha",
+                    "--catalog-source",
+                    "https://git.example.com/catalog.git@main",
+                ]
             )
-
-        msg = str(exc_info.value)
-        assert "does not accept a catalog source" in msg
-        assert "KANON_CATALOG_SOURCES" in msg
+        assert exc_info.value.code != 0
 
 
 # ===========================================================================
@@ -715,7 +726,6 @@ class TestInstallRefreshLockSourceKwarg:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 refresh_lock_source="alpha",
             )
 
@@ -779,7 +789,6 @@ class TestInstallRefreshLockSourceKwarg:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 refresh_lock_source="alpha",
             )
 

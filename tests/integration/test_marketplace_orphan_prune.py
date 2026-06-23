@@ -38,7 +38,6 @@ from kanon_cli.core.install import install
 from kanon_cli.core.lockfile import (
     read_lockfile,
 )
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
@@ -201,7 +200,7 @@ class TestInstallAutoPruneReconcile:
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         first_lock = read_lockfile(lock_path)
         assert len(first_lock.sources) == 1
@@ -225,7 +224,7 @@ class TestInstallAutoPruneReconcile:
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed) as mock_run,
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         removed = _extract_marketplace_remove_names(mock_run.call_args_list)
         assert "source_alpha" in removed, (
@@ -281,7 +280,7 @@ class TestInstallAutoPruneReconcile:
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         lock = read_lockfile(lock_path)
         by_name = {s.name: s for s in lock.sources}
@@ -345,7 +344,7 @@ class TestCleanOrphansCanonicalFlow:
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         # Sanity: the lock attributes source_alpha to source A.
         installed_lock = read_lockfile(lock_path)

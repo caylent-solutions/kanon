@@ -21,7 +21,6 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +299,6 @@ class TestSymlinkedKanonFile:
             install(
                 symlink_kanon,
                 lock_file_path=symlink_kanon.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         # .kanon-data/ must be created inside the real project directory (where .kanon lives),
@@ -401,7 +399,6 @@ class TestPathsWithSpaces:
             install(
                 spaced_project,
                 lock_file_path=spaced_project.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         assert (spaced_dir / ".kanon-data").is_dir(), (
@@ -424,7 +421,6 @@ class TestPathsWithSpaces:
             install(
                 spaced_project,
                 lock_file_path=spaced_project.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         gitignore = spaced_dir / ".gitignore"

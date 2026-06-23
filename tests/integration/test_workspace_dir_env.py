@@ -22,7 +22,6 @@ import pytest
 from kanon_cli.core.clean import clean
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import _RefResolution, install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +73,7 @@ def _run_install(kanonenv: pathlib.Path, lock_path: pathlib.Path) -> None:
             return_value=IncludeTree(path=pathlib.Path("meta.xml")),
         ),
     ):
-        install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+        install(kanonenv, lock_file_path=lock_path)
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +204,7 @@ class TestWorkspaceDirPathEntry:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         assert (alt_workspace / ".kanon-data").exists(), (
             "path= entry: install must place .kanon-data/ under KANON_WORKSPACE_DIR"

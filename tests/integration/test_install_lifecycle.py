@@ -18,7 +18,7 @@ import pytest
 
 from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE, write_manifest_for_sync
+from tests.conftest import write_manifest_for_sync
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def _install_with_patched_repo(kanonenv: pathlib.Path) -> None:
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
     ):
-        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 def _install_with_synced_packages(
@@ -123,7 +123,7 @@ def _install_with_synced_packages(
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
-        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst", side_effect=record_envsubst),
             patch("kanon_cli.repo.repo_sync", side_effect=record_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert "init" in call_order, "repo_init must be called during install"
         assert "envsubst" in call_order, "repo_envsubst must be called during install"
@@ -409,7 +409,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst", side_effect=record_envsubst),
             patch("kanon_cli.repo.repo_sync", side_effect=record_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         envsubst_pos = call_order.index("envsubst")
         sync_pos = call_order.index("sync")
@@ -439,7 +439,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst", side_effect=record_envsubst),
             patch("kanon_cli.repo.repo_sync", side_effect=record_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         expected_order = ["init", "envsubst", "sync"]
         for step in expected_order:
@@ -464,7 +464,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_init.call_count == 1, (
             f"repo_init must be called exactly once for a single source; was called {mock_init.call_count} times"
@@ -482,7 +482,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_envsubst.call_count == 1, (
             f"repo_envsubst must be called exactly once for a single source; "
@@ -501,7 +501,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync") as mock_sync,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_sync.call_count == 1, (
             f"repo_sync must be called exactly once for a single source; was called {mock_sync.call_count} times"
@@ -519,7 +519,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
             patch("kanon_cli.repo.repo_sync") as mock_sync,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_init.call_count == 2, (
             f"repo_init must be called once per source (2 sources); was called {mock_init.call_count} times"
@@ -558,7 +558,7 @@ class TestInstallRepoOperationOrder:
             patch("kanon_cli.repo.repo_envsubst", side_effect=record_envsubst),
             patch("kanon_cli.repo.repo_sync", side_effect=record_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Extract operations per source, preserving their global positions
         alpha_ops = [op for op, src in call_sequence if src == "alpha"]
@@ -737,7 +737,7 @@ class TestInstallLifecycleOrder:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=check_gitignore_during_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(gitignore_existed_during_sync) == 1, "repo_sync side-effect must run exactly once"
         assert not gitignore_existed_during_sync[0], (
@@ -763,7 +763,7 @@ class TestInstallLifecycleOrder:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=check_packages_during_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not packages_existed_during_sync[0], (
             ".packages/ must NOT exist when repo_sync runs -- aggregate_symlinks runs after sync"
@@ -808,7 +808,7 @@ class TestInstallLifecycleOrder:
             patch("kanon_cli.core.install.aggregate_symlinks", side_effect=record_aggregate),
             patch("kanon_cli.core.install.update_gitignore", side_effect=record_update_gitignore),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         expected_order = ["init", "envsubst", "sync", "aggregate", "gitignore"]
         for step in expected_order:

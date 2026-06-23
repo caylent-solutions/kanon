@@ -10,7 +10,6 @@ import sys
 import warnings
 
 from kanon_cli.constants import KANON_LOCK_FILE as _KANON_LOCK_FILE_ENV
-from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import InstallError, install
 from kanon_cli.repo import RepoCommandError
@@ -85,7 +84,13 @@ def register(subparsers) -> None:
         type=pathlib.Path,
         help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
-    add_catalog_source_arg(parser)
+
+    # kanon install is hermetic (spec Section 4.3 / FR-14): it is driven solely by
+    # the committed .kanon (+ .kanon.lock).  --catalog-source is deliberately NOT
+    # registered here, so passing it to install exits non-zero (argparse rejects the
+    # unrecognized argument).  A populated KANON_CATALOG_SOURCES env var has no effect
+    # on install (it is ignored, never read).  The catalog source belongs to the
+    # catalog-querying commands (kanon add / list / outdated / why).
 
     # --refresh-lock and --refresh-lock-source are mutually exclusive (spec Section 4.7).
     refresh_group = parser.add_mutually_exclusive_group()
@@ -95,9 +100,8 @@ def register(subparsers) -> None:
         default=False,
         help=(
             "Ignore the existing lockfile, re-resolve every transitive version from "
-            "scratch, and overwrite .kanon.lock with the new state. "
-            "Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source; "
-            "the lockfile fallback is disabled on this path."
+            "scratch against the committed .kanon source declarations, and overwrite "
+            ".kanon.lock with the new state."
         ),
     )
     refresh_group.add_argument(
@@ -105,12 +109,10 @@ def register(subparsers) -> None:
         metavar="NAME",
         default=None,
         help=(
-            "Re-resolve exactly one top-level source's full chain while preserving "
-            "every other source's lockfile entries verbatim. NAME may be a source "
-            "name (the KANON_SOURCE_<name> key) or a catalog entry name resolved "
-            "via derive_source_name. "
-            "Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source; "
-            "the lockfile fallback is disabled on this path."
+            "Re-resolve exactly one top-level source's full chain from the committed "
+            ".kanon while preserving every other source's lockfile entries verbatim. "
+            "NAME may be a source name (the KANON_SOURCE_<name> key) or a catalog "
+            "entry name resolved via derive_source_name."
         ),
     )
 
@@ -212,7 +214,6 @@ def _run(args) -> int | None:
         install(
             args.kanonenv_path,
             lock_file_path=lock_file_path,
-            catalog_source=args.catalog_source,
             refresh_lock=args.refresh_lock,
             refresh_lock_source=args.refresh_lock_source,
             strict_lock=args.strict_lock,
@@ -224,8 +225,6 @@ def _run(args) -> int | None:
         # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt,
         # lockfile-sha-unreachable.txt, conflict-detected.txt.
         # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
-        # Covers HermeticInstallCatalogSourceError (a catalog source was supplied to
-        # the hermetic install via --catalog-source or KANON_CATALOG_SOURCES).
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:

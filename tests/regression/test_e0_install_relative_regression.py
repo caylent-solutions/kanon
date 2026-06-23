@@ -71,7 +71,6 @@ def _make_args(kanonenv_path: pathlib.Path) -> object:
 
     args = MagicMock()
     args.kanonenv_path = kanonenv_path
-    args.catalog_source = None
     return args
 
 
@@ -355,19 +354,19 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
 
     How this exercises the invariant under the new install state machine
     (src/kanon_cli/core/install.py): _run() is the CLI boundary for
-    'kanon install'. When the operator supplies a relative .kanon path -- or
-    when KANON_CATALOG_SOURCES is set -- _run() must resolve the path before
-    delegating to parse_kanonenv() and then to install(). This test inspects
-    the source of _run() and asserts that the character positions satisfy:
+    'kanon install'. When the operator supplies a relative .kanon path, _run()
+    must resolve the path before delegating to parse_kanonenv() and then to
+    install(). This test inspects the source of _run() and asserts that the
+    character positions satisfy:
         resolve_pos < parse_pos < install_pos
     so that any future refactor that moves the resolve() call after either
     downstream call is immediately caught.
 
-    The install() call in the new state machine is formatted as a multi-line
-    call: install(\n    args.kanonenv_path, ...). The test therefore locates
-    the install invocation by searching for the unique keyword argument
-    'catalog_source=args.catalog_source' that is passed to install() and
-    is not present in any other part of _run().
+    install is hermetic (spec Section 4.3 / FR-14): _run() does not thread a
+    catalog source into install().  The install() call in the state machine is
+    formatted as a multi-line call: install(\n    args.kanonenv_path, ...). The
+    test locates the install invocation by searching for the keyword argument
+    'refresh_lock=args.refresh_lock' that is unique to the install() invocation.
 
     AC-FUNC-001
     """
@@ -377,7 +376,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
     parse_pos = source.find("parse_kanonenv(")
     # The install() call in _run is formatted as a multi-line call; locate it
     # via a keyword argument unique to the install() invocation.
-    install_pos = source.find("catalog_source=args.catalog_source")
+    install_pos = source.find("refresh_lock=args.refresh_lock")
 
     assert resolve_pos != -1, (
         "E0-INSTALL-RELATIVE regression guard: resolve() call not found in _run. "
@@ -388,10 +387,9 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
         "The install command must call parse_kanonenv() to validate the .kanon file."
     )
     assert install_pos != -1, (
-        "E0-INSTALL-RELATIVE regression guard: catalog_source=args.catalog_source keyword "
-        "argument not found in _run. The install() call must pass catalog_source so "
-        "--catalog-source / KANON_CATALOG_SOURCES is forwarded to the resolver. "
-        "Check that install() is called with catalog_source=args.catalog_source in "
+        "E0-INSTALL-RELATIVE regression guard: refresh_lock=args.refresh_lock keyword "
+        "argument not found in _run. The install() call must be present so the ordering "
+        "invariant can be checked. Check that install() is called in "
         "src/kanon_cli/commands/install.py."
     )
 

@@ -12,7 +12,6 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -97,7 +96,7 @@ class TestInstallCleanRoundtrip:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".packages" / "tool-a").is_symlink(), "install() should create a symlink in .packages/"
         assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (

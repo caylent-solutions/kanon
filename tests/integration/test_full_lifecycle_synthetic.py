@@ -353,12 +353,12 @@ class TestFullLifecycleSynthetic:
             ):
                 # kanon install is hermetic: it installs the sources declared in
                 # .kanon (written by kanon add) and pinned in .kanon.lock without
-                # resolving a catalog source.  Passing a catalog source here would
-                # raise HermeticInstallCatalogSourceError.
+                # resolving a catalog source.  The install parser does not accept
+                # --catalog-source and a populated KANON_CATALOG_SOURCES env var has
+                # no effect on install (it is ignored, not read).
                 install(
                     kanon_path,
                     lock_file_path=workspace_dir / ".kanon.lock",
-                    catalog_source=None,
                 )
 
             # ------------------------------------------------------------------

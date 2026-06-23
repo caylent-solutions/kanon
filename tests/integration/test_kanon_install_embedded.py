@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -62,7 +61,7 @@ class TestInstallUsesEmbeddedPythonAPI:
             patch("kanon_cli.repo.repo_sync"),
             patch("subprocess.run", side_effect=capturing_run),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(subprocess_calls) == 0, (
             f"Expected zero subprocess calls to 'repo' binary, but found: {subprocess_calls}"
@@ -89,7 +88,7 @@ class TestInstallWithoutPipx:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir()
 
@@ -115,7 +114,7 @@ class TestInstallWithoutRepoOnPath:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".gitignore").is_file()
         gitignore_content = (tmp_path / ".gitignore").read_text()
@@ -154,7 +153,7 @@ class TestInstallVersionConstraintResolution:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.subprocess.run", return_value=mock_ls_remote),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_revision) == 1, "repo_init should have been called once"
         assert captured_revision[0] == "refs/tags/1.0.3", (
@@ -191,7 +190,7 @@ class TestInstallSubdirectoryAutoDiscovery:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(discovered, lock_file_path=discovered.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
         assert (tmp_path / ".gitignore").is_file(), (
             "install() should write .gitignore relative to the .kanon parent directory"
@@ -234,7 +233,7 @@ class TestInstallMarketplaceDisabled:
             patch("kanon_cli.repo.repo_sync"),
             patch("subprocess.run", side_effect=capturing_run),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(claude_calls) == 0, (
             f"Expected no claude CLI subprocess calls when KANON_MARKETPLACE_INSTALL=false, but got: {claude_calls}"

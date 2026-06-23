@@ -435,7 +435,6 @@ class TestOrphanPruneNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -472,7 +471,6 @@ class TestOrphanPruneNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -519,7 +517,6 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=True,
                 strict_drift=False,
             )
@@ -582,7 +579,6 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=True,
                 strict_drift=False,
             )
@@ -612,7 +608,6 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=True,
             )
 
@@ -654,7 +649,6 @@ class TestDriftReuseNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -686,7 +680,6 @@ class TestDriftReuseNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -731,7 +724,6 @@ class TestDriftStrictFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
                 strict_drift=True,
             )
@@ -764,7 +756,6 @@ class TestDriftStrictFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_drift=True,
             )
 
@@ -834,7 +825,6 @@ class TestBothFlagsBothEvents:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=True,
                 strict_drift=True,
             )
@@ -873,7 +863,6 @@ class TestDriftDetectorScope:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_drift=True,
             )
 
@@ -903,6 +892,5 @@ class TestDriftDetectorScope:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_drift=True,
             )

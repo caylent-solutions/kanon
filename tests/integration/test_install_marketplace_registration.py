@@ -38,7 +38,6 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
@@ -288,7 +287,6 @@ class TestInstallMarketplaceRegistration:
             install(
                 kanonenv,
                 lock_file_path=kanonenv.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         recorded_add_argvs = _extract_marketplace_add_argvs(mock_run.call_args_list)
@@ -383,7 +381,6 @@ class TestInstallMarketplaceRegistration:
             install(
                 kanonenv,
                 lock_file_path=kanonenv.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         add_calls = _extract_marketplace_add_argvs(mock_run.call_args_list)

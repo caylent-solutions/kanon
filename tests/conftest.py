@@ -59,11 +59,12 @@ MINIMAL_KANONENV = (
 # exercising catalog-resolution logic. Uses an RFC 2606 reserved example.com
 # domain so no real network request is ever attempted.  The autouse
 # _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCES after every
-# test; tests that need this value must either:
-#   (a) pass it as catalog_source=DEFAULT_CATALOG_SOURCE to install(), or
-#   (b) set KANON_CATALOG_SOURCES via monkeypatch.setenv before calling code
+# test; the catalog-querying commands (add / list / outdated / why) read this
+# value from --catalog-source or the env var.  ``kanon install`` is hermetic and
+# ignores it.  Tests that need this value must either:
+#   (a) set KANON_CATALOG_SOURCES via monkeypatch.setenv before calling code
 #       that reads the env var, or
-#   (c) request the opt-in _set_default_catalog_source fixture.
+#   (b) request the opt-in _set_default_catalog_source fixture.
 DEFAULT_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 
 
@@ -511,27 +512,24 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
 
 @pytest.fixture()
 def make_install_args():
-    """Factory fixture that returns a MagicMock with kanonenv_path and catalog_source set.
+    """Factory fixture that returns a MagicMock suitable for the install CLI handler.
 
     Returns a callable that accepts a kanonenv path and returns a MagicMock
     suitable for passing to the install CLI handler _run(args). This allows
     integration and functional tests to invoke the CLI boundary without
     duplicating the argparse namespace setup inline.
 
-    The factory sets ``args.catalog_source`` to ``DEFAULT_CATALOG_SOURCE`` so
-    that tests which do not exercise catalog-resolution logic do not fail with
-    ``MissingCatalogSourceError`` due to the autouse ``_scrub_catalog_source_env``
-    fixture clearing ``KANON_CATALOG_SOURCES`` between every test.  Tests that
-    intentionally exercise the missing-catalog-source error path must override
-    ``args.catalog_source = None`` after calling the factory and must also
-    ensure ``KANON_CATALOG_SOURCES`` is absent (the autouse scrubber guarantees
-    that at test start).
+    ``kanon install`` is hermetic (spec Section 4.3 / FR-14): it is driven solely
+    by the committed ``.kanon`` (+ ``.kanon.lock``), accepts no catalog source, and
+    ignores ``KANON_CATALOG_SOURCES``.  The factory therefore sets only the
+    attributes the install handler actually reads (path, lock file, and the
+    refresh / strict flags).
 
     Args: (none -- use the returned factory)
 
     Returns:
         A factory function that accepts kanonenv_path (Path) and returns a
-        MagicMock with kanonenv_path, lock_file, and catalog_source attributes set.
+        MagicMock with kanonenv_path, lock_file, and the install flags set.
 
     Example::
 
@@ -550,7 +548,6 @@ def make_install_args():
         args = MagicMock()
         args.kanonenv_path = kanonenv_path
         args.lock_file = None
-        args.catalog_source = DEFAULT_CATALOG_SOURCE
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False

@@ -218,7 +218,7 @@ def _run_install_with_fake_catalog(
         patch("kanon_cli.core.install.run_repo_envsubst"),
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
-        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None, **kwargs)
+        install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +488,6 @@ class TestStrictLockEndToEnd:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=True,
             )
 
@@ -546,7 +545,6 @@ class TestStrictLockEndToEnd:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 strict_lock=False,
             )
 

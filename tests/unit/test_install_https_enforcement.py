@@ -73,7 +73,6 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
         mock_policy.assert_called()
@@ -108,7 +107,6 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
         # Verify all calls had allow_insecure=False
@@ -145,7 +143,6 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
         # Verify at least one call had allow_insecure=True
@@ -181,7 +178,6 @@ class TestInstallEnforcesHttpsPolicy:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
     def test_http_url_allowed_when_env_var_set_to_one(
@@ -214,7 +210,6 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
 
@@ -262,5 +257,4 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )

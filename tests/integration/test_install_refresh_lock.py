@@ -174,7 +174,6 @@ def _run_install_mocked(
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=catalog_source,
             refresh_lock=refresh_lock,
             strict_lock=strict_lock,
         )

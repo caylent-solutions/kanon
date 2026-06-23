@@ -30,7 +30,6 @@ import pytest
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +213,7 @@ class TestCaseSensitivityParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created by install() using the canonical lowercase path. "
@@ -254,7 +253,7 @@ class TestCaseSensitivityParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (project_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created inside '{dir_name}' directory. Contents: {list(project_dir.iterdir())}"
@@ -368,7 +367,7 @@ class TestDevNullAndTmpfsScenarios:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert (tmp_path / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created on tmpfs/tmp filesystem. Contents of tmp_path: {list(tmp_path.iterdir())}"
@@ -605,9 +604,7 @@ class TestSymlinkSemanticsParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(
-                abs_symlink, lock_file_path=abs_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE
-            )
+            install(abs_symlink, lock_file_path=abs_symlink.parent / ".kanon.lock")
 
         assert (real_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created in the real file's parent when using an absolute symlink. "
@@ -644,9 +641,7 @@ class TestSymlinkSemanticsParity:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(
-                rel_symlink, lock_file_path=rel_symlink.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE
-            )
+            install(rel_symlink, lock_file_path=rel_symlink.parent / ".kanon.lock")
 
         assert (real_dir / ".kanon-data").is_dir(), (
             f".kanon-data/ must be created in the real file's parent when using a relative symlink. "

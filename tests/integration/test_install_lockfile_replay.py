@@ -20,6 +20,7 @@ mocked because the embedded repo tool requires a proper XML manifest file.
 
 from __future__ import annotations
 
+import argparse
 import os
 import pathlib
 import subprocess
@@ -28,7 +29,6 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import (
-    HermeticInstallCatalogSourceError,
     KanonHashMismatchError,
     install,
 )
@@ -156,9 +156,8 @@ def _run_install_mocked(
     logic under test does not depend on their side-effects.
 
     ``kanon install`` is hermetic (spec Section 5.2 / FR-7): it resolves no
-    catalog source, so ``catalog_source`` is left ``None`` and
-    ``_resolve_ref_to_sha`` runs against the real local source repos so that
-    lockfile replay tests can verify pinned SHAs.
+    catalog source, so ``_resolve_ref_to_sha`` runs against the real local
+    source repos so that lockfile replay tests can verify pinned SHAs.
 
     ``strict_lock`` is forwarded to ``install()`` so the npm-ci path can be
     exercised (clean error on drift, no lockfile mutation).
@@ -171,7 +170,6 @@ def _run_install_mocked(
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=None,
             strict_lock=strict_lock,
         )
 
@@ -269,47 +267,71 @@ class TestLockfileReplay:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", catalog_source=None)
+            install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock")
 
         # In the LOCKFILE_CONSISTENT state, resolve_version must NOT be called.
         assert resolve_calls == [], (
             f"install() must not call resolve_version() in LOCKFILE_CONSISTENT state; got calls for: {resolve_calls!r}"
         )
 
-    def test_install_rejects_catalog_source_hermetically(self, tmp_path: pathlib.Path) -> None:
-        """install() rejects a --catalog-source value: the v4 lock has no [catalog] block.
+    def test_install_parser_rejects_catalog_source_flag(self) -> None:
+        """The install subparser does not register --catalog-source.
 
         Schema v4 (spec Section 5.2 / FR-7) removed the lockfile [catalog] block, so
         ``kanon install`` is hermetic and never resolves or records a catalog source.
-        A non-None ``catalog_source`` reaching install is rejected fail-fast rather
-        than silently ignored or recorded in the lock.
+        Passing ``--catalog-source`` to ``kanon install`` is therefore an unrecognized
+        argument: argparse exits non-zero (SystemExit) rather than silently accepting it.
+        """
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["install", "--catalog-source", "https://catalog.example.com/repo.git@main"])
+
+        assert exc_info.value.code != 0
+
+    def test_install_ignores_catalog_sources_env_var(self, tmp_path: pathlib.Path) -> None:
+        """A populated KANON_CATALOG_SOURCES env var has no effect on install.
+
+        Schema v4 (spec Section 5.2 / FR-7) makes ``kanon install`` hermetic: it is
+        driven solely by the committed ``.kanon`` (+ ``.kanon.lock``).  A populated
+        ``KANON_CATALOG_SOURCES`` environment variable is ignored (not read, not an
+        error): install succeeds, writes the lockfile from ``.kanon``, and the bogus
+        env URL never appears in the resulting lock.
         """
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
-        repo_path, _sha = _build_fixture_repo(fixture_dir)
+        repo_path, sha_v1 = _build_fixture_repo(fixture_dir)
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         kanon_path = _write_kanon(project_dir, str(repo_path))
 
-        catalog_source = "https://catalog.example.com/repo.git@main"
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-        ):
-            with pytest.raises(HermeticInstallCatalogSourceError) as exc_info:
-                install(
-                    kanon_path,
-                    lock_file_path=kanon_path.parent / ".kanon.lock",
-                    catalog_source=catalog_source,
-                )
+        bogus_env_url = "https://catalog.example.com/repo.git@main"
+        lock_path = project_dir / ".kanon.lock"
 
-        msg = str(exc_info.value)
-        assert msg.startswith("ERROR: 'kanon install' does not accept a catalog source")
-        assert "--catalog-source" in msg
-        # The hermetic rejection fires before any lockfile is written.
-        assert not (project_dir / ".kanon.lock").exists()
+        with patch.dict(os.environ, {"KANON_CATALOG_SOURCES": bogus_env_url}):
+            with (
+                patch("kanon_cli.repo.repo_init"),
+                patch("kanon_cli.repo.repo_envsubst"),
+                patch("kanon_cli.repo.repo_sync"),
+            ):
+                install(kanon_path, lock_file_path=lock_path)
+
+        # Install succeeded and wrote the lockfile from the committed .kanon.
+        assert lock_path.exists(), "install() must write .kanon.lock despite KANON_CATALOG_SOURCES being set"
+
+        lf = read_lockfile(lock_path)
+        # The single source comes from .kanon (the fixture repo), pinned to 1.0.0.
+        assert [e.name for e in lf.sources] == ["alpha"]
+        assert lf.sources[0].resolved_sha == sha_v1
+
+        # The bogus catalog URL from the env var must NOT appear anywhere in the lock.
+        lock_text = lock_path.read_text()
+        assert "catalog.example.com" not in lock_text
 
 
 # ===========================================================================

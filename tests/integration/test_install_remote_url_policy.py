@@ -123,7 +123,6 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
         error_text = str(exc_info.value)
@@ -150,7 +149,6 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
         # The error must name the source so the operator can trace it
@@ -177,7 +175,6 @@ class TestInstallHttpRemoteRejectedByDefault:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
         assert "KANON_ALLOW_INSECURE_REMOTES" in str(exc_info.value)
@@ -217,7 +214,6 @@ class TestInstallHttpRemoteAllowedWithOverride:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
     @pytest.mark.parametrize("env_val", ["0", "true", "yes", "on", "2"])
@@ -242,7 +238,6 @@ class TestInstallHttpRemoteAllowedWithOverride:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
 
@@ -280,7 +275,6 @@ class TestInstallHttpsUrlNoError:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=None,
             )
 
 
@@ -342,7 +336,6 @@ class TestInstallReplayPathEnforcesPolicy:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source=None,
                 )
 
 

@@ -41,16 +41,11 @@ _GIT_USER_EMAIL = "journey-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from journey content repo"
-_CATALOG_PKG_NAME = "my-pkg"
 _MARKETPLACE_NAME = "test-marketplace"
 _PLUGIN_NAME = "test-plugin"
 _MARKETPLACE_DIR_REL = ".claude-marketplaces"
 _GITIGNORE_PACKAGES = ".packages/"
 _GITIGNORE_KANON_DATA = ".kanon-data/"
-# Dummy catalog source used in catalog_source= arguments so install() passes
-# catalog-source validation.  The _resolve_ref_to_sha function is mocked by
-# the integration conftest autouse fixture, so the URL need not be real.
-_DUMMY_CATALOG_SOURCE = "https://example.com/catalog.git@main"
 # Minimal well-formed manifest XML written by fake_repo_sync helpers so that
 # install()'s include-walker can parse the manifest path after sync.
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
@@ -228,39 +223,6 @@ def _create_manifest_repo(
     return _clone_as_bare(work_dir, base / f"{subdir_name}-bare.git")
 
 
-def _create_catalog_repo(base: pathlib.Path, kanonenv_content: str) -> pathlib.Path:
-    """Create a local catalog git repo with a catalog/<pkg>/.kanon structure.
-
-    The catalog repo has a catalog/ subdirectory containing _CATALOG_PKG_NAME
-    with a pre-configured .kanon file. This matches what resolve_catalog_dir
-    expects: after git clone, it looks for a 'catalog/' subdirectory in the
-    cloned repo root.
-
-    Args:
-        base: Parent directory under which repos are created.
-        kanonenv_content: Content to write into the catalog's .kanon template.
-
-    Returns:
-        The absolute path to the bare catalog git repo (for use as url in
-        '<url>@<ref>' format with --catalog-source).
-    """
-    work_dir = base / "catalog-work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    _init_git_work_dir(work_dir)
-
-    catalog_dir = work_dir / "catalog"
-    catalog_dir.mkdir()
-    pkg_dir = catalog_dir / _CATALOG_PKG_NAME
-    pkg_dir.mkdir()
-    (pkg_dir / ".kanon").write_text(kanonenv_content, encoding="utf-8")
-    (pkg_dir / "README.md").write_text(f"# {_CATALOG_PKG_NAME}\n", encoding="utf-8")
-
-    _git(["add", "."], cwd=work_dir)
-    _git(["commit", "-m", "Add catalog package"], cwd=work_dir)
-
-    return _clone_as_bare(work_dir, base / "catalog-bare.git")
-
-
 def _create_mock_claude_binary(bin_dir: pathlib.Path) -> pathlib.Path:
     """Create a mock claude binary that logs all invocations to a file.
 
@@ -353,7 +315,6 @@ class TestFullJourneyBootstrapInstallClean:
             "KANON_SOURCE_main_REVISION=main\n"
             "KANON_SOURCE_main_PATH=default.xml\n"
         )
-        catalog_bare = _create_catalog_repo(repos_dir, kanonenv_content)
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -378,7 +339,6 @@ class TestFullJourneyBootstrapInstallClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=f"file://{catalog_bare}@main",
             )
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must exist after install"
@@ -478,7 +438,6 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert len(register_calls) >= 1, f"Expected at least one marketplace register call, got: {register_calls!r}"
@@ -596,7 +555,6 @@ class TestFullJourneyBootstrapInstallValidateClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
@@ -691,7 +649,6 @@ class TestFullJourneyWithVersionConstraints:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert len(resolved_calls) == 1, f"resolve_version must be called once per source, got: {resolved_calls!r}"
@@ -764,7 +721,6 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
             install(
                 discovered,
                 lock_file_path=discovered.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert (project_dir / ".packages").is_dir(), ".packages/ must be created relative to project/"
@@ -863,7 +819,6 @@ class TestFullJourneyMultiSourceWithMarketplace:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert "mp" in synced_sources, f"'mp' source must be synced, got: {synced_sources!r}"
@@ -944,7 +899,6 @@ class TestFullJourneyEnvVarOverrides:
                 install(
                     kanonenv_path,
                     lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
         finally:
             if original_gitbase is None:
@@ -1007,7 +961,6 @@ class TestFullJourneyInstallTwiceThenClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         first_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
@@ -1023,7 +976,6 @@ class TestFullJourneyInstallTwiceThenClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         second_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
@@ -1095,7 +1047,6 @@ class TestFullJourneyErrorRecovery:
                 install(
                     kanonenv_path,
                     lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
 
         partial_exists = (project_dir / ".kanon-data" / "sources" / "good").is_dir() or (

@@ -105,7 +105,6 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv_install,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=None,
             )
 
         # Verify the lockfile records marketplace_registered=true.
@@ -156,7 +155,6 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=None,
             )
 
         lf = read_lockfile(tmp_path / ".kanon.lock")

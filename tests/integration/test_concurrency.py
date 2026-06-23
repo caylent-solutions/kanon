@@ -49,10 +49,6 @@ from kanon_cli.core.install import install
 
 _SRC_DIR = pathlib.Path(__file__).resolve().parents[2] / "src"
 _LOCK_FILENAME = ".kanon-install.lock"
-# Dummy catalog source used by _patched_install so install() passes
-# catalog-source validation. The _resolve_ref_to_sha function is mocked
-# by the integration conftest autouse fixture, so the URL need not be real.
-_DUMMY_CATALOG_SOURCE = "https://example.com/manifest-repo.git@main"
 # Minimal well-formed manifest XML written by fake sync helpers so that
 # install()'s include-walker can parse the manifest path after sync.
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
@@ -212,14 +208,14 @@ def _patched_install(kanonenv: pathlib.Path) -> None:
     only execute the production install() code path -- they do not
     set up or tear down their own patch contexts.
 
-    ``catalog_source`` is supplied so install() passes catalog-source
-    validation; _resolve_ref_to_sha is mocked by the integration conftest
-    autouse fixture so no real git call is made for the catalog URL.
+    ``kanon install`` is hermetic: it resolves no catalog source, so the
+    production install() code path is driven solely by the committed .kanon
+    (+ .kanon.lock). _resolve_ref_to_sha is mocked by the integration conftest
+    autouse fixture so no real git call is made for the source URLs.
     """
     install(
         kanonenv,
         lock_file_path=kanonenv.parent / ".kanon.lock",
-        catalog_source=_DUMMY_CATALOG_SOURCE,
     )
 
 
@@ -251,7 +247,6 @@ def _patched_install_with_packages(
         install(
             kanonenv,
             lock_file_path=kanonenv.parent / ".kanon.lock",
-            catalog_source=_DUMMY_CATALOG_SOURCE,
         )
 
 
@@ -500,7 +495,6 @@ class TestIdempotentRetryAfterPartialFailure:
                 install(
                     kanonenv,
                     lock_file_path=kanonenv.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
 
         # Second attempt: all repo ops succeed.
@@ -536,7 +530,6 @@ class TestIdempotentRetryAfterPartialFailure:
                 install(
                     kanonenv,
                     lock_file_path=kanonenv.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
 
         # Second attempt: all repo ops succeed.
@@ -611,7 +604,6 @@ class TestIdempotentRetryAfterPartialFailure:
                 install(
                     kanonenv,
                     lock_file_path=kanonenv.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
 
         # Second attempt: all repo ops succeed.

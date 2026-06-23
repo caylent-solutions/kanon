@@ -21,7 +21,6 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _git, _run_kanon
 from kanon_cli.core.install import install
 from kanon_cli.core.xml_validator import validate_xml
@@ -216,7 +215,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert captured.err == "", (
@@ -238,7 +237,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert len(captured.out) > 0, (

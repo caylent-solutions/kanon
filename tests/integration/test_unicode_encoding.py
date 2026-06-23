@@ -21,7 +21,6 @@ from kanon_cli.core.install import install
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.xml_validator import validate_manifest
 from kanon_cli.version import resolve_version
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ def _install_patched(kanonenv: pathlib.Path) -> None:
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install.resolve_version", side_effect=lambda url, rev: rev),
     ):
-        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +175,7 @@ class TestUnicodeBranchRevision:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_revision) == 1, "repo_init must be called exactly once"
         assert captured_revision[0] == unicode_revision, (
@@ -305,7 +304,7 @@ class TestUnicodeManifestPath:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_path) == 1, "repo_init must be called exactly once"
         assert captured_path[0] == manifest_path, (

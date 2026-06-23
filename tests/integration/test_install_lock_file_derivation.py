@@ -69,7 +69,6 @@ class TestLockFileDerivation:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -99,7 +98,6 @@ class TestLockFileDerivation:
 
         args = MagicMock()
         args.kanonenv_path = kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -133,7 +131,6 @@ class TestExplicitLockFileFlag:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -169,7 +166,6 @@ class TestEnvVarLockFilePrecedence:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -201,7 +197,6 @@ class TestEnvVarLockFilePrecedence:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False

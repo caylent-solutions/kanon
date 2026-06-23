@@ -8,7 +8,7 @@ Covers:
 - Happy path: three XML files, exit 0, stdout sorted names, no error in stderr.
 - Empty-catalog path: zero XML files, exit 0, empty stdout, stderr note.
 - Missing-catalog-source path: no flag, no env var, exit non-zero, stderr error.
-- KANON_CATALOG_SOURCE env var path: no flag, env var set, exit 0, sorted names.
+- KANON_CATALOG_SOURCES env var path: no flag, env var set, exit 0, sorted names.
 
 AC-TEST-002, AC-TEST-003, AC-CYCLE-001
 """
@@ -263,9 +263,9 @@ class TestListDefaultHappyPath:
         assert "ERROR:" not in result.stderr, f"Unexpected ERROR in stderr: {result.stderr!r}"
 
     def test_env_var_sets_catalog_source(self, tmp_path: pathlib.Path) -> None:
-        """KANON_CATALOG_SOURCE env var (no CLI flag) selects the catalog source.
+        """KANON_CATALOG_SOURCES env var (no CLI flag) selects the catalog source.
 
-        AC-CYCLE-001: run kanon list with KANON_CATALOG_SOURCE set (no flag).
+        AC-CYCLE-001: run kanon list with KANON_CATALOG_SOURCES set (no flag).
         """
         bare = _create_manifest_repo(tmp_path, ["gamma", "alpha", "beta"])
         catalog_source = f"file://{bare}@main"
@@ -273,12 +273,12 @@ class TestListDefaultHappyPath:
         result = _run_kanon(
             ["list"],  # No --catalog-source flag
             extra_env={
-                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_CATALOG_SOURCES": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
         )
         assert result.returncode == 0, (
-            f"Expected exit 0 with KANON_CATALOG_SOURCE set; got {result.returncode}.\n"
+            f"Expected exit 0 with KANON_CATALOG_SOURCES set; got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -286,7 +286,7 @@ class TestListDefaultHappyPath:
         assert lines == ["alpha", "beta", "gamma"], f"Expected sorted names via env var; got {lines!r}"
 
     def test_catalog_source_flag_wins_over_env_var(self, tmp_path: pathlib.Path) -> None:
-        """CLI --catalog-source takes precedence over KANON_CATALOG_SOURCE env var."""
+        """CLI --catalog-source takes precedence over KANON_CATALOG_SOURCES env var."""
         # Create two repos: one with "correct" entry, one with "wrong" entry.
         bare_correct = _create_manifest_repo(tmp_path / "correct", ["correct-entry"])
         bare_wrong = _create_manifest_repo(tmp_path / "wrong", ["wrong-entry"])
@@ -294,7 +294,7 @@ class TestListDefaultHappyPath:
         result = _run_kanon(
             ["list", "--catalog-source", f"file://{bare_correct}@main"],
             extra_env={
-                "KANON_CATALOG_SOURCE": f"file://{bare_wrong}@main",
+                "KANON_CATALOG_SOURCES": f"file://{bare_wrong}@main",
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
         )
@@ -352,14 +352,14 @@ class TestListDefaultEmptyCatalog:
         )
 
     def test_empty_catalog_via_env_var(self, tmp_path: pathlib.Path) -> None:
-        """Empty catalog path also works via KANON_CATALOG_SOURCE env var."""
+        """Empty catalog path also works via KANON_CATALOG_SOURCES env var."""
         bare = _create_manifest_repo(tmp_path, [])
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
             ["list"],
             extra_env={
-                "KANON_CATALOG_SOURCE": catalog_source,
+                "KANON_CATALOG_SOURCES": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
         )
@@ -378,8 +378,8 @@ class TestListDefaultMissingCatalogSource:
 
     def test_exits_nonzero_when_no_source(self) -> None:
         """kanon list exits non-zero when neither flag nor env var is set."""
-        # Remove KANON_CATALOG_SOURCE from the environment
-        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCE"}
+        # Remove KANON_CATALOG_SOURCES from the environment
+        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCES"}
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "list"],
@@ -395,7 +395,7 @@ class TestListDefaultMissingCatalogSource:
 
     def test_stderr_contains_error_when_no_source(self) -> None:
         """kanon list writes an ERROR: line to stderr when no source is set."""
-        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCE"}
+        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCES"}
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "list"],
@@ -407,7 +407,7 @@ class TestListDefaultMissingCatalogSource:
 
     def test_stdout_empty_when_no_source(self) -> None:
         """kanon list writes nothing to stdout when no catalog source is set."""
-        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCE"}
+        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCES"}
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "list"],
@@ -419,7 +419,7 @@ class TestListDefaultMissingCatalogSource:
 
     def test_error_mentions_catalog_source_flag(self) -> None:
         """kanon list error text mentions --catalog-source."""
-        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCE"}
+        clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCES"}
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "list"],

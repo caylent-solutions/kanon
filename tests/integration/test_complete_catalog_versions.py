@@ -2,7 +2,7 @@
 
 Builds a real fixture manifest git repo on local filesystem with all seven
 refs (tags: 1.0.0, 2.0.0, 1.0.0a1, not-a-version, release/v3; branches:
-main, develop), points KANON_CATALOG_SOURCE at it, and invokes the completer
+main, develop), points KANON_CATALOG_SOURCES at it, and invokes the completer
 via subprocess end-to-end.
 """
 
@@ -86,7 +86,7 @@ def _run_complete(
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `kanon __complete_catalog_versions <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
-    env["KANON_CATALOG_SOURCE"] = f"file://{repo_path}@main"
+    env["KANON_CATALOG_SOURCES"] = f"file://{repo_path}@main"
     env["KANON_CACHE_DIR"] = str(cache_dir)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
@@ -176,10 +176,10 @@ class TestCompleteCatalogVersionsSubprocess:
         assert result.stdout.strip() == "", f"expected empty stdout, got {result.stdout!r}"
 
     def test_nonexistent_catalog_source_returns_empty_and_logs(self, tmp_path: Path) -> None:
-        """Non-existent KANON_CATALOG_SOURCE: empty stdout, exit 0, error logged (AC-CYCLE-001)."""
+        """Non-existent KANON_CATALOG_SOURCES: empty stdout, exit 0, error logged (AC-CYCLE-001)."""
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CATALOG_SOURCE"] = "file:///nonexistent/path@main"
+        env["KANON_CATALOG_SOURCES"] = "file:///nonexistent/path@main"
         env["KANON_CACHE_DIR"] = str(cache_dir)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 

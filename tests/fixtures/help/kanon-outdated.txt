@@ -13,16 +13,16 @@ live-resolved against the catalog when absent.
 Exit code is always 0 unless --fail-on-upgrade is set, in which
 case the command exits 1 when any source has an available upgrade.
 
-Catalog source precedence: --catalog-source flag, then
-KANON_CATALOG_SOURCE env var. Both being absent is a hard error.
+Catalog source precedence: --catalog-source flag, then the single
+KANON_CATALOG_SOURCES env-var entry. Both being absent is a hard error.
 
 options:
   -h, --help            show this help message and exit
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
-                        is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Required when
-                        KANON_CATALOG_SOURCE is not set.
+                        is a branch, tag, or 'latest'. Overrides the
+                        KANON_CATALOG_SOURCES env var. Required when
+                        KANON_CATALOG_SOURCES configures no single source.
   --kanon-file <path>   Path to the .kanon file. Defaults to './.kanon'.
                         Overridden by the KANON_KANON_FILE environment
                         variable; the CLI flag takes precedence when both are

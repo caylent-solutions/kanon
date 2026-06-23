@@ -139,7 +139,7 @@ class TestDoctorCombinedFlags:
         # -- Step 2: kanon doctor --refresh-completion-cache --prune-cache --
         env_with_cache = dict(os.environ)
         env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
-        env_with_cache.pop("KANON_CATALOG_SOURCE", None)
+        env_with_cache.pop("KANON_CATALOG_SOURCES", None)
 
         doctor_result = subprocess.run(
             [
@@ -193,7 +193,7 @@ class TestDoctorCombinedFlags:
 
         env_with_cache = dict(os.environ)
         env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
-        env_with_cache.pop("KANON_CATALOG_SOURCE", None)
+        env_with_cache.pop("KANON_CATALOG_SOURCES", None)
 
         doctor_result = subprocess.run(
             [
@@ -254,7 +254,7 @@ class TestDoctorCombinedFlags:
         )
 
         env_no_catalog = dict(os.environ)
-        env_no_catalog.pop("KANON_CATALOG_SOURCE", None)
+        env_no_catalog.pop("KANON_CATALOG_SOURCES", None)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],

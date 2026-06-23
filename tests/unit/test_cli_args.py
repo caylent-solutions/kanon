@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from kanon_cli.constants import CATALOG_ENV_VAR
+from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
 
 _CLI_ARGS_PY = pathlib.Path(__file__).parent.parent.parent / "src" / "kanon_cli" / "core" / "cli_args.py"
 
@@ -57,10 +57,10 @@ class TestAddCatalogSourceArgMetavar:
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgDefault:
-    """add_catalog_source_arg reads the default from KANON_CATALOG_SOURCE at parser-build time."""
+    """add_catalog_source_arg reads the default from KANON_CATALOG_SOURCES at parser-build time."""
 
     def test_default_none_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
+        monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -69,7 +69,7 @@ class TestAddCatalogSourceArgDefault:
         assert args.catalog_source is None
 
     def test_default_from_env_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         # Re-import to pick up env at parser-build time.
@@ -81,10 +81,10 @@ class TestAddCatalogSourceArgDefault:
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgPrecedence:
-    """CLI flag wins over KANON_CATALOG_SOURCE env var (spec Section 4 header)."""
+    """CLI flag wins over KANON_CATALOG_SOURCES env var (spec Section 4 header)."""
 
     def test_cli_flag_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -93,7 +93,7 @@ class TestAddCatalogSourceArgPrecedence:
         assert args.catalog_source == "https://h/r.git@cli-ref"
 
     def test_env_used_when_flag_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -102,7 +102,7 @@ class TestAddCatalogSourceArgPrecedence:
         assert args.catalog_source == "https://h/r.git@env-ref"
 
     def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
+        monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -126,8 +126,8 @@ class TestAddCatalogSourceArgHelpText:
         # The canonical help text defined in cli_args.py (the single source of truth):
         expected_help = (
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
-            "Required when KANON_CATALOG_SOURCE is not set."
+            "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
+            "Required when KANON_CATALOG_SOURCES configures no single source."
         )
         assert action.help == expected_help
 
@@ -145,7 +145,7 @@ class TestAddCatalogSourceArgHelpText:
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
-        assert "KANON_CATALOG_SOURCE" in action.help
+        assert "KANON_CATALOG_SOURCES" in action.help
 
 
 @pytest.mark.unit
@@ -161,7 +161,7 @@ class TestCycleEndToEnd:
         assert args.catalog_source == "https://h/r.git@main"
 
     def test_cycle_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()

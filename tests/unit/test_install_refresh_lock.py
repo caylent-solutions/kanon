@@ -168,7 +168,7 @@ class TestClassifyInstallStateRefreshLock:
 class TestRefreshLockIsHermetic:
     """Schema v4 (spec Section 5.2 / FR-7): --refresh-lock rebuilds the lock from
     .kanon hermetically.  It neither resolves nor requires a catalog source, and a
-    supplied --catalog-source / KANON_CATALOG_SOURCE is rejected fail-fast.
+    supplied --catalog-source / KANON_CATALOG_SOURCES is rejected fail-fast.
     """
 
     def test_refresh_lock_no_catalog_source_succeeds(
@@ -177,7 +177,7 @@ class TestRefreshLockIsHermetic:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install(refresh_lock=True) with NO catalog source rebuilds the lock (no error)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
         lock_path = kanon_path.parent / ".kanon.lock"
 
@@ -204,7 +204,7 @@ class TestRefreshLockIsHermetic:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install(refresh_lock=True, catalog_source=...) is rejected hermetically."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         mock_ref = _RefResolution(sha="b" * 40, resolved_ref="refs/heads/main")
@@ -228,8 +228,8 @@ class TestRefreshLockIsHermetic:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock=True) with KANON_CATALOG_SOURCE set is rejected hermetically."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env.example.com/repo.git@main")
+        """install(refresh_lock=True) with KANON_CATALOG_SOURCES set is rejected hermetically."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/repo.git@main")
         kanon_path = _write_kanon(tmp_path)
 
         mock_ref = _RefResolution(sha="b" * 40, resolved_ref="refs/heads/main")
@@ -246,7 +246,7 @@ class TestRefreshLockIsHermetic:
                     catalog_source=None,
                     refresh_lock=True,
                 )
-        assert "KANON_CATALOG_SOURCE" in str(exc_info.value)
+        assert "KANON_CATALOG_SOURCES" in str(exc_info.value)
 
 
 # ===========================================================================
@@ -304,7 +304,7 @@ class TestInstallRefreshLockKwarg:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install(refresh_lock=True, catalog_source=...) is rejected hermetically (FR-7)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
@@ -336,7 +336,7 @@ class TestInstallRefreshLockKwarg:
     ) -> None:
         """install(refresh_lock=True) with no catalog source rewrites the lockfile
         even when a consistent lockfile is already present (AC-FUNC-001)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         # Write a consistent lockfile with a stale SHA so we can detect the rewrite.
@@ -382,7 +382,7 @@ class TestRefreshLockDoesNotTouchKanonFile:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After install(refresh_lock=True), the .kanon file content is unchanged."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
         original_content = kanon_path.read_text()
 

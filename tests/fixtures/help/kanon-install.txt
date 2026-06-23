@@ -17,13 +17,13 @@ options:
   -h, --help            show this help message and exit
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
-                        is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Required when
-                        KANON_CATALOG_SOURCE is not set.
+                        is a branch, tag, or 'latest'. Overrides the
+                        KANON_CATALOG_SOURCES env var. Required when
+                        KANON_CATALOG_SOURCES configures no single source.
   --refresh-lock        Ignore the existing lockfile, re-resolve every
                         transitive version from scratch, and overwrite
                         .kanon.lock with the new state. Requires a CLI-
-                        supplied or KANON_CATALOG_SOURCE env-var catalog
+                        supplied or KANON_CATALOG_SOURCES env-var catalog
                         source; the lockfile fallback is disabled on this
                         path.
   --refresh-lock-source NAME
@@ -32,7 +32,7 @@ options:
                         verbatim. NAME may be a source name (the
                         KANON_SOURCE_<name> key) or a catalog entry name
                         resolved via derive_source_name. Requires a CLI-
-                        supplied or KANON_CATALOG_SOURCE env-var catalog
+                        supplied or KANON_CATALOG_SOURCES env-var catalog
                         source; the lockfile fallback is disabled on this
                         path.
   --strict-lock         Upgrade orphaned lock entries to a hard error. An

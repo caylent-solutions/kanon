@@ -342,8 +342,8 @@ class TestWhyLockfilePresent:
 
         Flow:
           1. Build a synthetic catalog bare repo containing entry ``foo``.
-          2. Run ``kanon add foo --catalog-source <url>`` (writes .kanon with
-             [catalog] block so subsequent bare install reads the source URL).
+          2. Run ``kanon add foo --catalog-source <url>`` (writes .kanon with the
+             per-dependency KANON_SOURCE_foo_* lines that bare install reads).
           3. Run bare ``kanon install`` (no ``--catalog-source``) -- this writes
              .kanon.lock with ``foo`` as a top-level ``[[sources]]`` entry with
              no transitive includes.
@@ -376,7 +376,7 @@ class TestWhyLockfilePresent:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # -- Act: kanon add (writes .kanon with [catalog] block) --
+        # -- Act: kanon add (writes .kanon with the KANON_SOURCE_foo_* lines) --
         add_result = _run_kanon(
             [
                 "add",
@@ -392,9 +392,9 @@ class TestWhyLockfilePresent:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Act: bare kanon install (reads catalog block, writes .kanon.lock) --
+        # -- Act: bare kanon install (reads .kanon sources, writes .kanon.lock) --
         env = dict(os.environ)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
         install_result = _subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],
             capture_output=True,

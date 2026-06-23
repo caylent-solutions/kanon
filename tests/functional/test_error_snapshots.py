@@ -603,7 +603,7 @@ def _make_cli_args(slug: str, tmp_path: pathlib.Path) -> tuple[list[str], "dict[
 
     if slug == "missing-catalog-source":
         # No catalog source in env or flag -- kanon list fires immediately.
-        return ["list"], {"KANON_CATALOG_SOURCE": ""}
+        return ["list"], {"KANON_CATALOG_SOURCES": ""}
 
     if slug == "lockfile-hash-mismatch":
         # Under the npm-like reconcile contract, plain `kanon install` reconciles a
@@ -736,9 +736,9 @@ def test_error_message_matches_fixture(slug: str, tmp_path: pathlib.Path) -> Non
     if extra_env is not None:
         resolved_env = {k: v for k, v in os.environ.items()}
         resolved_env.update(extra_env)
-        # Explicitly unset KANON_CATALOG_SOURCE when set to empty string.
-        if resolved_env.get("KANON_CATALOG_SOURCE") == "":
-            del resolved_env["KANON_CATALOG_SOURCE"]
+        # Explicitly unset KANON_CATALOG_SOURCES when set to empty string.
+        if resolved_env.get("KANON_CATALOG_SOURCES") == "":
+            del resolved_env["KANON_CATALOG_SOURCES"]
     else:
         resolved_env = None
 

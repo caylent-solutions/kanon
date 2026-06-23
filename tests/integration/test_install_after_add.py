@@ -81,7 +81,7 @@ class TestInstallAfterAdd:
 
         # Remove any catalog-source env var so the install is truly bare.
         env = dict(os.environ)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],
@@ -154,7 +154,7 @@ class TestInstallAfterAdd:
         )
 
         env = dict(os.environ)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", "--catalog-source", add_catalog_source],

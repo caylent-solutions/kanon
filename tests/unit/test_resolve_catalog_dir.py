@@ -20,19 +20,19 @@ class TestResolveCatalogDirParametrised:
 
     def test_raises_missing_catalog_source_when_no_flag_no_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Case (a): no flag, no env var -- must raise MissingCatalogSourceError."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         with pytest.raises(MissingCatalogSourceError):
             resolve_catalog_dir(None)
 
     def test_raises_missing_catalog_source_is_value_error_subclass(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """MissingCatalogSourceError must be a subclass of ValueError."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         with pytest.raises(ValueError):
             resolve_catalog_dir(None)
 
     def test_env_var_set_returns_cloned_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """Case (b): no flag but env var set -- resolves via env-var branch."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env-repo.git@env-branch")
         env_catalog = tmp_path / "repo" / "catalog"
         env_catalog.mkdir(parents=True)
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
@@ -45,7 +45,7 @@ class TestResolveCatalogDirParametrised:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
         """Case (c): flag set -- resolves via flag branch; env var is ignored."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env-repo.git@env-branch")
         flag_catalog = tmp_path / "repo" / "catalog"
         flag_catalog.mkdir(parents=True)
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
@@ -56,7 +56,7 @@ class TestResolveCatalogDirParametrised:
 
     def test_flag_wins_over_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """Flag value is passed to _clone_remote_catalog; env var value is not used."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env-repo.git@env-branch")
         flag_catalog = tmp_path / "repo" / "catalog"
         flag_catalog.mkdir(parents=True)
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:

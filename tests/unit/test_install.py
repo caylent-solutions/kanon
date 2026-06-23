@@ -1,4 +1,14 @@
-"""Tests for install core business logic."""
+"""Tests for install core business logic.
+
+Covers:
+- Source directory creation
+- Repo init/sync/envsubst lifecycle
+- .gitignore management
+- Manifest working-tree reset
+- aggregate_symlinks
+- create_dirsymlink
+- utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
+"""
 
 import argparse
 import pathlib
@@ -8,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.commands.install import _run
+from tests.conftest import bare_text_io_calls
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     _RefResolution,
@@ -1022,3 +1033,33 @@ class TestAggregateSymlinksUsesJunctionHelper:
 
         with pytest.raises(OSError):
             create_dirsymlink(link, target)
+
+
+# ---------------------------------------------------------------------------
+# utf-8 encoding sweep (AC-12)
+# ---------------------------------------------------------------------------
+
+_INSTALL_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
+
+
+@pytest.mark.unit
+class TestInstallPyUtf8EncodingSweep:
+    """AC-12: all read_text/write_text calls in core/install.py specify encoding."""
+
+    def test_no_bare_read_text_calls(self) -> None:
+        """core/install.py must not contain bare .read_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_INSTALL_PY)
+        read_bare = [b for b in bare if "read_text" in b[1]]
+        assert read_bare == [], (
+            f"core/install.py has bare read_text() calls: {read_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+    def test_no_bare_write_text_calls(self) -> None:
+        """core/install.py must not contain bare .write_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_INSTALL_PY)
+        write_bare = [b for b in bare if "write_text" in b[1]]
+        assert write_bare == [], (
+            f"core/install.py has bare write_text() calls: {write_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )

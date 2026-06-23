@@ -389,7 +389,7 @@ class TestRefreshLockSourceHermeticCatalogRejection:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """install(refresh_lock_source='alpha', catalog_source=<value>) raises HermeticInstallCatalogSourceError."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
@@ -414,8 +414,8 @@ class TestRefreshLockSourceHermeticCatalogRejection:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock_source='alpha') with KANON_CATALOG_SOURCE set raises HermeticInstallCatalogSourceError."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://git.example.com/catalog.git@main")
+        """install(refresh_lock_source='alpha') with KANON_CATALOG_SOURCES set raises HermeticInstallCatalogSourceError."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://git.example.com/catalog.git@main")
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
@@ -433,7 +433,7 @@ class TestRefreshLockSourceHermeticCatalogRejection:
 
         msg = str(exc_info.value)
         assert "does not accept a catalog source" in msg
-        assert "KANON_CATALOG_SOURCE" in msg
+        assert "KANON_CATALOG_SOURCES" in msg
 
 
 # ===========================================================================
@@ -685,7 +685,7 @@ class TestInstallRefreshLockSourceKwarg:
     ) -> None:
         """AC-FUNC-001: install(refresh_lock_source='alpha') re-resolves only alpha;
         beta entry is preserved verbatim (excluding kanon_hash and generated_at)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(
@@ -751,7 +751,7 @@ class TestInstallRefreshLockSourceKwarg:
         XML include entries. The singular form "project" is used because both
         counts equal 1.
         """
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")

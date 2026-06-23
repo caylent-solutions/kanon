@@ -341,7 +341,7 @@ class TestInstallRelativeKanonPath:
         # _resolve_ref_to_sha (git ls-remote) can succeed without a network call.
         # The manifest_url already has the file:// prefix; append @main to form
         # the <git-url>@<ref> catalog source format.
-        env["KANON_CATALOG_SOURCE"] = f"{manifest_url}@main"
+        env["KANON_CATALOG_SOURCES"] = f"{manifest_url}@main"
         # The manifest fixture uses file:// URLs for its <remote fetch=...> entries.
         # KANON_ALLOW_INSECURE_REMOTES=1 disables the HTTPS-by-default security check
         # so the install can proceed with the local file:// bare repos.

@@ -96,7 +96,7 @@ def register(subparsers) -> None:
         help=(
             "Ignore the existing lockfile, re-resolve every transitive version from "
             "scratch, and overwrite .kanon.lock with the new state. "
-            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source; "
             "the lockfile fallback is disabled on this path."
         ),
     )
@@ -109,7 +109,7 @@ def register(subparsers) -> None:
             "every other source's lockfile entries verbatim. NAME may be a source "
             "name (the KANON_SOURCE_<name> key) or a catalog entry name resolved "
             "via derive_source_name. "
-            "Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source; "
+            "Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source; "
             "the lockfile fallback is disabled on this path."
         ),
     )
@@ -225,7 +225,7 @@ def _run(args) -> int | None:
         # lockfile-sha-unreachable.txt, conflict-detected.txt.
         # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
         # Covers HermeticInstallCatalogSourceError (a catalog source was supplied to
-        # the hermetic install via --catalog-source or KANON_CATALOG_SOURCE).
+        # the hermetic install via --catalog-source or KANON_CATALOG_SOURCES).
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:

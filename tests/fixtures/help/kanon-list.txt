@@ -10,8 +10,8 @@ lexicographically. Reads *-marketplace.xml files under
 repo-specs/ in the manifest repo identified by the catalog source.
 
 Requires a catalog source via --catalog-source or the
-KANON_CATALOG_SOURCE environment variable. The CLI flag takes
-precedence when both are set.
+KANON_CATALOG_SOURCES environment variable (the single configured
+entry is used). The CLI flag takes precedence when both are set.
 
 Filter mode: supply an optional positional <substring> or --regex
 <pattern> to narrow the catalog entries returned. The filter checks
@@ -57,9 +57,9 @@ options:
   -h, --help            show this help message and exit
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
-                        is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Required when
-                        KANON_CATALOG_SOURCE is not set.
+                        is a branch, tag, or 'latest'. Overrides the
+                        KANON_CATALOG_SOURCES env var. Required when
+                        KANON_CATALOG_SOURCES configures no single source.
   --format {names,json}
                         Output format. 'names' (default): one entry name per
                         line, pipeable into kanon add. 'json': structured JSON
@@ -147,5 +147,5 @@ Examples:
   kanon list --all-versions --limit 3 --catalog-source ...
   kanon list --all-versions --no-limit --catalog-source ...
   kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...
-  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list
+  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon list
   KANON_LIST_FORMAT=json kanon list --catalog-source ...

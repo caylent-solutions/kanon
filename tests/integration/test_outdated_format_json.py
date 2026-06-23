@@ -219,7 +219,7 @@ def _run_kanon(
         The completed subprocess result.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     env.pop("KANON_OUTDATED_FORMAT", None)
     if extra_env:
         env.update(extra_env)

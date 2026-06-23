@@ -149,7 +149,7 @@ class TestOutdatedRefsTagsParsing:
 
         # Run 'kanon outdated' with the same catalog source.
         env = dict(os.environ)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
         outdated_result = subprocess.run(
             [
                 sys.executable,

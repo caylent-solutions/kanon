@@ -127,11 +127,10 @@ Global options (always available):
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
-  --catalog-source <url>@<ref>   Override KANON_CATALOG_SOURCE. No default; one of
-                                 --catalog-source or KANON_CATALOG_SOURCE is required
-                                 for list/add/outdated/why/catalog audit. For install
-                                 and doctor, .kanon.lock [catalog].source is used as
-                                 fallback when present and consistent.
+  --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
+                                 one of --catalog-source or a single KANON_CATALOG_SOURCES
+                                 entry is required for list/add/outdated/why/catalog audit.
+                                 install is hermetic and does not accept a catalog source.
 """
 
 

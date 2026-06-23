@@ -199,7 +199,7 @@ def _run_kanon(
         The completed subprocess result.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -354,7 +354,7 @@ class TestOutdatedCoreTableOutput:
 
         result = _run_kanon(
             ["outdated", "--kanon-file", str(kanon_file)],
-            extra_env={"KANON_CATALOG_SOURCE": ""},
+            extra_env={"KANON_CATALOG_SOURCES": ""},
             cwd=workspace,
         )
         assert result.returncode != 0, (
@@ -464,7 +464,7 @@ class TestOutdatedCoreTableOutput:
             ],
             capture_output=True,
             text=True,
-            env={**os.environ, "KANON_CATALOG_SOURCE": ""},
+            env={**os.environ, "KANON_CATALOG_SOURCES": ""},
             cwd=str(workspace),
         )
         assert result.returncode == 0, (

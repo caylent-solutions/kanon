@@ -2,11 +2,53 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import pathlib
 from collections.abc import Generator
 
 import pytest
+
+# Method names whose bare (encoding-less) callsites the utf-8 encoding sweep
+# (AC-12 / FR-38) forbids in kanon's own source.
+_TEXT_IO_METHODS = ("read_text", "write_text")
+
+
+def bare_text_io_calls(source_path: pathlib.Path) -> list[tuple[int, str]]:
+    """Return every bare ``.read_text()`` / ``.write_text()`` callsite in a source file.
+
+    Parses the Python source at ``source_path`` and walks its AST for calls to
+    the ``read_text`` / ``write_text`` ``pathlib.Path`` methods that do NOT pass
+    an explicit ``encoding=`` keyword argument. Those bare callsites adopt the
+    platform default encoding and so behave differently on Windows, which the
+    utf-8 encoding sweep (AC-12 / FR-38) forbids for kanon's own source under
+    ``src/kanon_cli/`` (the vendored ``repo/`` tree is out of scope).
+
+    This is the single shared source of truth for the encoding-sweep unit tests
+    (``test_add.py``, ``test_cache.py``, ``test_cached_catalogs.py``,
+    ``test_install.py``); each test imports this helper rather than inlining its
+    own AST walker (DRY).
+
+    Args:
+        source_path: Path to the Python source file to scan.
+
+    Returns:
+        A list of ``(lineno, method_name)`` tuples, one per bare callsite, in
+        source order. ``method_name`` is ``"read_text"`` or ``"write_text"``.
+    """
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    bare: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr not in _TEXT_IO_METHODS:
+            continue
+        has_encoding = any(kw.arg == "encoding" for kw in node.keywords)
+        if not has_encoding:
+            bare.append((node.lineno, func.attr))
+    return bare
+
 
 # Minimal valid .kanon content used across integration and functional tests.
 MINIMAL_KANONENV = (
@@ -16,10 +58,10 @@ MINIMAL_KANONENV = (
 # Default catalog source used by tests that need a catalog source but are not
 # exercising catalog-resolution logic. Uses an RFC 2606 reserved example.com
 # domain so no real network request is ever attempted.  The autouse
-# _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCE after every
+# _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCES after every
 # test; tests that need this value must either:
 #   (a) pass it as catalog_source=DEFAULT_CATALOG_SOURCE to install(), or
-#   (b) set KANON_CATALOG_SOURCE via monkeypatch.setenv before calling code
+#   (b) set KANON_CATALOG_SOURCES via monkeypatch.setenv before calling code
 #       that reads the env var, or
 #   (c) request the opt-in _set_default_catalog_source fixture.
 DEFAULT_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
@@ -452,10 +494,10 @@ def write_lockfile_doctor_integration(
 
 @pytest.fixture(autouse=True)
 def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
-    """Clear KANON_CATALOG_SOURCE after every test function.
+    """Clear KANON_CATALOG_SOURCES after every test function.
 
     Belt-and-suspenders teardown that unconditionally deletes
-    KANON_CATALOG_SOURCE from os.environ after every test, regardless of
+    KANON_CATALOG_SOURCES from os.environ after every test, regardless of
     whether the test or any of its fixtures set it. Prevents env-var leaks
     between tests when a fixture or test directly mutates os.environ without
     using monkeypatch (which would otherwise undo changes automatically).
@@ -464,7 +506,7 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
     every test in the suite without per-test opt-in.
     """
     yield
-    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+    monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
 
 @pytest.fixture()
@@ -479,10 +521,10 @@ def make_install_args():
     The factory sets ``args.catalog_source`` to ``DEFAULT_CATALOG_SOURCE`` so
     that tests which do not exercise catalog-resolution logic do not fail with
     ``MissingCatalogSourceError`` due to the autouse ``_scrub_catalog_source_env``
-    fixture clearing ``KANON_CATALOG_SOURCE`` between every test.  Tests that
+    fixture clearing ``KANON_CATALOG_SOURCES`` between every test.  Tests that
     intentionally exercise the missing-catalog-source error path must override
     ``args.catalog_source = None`` after calling the factory and must also
-    ensure ``KANON_CATALOG_SOURCE`` is absent (the autouse scrubber guarantees
+    ensure ``KANON_CATALOG_SOURCES`` is absent (the autouse scrubber guarantees
     that at test start).
 
     Args: (none -- use the returned factory)
@@ -520,15 +562,15 @@ def make_install_args():
 
 @pytest.fixture()
 def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Opt-in fixture: sets KANON_CATALOG_SOURCE to DEFAULT_CATALOG_SOURCE for one test.
+    """Opt-in fixture: sets KANON_CATALOG_SOURCES to DEFAULT_CATALOG_SOURCE for one test.
 
     This fixture is opt-in (no ``autouse=True``).  Tests that invoke code paths
-    which read ``KANON_CATALOG_SOURCE`` from the environment (e.g. subprocess-
+    which read ``KANON_CATALOG_SOURCES`` from the environment (e.g. subprocess-
     based tests, or tests that call ``install()`` without passing the
     ``catalog_source`` keyword argument) can request this fixture by name to
-    inject the standard test value for the duration of that test.
+    inject the standard test value (a single source) for the duration of that test.
 
-    The autouse ``_scrub_catalog_source_env`` fixture clears ``KANON_CATALOG_SOURCE``
+    The autouse ``_scrub_catalog_source_env`` fixture clears ``KANON_CATALOG_SOURCES``
     after every test; this fixture sets it fresh via ``monkeypatch.setenv`` so it
     is automatically reverted by pytest's monkeypatch teardown in addition to
     the scrubber's ``delenv`` -- belt-and-suspenders isolation.
@@ -543,8 +585,8 @@ def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
             from kanon_cli.core.install import install
             kanonenv = tmp_path / ".kanon"
             kanonenv.write_text("KANON_SOURCE_s_URL=https://example.com/s.git\\n...")
-            # KANON_CATALOG_SOURCE is already set by the fixture
+            # KANON_CATALOG_SOURCES is already set by the fixture
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
     """
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", DEFAULT_CATALOG_SOURCE)
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", DEFAULT_CATALOG_SOURCE)
     return DEFAULT_CATALOG_SOURCE

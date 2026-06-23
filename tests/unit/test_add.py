@@ -9,6 +9,7 @@ Covers:
 - Soft-spot rule 1 / rule 3 hard error
 - Shell-quoting empty-positional detection
 - Argparse subparser structure and flags
+- utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
 
 AC-TEST-001
 """
@@ -21,6 +22,7 @@ import textwrap
 import pytest
 
 from kanon_cli.core.metadata import CatalogMetadata
+from tests.conftest import bare_text_io_calls
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +161,8 @@ class TestBuildTripleLines:
 class TestStandardHeader:
     """Standard-header creation when the destination file is absent."""
 
-    _SAMPLE_CATALOG_SOURCE = "https://github.com/example/manifest.git@main"
-    # Expected GITBASE derived from _SAMPLE_CATALOG_SOURCE: scheme + netloc + org segment.
+    # Expected GITBASE for a manifest at https://github.com/example/manifest.git:
+    # scheme + netloc + org segment.
     _EXPECTED_GITBASE = "https://github.com/example"
     _EXPECTED_MARKETPLACE_INSTALL = "false"
 
@@ -172,7 +174,6 @@ class TestStandardHeader:
         assert not dest.exists()
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -185,7 +186,6 @@ class TestStandardHeader:
         dest = tmp_path / ".kanon"
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -200,7 +200,6 @@ class TestStandardHeader:
         dest = tmp_path / ".kanon"
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -214,7 +213,6 @@ class TestStandardHeader:
         dest = tmp_path / ".kanon"
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -230,7 +228,6 @@ class TestStandardHeader:
         dest = tmp_path / ".kanon"
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -250,7 +247,6 @@ class TestStandardHeader:
         dest.write_text("EXISTING=value\n")
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
@@ -259,37 +255,29 @@ class TestStandardHeader:
         # Standard header lines must NOT appear when file already exists
         assert "GITBASE=" not in content
 
-    def test_catalog_block_written_to_fresh_file(self, tmp_path: pathlib.Path) -> None:
-        """Fresh .kanon file gets a [catalog] block with the catalog source."""
+    def test_no_catalog_block_written_to_fresh_file(self, tmp_path: pathlib.Path) -> None:
+        """Schema 3.0.0 (FR-1) removed the global [catalog] block; the header omits it.
+
+        ``kanon add`` no longer records a global catalog source in ``.kanon``:
+        catalog sources are per-dependency and ``kanon install`` is hermetic, so
+        the header carries only the GITBASE / CLAUDE_MARKETPLACES_DIR /
+        KANON_MARKETPLACE_INSTALL lines and never a ``[catalog]`` block.
+        """
         from kanon_cli.commands.add import _write_standard_header
-        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER, KANON_CATALOG_BLOCK_KEY
 
         dest = tmp_path / ".kanon"
         _write_standard_header(
             dest,
-            self._SAMPLE_CATALOG_SOURCE,
             self._EXPECTED_GITBASE,
             self._EXPECTED_MARKETPLACE_INSTALL,
         )
         content = dest.read_text()
-        assert KANON_CATALOG_BLOCK_HEADER in content
-        assert f"{KANON_CATALOG_BLOCK_KEY}={self._SAMPLE_CATALOG_SOURCE}" in content
-
-    def test_catalog_block_not_written_when_file_exists(self, tmp_path: pathlib.Path) -> None:
-        """Existing .kanon file is not rewritten -- no [catalog] block added."""
-        from kanon_cli.commands.add import _write_standard_header
-        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER
-
-        dest = tmp_path / ".kanon"
-        dest.write_text("EXISTING=value\n")
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
-        )
-        content = dest.read_text()
-        assert KANON_CATALOG_BLOCK_HEADER not in content
+        assert "[catalog]" not in content
+        assert "KANON_CATALOG_SOURCE" not in content
+        # The header still carries exactly the three standard lines.
+        assert f"GITBASE={self._EXPECTED_GITBASE}" in content
+        assert "CLAUDE_MARKETPLACES_DIR=" in content
+        assert f"KANON_MARKETPLACE_INSTALL={self._EXPECTED_MARKETPLACE_INSTALL}" in content
 
 
 # ---------------------------------------------------------------------------
@@ -910,7 +898,7 @@ class TestRunAddMissingCatalogSource:
 
         from kanon_cli.commands.add import run_add
 
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         args = argparse.Namespace(
             catalog_source=None,
             kanon_file="./.kanon",
@@ -937,7 +925,7 @@ class TestRunAddGitbaseDerivationError:
 
         from kanon_cli.commands.add import run_add
 
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         # A schemeless bare URL that cannot be derived -- "@main" suffix is stripped,
         # leaving "not-valid-url/org/repo" which has no scheme and no SCP pattern match.
         args = argparse.Namespace(
@@ -1859,3 +1847,33 @@ class TestRunAddForce:
         # File must remain unchanged
         content = kanon_file.read_text()
         assert "refs/tags/1.0.0" in content
+
+
+# ---------------------------------------------------------------------------
+# utf-8 encoding sweep (AC-12)
+# ---------------------------------------------------------------------------
+
+_ADD_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "commands" / "add.py"
+
+
+@pytest.mark.unit
+class TestAddPyUtf8EncodingSweep:
+    """AC-12: all read_text/write_text calls in commands/add.py specify encoding."""
+
+    def test_no_bare_read_text_calls(self) -> None:
+        """commands/add.py must not contain bare .read_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_ADD_PY)
+        read_bare = [b for b in bare if "read_text" in b[1]]
+        assert read_bare == [], (
+            f"commands/add.py has bare read_text() calls without encoding=: {read_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+    def test_no_bare_write_text_calls(self) -> None:
+        """commands/add.py must not contain bare .write_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_ADD_PY)
+        write_bare = [b for b in bare if "write_text" in b[1]]
+        assert write_bare == [], (
+            f"commands/add.py has bare write_text() calls without encoding=: {write_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )

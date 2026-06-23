@@ -8,9 +8,10 @@ Spec reference: ``spec/kanon-list-add-lock-features-spec.md`` Section 3
 primitives table row 2 (CLI flag + env var for catalog source) and
 Section 3.5 (Standards audit and tightening).
 
-Environment-variable coupling: the ``KANON_CATALOG_SOURCE`` env var
-name is sourced from ``kanon_cli.constants.CATALOG_ENV_VAR`` -- never
-hard-coded here.
+Environment-variable coupling: the catalog source default is the single
+entry configured in the plural ``KANON_CATALOG_SOURCES`` env var, resolved
+via ``kanon_cli.core.catalog.resolve_env_catalog_source`` -- the env var
+name is never hard-coded here.
 
 Global flags factory: ``add_global_flags(parser)`` adds the three
 spec-required global flags -- ``--quiet``, ``--verbose``, and
@@ -30,17 +31,19 @@ import logging
 import os
 
 import kanon_cli.constants as constants
-from kanon_cli.constants import CATALOG_ENV_VAR
+from kanon_cli.core.catalog import resolve_env_catalog_source
 
 
 def add_catalog_source_arg(parser: argparse.ArgumentParser) -> None:
     """Add the --catalog-source flag to the given argparse parser.
 
     The flag accepts a ``<git-url>@<ref>`` string identifying a manifest
-    repo at a specific revision. Couples to the ``KANON_CATALOG_SOURCE``
-    env var via the ``default=`` mechanism (the env var is read at parser
-    build time; CLI flag wins when both are set, per spec Section 4
-    header).
+    repo at a specific revision. Couples to the plural ``KANON_CATALOG_SOURCES``
+    env var via the ``default=`` mechanism: the default is the single source
+    configured in ``KANON_CATALOG_SOURCES`` (resolved at parser build time via
+    ``resolve_env_catalog_source``). The CLI flag wins when both are set, per
+    spec Section 4 header; a ``KANON_CATALOG_SOURCES`` value listing more than
+    one source fails fast (the operator must disambiguate with the flag).
 
     Args:
         parser: The ``ArgumentParser`` (or sub-parser) to extend.
@@ -48,12 +51,12 @@ def add_catalog_source_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--catalog-source",
         dest="catalog_source",
-        default=os.environ.get(CATALOG_ENV_VAR),
+        default=resolve_env_catalog_source(),
         metavar="<git-url>@<ref>",
         help=(
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
-            "Required when KANON_CATALOG_SOURCE is not set."
+            "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
+            "Required when KANON_CATALOG_SOURCES configures no single source."
         ),
     )
 

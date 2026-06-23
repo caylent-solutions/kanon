@@ -13,7 +13,6 @@ _shtab_kanon_commands() {
     "__complete_source_names_in_kanon:Internal hidden subcommand for shell completion of .kanon source names."
     "__resolve_entry_to_repo_url:Internal hidden subcommand for the mid-token splitter. Given a catalog entry name, returns the catalog source URL to stdout so the shell helper can route to _kanon_complete_project_versions."
     "add:Resolve catalog entries from a manifest repo and append the"
-    "bootstrap:"
     "catalog:Subcommands for inspecting and auditing manifest repos."
     "clean:Execute the full Kanon clean lifecycle."
     "completion:Emit the shell completion script for kanon to stdout."
@@ -38,6 +37,7 @@ _shtab_kanon_catalog_commands() {
 
 _shtab_kanon_validate_commands() {
   local _commands=(
+    "lockfile:Check that the consumer-project .kanon declarations agree with the"
     "marketplace:Validate all marketplace XML manifests under repo-specs\/."
     "metadata:Check every \*-marketplace.xml under repo-specs\/ for in-repo soft-spot violations (spec Section 3.5 rules 1, 2, 3)."
     "xml:Validate all XML manifest files under repo-specs\/."
@@ -115,7 +115,7 @@ _shtab_kanon___resolve_entry_to_repo_url_defaults_added=0
 
 _shtab_kanon_add_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
   "--kanon-file[Destination .kanon file path. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
   "--force[Overwrite an existing KANON_SOURCE_\<name\>_\* block in the
 destination .kanon file. Without this flag, any collision
@@ -141,13 +141,6 @@ append). Mutually exclusive with --marketplace-install.]"
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_add_defaults_added=0
-
-_shtab_kanon_bootstrap_options=(
-  "(-)*:argv_tail:"
-)
-
-# guard to ensure default positional specs are added only once per session
-_shtab_kanon_bootstrap_defaults_added=0
 
 _shtab_kanon_catalog_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -192,7 +185,7 @@ _shtab_kanon_doctor_options=(
   "--strict-drift[Promote branch-drift findings from info-level to error-level. With this flag, kanon doctor returns exit code 1 when any branch-pinned source\'s tip SHA differs from the locked SHA.]"
   "--refresh-completion-cache[Subcheck 8\: invalidate the shell completion cache under \$\{KANON_CACHE_DIR\}\/completion-cache\/. Removes all files there and recreates the directory with mode 0700. Reports an info finding with the count of files removed.]"
   "--prune-cache[Subcheck 10\: remove cache files under \$\{KANON_CACHE_DIR\} whose last-access time is older than KANON_CACHE_PRUNE_AGE_DAYS days (default 30). Reports an info finding with the count and total byte size pruned. Also reports stale .kanon-data\/.kanon-install.lock files as advisory (does not delete them).]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
 )
 
 # guard to ensure default positional specs are added only once per session
@@ -200,9 +193,9 @@ _shtab_kanon_doctor_defaults_added=0
 
 _shtab_kanon_install_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
-  "--refresh-lock[Ignore the existing lockfile, re-resolve every transitive version from scratch, and overwrite .kanon.lock with the new state. Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source\; the lockfile fallback is disabled on this path.]"
-  "--refresh-lock-source[Re-resolve exactly one top-level source\'s full chain while preserving every other source\'s lockfile entries verbatim. NAME may be a source name (the KANON_SOURCE_\<name\> key) or a catalog entry name resolved via derive_source_name. Requires a CLI-supplied or KANON_CATALOG_SOURCE env-var catalog source\; the lockfile fallback is disabled on this path.]:refresh_lock_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
+  "--refresh-lock[Ignore the existing lockfile, re-resolve every transitive version from scratch, and overwrite .kanon.lock with the new state. Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source\; the lockfile fallback is disabled on this path.]"
+  "--refresh-lock-source[Re-resolve exactly one top-level source\'s full chain while preserving every other source\'s lockfile entries verbatim. NAME may be a source name (the KANON_SOURCE_\<name\> key) or a catalog entry name resolved via derive_source_name. Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source\; the lockfile fallback is disabled on this path.]:refresh_lock_source:"
   "--strict-lock[Upgrade orphaned lock entries to a hard error. An orphaned lock entry is a source present in .kanon.lock but absent from .kanon (e.g. after \'kanon remove\'). Without this flag, orphaned entries are pruned and an info-line is emitted per orphan. With this flag, kanon exits with an error listing every orphaned source. Remediation\: run without --strict-lock to prune, or restore the missing KANON_SOURCE_\<name\>_\* triples in .kanon.]"
   "--strict-drift[Upgrade branch drift to a hard error. Branch drift occurs when the lockfile records a SHA for a branch-shaped source but the branch\'s current tip on the remote is a different SHA. Without this flag, the locked SHA is reused and an info-line is emitted. With this flag, kanon exits with an error listing every drifted source. Remediation\: run \'kanon install --refresh-lock-source \<source\>\' to accept the new branch tip.]"
   "--lock-file[Path to the lock file. Defaults to \<kanon-file\>.lock (derived from --kanon-file). The KANON_LOCK_FILE environment variable is consulted when this flag is absent\; the CLI flag takes precedence when both are set.]:lock_file:"
@@ -214,7 +207,7 @@ _shtab_kanon_install_defaults_added=0
 
 _shtab_kanon_list_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
   "--format[Output format. \'names\' (default)\: one entry name per line, pipeable into kanon add. \'json\'\: structured JSON array. Default mode and --detail mode emit \{name, display-name, type, description, version\} objects\; --all-versions mode emits \{name, version, ref, sha\} objects. The KANON_LIST_FORMAT environment variable sets the format when this flag is absent\; the CLI flag takes precedence when both are set. --format json is incompatible with --tree (hard error at validation time).]:list_format:(names json)"
   "--detail[Print a human-readable multi-line record per entry (display-name, description, version, type). Human-readable only -- not pipeable into kanon add. For machine consumers, combine with --format json.]"
   "--tree[Render a three-layer ASCII dependency tree per entry\: the catalog entry (root), the XML manifests reachable via transitive \<include\> directives, and the \<project\> repos referenced by those manifests. Each node shows the version resolved at command-execution time. Mutually exclusive with --all-versions. Subject to the threshold guardrail (KANON_TREE_NO_FILTER_THRESHOLD, default 20)\: when the catalog exceeds the threshold, supply a filter -- positional substring, --regex, --max-depth 0 -- or pass --no-filter-required.]"
@@ -234,7 +227,7 @@ _shtab_kanon_list_defaults_added=0
 
 _shtab_kanon_outdated_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
   "--kanon-file[Path to the .kanon file. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
   "--lock-file[Path to the .kanon.lock file. When present, provides the current resolved SHA. When absent, the command live-resolves against the catalog. Defaults to \<kanon-file\>.lock. Overridden by the KANON_LOCK_FILE environment variable\; the CLI flag takes precedence when both are set.]:lock_file:"
   "--fail-on-upgrade[Exit 1 when ANY source has an available upgrade (upgrade-type \!\= \'none\'). Default is to always exit 0 (parity with pip list --outdated, npm outdated, cargo outdated). Use this flag in CI pipelines to gate on lockfile freshness\: the build fails when any source is upgradable, prompting the operator to refresh the lockfile. Spec reference\: spec\/kanon-list-add-lock-features-spec.md Section 0.2 and Section 4.4 \'Exit code\'.]"
@@ -275,6 +268,15 @@ _shtab_kanon_validate_options=(
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_validate_defaults_added=0
 
+_shtab_kanon_validate_lockfile_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--lock-file[Path to the lock file. Defaults to \<kanon-file\>.lock (derived from the .kanon path). The KANON_LOCK_FILE environment variable is consulted when this flag is absent\; the CLI flag takes precedence when both are set.]:lock_file:"
+  ":Path to the .kanon configuration file (default\: auto-discover from current directory):"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_validate_lockfile_defaults_added=0
+
 _shtab_kanon_validate_marketplace_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
   "--repo-root[Repository root directory (default\: auto-detect via git rev-parse)]:repo_root:"
@@ -302,7 +304,7 @@ _shtab_kanon_validate_xml_defaults_added=0
 
 _shtab_kanon_why_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides KANON_CATALOG_SOURCE env var. Required when KANON_CATALOG_SOURCE is not set.]:catalog_source:"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
   "--kanon-file[Path to the .kanon file. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
   "--lock-file[Path to the .kanon.lock file. When present, the tree is built from lockfile entries (no git calls). When absent, the command live-resolves against the catalog. Defaults to \<kanon-file\>.lock. Overridden by the KANON_LOCK_FILE environment variable\; the CLI flag takes precedence when both are set.]:lock_file:"
   "--format[Output format\: \'text\' (default) or \'json\'. Overridden by the KANON_WHY_FORMAT environment variable\; the CLI flag takes precedence when both are set.]:format:(text json)"
@@ -339,7 +341,6 @@ _shtab_kanon() {
         __complete_source_names_in_kanon) _arguments -C -s $_shtab_kanon___complete_source_names_in_kanon_options ;;
         __resolve_entry_to_repo_url) _arguments -C -s $_shtab_kanon___resolve_entry_to_repo_url_options ;;
         add) _arguments -C -s $_shtab_kanon_add_options ;;
-        bootstrap) _arguments -C -s $_shtab_kanon_bootstrap_options ;;
         catalog) _shtab_kanon_catalog ;;
         clean) _arguments -C -s $_shtab_kanon_clean_options ;;
         completion) _arguments -C -s $_shtab_kanon_completion_options ;;
@@ -396,6 +397,7 @@ _shtab_kanon_validate() {
       (( CURRENT += 1 ))
       curcontext="${curcontext%:*:*}:_shtab_kanon_validate-$line[1]:"
       case $line[1] in
+        lockfile) _arguments -C -s $_shtab_kanon_validate_lockfile_options ;;
         marketplace) _arguments -C -s $_shtab_kanon_validate_marketplace_options ;;
         metadata) _arguments -C -s $_shtab_kanon_validate_metadata_options ;;
         xml) _arguments -C -s $_shtab_kanon_validate_xml_options ;;

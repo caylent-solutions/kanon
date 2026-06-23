@@ -58,15 +58,11 @@ SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 WORKSPACE_DIR_ENV_VAR = "KANON_WORKSPACE_DIR"
 
 # -- Catalog --
-CATALOG_ENV_VAR = "KANON_CATALOG_SOURCE"
-
-# -- .kanon [catalog] block --
-# INI-style section header written by `kanon add` to a freshly-created .kanon
-# file to record the catalog source URL so `kanon install` can read it back
-# without requiring the operator to pass --catalog-source again.
-KANON_CATALOG_BLOCK_HEADER = "[catalog]"
-# Key name for the catalog source entry within the [catalog] block.
-KANON_CATALOG_BLOCK_KEY = "KANON_CATALOG_SOURCE"
+# Name of the environment variable holding the plural catalog discovery set:
+# a newline-delimited list of `url[@ref]` entries (spec Section 6 / Section 7.1
+# / FR-9). Identical entries are deduplicated preserving first-seen order; a
+# malformed entry fails fast. Replaces the singular env var removed in 3.0.0.
+CATALOG_SOURCES_ENV_VAR = "KANON_CATALOG_SOURCES"
 
 # -- List command error and notice strings --
 # Canonical missing-catalog error template (spec Section 4 header, verbatim).
@@ -74,8 +70,8 @@ KANON_CATALOG_BLOCK_KEY = "KANON_CATALOG_SOURCE"
 MISSING_CATALOG_ERROR_TEMPLATE = (
     "ERROR: {command} requires a catalog source.\n"
     "Provide one of:\n"
-    "  --catalog-source <git-url>@<ref>      # e.g. --catalog-source https://example.com/org/manifest-repo.git@main\n"
-    "  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run\n"
+    "  --catalog-source <git-url>@<ref>       # e.g. --catalog-source https://example.com/org/manifest-repo.git@main\n"
+    "  KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var (one entry per line), then re-run\n"
     "\n"
     "The CLI flag takes precedence when both are set.\n"
     "A catalog source identifies a manifest repo (a git repository whose\n"

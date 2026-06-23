@@ -160,7 +160,7 @@ def read_entries(file_path: Path) -> list[str]:
     """
     if not file_path.exists():
         return []
-    lines = file_path.read_text().splitlines()
+    lines = file_path.read_text(encoding="utf-8").splitlines()
     return [line.rstrip() for line in lines if line.strip()]
 
 
@@ -189,7 +189,7 @@ def write_entries(
     for _entry, reason in result.dropped:
         log_completion_error(completer_name, SanitizationError(reason))
     content = "".join(f"{e}\n" for e in result.kept)
-    file_path.write_text(content)
+    file_path.write_text(content, encoding="utf-8")
     _chmod_secure(file_path, _FILE_MODE)
 
 
@@ -200,7 +200,7 @@ def read_epoch(file_path: Path) -> int | None:
     """
     if not file_path.exists():
         return None
-    return int(file_path.read_text().strip())
+    return int(file_path.read_text(encoding="utf-8").strip())
 
 
 def write_epoch(file_path: Path, epoch: int) -> None:
@@ -209,7 +209,7 @@ def write_epoch(file_path: Path, epoch: int) -> None:
     Creates parent directories (mode 0700) as needed.
     """
     _mkdir_secure(file_path.parent)
-    file_path.write_text(f"{epoch}\n")
+    file_path.write_text(f"{epoch}\n", encoding="utf-8")
     _chmod_secure(file_path, _FILE_MODE)
 
 
@@ -257,7 +257,7 @@ def classify(fetched_at_path: Path, ttl_seconds: int, now: int) -> Freshness:
     if not fetched_at_path.exists():
         return Freshness.MISSING
 
-    raw = fetched_at_path.read_text().strip()
+    raw = fetched_at_path.read_text(encoding="utf-8").strip()
     try:
         fetched_at = int(raw)
     except ValueError:

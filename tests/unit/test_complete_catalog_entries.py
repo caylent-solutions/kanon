@@ -319,7 +319,7 @@ class TestComplete:
 
     def _env_setup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Configure env vars for a clean test environment."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
@@ -449,8 +449,8 @@ class TestComplete:
         assert result == []
 
     def test_missing_catalog_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Missing KANON_CATALOG_SOURCE: empty result and error logged (AC-FUNC-008)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        """Missing KANON_CATALOG_SOURCES: empty result and error logged (AC-FUNC-008)."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "log_completion_error") as mock_log:
@@ -491,7 +491,7 @@ class TestHandle:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """_handle() prints one name per line and exits 0 on success."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
@@ -509,7 +509,7 @@ class TestHandle:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "complete", return_value=[]):
@@ -568,8 +568,8 @@ class TestParseCatalogSource:
     def test_invalid_source_in_complete_returns_empty_and_logs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """complete() with invalid KANON_CATALOG_SOURCE logs error and returns [] (lines 266-268)."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "no-at-sign-here")
+        """complete() with invalid KANON_CATALOG_SOURCES logs error and returns [] (lines 266-268)."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "no-at-sign-here")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "log_completion_error") as mock_log:
@@ -619,7 +619,7 @@ class TestHandleRefreshOnly:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """When args.refresh_only is True, _handle() refreshes cache but prints nothing."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
@@ -637,7 +637,7 @@ class TestHandleRefreshOnly:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """When args.refresh_only is False, _handle() prints results normally."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
@@ -717,8 +717,8 @@ class TestStderrTtyDiagnostic:
     ) -> None:
         """When sys.stderr.isatty() is True, a diagnostic line is written to stderr."""
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
-        # Remove KANON_CATALOG_SOURCE to trigger the missing-source error path in complete()
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        # Remove KANON_CATALOG_SOURCES to trigger the missing-source error path in complete()
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
 
@@ -738,14 +738,14 @@ class TestStderrTtyDiagnostic:
 
         assert result == []
         # A diagnostic line should have been written to stderr (tty is active)
-        assert any("__complete_catalog_entries" in line or "KANON_CATALOG_SOURCE" in line for line in err_lines), (
+        assert any("__complete_catalog_entries" in line or "KANON_CATALOG_SOURCES" in line for line in err_lines), (
             f"Expected diagnostic stderr output, got: {err_lines!r}"
         )
 
     def test_log_completion_error_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
         monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
 

@@ -138,7 +138,7 @@ class TestBackgroundRefreshEndToEnd:
         stale_value = 1
 
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CATALOG_SOURCE"] = f"{catalog_url}@{catalog_ref}"
+        env["KANON_CATALOG_SOURCES"] = f"{catalog_url}@{catalog_ref}"
         env["KANON_CACHE_DIR"] = str(cache_dir)
         env["KANON_COMPLETION_REFRESH_BG"] = "1"
         # Use a generous TTL so no inline-fetch is triggered; the pre-seeded

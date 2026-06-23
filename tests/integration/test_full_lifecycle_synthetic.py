@@ -16,7 +16,7 @@ so the test can assert per-entry argv content rather than just call counts.
 Design: each entry runs in its own isolated workspace directory. The first entry
 passes ``--catalog-source`` to ``kanon add`` (the CLI flag). Entries 2-6 omit the
 ``--catalog-source`` flag and instead supply the catalog via the
-``KANON_CATALOG_SOURCE`` environment variable. Each workspace is isolated so that
+``KANON_CATALOG_SOURCES`` environment variable. Each workspace is isolated so that
 each ``kanon install`` processes exactly one catalog entry, keeping the total
 add and remove counts at exactly 6.
 
@@ -225,7 +225,7 @@ class TestFullLifecycleSynthetic:
               sub-directory and ``CLAUDE_MARKETPLACES_DIR`` override.
            b. Run ``kanon add <entry>`` -- first entry passes
               ``--catalog-source`` via the CLI flag; entries 2-6 omit the flag
-              and supply the catalog via ``KANON_CATALOG_SOURCE`` env var
+              and supply the catalog via ``KANON_CATALOG_SOURCES`` env var
               instead (AC-FUNC-004 -- no ``--catalog-source`` flag for entries
               2-6, exercising the E22 install-reads-catalog-block path).
            c. Assert no ``<...>`` placeholder survives in ``.kanon`` (E28).
@@ -246,7 +246,7 @@ class TestFullLifecycleSynthetic:
             monkeypatch: Pytest monkeypatch fixture.
         """
         monkeypatch.delenv("KANON_MARKETPLACE_INSTALL", raising=False)
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         # Step 1: build the synthetic 6-entry catalog bare repo.
         bare_catalog = _create_manifest_repo_with_tags(
@@ -305,17 +305,17 @@ class TestFullLifecycleSynthetic:
                 add_args += ["--catalog-source", catalog_source]
 
             # For entries 2-6: no --catalog-source flag (AC-FUNC-004).
-            # KANON_CATALOG_SOURCE env var is set in add_env instead.
+            # KANON_CATALOG_SOURCES env var is set in add_env instead.
             # KANON_MARKETPLACE_INSTALL and CLAUDE_MARKETPLACES_DIR are in
             # os.environ via monkeypatch and propagate via dict(os.environ).
             add_env = dict(os.environ)
-            add_env.pop("KANON_CATALOG_SOURCE", None)
+            add_env.pop("KANON_CATALOG_SOURCES", None)
             if idx > 0:
                 # Entries 2-6 omit the --catalog-source flag; the catalog
                 # source is supplied via env var so kanon add can find the
                 # manifest repo. The install step is hermetic (no catalog
                 # source) and installs the sources kanon add wrote into .kanon.
-                add_env["KANON_CATALOG_SOURCE"] = catalog_source
+                add_env["KANON_CATALOG_SOURCES"] = catalog_source
 
             add_result = _run_kanon(add_args, cwd=workspace_dir, extra_env=add_env)
             assert add_result.returncode == 0, (

@@ -44,13 +44,13 @@ new subcommand was added), regenerate the fixture by running the command with
 the deterministic environment variables and redirecting stdout:
 
 ```bash
-NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCE python -m kanon_cli --help > tests/fixtures/help/kanon-toplevel.txt
+NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCES python -m kanon_cli --help > tests/fixtures/help/kanon-toplevel.txt
 ```
 
 For a subcommand fixture:
 
 ```bash
-NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCE python -m kanon_cli <command> --help > tests/fixtures/help/kanon-<command>.txt
+NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCES python -m kanon_cli <command> --help > tests/fixtures/help/kanon-<command>.txt
 ```
 
 The three environment controls used during regeneration match exactly what
@@ -58,7 +58,7 @@ The three environment controls used during regeneration match exactly what
 
 - `NO_COLOR=1` -- disables ANSI colour codes for deterministic plain-text output.
 - `COLUMNS=80` -- pins terminal width so argparse wraps at a fixed column count.
-- `env -u KANON_CATALOG_SOURCE` -- unsets the variable so ambient catalog-source
+- `env -u KANON_CATALOG_SOURCES` -- unsets the variable so ambient catalog-source
   overrides do not affect the help text.
 
 After regenerating, run the snapshot test to confirm the fixture matches:

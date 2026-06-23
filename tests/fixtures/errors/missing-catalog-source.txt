@@ -1,7 +1,7 @@
 ERROR: list requires a catalog source.
 Provide one of:
-  --catalog-source <git-url>@<ref>      # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
-  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run
+  --catalog-source <git-url>@<ref>       # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
+  KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var (one entry per line), then re-run
 
 The CLI flag takes precedence when both are set.
 A catalog source identifies a manifest repo (a git repository whose

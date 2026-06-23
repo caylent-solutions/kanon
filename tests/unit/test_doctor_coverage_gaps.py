@@ -43,13 +43,19 @@ from kanon_cli.core.lockfile import (
 
 
 def _write_minimal_kanon(kanon_file: pathlib.Path) -> None:
-    """Write a minimal .kanon file with only a catalog source declaration.
+    """Write a minimal .kanon file with a single per-dependency source block.
+
+    Schema 3.0.0 .kanon carries no global catalog-source line (the [catalog]
+    block was removed); a dependency is declared via its KANON_SOURCE_<alias>_*
+    keys.
 
     Args:
         kanon_file: Path to write the .kanon file.
     """
     kanon_file.write_text(
-        "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+        "KANON_SOURCE_meta_URL=https://example.com/catalog.git\n"
+        "KANON_SOURCE_meta_REVISION=main\n"
+        "KANON_SOURCE_meta_PATH=repo-specs/meta.xml\n",
         encoding="utf-8",
     )
 
@@ -476,8 +482,7 @@ class TestDoctorCommandOrphanLockFindings:
         kanon_file.write_text(
             f"KANON_SOURCE_{source_name}_URL=https://example.com/repo.git\n"
             f"KANON_SOURCE_{source_name}_REVISION=main\n"
-            f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
-            "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+            f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n",
             encoding="utf-8",
         )
 
@@ -494,8 +499,7 @@ class TestDoctorCommandOrphanLockFindings:
         kanon_file.write_text(
             "KANON_SOURCE_REALSRC_URL=https://example.com/real.git\n"
             "KANON_SOURCE_REALSRC_REVISION=main\n"
-            "KANON_SOURCE_REALSRC_PATH=repo-specs/real.xml\n"
-            "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+            "KANON_SOURCE_REALSRC_PATH=repo-specs/real.xml\n",
             encoding="utf-8",
         )
 

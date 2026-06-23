@@ -29,8 +29,8 @@ Every ``kanon install`` invocation inspects the state matrix:
 
 ``kanon install`` is hermetic (spec Section 5.2 / FR-7): the schema-v4 lock carries
 no ``[catalog]`` block, so install neither resolves nor records a catalog source.  A
-``--catalog-source`` CLI flag or ``KANON_CATALOG_SOURCE`` env var reaching install is
-rejected fail-fast via ``HermeticInstallCatalogSourceError``.
+``--catalog-source`` CLI flag or a populated ``KANON_CATALOG_SOURCES`` env var reaching
+install is rejected fail-fast via ``HermeticInstallCatalogSourceError``.
 
 Exception hierarchy:
 
@@ -73,11 +73,12 @@ import kanon_cli.repo as _repo
 from kanon_cli.repo.git_command import GitCommandError
 from kanon_cli import __version__
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_GIT_LS_REMOTE_TIMEOUT,
     WORKSPACE_DIR_ENV_VAR,
 )
+from kanon_cli.core.catalog import parse_catalog_sources
 from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 from kanon_cli.core.lockfile import (
@@ -299,15 +300,15 @@ class HermeticInstallCatalogSourceError(InstallError):
     Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block,
     so ``kanon install`` is hermetic: it reads ``.kanon`` and ``.kanon.lock`` and
     reconciles sources without resolving or recording any catalog source.  A
-    ``--catalog-source`` CLI flag or a ``KANON_CATALOG_SOURCE`` environment
-    variable reaching install is therefore rejected fail-fast rather than silently
-    ignored.  The catalog source belongs to the catalog-querying commands
-    (``kanon add`` / ``kanon list`` / ``kanon outdated`` / ``kanon why``).
+    ``--catalog-source`` CLI flag or a populated ``KANON_CATALOG_SOURCES``
+    environment variable reaching install is therefore rejected fail-fast rather
+    than silently ignored.  The catalog source belongs to the catalog-querying
+    commands (``kanon add`` / ``kanon list`` / ``kanon outdated`` / ``kanon why``).
 
     Args:
         origin: A short description of where the offending value came from
             (e.g. ``"the --catalog-source flag"`` or
-            ``"the KANON_CATALOG_SOURCE environment variable"``).
+            ``"the KANON_CATALOG_SOURCES environment variable"``).
     """
 
     def __init__(self, origin: str) -> None:
@@ -321,7 +322,7 @@ class HermeticInstallCatalogSourceError(InstallError):
             "  'kanon install' is hermetic: it installs exactly the sources declared in .kanon\n"
             "  and pinned in .kanon.lock, and never resolves a remote catalog.\n"
             "  Remediation: re-run 'kanon install' without --catalog-source and with\n"
-            "  KANON_CATALOG_SOURCE unset. Use --catalog-source with 'kanon add', 'kanon list',\n"
+            "  KANON_CATALOG_SOURCES unset. Use --catalog-source with 'kanon add', 'kanon list',\n"
             "  'kanon outdated', or 'kanon why' instead."
         )
 
@@ -902,29 +903,31 @@ def _classify_install_state(
     )
 
 
-def _reject_catalog_source_on_install(cli_arg: str | None, env_value: str | None) -> None:
+def _reject_catalog_source_on_install(cli_arg: str | None, env_configured: bool) -> None:
     """Fail fast if a catalog source was supplied to the hermetic ``kanon install``.
 
     Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block, so
     ``kanon install`` is hermetic and never resolves a remote catalog source: it
     installs exactly the sources declared in ``.kanon`` and pinned in ``.kanon.lock``.
-    A ``--catalog-source`` CLI flag or a ``KANON_CATALOG_SOURCE`` environment
-    variable is therefore an operator error on this command and is rejected rather
-    than silently ignored.  The CLI flag takes precedence over the env var when
-    attributing the origin in the error message.
+    A ``--catalog-source`` CLI flag or a populated ``KANON_CATALOG_SOURCES``
+    environment variable is therefore an operator error on this command and is
+    rejected rather than silently ignored.  The CLI flag takes precedence over the
+    env var when attributing the origin in the error message.
 
     Args:
         cli_arg: The ``--catalog-source`` CLI flag value, or ``None``.
-        env_value: The ``KANON_CATALOG_SOURCE`` environment-variable value, or ``None``.
+        env_configured: ``True`` when ``KANON_CATALOG_SOURCES`` configures at
+            least one catalog source.
 
     Raises:
-        HermeticInstallCatalogSourceError: If either ``cli_arg`` or ``env_value`` is set.
+        HermeticInstallCatalogSourceError: If ``cli_arg`` is set or
+            ``env_configured`` is ``True``.
     """
     if cli_arg is not None:
         raise HermeticInstallCatalogSourceError(origin="the --catalog-source flag")
-    if env_value is not None:
+    if env_configured:
         raise HermeticInstallCatalogSourceError(
-            origin="the KANON_CATALOG_SOURCE environment variable",
+            origin="the KANON_CATALOG_SOURCES environment variable",
         )
 
 
@@ -1415,7 +1418,7 @@ def update_gitignore(
 
     existing_content = ""
     if gitignore.exists():
-        existing_content = gitignore.read_text()
+        existing_content = gitignore.read_text(encoding="utf-8")
 
     existing_lines = existing_content.splitlines()
     missing = [entry for entry in required_entries if entry not in existing_lines]
@@ -1793,8 +1796,8 @@ def _run_install(
         lockfile_path: Path to the .kanon.lock file (may or may not exist).
         catalog_source: Catalog source string from the CLI flag, or None when
             the caller did not provide one.  ``kanon install`` is hermetic, so a
-            non-None value (or a set ``KANON_CATALOG_SOURCE`` env var) is rejected
-            fail-fast via ``HermeticInstallCatalogSourceError``.
+            non-None value (or a populated ``KANON_CATALOG_SOURCES`` env var) is
+            rejected fail-fast via ``HermeticInstallCatalogSourceError``.
         refresh_lock: When ``True``, short-circuit to ``InstallState.REFRESH_LOCK``
             regardless of lockfile presence or hash state.
         refresh_lock_source: When set, re-resolve exactly the named source chain
@@ -1812,7 +1815,7 @@ def _run_install(
             than a pure source removal (an addition or a changed revision spec).
             Default install reconciles instead of raising.
         HermeticInstallCatalogSourceError: If a catalog source is supplied via the
-            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCE`` env var, which
+            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCES`` env var, which
             the hermetic install does not accept.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name (by literal or derive_source_name match).
@@ -1915,9 +1918,10 @@ def _run_install(
     # Step 3: kanon install is hermetic (spec Section 5.2 / FR-7).  The v4 lock
     # carries no [catalog] block, so install neither resolves nor records a catalog
     # source: it reads .kanon + .kanon.lock and reconciles sources only.  A
-    # --catalog-source value (CLI flag or KANON_CATALOG_SOURCE env var) reaching
-    # install is rejected fail-fast, never silently ignored.
-    _reject_catalog_source_on_install(catalog_source, os.environ.get(CATALOG_ENV_VAR))
+    # --catalog-source value (CLI flag or a populated KANON_CATALOG_SOURCES env var)
+    # reaching install is rejected fail-fast, never silently ignored.
+    env_catalog_configured = bool(parse_catalog_sources(os.environ.get(CATALOG_SOURCES_ENV_VAR)))
+    _reject_catalog_source_on_install(catalog_source, env_catalog_configured)
 
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
@@ -2510,7 +2514,7 @@ def install(
          When refresh_lock_source is set, uses InstallState.REFRESH_LOCK_SOURCE.
       3. Reject a supplied catalog source: install is hermetic and does not
          resolve one (HermeticInstallCatalogSourceError if --catalog-source or
-         KANON_CATALOG_SOURCE is set).
+         KANON_CATALOG_SOURCES is set).
       4. Parse .kanon and validate sources.
       4a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
          Prune orphans (or raise OrphanedLockEntryError with --strict-lock).
@@ -2536,7 +2540,7 @@ def install(
             function does not apply any fallback or derivation.
         catalog_source: The ``--catalog-source`` CLI flag value, or None when no
             flag is present.  ``kanon install`` is hermetic, so a non-None value
-            (or a set ``KANON_CATALOG_SOURCE`` env var) is rejected fail-fast.
+            (or a populated ``KANON_CATALOG_SOURCES`` env var) is rejected fail-fast.
         refresh_lock: When ``True``, ignore the existing lockfile entirely and
             rebuild it from scratch.  Default ``False`` preserves prior behaviour.
         refresh_lock_source: When set to a source name or catalog entry name,
@@ -2559,7 +2563,7 @@ def install(
             than a pure source removal (an addition or a changed revision spec).
             Default install reconciles instead of raising.
         HermeticInstallCatalogSourceError: If a catalog source is supplied via the
-            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCE`` env var, which
+            ``--catalog-source`` flag or the ``KANON_CATALOG_SOURCES`` env var, which
             the hermetic install does not accept.
         UnknownSourceError: If ``refresh_lock_source`` does not match any known
             top-level source name by direct lookup or via ``derive_source_name``.

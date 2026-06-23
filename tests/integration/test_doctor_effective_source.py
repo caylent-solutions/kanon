@@ -5,7 +5,7 @@ each catalog-source precedence combination.
 
 AC-TEST-002: Integration tests in this file cover all precedence combinations
 and assert stdout contains the resolved value AND the provenance suffix.
-AC-CYCLE-001: End-to-end cycle test with a leaked KANON_CATALOG_SOURCE env var.
+AC-CYCLE-001: End-to-end cycle test with a leaked KANON_CATALOG_SOURCES env var.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _run_kanon_doctor(
 ) -> subprocess.CompletedProcess[str]:
     """Run 'kanon doctor' via subprocess with controlled environment.
 
-    Starts from a clean copy of os.environ with KANON_CATALOG_SOURCE stripped,
+    Starts from a clean copy of os.environ with KANON_CATALOG_SOURCES stripped,
     then applies extra_env on top. This ensures tests start with a predictable
     environment regardless of what the operator's shell has exported.
 
@@ -50,7 +50,7 @@ def _run_kanon_doctor(
     """
     env = dict(os.environ)
     # Strip any inherited catalog source to ensure test isolation.
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
 
@@ -72,22 +72,22 @@ def _write_minimal_kanon(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-002: Only KANON_CATALOG_SOURCE is set (no CLI flag, no lockfile).
+# AC-FUNC-002: Only KANON_CATALOG_SOURCES is set (no CLI flag, no lockfile).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 class TestDoctorEffectiveSourceEnvVarOnly:
-    """kanon doctor with only KANON_CATALOG_SOURCE set prints env var value + provenance."""
+    """kanon doctor with only KANON_CATALOG_SOURCES set prints env var value + provenance."""
 
     def test_env_var_value_appears_in_stdout(self, tmp_path: pathlib.Path) -> None:
-        """Stdout contains the KANON_CATALOG_SOURCE value."""
+        """Stdout contains the KANON_CATALOG_SOURCES value."""
         env_value = "https://env.example.com/repo.git@main"
         kanon_file = _write_minimal_kanon(tmp_path)
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
         )
 
         assert env_value in result.stdout
@@ -99,20 +99,20 @@ class TestDoctorEffectiveSourceEnvVarOnly:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
         )
 
-        assert "(from KANON_CATALOG_SOURCE env var)" in result.stdout
+        assert "(from KANON_CATALOG_SOURCES env var)" in result.stdout
 
 
 # ---------------------------------------------------------------------------
-# AC-FUNC-001: CLI flag takes precedence over KANON_CATALOG_SOURCE env var.
+# AC-FUNC-001: CLI flag takes precedence over KANON_CATALOG_SOURCES env var.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 class TestDoctorEffectiveSourceCliWins:
-    """kanon doctor --catalog-source wins over KANON_CATALOG_SOURCE when both are set."""
+    """kanon doctor --catalog-source wins over KANON_CATALOG_SOURCES when both are set."""
 
     def test_cli_value_appears_in_stdout(self, tmp_path: pathlib.Path) -> None:
         """Stdout contains the --catalog-source CLI flag value, not the env var value."""
@@ -122,7 +122,7 @@ class TestDoctorEffectiveSourceCliWins:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
             extra_args=["--catalog-source", cli_value],
         )
 
@@ -136,7 +136,7 @@ class TestDoctorEffectiveSourceCliWins:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
             extra_args=["--catalog-source", cli_value],
         )
 
@@ -150,7 +150,7 @@ class TestDoctorEffectiveSourceCliWins:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
             extra_args=["--catalog-source", cli_value],
         )
 
@@ -162,7 +162,7 @@ class TestDoctorEffectiveSourceCliWins:
 #
 # Schema v4 (spec Section 5.2 / FR-7) removed the lockfile [catalog] block, so
 # the lockfile no longer participates in the effective-source precedence chain.
-# The chain is now: --catalog-source CLI flag -> KANON_CATALOG_SOURCE env var ->
+# The chain is now: --catalog-source CLI flag -> KANON_CATALOG_SOURCES env var ->
 # none. When a v4 lockfile is the only thing present (no CLI flag, no env var),
 # the effective source is "(none configured)" -- the lockfile does NOT supply
 # a catalog source the way the removed [catalog].source tier used to.
@@ -213,10 +213,10 @@ class TestDoctorEffectiveSourceLockfilePresent:
         assert "(from .kanon.lock [catalog].source)" not in result.stdout
 
     def test_env_var_wins_over_present_lockfile(self, tmp_path: pathlib.Path) -> None:
-        """KANON_CATALOG_SOURCE supplies the effective source even when a v4 lockfile is present.
+        """KANON_CATALOG_SOURCES supplies the effective source even when a v4 lockfile is present.
 
         Confirms the lockfile does not pre-empt the env-var tier: with a v4 lock on
-        disk and KANON_CATALOG_SOURCE set, the env-var value (and its provenance
+        disk and KANON_CATALOG_SOURCES set, the env-var value (and its provenance
         suffix) is what doctor reports.
         """
         from kanon_cli.core.kanon_hash import kanon_hash
@@ -228,11 +228,11 @@ class TestDoctorEffectiveSourceLockfilePresent:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": env_value},
+            extra_env={"KANON_CATALOG_SOURCES": env_value},
         )
 
         assert env_value in result.stdout
-        assert "(from KANON_CATALOG_SOURCE env var)" in result.stdout
+        assert "(from KANON_CATALOG_SOURCES env var)" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ class TestDoctorEffectiveSourceNoneConfigured:
 
 @pytest.mark.integration
 class TestDoctorEffectiveSourceLeakedEnvVar:
-    """kanon doctor surfaces KANON_CATALOG_SOURCE leakage from a shell profile.
+    """kanon doctor surfaces KANON_CATALOG_SOURCES leakage from a shell profile.
 
     This is the primary user-facing purpose of subcheck 6 (spec Section 3.6):
     an operator in a workspace that should NOT use a particular catalog can
@@ -277,13 +277,13 @@ class TestDoctorEffectiveSourceLeakedEnvVar:
     """
 
     def test_leaked_value_appears_in_stdout(self, tmp_path: pathlib.Path) -> None:
-        """The leaked KANON_CATALOG_SOURCE value appears in stdout."""
+        """The leaked KANON_CATALOG_SOURCES value appears in stdout."""
         leaked_value = "https://example.invalid/leaked.git@main"
         kanon_file = _write_minimal_kanon(tmp_path)
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": leaked_value},
+            extra_env={"KANON_CATALOG_SOURCES": leaked_value},
         )
 
         assert leaked_value in result.stdout
@@ -291,7 +291,7 @@ class TestDoctorEffectiveSourceLeakedEnvVar:
     def test_leaked_env_var_provenance_is_surfaced(self, tmp_path: pathlib.Path) -> None:
         """Provenance suffix names the env var so the operator sees the leakage.
 
-        AC-CYCLE-001: Set KANON_CATALOG_SOURCE to a leaked value in the environment;
+        AC-CYCLE-001: Set KANON_CATALOG_SOURCES to a leaked value in the environment;
         run kanon doctor in a workspace that should NOT use that catalog;
         assert stdout's provenance suffix names the env var.
         """
@@ -300,7 +300,7 @@ class TestDoctorEffectiveSourceLeakedEnvVar:
 
         result = _run_kanon_doctor(
             kanon_file,
-            extra_env={"KANON_CATALOG_SOURCE": leaked_value},
+            extra_env={"KANON_CATALOG_SOURCES": leaked_value},
         )
 
-        assert "(from KANON_CATALOG_SOURCE env var)" in result.stdout
+        assert "(from KANON_CATALOG_SOURCES env var)" in result.stdout

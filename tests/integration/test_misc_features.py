@@ -18,7 +18,7 @@ import pytest
 
 import kanon_cli
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     CONSTRAINT_RE,
     KANONENV_FILENAME,
     KANON_REPO_DIR_ENV,
@@ -99,8 +99,8 @@ class TestConstantsModule:
         assert m.group(1) == "HOME"
 
     def test_catalog_env_var_defined(self) -> None:
-        assert isinstance(CATALOG_ENV_VAR, str)
-        assert CATALOG_ENV_VAR
+        assert isinstance(CATALOG_SOURCES_ENV_VAR, str)
+        assert CATALOG_SOURCES_ENV_VAR
 
     def test_selfupdate_message_defined(self) -> None:
         assert isinstance(SELFUPDATE_EMBEDDED_MESSAGE, str)

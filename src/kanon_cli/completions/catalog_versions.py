@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return [] immediately.
-2. Resolve KANON_CATALOG_SOURCE env var to get the manifest repo URL and ref.
+2. Resolve the single KANON_CATALOG_SOURCES entry to get the manifest repo URL and ref.
 3. Check the catalog versions cache (catalogs/<sha>/tags.txt):
    - Cache hit (fetched_at within TTL): return cached entries filtered by prefix.
    - Cache stale (fetched_at past TTL) + KANON_COMPLETION_REFRESH_BG=1:
@@ -49,13 +49,13 @@ from kanon_cli.completions.cache import (
 )
 from kanon_cli.completions.pep440_filter import filter_pep440_tags
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     KANON_COMPLETION_CACHE_TTL,
     KANON_COMPLETION_ENABLED,
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_TIMEOUT,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 
 _COMPLETER_NAME = "__complete_catalog_versions"
 _TAGS_FILENAME = "tags.txt"
@@ -257,7 +257,7 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
 
     Args:
         url: Git repository URL (unused; passed to identify the target for logging).
-        catalog_source: Full ``<url>@<ref>`` value for KANON_CATALOG_SOURCE.
+        catalog_source: Full ``<url>@<ref>`` value for KANON_CATALOG_SOURCES.
     """
     subprocess.Popen(
         [
@@ -269,7 +269,7 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
         ],
         env={
             **os.environ,
-            CATALOG_ENV_VAR: catalog_source,
+            CATALOG_SOURCES_ENV_VAR: catalog_source,
             "KANON_COMPLETION_REFRESH_BG": "0",
         },
         start_new_session=True,
@@ -288,7 +288,7 @@ def complete(current_token: str) -> list[str]:
 
     Resolution contract:
     1. KANON_COMPLETION_ENABLED=0 -> return [].
-    2. Read KANON_CATALOG_SOURCE from environment.
+    2. Read the single KANON_CATALOG_SOURCES entry from the environment.
     3. Cache-hit within TTL -> return cached entries filtered by prefix.
     4. Cache-stale + KANON_COMPLETION_REFRESH_BG=1 -> return stale + fork bg.
     5. Cache-miss or stale + KANON_COMPLETION_REFRESH_BG=0 -> inline fetch.
@@ -305,20 +305,20 @@ def complete(current_token: str) -> list[str]:
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source
-    source = os.environ.get(CATALOG_ENV_VAR)
-    if not source:
-        missing_exc = ValueError(f"{CATALOG_ENV_VAR} is not set")
-        log_completion_error(_COMPLETER_NAME, missing_exc)
-        _write_stderr_diagnostic(missing_exc)
-        return []
-
+    # Step 2: resolve catalog source from the single KANON_CATALOG_SOURCES entry.
     try:
-        url, ref = _parse_catalog_source(source)
+        source = resolve_env_catalog_source()
     except ValueError as exc:
         log_completion_error(_COMPLETER_NAME, exc)
         _write_stderr_diagnostic(exc)
         return []
+    if not source:
+        missing_exc = ValueError(f"{CATALOG_SOURCES_ENV_VAR} is not set")
+        log_completion_error(_COMPLETER_NAME, missing_exc)
+        _write_stderr_diagnostic(missing_exc)
+        return []
+
+    url, ref = _parse_catalog_source(source)
 
     # Step 3: check cache
     entry_dir = catalog_entry_dir(url, ref)

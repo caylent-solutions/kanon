@@ -95,9 +95,9 @@ class TestDoctorDefaultSubcheckOutput:
 
         # Step 3: kanon install is hermetic -- it installs exactly the sources
         # declared in .kanon and never resolves a catalog source. Strip
-        # KANON_CATALOG_SOURCE so install's hermetic guard does not reject the run.
+        # KANON_CATALOG_SOURCES so install's hermetic guard does not reject the run.
         env_without_catalog = dict(os.environ)
-        env_without_catalog.pop("KANON_CATALOG_SOURCE", None)
+        env_without_catalog.pop("KANON_CATALOG_SOURCES", None)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],

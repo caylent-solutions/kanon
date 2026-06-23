@@ -81,13 +81,13 @@ def test_resolve_disabled_returns_empty(
 ) -> None:
     """KANON_COMPLETION_ENABLED=0 -> resolve returns empty string immediately.
 
-    The function must NOT inspect the cache or KANON_CATALOG_SOURCE when
+    The function must NOT inspect the cache or KANON_CATALOG_SOURCES when
     completion is disabled (AC-FUNC-007).
     """
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "0")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    # Do NOT set KANON_CATALOG_SOURCE -- if the code reads it, it would fail.
-    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+    # Do NOT set KANON_CATALOG_SOURCES -- if the code reads it, it would fail.
+    monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
     result = resolve_entry_to_repo_url(entry_name)
     assert result == ""
@@ -110,7 +110,7 @@ def test_resolve_known_entry_returns_catalog_url(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     result = resolve_entry_to_repo_url("foo")
     assert result == catalog_url
@@ -133,7 +133,7 @@ def test_resolve_each_known_entry_returns_same_catalog_url(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     result = resolve_entry_to_repo_url(entry_name)
     assert result == catalog_url
@@ -156,7 +156,7 @@ def test_resolve_unknown_entry_raises_entry_not_found(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     with pytest.raises(EntryNotFoundError) as exc_info:
         resolve_entry_to_repo_url("unknown")
@@ -175,7 +175,7 @@ def test_resolve_empty_name_raises_entry_not_found(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     with pytest.raises(EntryNotFoundError):
         resolve_entry_to_repo_url("")
@@ -191,10 +191,10 @@ def test_resolve_missing_catalog_source_raises_midtoken_cache_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Absent KANON_CATALOG_SOURCE raises MidtokenCacheError."""
+    """Absent KANON_CATALOG_SOURCES raises MidtokenCacheError."""
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+    monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
     with pytest.raises(MidtokenCacheError):
         resolve_entry_to_repo_url("foo")
@@ -205,10 +205,10 @@ def test_resolve_malformed_catalog_source_raises_midtoken_cache_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Malformed KANON_CATALOG_SOURCE (no '@') raises MidtokenCacheError."""
+    """Malformed KANON_CATALOG_SOURCES (no '@') raises MidtokenCacheError."""
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", "not-a-valid-catalog-source")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", "not-a-valid-catalog-source")
 
     with pytest.raises(MidtokenCacheError):
         resolve_entry_to_repo_url("foo")
@@ -226,7 +226,7 @@ def test_resolve_empty_cache_index_raises_entry_not_found(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     with pytest.raises(EntryNotFoundError):
         resolve_entry_to_repo_url("foo")
@@ -243,7 +243,7 @@ def test_resolve_no_cache_dir_raises_midtoken_cache_error(
     # Do NOT create any cache -- cache directory is empty.
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     with pytest.raises(MidtokenCacheError):
         resolve_entry_to_repo_url("foo")
@@ -271,7 +271,7 @@ def test_handle_success_prints_url_to_stdout(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     args = argparse.Namespace(entry_name="foo")
     result = _handle(args)
@@ -297,7 +297,7 @@ def test_handle_entry_not_found_returns_1(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", f"{catalog_url}@{catalog_ref}")
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     args = argparse.Namespace(entry_name="unknown")
     result = _handle(args)
@@ -319,7 +319,7 @@ def test_handle_disabled_returns_0_empty_stdout(
 
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "0")
     monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+    monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
     args = argparse.Namespace(entry_name="foo")
     result = _handle(args)

@@ -54,7 +54,7 @@ def _read_origin(origin_path: Path) -> str | None:
     Returns:
         The stripped url@ref string if valid, or None if malformed.
     """
-    content = origin_path.read_text().strip()
+    content = origin_path.read_text(encoding="utf-8").strip()
     if not content:
         return None
     if "@" not in content:

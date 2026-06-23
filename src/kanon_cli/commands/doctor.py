@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from kanon_cli.core.lockfile import Lockfile
 
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     FINDING_PREFIX_FAIL,
     FINDING_PREFIX_INFO,
     FINDING_PREFIX_OK,
@@ -60,13 +60,15 @@ from kanon_cli.constants import (
     _KANON_RESOLVE_TIMEOUT_DEFAULT,
     _KANON_RESOLVE_TIMEOUT_ENV,
 )
+from kanon_cli.core.catalog import parse_catalog_sources
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.git_runner import run_git_ls_remote
 
 # Sentinel for detecting whether --catalog-source was explicitly supplied on the
 # command line versus left at the argparse default.  argparse sets catalog_source
 # to _UNSET when the user did not supply the flag; any other value (including the
-# string value of KANON_CATALOG_SOURCE) means the user typed it on the CLI.
+# single source resolved from KANON_CATALOG_SOURCES) means the user typed it on
+# the CLI.
 _UNSET: object = object()
 
 # ---------------------------------------------------------------------------
@@ -765,8 +767,13 @@ def _check_effective_catalog_source(
     catalog source by walking the precedence chain (first non-empty wins):
 
       1. ``--catalog-source`` CLI flag (highest precedence).
-      2. ``KANON_CATALOG_SOURCE`` env var.
+      2. The single source configured in the ``KANON_CATALOG_SOURCES`` env var.
       3. None (no catalog source configured).
+
+    ``KANON_CATALOG_SOURCES`` (plural, spec Section 6 / FR-9) is a
+    newline-delimited list; when it configures exactly one source that source is
+    the effective value, and when it configures several the finding reports the
+    ambiguity (single-source commands require ``--catalog-source`` to select one).
 
     Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block,
     so the lockfile no longer participates in catalog-source provenance.  The
@@ -779,7 +786,7 @@ def _check_effective_catalog_source(
 
     The provenance suffix is mandatory in every output path -- without it an
     operator can read the effective value but cannot tell WHERE it came from.
-    This is the primary mechanism for detecting ``KANON_CATALOG_SOURCE``
+    This is the primary mechanism for detecting ``KANON_CATALOG_SOURCES``
     leakage from a shell profile into an unrelated workspace (spec Section 3.6).
 
     Precedence disambiguation: ``args.catalog_source`` is set to the
@@ -804,7 +811,7 @@ def _check_effective_catalog_source(
     """
     raw_catalog_source = getattr(args, "catalog_source", _UNSET)
     cli_value: str | None = None if raw_catalog_source is _UNSET else str(raw_catalog_source)
-    env_value: str | None = env.get(CATALOG_ENV_VAR)
+    env_sources = parse_catalog_sources(env.get(CATALOG_SOURCES_ENV_VAR))
 
     # Determine provenance by walking the precedence chain.
     # CLI flag wins unambiguously: catalog_source is not the _UNSET sentinel
@@ -813,10 +820,19 @@ def _check_effective_catalog_source(
         effective = cli_value
         provenance = "(from --catalog-source CLI flag)"
         message = f"Effective catalog source: {effective} {provenance}"
-    elif env_value is not None:
-        effective = env_value
-        provenance = "(from KANON_CATALOG_SOURCE env var)"
+    elif len(env_sources) == 1:
+        url, ref = env_sources[0]
+        effective = f"{url}@{ref}"
+        provenance = "(from KANON_CATALOG_SOURCES env var)"
         message = f"Effective catalog source: {effective} {provenance}"
+    elif len(env_sources) > 1:
+        rendered = ", ".join(f"{url}@{ref}" for url, ref in env_sources)
+        provenance = "(from KANON_CATALOG_SOURCES env var)"
+        message = (
+            f"KANON_CATALOG_SOURCES configures {len(env_sources)} catalog sources "
+            f"({rendered}) {provenance}; single-source commands require "
+            "--catalog-source to select one."
+        )
     else:
         provenance = "(none configured)"
         message = f"Effective catalog source: {provenance}; commands requiring a catalog source will fail."

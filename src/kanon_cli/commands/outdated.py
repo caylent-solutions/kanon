@@ -755,8 +755,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "live-resolved against the catalog when absent.\n\n"
             "Exit code is always 0 unless --fail-on-upgrade is set, in which\n"
             "case the command exits 1 when any source has an available upgrade.\n\n"
-            "Catalog source precedence: --catalog-source flag, then\n"
-            "KANON_CATALOG_SOURCE env var. Both being absent is a hard error."
+            "Catalog source precedence: --catalog-source flag, then the single\n"
+            "KANON_CATALOG_SOURCES env-var entry. Both being absent is a hard error."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

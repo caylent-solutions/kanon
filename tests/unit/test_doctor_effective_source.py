@@ -2,7 +2,7 @@
 
 Covers all precedence permutations for catalog source resolution (schema v4):
   1. CLI flag (--catalog-source) takes highest precedence.
-  2. KANON_CATALOG_SOURCE env var wins when CLI flag is absent.
+  2. KANON_CATALOG_SOURCES env var wins when CLI flag is absent.
   3. When neither CLI flag nor env var is set, a "none configured" message is
      returned.
 
@@ -25,7 +25,7 @@ import argparse
 import pytest
 
 from kanon_cli.commands.doctor import DoctorFinding, _UNSET, _check_effective_catalog_source
-from kanon_cli.constants import CATALOG_ENV_VAR
+from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
 from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
@@ -85,11 +85,11 @@ class TestCheckEffectiveCatalogSource:
 
     # AC-FUNC-001: CLI flag wins when BOTH CLI and env var are set.
     def test_cli_flag_wins_over_env_var(self) -> None:
-        """CLI flag takes precedence over KANON_CATALOG_SOURCE env var."""
+        """CLI flag takes precedence over KANON_CATALOG_SOURCES env var."""
         cli_value = "https://cli.example.com/repo.git@main"
         env_value = "https://env.example.com/repo.git@main"
         args = _make_args(catalog_source=cli_value)
-        env = {CATALOG_ENV_VAR: env_value}
+        env = {CATALOG_SOURCES_ENV_VAR: env_value}
 
         finding = _check_effective_catalog_source(args, env, None)
 
@@ -116,17 +116,17 @@ class TestCheckEffectiveCatalogSource:
 
     # AC-FUNC-002: env var wins when CLI is absent.
     def test_env_var_wins_when_cli_absent(self) -> None:
-        """KANON_CATALOG_SOURCE env var is used when CLI flag is not set."""
+        """KANON_CATALOG_SOURCES env var is used when CLI flag is not set."""
         env_value = "https://env.example.com/repo.git@main"
         args = _make_args(catalog_source=None)
-        env = {CATALOG_ENV_VAR: env_value}
+        env = {CATALOG_SOURCES_ENV_VAR: env_value}
 
         finding = _check_effective_catalog_source(args, env, None)
 
         assert isinstance(finding, DoctorFinding)
         assert finding.kind == "info"
         assert env_value in finding.message
-        assert "(from KANON_CATALOG_SOURCE env var)" in finding.message
+        assert "(from KANON_CATALOG_SOURCES env var)" in finding.message
 
     # FR-7: the v4 lockfile no longer supplies a catalog source.
     def test_lockfile_present_no_cli_no_env_yields_none_configured(self) -> None:
@@ -165,7 +165,7 @@ class TestCheckEffectiveCatalogSource:
         "catalog_source,env,has_lockfile",
         [
             ("https://cli.example.com/repo.git@main", {}, False),
-            (None, {CATALOG_ENV_VAR: "https://env.example.com/repo.git@main"}, False),
+            (None, {CATALOG_SOURCES_ENV_VAR: "https://env.example.com/repo.git@main"}, False),
             (None, {}, True),
             (None, {}, False),
         ],
@@ -191,15 +191,15 @@ class TestCheckEffectiveCatalogSource:
         [
             (
                 "https://cli.example.com/repo.git@main",
-                {CATALOG_ENV_VAR: "https://env.example.com/repo.git@main"},
+                {CATALOG_SOURCES_ENV_VAR: "https://env.example.com/repo.git@main"},
                 False,
                 "(from --catalog-source CLI flag)",
             ),
             (
                 None,
-                {CATALOG_ENV_VAR: "https://env.example.com/repo.git@main"},
+                {CATALOG_SOURCES_ENV_VAR: "https://env.example.com/repo.git@main"},
                 False,
-                "(from KANON_CATALOG_SOURCE env var)",
+                "(from KANON_CATALOG_SOURCES env var)",
             ),
             (
                 None,
@@ -232,21 +232,21 @@ class TestCheckEffectiveCatalogSource:
 
     # AC-CYCLE-001: leaked env var scenario.
     def test_leaked_env_var_is_surfaced(self) -> None:
-        """KANON_CATALOG_SOURCE leakage from a shell profile is detected.
+        """KANON_CATALOG_SOURCES leakage from a shell profile is detected.
 
         When a workspace has no CLI flag set and no lockfile but the operator's
-        shell profile leaked KANON_CATALOG_SOURCE from an unrelated project, the
+        shell profile leaked KANON_CATALOG_SOURCES from an unrelated project, the
         provenance suffix names the env var so the operator sees the leakage.
         """
         leaked_value = "https://example.invalid/leaked.git@main"
         args = _make_args(catalog_source=None)
-        env = {CATALOG_ENV_VAR: leaked_value}
+        env = {CATALOG_SOURCES_ENV_VAR: leaked_value}
 
         finding = _check_effective_catalog_source(args, env, None)
 
         assert finding.kind == "info"
         assert leaked_value in finding.message
-        assert "(from KANON_CATALOG_SOURCE env var)" in finding.message
+        assert "(from KANON_CATALOG_SOURCES env var)" in finding.message
 
     # Additional: CLI-only (no env, no lockfile).
     def test_cli_only_no_env_no_lockfile(self) -> None:
@@ -266,7 +266,7 @@ class TestCheckEffectiveCatalogSource:
         cli_value = "https://cli.example.com/repo.git@main"
         env_value = "https://env.example.com/repo.git@main"
         args = _make_args(catalog_source=cli_value)
-        env = {CATALOG_ENV_VAR: env_value}
+        env = {CATALOG_SOURCES_ENV_VAR: env_value}
         lockfile = _make_lockfile()
 
         finding = _check_effective_catalog_source(args, env, lockfile)
@@ -276,7 +276,7 @@ class TestCheckEffectiveCatalogSource:
 
     # AC-FUNC-001 edge case: CLI value equals env var value -- must still attribute to CLI.
     def test_cli_wins_when_cli_value_equals_env_value(self) -> None:
-        """CLI flag is attributed to CLI even when its value matches KANON_CATALOG_SOURCE.
+        """CLI flag is attributed to CLI even when its value matches KANON_CATALOG_SOURCES.
 
         This is the sentinel-based disambiguation edge case: without a sentinel
         the old comparison `cli_value != env_value` evaluated False and the
@@ -287,10 +287,10 @@ class TestCheckEffectiveCatalogSource:
         shared_value = "https://shared.example.com/repo.git@main"
         # Both CLI flag and env var carry the same URL.
         args = _make_args(catalog_source=shared_value)
-        env = {CATALOG_ENV_VAR: shared_value}
+        env = {CATALOG_SOURCES_ENV_VAR: shared_value}
 
         finding = _check_effective_catalog_source(args, env, None)
 
         assert shared_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
-        assert "(from KANON_CATALOG_SOURCE env var)" not in finding.message
+        assert "(from KANON_CATALOG_SOURCES env var)" not in finding.message

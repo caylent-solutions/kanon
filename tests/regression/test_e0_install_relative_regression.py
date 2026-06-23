@@ -356,7 +356,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
     How this exercises the invariant under the new install state machine
     (src/kanon_cli/core/install.py): _run() is the CLI boundary for
     'kanon install'. When the operator supplies a relative .kanon path -- or
-    when KANON_CATALOG_SOURCE is set -- _run() must resolve the path before
+    when KANON_CATALOG_SOURCES is set -- _run() must resolve the path before
     delegating to parse_kanonenv() and then to install(). This test inspects
     the source of _run() and asserts that the character positions satisfy:
         resolve_pos < parse_pos < install_pos
@@ -390,7 +390,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
     assert install_pos != -1, (
         "E0-INSTALL-RELATIVE regression guard: catalog_source=args.catalog_source keyword "
         "argument not found in _run. The install() call must pass catalog_source so "
-        "--catalog-source / KANON_CATALOG_SOURCE is forwarded to the resolver. "
+        "--catalog-source / KANON_CATALOG_SOURCES is forwarded to the resolver. "
         "Check that install() is called with catalog_source=args.catalog_source in "
         "src/kanon_cli/commands/install.py."
     )

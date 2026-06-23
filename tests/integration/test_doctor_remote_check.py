@@ -134,7 +134,7 @@ def _run_kanon(
         CompletedProcess with returncode, stdout, stderr.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(

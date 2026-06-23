@@ -686,9 +686,9 @@ class TestStrictLockOrphanErrorMessage:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
-        # install is hermetic: a leaked KANON_CATALOG_SOURCE would trip the
+        # install is hermetic: a leaked KANON_CATALOG_SOURCES would trip the
         # hermetic-rejection guard before orphan detection.
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", "--strict-lock"],
             capture_output=True,
@@ -899,10 +899,10 @@ class TestStrictLockDefaultAutoPrune:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
-        # install is hermetic: a leaked KANON_CATALOG_SOURCE would trip the
+        # install is hermetic: a leaked KANON_CATALOG_SOURCES would trip the
         # hermetic-rejection guard.  'kanon add' passes --catalog-source
         # explicitly, so popping the env var is safe for both add and install.
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli"] + args,
             capture_output=True,

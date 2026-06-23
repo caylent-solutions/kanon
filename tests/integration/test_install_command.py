@@ -130,7 +130,7 @@ class TestInstallDeprecationWarningSubprocess:
 
     def test_both_set_writes_single_combined_deprecation_to_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-003: Both REPO_URL and REPO_REV set => single combined message on stderr."""
-        # install is hermetic: KANON_CATALOG_SOURCE must NOT be set (it would trigger
+        # install is hermetic: KANON_CATALOG_SOURCES must NOT be set (it would trigger
         # the hermetic-rejection error, whose text contains '--catalog-source' and
         # would add a second line that trips the single-combined-notice assertion).
         result = _run_install_subprocess(
@@ -160,13 +160,13 @@ class TestInstallDeprecationWarningSubprocess:
     def test_neither_set_no_deprecation_on_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-004: Neither REPO_URL nor REPO_REV set => no deprecation text on stderr."""
         # Explicitly remove the legacy vars from the environment.  install is
-        # hermetic, so KANON_CATALOG_SOURCE must NOT be set (it would trigger the
+        # hermetic, so KANON_CATALOG_SOURCES must NOT be set (it would trigger the
         # hermetic-rejection error whose message contains '--catalog-source',
         # which would trip the deprecation-line filter below).
         env = _build_env({})
         env.pop("REPO_URL", None)
         env.pop("REPO_REV", None)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", str(kanonenv)],

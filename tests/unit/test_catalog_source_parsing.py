@@ -29,7 +29,14 @@ from collections.abc import Callable
 
 import pytest
 
-from kanon_cli.core.catalog import _parse_catalog_source, resolve_catalog_dir
+from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
+from kanon_cli.core.catalog import (
+    MultipleCatalogSourcesError,
+    _parse_catalog_source,
+    parse_catalog_sources,
+    resolve_catalog_dir,
+    resolve_env_catalog_source,
+)
 
 # ---------------------------------------------------------------------------
 # Parametrised unit tests -- AC-FUNC-001 through AC-FUNC-008, AC-TEST-001
@@ -263,3 +270,182 @@ def test_round_trip_through_catalog_resolver(
     assert result.is_dir(), f"resolve_catalog_dir returned a non-directory path: {result}"
     assert result.name == "catalog", f"resolve_catalog_dir should return the catalog/ subdirectory; got: {result}"
     assert (result / "kanon").is_dir(), f"Expected catalog/kanon/ to exist in cloned repo; result path: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Plural KANON_CATALOG_SOURCES parser -- AC-13 (spec Section 6 / FR-9)
+#
+# parse_catalog_sources splits the newline-delimited value into an
+# order-preserving, deduplicated list of (url, ref) entries; blank lines are
+# skipped; a malformed (non-blank) entry fails fast naming the offending line.
+# ---------------------------------------------------------------------------
+
+_PLURAL_VALID_CASES = [
+    (
+        "https://github.com/org/repo.git@main",
+        [("https://github.com/org/repo.git", "main")],
+        "single-entry",
+    ),
+    (
+        "https://github.com/org/a.git@main\nhttps://github.com/org/b.git@dev",
+        [
+            ("https://github.com/org/a.git", "main"),
+            ("https://github.com/org/b.git", "dev"),
+        ],
+        "two-distinct-entries-order-preserved",
+    ),
+    (
+        "https://h/a.git@dev\nhttps://h/b.git@main\nhttps://h/c.git@v1.0.0",
+        [
+            ("https://h/a.git", "dev"),
+            ("https://h/b.git", "main"),
+            ("https://h/c.git", "v1.0.0"),
+        ],
+        "three-entries-order-preserved",
+    ),
+    (
+        "git@host:org/repo.git@main\nssh://git@host.com/org/repo.git@v2.0.0",
+        [
+            ("git@host:org/repo.git", "main"),
+            ("ssh://git@host.com/org/repo.git", "v2.0.0"),
+        ],
+        "ssh-user-info-entries",
+    ),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw,expected",
+    [(raw, exp) for raw, exp, _ in _PLURAL_VALID_CASES],
+    ids=[label for _, _, label in _PLURAL_VALID_CASES],
+)
+def test_parse_catalog_sources_valid(raw: str, expected: list[tuple[str, str]]) -> None:
+    """``parse_catalog_sources`` splits the newline list into order-preserving ``(url, ref)`` tuples."""
+    assert parse_catalog_sources(raw) == expected, (
+        f"For {raw!r}: expected {expected!r}, got {parse_catalog_sources(raw)!r}"
+    )
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_none_returns_empty() -> None:
+    """An unset (``None``) value parses to an empty discovery set."""
+    assert parse_catalog_sources(None) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "\n",
+        "   ",
+        "\n  \n\t\n",
+    ],
+    ids=["empty-string", "single-newline", "spaces-only", "blank-lines-only"],
+)
+def test_parse_catalog_sources_blank_lines_skipped(raw: str) -> None:
+    """Blank / whitespace-only lines are skipped, yielding an empty set."""
+    assert parse_catalog_sources(raw) == []
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_trims_and_skips_interior_blanks() -> None:
+    """Surrounding whitespace per line is trimmed and interior blank lines are skipped."""
+    raw = "\n  https://h/a.git@main  \n\n\thttps://h/b.git@dev\t\n\n"
+    assert parse_catalog_sources(raw) == [
+        ("https://h/a.git", "main"),
+        ("https://h/b.git", "dev"),
+    ]
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_dedup_preserves_first_seen_order() -> None:
+    """Identical entries collapse to one, preserving first-seen order."""
+    raw = "https://h/a.git@main\nhttps://h/b.git@dev\nhttps://h/a.git@main\nhttps://h/c.git@v1\nhttps://h/b.git@dev"
+    assert parse_catalog_sources(raw) == [
+        ("https://h/a.git", "main"),
+        ("https://h/b.git", "dev"),
+        ("https://h/c.git", "v1"),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw,offending",
+    [
+        ("https://github.com/org/repo.git", "https://github.com/org/repo.git"),
+        ("https://h/a.git@main\ngit@host:org/repo.git", "git@host:org/repo.git"),
+        ("https://h/a.git@main\n@dev", "@dev"),
+        ("https://h/a.git@main\nhttps://h/b.git@", "https://h/b.git@"),
+    ],
+    ids=["no-at-single", "missing-ref-second", "empty-url-second", "empty-ref-second"],
+)
+def test_parse_catalog_sources_malformed_entry_fails_fast(raw: str, offending: str) -> None:
+    """A malformed (non-blank) entry raises ValueError naming the offending line; blank lines alone never raise."""
+    with pytest.raises(ValueError) as exc_info:
+        parse_catalog_sources(raw)
+    message = str(exc_info.value)
+    assert CATALOG_SOURCES_ENV_VAR in message, f"Error must name the env var; got: {message!r}"
+    assert offending in message, f"Error must name the offending entry {offending!r}; got: {message!r}"
+
+
+# ---------------------------------------------------------------------------
+# resolve_env_catalog_source -- single-source resolution from the plural env
+# (spec Section 4.2: env consumed only when exactly one source is configured)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_unset_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the plural env var is unset, the single-source resolver returns None."""
+    monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
+    assert resolve_env_catalog_source() is None
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_blank_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A blank-only env value configures no source, so the resolver returns None."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "\n   \n\t\n")
+    assert resolve_env_catalog_source() is None
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_single_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exactly one configured source is returned as a normalized ``url@ref`` string."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "  https://github.com/org/repo.git@main  ")
+    assert resolve_env_catalog_source() == "https://github.com/org/repo.git@main"
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_duplicate_collapses_to_single(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two identical entries deduplicate to one, so the single-source resolver succeeds."""
+    monkeypatch.setenv(
+        CATALOG_SOURCES_ENV_VAR,
+        "https://github.com/org/repo.git@main\nhttps://github.com/org/repo.git@main",
+    )
+    assert resolve_env_catalog_source() == "https://github.com/org/repo.git@main"
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_multiple_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """More than one distinct source fails fast naming every source and the disambiguation flag."""
+    monkeypatch.setenv(
+        CATALOG_SOURCES_ENV_VAR,
+        "https://github.com/org/a.git@main\nhttps://github.com/org/b.git@dev",
+    )
+    with pytest.raises(MultipleCatalogSourcesError) as exc_info:
+        resolve_env_catalog_source()
+    message = str(exc_info.value)
+    assert "https://github.com/org/a.git@main" in message
+    assert "https://github.com/org/b.git@dev" in message
+    assert "--catalog-source" in message
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_malformed_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed configured entry propagates a ValueError naming the env var."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://github.com/org/repo.git")
+    with pytest.raises(ValueError) as exc_info:
+        resolve_env_catalog_source()
+    assert CATALOG_SOURCES_ENV_VAR in str(exc_info.value)

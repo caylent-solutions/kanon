@@ -7,6 +7,7 @@ TDD-paired test file covering:
   entries via log_completion_error.
 - fork_background_refresh (E2-F1-S2-T1): routes through spawn_detached
   instead of os.fork/setsid/dup2 directly.
+- utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
 
 All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
@@ -16,6 +17,7 @@ PermissionError on /tmp.
 from __future__ import annotations
 
 import os
+import pathlib
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,37 @@ import pytest
 from unittest.mock import patch
 
 from kanon_cli.completions.cache import fork_background_refresh, maybe_update_accessed_at, write_entries
+from tests.conftest import bare_text_io_calls
+
+
+# ---------------------------------------------------------------------------
+# utf-8 encoding sweep (AC-12)
+# ---------------------------------------------------------------------------
+
+_CACHE_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "completions" / "cache.py"
+
+
+@pytest.mark.unit
+class TestCachePyUtf8EncodingSweep:
+    """AC-12: all read_text/write_text calls in completions/cache.py specify encoding."""
+
+    def test_no_bare_read_text_calls(self) -> None:
+        """completions/cache.py must not contain bare .read_text() calls."""
+        bare = bare_text_io_calls(_CACHE_PY)
+        read_bare = [b for b in bare if "read_text" in b[1]]
+        assert read_bare == [], (
+            f"completions/cache.py has bare read_text() calls: {read_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+    def test_no_bare_write_text_calls(self) -> None:
+        """completions/cache.py must not contain bare .write_text() calls."""
+        bare = bare_text_io_calls(_CACHE_PY)
+        write_bare = [b for b in bare if "write_text" in b[1]]
+        assert write_bare == [], (
+            f"completions/cache.py has bare write_text() calls: {write_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
 
 
 @pytest.mark.unit

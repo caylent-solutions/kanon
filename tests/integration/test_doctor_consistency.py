@@ -130,7 +130,7 @@ def _run_kanon(
 ) -> subprocess.CompletedProcess[str]:
     """Run the kanon CLI via the same Python interpreter."""
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(

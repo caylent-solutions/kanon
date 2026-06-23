@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return [] immediately.
-2. Resolve KANON_CATALOG_SOURCE env var to get the manifest repo URL and ref.
+2. Resolve the single KANON_CATALOG_SOURCES entry to get the manifest repo URL and ref.
 3. Check the catalog entry cache (catalogs/<sha>/index.txt):
    - Cache hit (fetched_at within TTL): return cached entries filtered by prefix.
    - Cache stale (fetched_at past TTL) and KANON_COMPLETION_REFRESH_BG=1:
@@ -44,7 +44,7 @@ from kanon_cli.completions.cache import (
     write_epoch,
 )
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     COMPLETION_MAX_ENTRY_LEN,
     COMPLETION_UNSAFE_CHARS,
     KANON_COMPLETION_CACHE_TTL,
@@ -52,7 +52,7 @@ from kanon_cli.constants import (
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_TIMEOUT,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.metadata import CatalogMetadataParseError, _parse_catalog_metadata, find_catalog_entry_files
 
 _COMPLETER_NAME = "__complete_catalog_entries"
@@ -239,7 +239,7 @@ def complete(current_token: str) -> list[str]:
 
     Resolution contract:
     1. KANON_COMPLETION_ENABLED=0 -> return [].
-    2. Read KANON_CATALOG_SOURCE from environment.
+    2. Read the single KANON_CATALOG_SOURCES entry from the environment.
     3. Cache-hit within TTL -> return cached names filtered by prefix.
     4. Cache-stale + KANON_COMPLETION_REFRESH_BG=1 -> return stale + fork bg.
     5. Cache-miss or stale + KANON_COMPLETION_REFRESH_BG=0 -> inline fetch.
@@ -256,20 +256,20 @@ def complete(current_token: str) -> list[str]:
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source
-    source = os.environ.get(CATALOG_ENV_VAR)
-    if not source:
-        missing_exc = ValueError("KANON_CATALOG_SOURCE is not set")
-        log_completion_error(_COMPLETER_NAME, missing_exc)
-        _write_stderr_diagnostic(missing_exc)
-        return []
-
+    # Step 2: resolve catalog source from the single KANON_CATALOG_SOURCES entry.
     try:
-        url, ref = _parse_catalog_source(source)
+        source = resolve_env_catalog_source()
     except ValueError as exc:
         log_completion_error(_COMPLETER_NAME, exc)
         _write_stderr_diagnostic(exc)
         return []
+    if not source:
+        missing_exc = ValueError(f"{CATALOG_SOURCES_ENV_VAR} is not set")
+        log_completion_error(_COMPLETER_NAME, missing_exc)
+        _write_stderr_diagnostic(missing_exc)
+        return []
+
+    url, ref = _parse_catalog_source(source)
 
     # Step 3: check cache
     entry_dir = catalog_entry_dir(url, ref)
@@ -324,7 +324,7 @@ def _spawn_background_refresh(url: str, ref: str) -> None:
             "__complete_catalog_entries",
             "--refresh-only",
         ],
-        env={**os.environ, CATALOG_ENV_VAR: source, "KANON_COMPLETION_REFRESH_BG": "0"},
+        env={**os.environ, CATALOG_SOURCES_ENV_VAR: source, "KANON_COMPLETION_REFRESH_BG": "0"},
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

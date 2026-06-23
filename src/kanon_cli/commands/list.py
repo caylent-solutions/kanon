@@ -17,7 +17,8 @@ Section 4.1 flag-table rows ``<substring>`` (positional), ``--regex <pattern>``,
 ``--match-fields <csv>`` for the filter framework.
 
 Environment variables:
-- ``KANON_CATALOG_SOURCE``: catalog source override (CLI flag wins).
+- ``KANON_CATALOG_SOURCES``: catalog discovery set (CLI flag wins); the single
+  configured entry is used when ``--catalog-source`` is absent.
 - ``KANON_TREE_NO_FILTER_THRESHOLD``: overrides the default threshold (20)
   above which ``kanon list --tree`` requires a filter.
 - ``KANON_LIST_LIMIT``: overrides the default version-walk cap (50).
@@ -41,13 +42,12 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
     KANON_LIST_LIMIT,
     KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
     MISSING_CATALOG_ERROR_TEMPLATE,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.metadata import (
     CatalogMetadata,
@@ -1153,7 +1153,7 @@ def run_list(args: argparse.Namespace) -> int:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
         source is configured or a flag conflict is detected.
     """
-    catalog_source: str | None = getattr(args, "catalog_source", None) or os.environ.get(CATALOG_ENV_VAR)
+    catalog_source: str | None = getattr(args, "catalog_source", None) or resolve_env_catalog_source()
     detail: bool = getattr(args, "detail", False)
     tree: bool = getattr(args, "tree", False)
     max_depth: int | None = getattr(args, "max_depth", None)
@@ -1419,8 +1419,8 @@ def register(subparsers) -> None:
             "lexicographically. Reads *-marketplace.xml files under\n"
             "repo-specs/ in the manifest repo identified by the catalog source.\n\n"
             "Requires a catalog source via --catalog-source or the\n"
-            "KANON_CATALOG_SOURCE environment variable. The CLI flag takes\n"
-            "precedence when both are set.\n\n"
+            "KANON_CATALOG_SOURCES environment variable (the single configured\n"
+            "entry is used). The CLI flag takes precedence when both are set.\n\n"
             "Filter mode: supply an optional positional <substring> or --regex\n"
             "<pattern> to narrow the catalog entries returned. The filter checks\n"
             "the entry name, display-name, description, and keywords by default.\n"
@@ -1467,7 +1467,7 @@ def register(subparsers) -> None:
             "  kanon list --all-versions --limit 3 --catalog-source ...\n"
             "  kanon list --all-versions --no-limit --catalog-source ...\n"
             "  kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...\n"
-            "  KANON_CATALOG_SOURCE=https://example.com/org/repo.git@v1.0.0 kanon list\n"
+            "  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon list\n"
             "  KANON_LIST_FORMAT=json kanon list --catalog-source ..."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

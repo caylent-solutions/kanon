@@ -71,7 +71,7 @@ def _clean_env() -> dict[str, str]:
 
     - ``NO_COLOR=1`` -- disables ANSI colour codes from the kanon output layer
       and from the terminal library (strips colour regardless of TTY state).
-    - ``KANON_CATALOG_SOURCE`` removed -- prevents any ambient catalog-source
+    - ``KANON_CATALOG_SOURCES`` removed -- prevents any ambient catalog-source
       override from bleeding into the help text.
     - ``COLUMNS=80`` -- pins the terminal width so argparse wraps at a fixed
       column count and output is identical across hosts with different
@@ -82,7 +82,7 @@ def _clean_env() -> dict[str, str]:
     """
     env = dict(os.environ)
     env["NO_COLOR"] = "1"
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     env["COLUMNS"] = "80"
     return env
 

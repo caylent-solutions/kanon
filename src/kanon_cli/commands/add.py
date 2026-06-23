@@ -24,16 +24,13 @@ import urllib.parse
 from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
-    KANON_CATALOG_BLOCK_HEADER,
-    KANON_CATALOG_BLOCK_KEY,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     MISSING_CATALOG_ERROR_TEMPLATE,
     TAG_ERROR_DISPLAY_CAP,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.core.metadata import (
@@ -316,21 +313,21 @@ def _build_triple_lines(
 
 def _write_standard_header(
     dest: pathlib.Path,
-    catalog_source: str,
     gitbase: str,
     marketplace_install: str,
 ) -> None:
     """Write the standard .kanon header lines to dest, if dest does not exist.
 
-    Creates dest and writes the three standard header lines with derived values,
-    followed by a ``[catalog]`` block that records the catalog source URL so
-    ``kanon install`` can read it back without requiring the operator to pass
-    ``--catalog-source`` again.
+    Creates dest and writes the three standard header lines with derived values.
+    Schema 3.0.0 (spec Section 0 / Section 5.1 / FR-1) removed the global
+    ``[catalog]`` block: catalog sources are per-dependency, so no global
+    catalog-source line is recorded in ``.kanon`` and ``kanon install`` is
+    hermetic (it never reads a global catalog source back).
 
     Does nothing when dest already exists -- the caller owns the decision of
     whether to create or append, so an existing file must never be rewritten
-    by this helper. The ``[catalog]`` block is therefore written ONLY on the
-    first ``kanon add`` invocation (fresh file path).
+    by this helper. The header is therefore written ONLY on the first
+    ``kanon add`` invocation (fresh file path).
 
     The GITBASE value is derived from the catalog-source URL by the caller via
     ``_derive_gitbase_from_catalog_source``; the marketplace_install value is
@@ -339,9 +336,6 @@ def _write_standard_header(
 
     Args:
         dest: Destination .kanon file path.
-        catalog_source: The ``--catalog-source`` value passed to ``kanon add``.
-            Written verbatim as the ``KANON_CATALOG_SOURCE=`` value inside the
-            ``[catalog]`` block.
         gitbase: The derived GITBASE value (scheme + authority from catalog URL).
         marketplace_install: The KANON_MARKETPLACE_INSTALL value (from env or default).
     """
@@ -349,14 +343,9 @@ def _write_standard_header(
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        f"GITBASE={gitbase}\n"
-        f"{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\n"
-        f"KANON_MARKETPLACE_INSTALL={marketplace_install}\n"
-        f"\n"
-        f"{KANON_CATALOG_BLOCK_HEADER}\n"
-        f"{KANON_CATALOG_BLOCK_KEY}={catalog_source}\n"
+        f"GITBASE={gitbase}\n{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\nKANON_MARKETPLACE_INSTALL={marketplace_install}\n"
     )
-    dest.write_text(header)
+    dest.write_text(header, encoding="utf-8")
 
 
 def _append_triple_block(
@@ -635,7 +624,7 @@ def _read_existing_triple_block(
     revision: str | None = None
     path: str | None = None
 
-    for raw_line in kanon_file.read_text().splitlines():
+    for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if line.startswith(f"{prefix}URL="):
             url = line[len(f"{prefix}URL=") :]
@@ -717,7 +706,7 @@ def _overwrite_triple_block(
     prefix = f"KANON_SOURCE_{source_name}_"
     triple_keys = {f"{prefix}URL", f"{prefix}REVISION", f"{prefix}PATH"}
 
-    existing_lines = dest.read_text().splitlines(keepends=True)
+    existing_lines = dest.read_text(encoding="utf-8").splitlines(keepends=True)
     result: list[str] = []
     inserted = False
 
@@ -734,7 +723,7 @@ def _overwrite_triple_block(
         else:
             result.append(raw_line)
 
-    dest.write_text("".join(result))
+    dest.write_text("".join(result), encoding="utf-8")
 
     key_names = ", ".join(
         [
@@ -821,7 +810,7 @@ def run_add(args: argparse.Namespace) -> int:
     Returns:
         0 on success; non-zero on failure (typically via sys.exit()).
     """
-    catalog_source: str | None = getattr(args, "catalog_source", None) or os.environ.get(CATALOG_ENV_VAR)
+    catalog_source: str | None = getattr(args, "catalog_source", None) or resolve_env_catalog_source()
     if not catalog_source:
         print(
             MISSING_CATALOG_ERROR_TEMPLATE.format(command="add"),
@@ -925,7 +914,7 @@ def run_add(args: argparse.Namespace) -> int:
     with kanon_workspace_lock(workspace_root):
         # Create header if file does not exist, then append or overwrite each
         # resolved triple in argument order.
-        _write_standard_header(kanon_file, catalog_source, gitbase, marketplace_install)
+        _write_standard_header(kanon_file, gitbase, marketplace_install)
 
         for source_name, _rel_path, lines in resolved_entries:
             if force and kanon_file.exists():

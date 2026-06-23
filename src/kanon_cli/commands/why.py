@@ -1285,8 +1285,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "  (c) Top-level source name -- normalized via derive_source_name.\n\n"
             "Chain format:\n"
             "  <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>\n\n"
-            "Catalog source precedence: --catalog-source flag, then\n"
-            "KANON_CATALOG_SOURCE env var. Required only when .kanon.lock\n"
+            "Catalog source precedence: --catalog-source flag, then the single\n"
+            "KANON_CATALOG_SOURCES env-var entry. Required only when .kanon.lock\n"
             "is absent (live-resolve path)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1476,89 +1476,265 @@ class TestReadExistingTripleBlock:
 
 
 @pytest.mark.unit
-class TestCheckAgainstExistingBlocks:
-    """_check_against_existing_blocks detects existing block collisions."""
+class TestSameNameGuard:
+    """_emit_same_name_guard_error fails fast with a diff + the guiding message."""
 
-    def test_force_true_returns_without_error(self, tmp_path: pathlib.Path) -> None:
-        """When force=True, returns immediately without checking the file."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
-
-        kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n")
-        # Should not raise, even though block exists
-        result = _check_against_existing_blocks(
-            kanon_file=kanon_file,
-            source_name="my_pkg",
-            new_url="https://example.com/new.git",
-            new_ref="refs/tags/2.0.0",
-            new_path="repo-specs/my-pkg-marketplace.xml",
-            force=True,
-        )
-        assert result is None
-
-    def test_existing_block_without_force_exits_nonzero(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """When force=False and block exists, exits non-zero."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+    def test_same_name_guard_exits_nonzero(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """A re-add of an existing alias (same source@ref) without --force exits non-zero."""
+        from kanon_cli.commands.add import _emit_same_name_guard_error
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
+            "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git\n"
             "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
-            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n"
+            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n",
+            encoding="utf-8",
         )
         with pytest.raises(SystemExit) as exc_info:
-            _check_against_existing_blocks(
+            _emit_same_name_guard_error(
                 kanon_file=kanon_file,
                 source_name="my_pkg",
-                new_url="https://example.com/new.git",
-                new_ref="refs/tags/2.0.0",
+                new_url="https://example.com/repo.git",
+                new_ref="==1.0.0",
                 new_path="repo-specs/my-pkg-marketplace.xml",
-                force=False,
             )
         assert exc_info.value.code != 0
 
-    def test_existing_block_collision_error_names_source(
+    def test_same_name_guard_names_alias_and_shows_diff_and_guidance(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Collision error message names the source name."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+        """The guard error names the alias, renders a +/- diff, and points to --force / remove."""
+        from kanon_cli.commands.add import _emit_same_name_guard_error
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
+            "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git\n"
             "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
-            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n"
+            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n",
+            encoding="utf-8",
         )
         with pytest.raises(SystemExit):
-            _check_against_existing_blocks(
+            _emit_same_name_guard_error(
                 kanon_file=kanon_file,
                 source_name="my_pkg",
-                new_url="https://example.com/new.git",
-                new_ref="refs/tags/2.0.0",
+                new_url="https://example.com/repo.git",
+                new_ref="==2.0.0",
                 new_path="repo-specs/my-pkg-marketplace.xml",
-                force=False,
             )
-        captured = capsys.readouterr()
-        assert "my_pkg" in captured.err
-        assert "--force" in captured.err
+        err = capsys.readouterr().err
+        assert "my_pkg" in err
+        # Diff renders the existing block with '-' and the requested block with '+'.
+        assert "-KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0" in err
+        assert "+KANON_SOURCE_my_pkg_REF===2.0.0" in err
+        # Guiding remediation message.
+        assert "--force" in err
+        assert "kanon remove my_pkg" in err
 
-    def test_no_existing_block_returns_none(self, tmp_path: pathlib.Path) -> None:
-        """When source name not in file, returns without error."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+
+@pytest.mark.unit
+class TestResolveEntryAlias:
+    """_resolve_entry_alias implements the deterministic auto-suffix model."""
+
+    _URL_A = "https://github.com/org-a/pkg.git"
+    _URL_B = "https://github.com/caylent/caylent-private-kanon.git"
+
+    def test_free_base_alias_is_new(self) -> None:
+        """An unused base alias resolves to itself with mode 'new'."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        alias, mode = _resolve_entry_alias({}, "history", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("history", "new")
+
+    def test_cross_source_collision_appends_repo_suffix(self) -> None:
+        """A taken bare alias from a DIFFERENT source auto-suffixes to base_repo."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_B, ">=2.0.0,<3.0.0", force=False)
+        assert (alias, mode) == ("history_caylent_private_kanon", "new")
+
+    def test_same_repo_different_ref_appends_ref_suffix(self) -> None:
+        """When the repo suffix still collides (same repo, different ref) the ref suffix is added."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {
+            "history": (self._URL_A, "1.0.0"),
+            "history_caylent_private_kanon": (self._URL_B, ">=9.0.0,<10.0.0"),
+        }
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_B, ">=0.1.0,<1.0.0", force=False)
+        assert (alias, mode) == ("history_caylent_private_kanon_0_1_0_1_0_0", "new")
+
+    def test_same_source_same_ref_without_force_is_duplicate(self) -> None:
+        """Re-add of the same alias at the same source@ref (no --force) is a duplicate."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("history", "duplicate")
+
+    def test_same_source_same_ref_with_force_is_overwrite(self) -> None:
+        """Re-add of the same alias at the same source@ref with --force is a force_overwrite."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_A, "1.0.0", force=True)
+        assert (alias, mode) == ("history", "force_overwrite")
+
+    def test_all_candidates_taken_by_distinct_sources_exits(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """When every candidate is taken by a distinct source the add fails fast."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        url_c = "https://github.com/org-c/pkg.git"
+        existing = {
+            "history": (self._URL_A, "1.0.0"),
+            "history_caylent_private_kanon": (self._URL_B, "2.0.0"),
+            "history_caylent_private_kanon_3_0_0": (url_c, "3.0.0"),
+        }
+        # Third candidate is base_repo_ref = history_caylent_private_kanon_3_0_0,
+        # occupied by url_c, so all three candidates collide with distinct sources.
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_entry_alias(existing, "history", self._URL_B, "3.0.0", force=False)
+        assert exc_info.value.code != 0
+        assert "--as" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+class TestResolveOverrideAlias:
+    """_resolve_override_alias never suffixes an explicit --as alias."""
+
+    _URL_A = "https://github.com/org-a/pkg.git"
+    _URL_B = "https://github.com/org-b/pkg.git"
+
+    def test_free_alias_is_new(self) -> None:
+        """A free --as alias resolves to itself with mode 'new'."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        alias, mode = _resolve_override_alias({}, "myalias", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("myalias", "new")
+
+    def test_taken_by_same_source_without_force_is_duplicate(self) -> None:
+        """An --as alias already mapped to the same source@ref is a duplicate (no --force)."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_override_alias(existing, "myalias", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("myalias", "duplicate")
+
+    def test_taken_by_different_source_without_force_exits(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """An --as alias already mapped to a DIFFERENT source (no --force) fails fast."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_override_alias(existing, "myalias", self._URL_B, "2.0.0", force=False)
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err
+        assert "myalias" in err
+        assert "--force" in err
+
+    def test_taken_by_different_source_with_force_is_overwrite(self) -> None:
+        """With --force, an --as alias mapped to a different source is an explicit overwrite."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_override_alias(existing, "myalias", self._URL_B, "2.0.0", force=True)
+        assert (alias, mode) == ("myalias", "force_overwrite")
+
+
+@pytest.mark.unit
+class TestAliasSanitization:
+    """_sanitize_alias_fragment / _source_repo_fragment / _validate_alias_override."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("main", "main"),
+            (">=0.1.0,<1.0.0", "0_1_0_1_0_0"),
+            ("caylent-private-kanon", "caylent_private_kanon"),
+            ("__leading_trailing__", "leading_trailing"),
+            ("a---b", "a_b"),
+            ("", ""),
+        ],
+        ids=["branch", "constraint", "repo-name", "trim", "collapse", "empty"],
+    )
+    def test_sanitize_alias_fragment(self, value: str, expected: str) -> None:
+        """Non-charset runs collapse to a single '_'; leading/trailing '_' trimmed; never '__'."""
+        from kanon_cli.commands.add import _sanitize_alias_fragment
+
+        result = _sanitize_alias_fragment(value)
+        assert result == expected
+        assert "__" not in result
+
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            ("https://github.com/caylent/caylent-private-kanon.git", "caylent_private_kanon"),
+            ("git@github.com:org/my-repo.git", "my_repo"),
+            ("file:///tmp/bare-repo.git", "bare_repo"),
+            ("https://host/org/repo", "repo"),
+        ],
+        ids=["https-git", "scp", "file", "no-git-suffix"],
+    )
+    def test_source_repo_fragment(self, url: str, expected: str) -> None:
+        """The repo fragment is the sanitized basename of the URL path (sans .git)."""
+        from kanon_cli.commands.add import _source_repo_fragment
+
+        assert _source_repo_fragment(url) == expected
+
+    @pytest.mark.parametrize(
+        "alias",
+        ["good_alias", "Alias123", "a"],
+        ids=["underscore", "mixed-case-digits", "single"],
+    )
+    def test_validate_alias_override_accepts_legal(self, alias: str) -> None:
+        """A legal alias passes validation unchanged."""
+        from kanon_cli.commands.add import _validate_alias_override
+
+        assert _validate_alias_override(alias) == alias
+
+    @pytest.mark.parametrize(
+        "alias",
+        ["", "bad-alias", "has space", "double__under", "dot.alias"],
+        ids=["empty", "hyphen", "space", "double-underscore", "dot"],
+    )
+    def test_validate_alias_override_rejects_illegal(self, alias: str) -> None:
+        """An illegal alias raises AliasOverrideError (fail fast, no silent sanitize)."""
+        from kanon_cli.commands.add import AliasOverrideError, _validate_alias_override
+
+        with pytest.raises(AliasOverrideError):
+            _validate_alias_override(alias)
+
+
+@pytest.mark.unit
+class TestReadAllSourceAliases:
+    """_read_all_source_aliases maps each alias to its (url, ref) coordinates."""
+
+    def test_reads_multiple_aliases_in_order(self, tmp_path: pathlib.Path) -> None:
+        """Every alias block is read with its URL and REF, in first-seen order."""
+        from kanon_cli.commands.add import _read_all_source_aliases
 
         kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("GITBASE=https://example.com/org\n")
-        result = _check_against_existing_blocks(
-            kanon_file=kanon_file,
-            source_name="new_pkg",
-            new_url="https://example.com/new.git",
-            new_ref="refs/tags/1.0.0",
-            new_path="repo-specs/new-pkg-marketplace.xml",
-            force=False,
+        kanon_file.write_text(
+            "CLAUDE_MARKETPLACES_DIR=/tmp/mk\n"
+            "KANON_SOURCE_alpha_URL=https://example.com/a.git\n"
+            "KANON_SOURCE_alpha_REF=1.0.0\n"
+            "KANON_SOURCE_alpha_PATH=p\n"
+            "KANON_SOURCE_beta_URL=https://example.com/b.git\n"
+            "KANON_SOURCE_beta_REF=2.0.0\n",
+            encoding="utf-8",
         )
-        assert result is None
+        result = _read_all_source_aliases(kanon_file)
+        assert result == {
+            "alpha": ("https://example.com/a.git", "1.0.0"),
+            "beta": ("https://example.com/b.git", "2.0.0"),
+        }
+        assert list(result) == ["alpha", "beta"]
+
+    def test_absent_file_is_empty(self, tmp_path: pathlib.Path) -> None:
+        """A missing .kanon file yields an empty alias map."""
+        from kanon_cli.commands.add import _read_all_source_aliases
+
+        assert _read_all_source_aliases(tmp_path / ".kanon") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1738,20 +1914,28 @@ class TestRunAddForce:
         )
         return xml_path
 
-    def test_run_add_force_overwrites_existing_block(self, tmp_path: pathlib.Path) -> None:
-        """run_add --force overwrites an existing triple with new values."""
+    def test_run_add_force_overwrites_same_source_block(self, tmp_path: pathlib.Path) -> None:
+        """run_add --force overwrites the alias block when re-adding the same source@ref.
+
+        The existing block is keyed by the same alias and the same source URL +
+        resolved ref the add resolves to, so the alias resolution returns
+        ``force_overwrite`` (a re-add of the existing package, spec Section 4.2)
+        rather than auto-suffixing to a fresh alias. The PATH is refreshed by the
+        overwrite while the URL / REF are re-pinned.
+        """
         import argparse
         from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
-        # Pre-populate with an existing block for force-pkg
+        # Pre-populate with an existing block for force-pkg at the SAME source@ref.
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
-            "KANON_SOURCE_force_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_force_pkg_REF=refs/tags/1.0.0\n"
-            "KANON_SOURCE_force_pkg_PATH=repo-specs/force-pkg-marketplace.xml\n"
+            "KANON_SOURCE_force_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_force_pkg_REF=refs/tags/2.0.0\n"
+            "KANON_SOURCE_force_pkg_PATH=repo-specs/stale-path.xml\n",
+            encoding="utf-8",
         )
         meta = CatalogMetadata(
             name="force-pkg",
@@ -1768,6 +1952,7 @@ class TestRunAddForce:
             entries=["force-pkg"],
             force=True,
             dry_run=False,
+            alias_override=None,
         )
 
         with (
@@ -1788,8 +1973,68 @@ class TestRunAddForce:
 
         assert result == 0
         content = kanon_file.read_text()
+        # The block stays keyed by the bare alias (overwrite, not auto-suffix).
         assert "KANON_SOURCE_force_pkg_REF=refs/tags/2.0.0" in content
-        assert "refs/tags/1.0.0" not in content
+        assert "KANON_SOURCE_force_pkg_repo_URL=" not in content
+        # The PATH is refreshed by the overwrite.
+        assert "repo-specs/force-pkg-marketplace.xml" in content
+        assert "repo-specs/stale-path.xml" not in content
+
+    def test_run_add_cross_source_collision_auto_suffixes(self, tmp_path: pathlib.Path) -> None:
+        """A same-NAME add from a DIFFERENT source auto-suffixes; the existing block is untouched."""
+        import argparse
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        kanon_file = tmp_path / ".kanon"
+        # Existing block keyed by alias 'force_pkg' at a DIFFERENT source URL.
+        kanon_file.write_text(
+            "GITBASE=https://example.com/org\n"
+            "KANON_SOURCE_force_pkg_URL=https://example.com/other.git\n"
+            "KANON_SOURCE_force_pkg_REF=refs/tags/1.0.0\n"
+            "KANON_SOURCE_force_pkg_PATH=repo-specs/force-pkg-marketplace.xml\n",
+            encoding="utf-8",
+        )
+        meta = CatalogMetadata(
+            name="force-pkg",
+            display_name="Force Pkg",
+            description="Test.",
+            version="2.0.0",
+        )
+        xml_path = self._make_xml_file(tmp_path, "force-pkg")
+        manifest_root = tmp_path / "repo"
+
+        args = argparse.Namespace(
+            catalog_source="https://example.com/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["force-pkg"],
+            force=False,
+            dry_run=False,
+            alias_override=None,
+        )
+
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, "https://example.com/repo.git", "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, "https://example.com/repo.git")],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/2.0.0",
+            ),
+        ):
+            result = run_add(args)
+
+        assert result == 0
+        content = kanon_file.read_text()
+        # New block carries the source-repo suffix; the original block is intact.
+        assert "KANON_SOURCE_force_pkg_repo_URL=https://example.com/repo.git" in content
+        assert "KANON_SOURCE_force_pkg_URL=https://example.com/other.git" in content
 
     def test_run_add_force_new_entry_appends_when_no_existing_block(self, tmp_path: pathlib.Path) -> None:
         """run_add --force appends when the source name is not already present."""
@@ -1848,11 +2093,15 @@ class TestRunAddForce:
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
+        # Existing block at the SAME source@ref so the --force add resolves to a
+        # force_overwrite (a re-add of the existing package) and the dry-run diff
+        # renders the removed (-) and added (+) block lines.
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
-            "KANON_SOURCE_dry_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_dry_pkg_REF=refs/tags/1.0.0\n"
-            "KANON_SOURCE_dry_pkg_PATH=repo-specs/dry-pkg-marketplace.xml\n"
+            "KANON_SOURCE_dry_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_dry_pkg_REF=refs/tags/2.0.0\n"
+            "KANON_SOURCE_dry_pkg_PATH=repo-specs/stale-path.xml\n",
+            encoding="utf-8",
         )
         meta = CatalogMetadata(
             name="dry-pkg",
@@ -1869,6 +2118,7 @@ class TestRunAddForce:
             entries=["dry-pkg"],
             force=True,
             dry_run=True,
+            alias_override=None,
         )
 
         with (
@@ -1890,11 +2140,11 @@ class TestRunAddForce:
         assert result == 0
         captured = capsys.readouterr()
         # Dry run must show removed lines with '-' and added lines with '+'
-        assert "-KANON_SOURCE_dry_pkg_URL=" in captured.out
-        assert "+KANON_SOURCE_dry_pkg_URL=" in captured.out
+        assert "-KANON_SOURCE_dry_pkg_PATH=repo-specs/stale-path.xml" in captured.out
+        assert "+KANON_SOURCE_dry_pkg_PATH=" in captured.out
         # File must remain unchanged
         content = kanon_file.read_text()
-        assert "refs/tags/1.0.0" in content
+        assert "repo-specs/stale-path.xml" in content
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ _shtab_kanon_catalog_subparsers=('audit')
 _shtab_kanon_validate_subparsers=('xml' 'marketplace' 'metadata' 'lockfile')
 
 _shtab_kanon_option_strings=('-h' '--help' '--version' '--quiet' '--verbose' '--no-color')
-_shtab_kanon_add_option_strings=('-h' '--help' '--catalog-source' '--kanon-file' '--force' '--dry-run')
+_shtab_kanon_add_option_strings=('-h' '--help' '--catalog-source' '--as' '--kanon-file' '--force' '--dry-run')
 _shtab_kanon_catalog_option_strings=('-h' '--help')
 _shtab_kanon_catalog_audit_option_strings=('-h' '--help' '--check' '--format' '--strict')
 _shtab_kanon_clean_option_strings=('-h' '--help' '--orphans')

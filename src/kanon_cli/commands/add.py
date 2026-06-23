@@ -30,6 +30,7 @@ from packaging.version import InvalidVersion, Version
 from kanon_cli.constants import (
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
+    KANON_LOCK_FILE,
     MISSING_CATALOG_ERROR_TEMPLATE,
     SOURCE_PATH_SUFFIX,
     SOURCE_PREFIX,
@@ -40,7 +41,11 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.kanon_hash import kanon_hash
+from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present
+from kanon_cli.core.lockfile import write_lockfile
 from kanon_cli.utils.concurrency import kanon_workspace_lock
+from kanon_cli.utils.lock_file_path import derive_lock_file_path
 from kanon_cli.core.metadata import (
     CatalogMetadata,
     CatalogMetadataParseError,
@@ -62,6 +67,18 @@ _ZERO_PEP440_TAGS_ERROR = (
 # Pre-compiled regex for SCP-shorthand git URLs: git@host:org/repo[.git]
 # Compiled at module load time to avoid re-compiling on every derivation call.
 _SCP_URL_PATTERN = re.compile(r"^(git@[^:]+):([^/]+)/[^/]+(?:\.git)?$")
+
+# Alias charset (spec Section 4.2 / 5.1): a local alias uses only [A-Za-z0-9_]
+# with single underscores (never a "__" run). This pattern matches a legal
+# fully-formed alias; it is reused to validate the --as override and to verify
+# the auto-computed alias never emits a "__".
+_ALIAS_CHARSET_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+# Run of one or more characters that are NOT in the alias charset. Used by the
+# suffix sanitizer (spec Section 4.2 / 5.1): every such run collapses to a
+# single underscore so a constraint ref like ">=0.1.0,<1.0.0" maps to the alias
+# fragment "0_1_0_1_0_0" (never "__").
+_NON_ALIAS_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -106,6 +123,21 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     add_catalog_source_arg(parser)
 
     parser.add_argument(
+        "--as",
+        dest="alias_override",
+        metavar="<alias>",
+        default=None,
+        help=(
+            "Override the auto-computed local alias for the (single) added\n"
+            "entry. The alias charset is [A-Za-z0-9_] with no '__' run. When\n"
+            "the alias is already mapped to a different source it is a hard\n"
+            "error (use --force to overwrite, or 'kanon remove <alias>'\n"
+            "first). Without --as, the alias is the sanitized manifest name,\n"
+            "auto-suffixed deterministically on a cross-source collision."
+        ),
+    )
+
+    parser.add_argument(
         "--kanon-file",
         dest="kanon_file",
         default=os.environ.get(KANON_KANON_FILE_ENV, KANON_KANON_FILE_DEFAULT),
@@ -124,11 +156,13 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         action="store_true",
         default=False,
         help=(
-            "Overwrite an existing KANON_SOURCE_<name>_* block in the\n"
-            "destination .kanon file. Without this flag, any collision\n"
-            "between a requested source name and an existing block is a\n"
-            "hard error. Collision detection pre-flight runs before any\n"
-            "write whether or not --force is set."
+            "Overwrite an existing alias block when re-adding the same\n"
+            "package (same source@ref), and re-pin its .kanon.lock entry\n"
+            "while keeping the dep's NAME. Without this flag, a re-add of an\n"
+            "existing alias is a hard error (with a diff and the guiding\n"
+            "message). A cross-source collision (a different source for the\n"
+            "same manifest name) is auto-suffixed deterministically and is\n"
+            "never an error, with or without --force."
         ),
     )
     parser.add_argument(
@@ -138,11 +172,11 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         default=False,
         help=(
             "Print the diff that WOULD be written to the destination\n"
-            ".kanon file ('+' for added lines, '-' for removed lines\n"
-            "under --force). Makes no on-disk change. Exits 0. Collision\n"
-            "detection pre-flight still runs, so within-request and\n"
-            "against-existing collisions are reported before a diff is\n"
-            "shown (unless --force is also passed)."
+            ".kanon file ('+' for added lines, '-' for removed lines when a\n"
+            "--force overwrite replaces an existing block). Makes no on-disk\n"
+            "change. Exits 0. Alias resolution still runs first, so a\n"
+            "within-request duplicate or a re-add of an existing alias\n"
+            "(without --force) is reported before any diff is shown."
         ),
     )
 
@@ -181,6 +215,31 @@ class CatalogSourceURLDerivationError(ValueError):
             f"ERROR: cannot derive GITBASE from catalog-source URL {self.url}: {self.reason}\n"
             "Pass an explicit GITBASE via the KANON_GITBASE env var or"
             " hand-edit .kanon after running kanon add."
+        )
+
+
+class AliasOverrideError(ValueError):
+    """Raised when an explicit ``--as`` alias is not a legal local alias.
+
+    Spec reference: ``specs/kanon-refinements.md`` Section 4.2 (``--as <alias>``
+    override; charset ``[A-Za-z0-9_]``, no ``__``) + CLAUDE.md Error Handling
+    Contract.
+
+    Args:
+        alias: The rejected ``--as`` value.
+        reason: A human-readable explanation of why the alias is illegal.
+    """
+
+    def __init__(self, alias: str, reason: str) -> None:
+        self.alias = alias
+        self.reason = reason
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"ERROR: invalid --as alias {self.alias!r}: {self.reason}\n"
+            "An alias may contain only [A-Za-z0-9_] and must not contain a"
+            " '__' run; pick a different --as value."
         )
 
 
@@ -274,6 +333,253 @@ def _split_name_spec(raw: str) -> tuple[str, str | None]:
     name = raw[:idx]
     spec = raw[idx + 1 :]
     return name, spec if spec else None
+
+
+def _sanitize_alias_fragment(value: str) -> str:
+    """Map an arbitrary string to the alias charset as a single fragment.
+
+    Implements the spec Section 4.2 / 5.1 ref-sanitization rule, applied to both
+    the source-repo suffix and the ref suffix: lowercase, replace every run of
+    one or more characters outside ``[A-Za-z0-9_]`` with a single ``_``, then
+    trim leading / trailing ``_``. The result never contains a ``__`` run.
+
+    Examples:
+        ``main`` -> ``main``;
+        ``>=0.1.0,<1.0.0`` -> ``0_1_0_1_0_0``;
+        ``caylent-private-kanon`` -> ``caylent_private_kanon``.
+
+    Args:
+        value: The raw fragment (a ref spec or a source-repo name).
+
+    Returns:
+        The sanitized alias fragment (possibly empty when ``value`` carried no
+        charset characters).
+    """
+    collapsed = _NON_ALIAS_CHARS_RE.sub("_", value.lower())
+    return collapsed.strip("_")
+
+
+def _source_repo_fragment(url: str) -> str:
+    """Return the sanitized source-repo name for the cross-source alias suffix.
+
+    Extracts the repository name from the catalog-source URL -- the last path
+    segment with any trailing ``.git`` removed -- and sanitizes it to the alias
+    charset (spec Section 4.2: ``caylent/caylent-private-kanon.git`` ->
+    ``caylent_private_kanon``). Both ``/`` (https/ssh/file) and ``:`` (SCP
+    shorthand ``git@host:org/repo``) are treated as path separators so the bare
+    repo name is isolated before sanitization.
+
+    Args:
+        url: The catalog-source URL (without the ``@<ref>`` suffix).
+
+    Returns:
+        The sanitized source-repo fragment for use as an alias suffix.
+    """
+    # Normalise both separators so the final segment is the repo name regardless
+    # of URL form. SCP shorthand (git@host:org/repo) uses ':' before the path.
+    tail = url.replace(":", "/").rstrip("/").rsplit("/", 1)[-1]
+    repo_name = tail.removesuffix(".git")
+    return _sanitize_alias_fragment(repo_name)
+
+
+def _validate_alias_override(alias: str) -> str:
+    """Validate an explicit ``--as`` override and return it unchanged.
+
+    Enforces the spec Section 4.2 alias charset: non-empty, only ``[A-Za-z0-9_]``,
+    and no ``__`` run. Fails fast with :class:`AliasOverrideError` (a no-silent
+    rejection) rather than silently sanitizing the operator's chosen alias.
+
+    Args:
+        alias: The raw ``--as`` value.
+
+    Returns:
+        The validated alias (identical to the input).
+
+    Raises:
+        AliasOverrideError: When the alias is empty, carries an out-of-charset
+            character, or contains a ``__`` run.
+    """
+    if not alias:
+        raise AliasOverrideError(alias, "the alias is empty")
+    if not _ALIAS_CHARSET_RE.fullmatch(alias):
+        raise AliasOverrideError(alias, "the alias contains a character outside [A-Za-z0-9_]")
+    if "__" in alias:
+        raise AliasOverrideError(alias, "the alias contains a '__' run")
+    return alias
+
+
+def _read_all_source_aliases(kanon_file: pathlib.Path) -> dict[str, tuple[str | None, str | None]]:
+    """Map every alias in the .kanon file to its ``(url, ref)`` coordinates.
+
+    Scans the destination file once for ``KANON_SOURCE_<alias>_URL`` and
+    ``KANON_SOURCE_<alias>_REF`` lines and groups them by alias. The returned
+    mapping is the authoritative set of already-taken aliases used by the
+    alias-resolution algorithm (so a colliding add can deterministically pick
+    the next free suffix). An alias appears in the mapping when it has at least
+    one block line; a missing ``_URL`` / ``_REF`` is recorded as ``None``.
+
+    Args:
+        kanon_file: Path to the .kanon file (may not exist).
+
+    Returns:
+        Ordered mapping ``alias -> (url, ref)`` for every alias present in the
+        file (insertion order = first-seen line order). Empty when the file is
+        absent or carries no source blocks.
+    """
+    aliases: dict[str, tuple[str | None, str | None]] = {}
+    if not kanon_file.exists():
+        return aliases
+
+    url_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_URL_SUFFIX)}=(.*)$")
+    ref_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_REF_SUFFIX)}=(.*)$")
+
+    for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        url_match = url_re.match(line)
+        if url_match:
+            alias = url_match.group(1)
+            prev_url, prev_ref = aliases.get(alias, (None, None))
+            aliases[alias] = (url_match.group(2), prev_ref)
+            continue
+        ref_match = ref_re.match(line)
+        if ref_match:
+            alias = ref_match.group(1)
+            prev_url, prev_ref = aliases.get(alias, (None, None))
+            aliases[alias] = (prev_url, ref_match.group(2))
+    return aliases
+
+
+def _alias_candidate_sequence(base_alias: str, entry_url: str, entry_ref: str) -> list[str]:
+    """Build the deterministic alias-candidate sequence for an entry.
+
+    Per spec Section 4.2 the first-added of two colliding entries keeps the bare
+    alias; each subsequent colliding add gets the sanitized source-repo suffix,
+    then the sanitized ref suffix if it still collides. This returns the ordered
+    candidates ``[base, base_repo, base_repo_ref]`` with empty sanitized
+    fragments skipped so a ``__`` run can never appear.
+
+    Args:
+        base_alias: The sanitized manifest name (``derive_source_name`` output).
+        entry_url: This entry's catalog-source URL (for the repo suffix).
+        entry_ref: This entry's verbatim ref spec (for the ref suffix).
+
+    Returns:
+        The ordered list of candidate aliases to try, most-bare first.
+    """
+    candidates = [base_alias]
+    repo_fragment = _source_repo_fragment(entry_url)
+    if repo_fragment:
+        with_repo = f"{base_alias}_{repo_fragment}"
+        candidates.append(with_repo)
+        ref_fragment = _sanitize_alias_fragment(entry_ref)
+        if ref_fragment:
+            candidates.append(f"{with_repo}_{ref_fragment}")
+    return candidates
+
+
+def _resolve_entry_alias(
+    existing: dict[str, tuple[str | None, str | None]],
+    base_alias: str,
+    entry_url: str,
+    entry_ref: str,
+    force: bool,
+) -> tuple[str, str]:
+    """Resolve the local alias for an auto-computed (no ``--as``) entry.
+
+    Walks the deterministic candidate sequence (spec Section 4.2). For each
+    candidate, in order:
+
+    - free (not in ``existing``) -> use it; mode ``"new"``.
+    - taken by the SAME url+ref -> this is a re-add of the existing package:
+      ``"duplicate"`` without ``--force`` (the caller errors with a diff and the
+      guiding message), or ``"force_overwrite"`` with ``--force``.
+    - taken by a DIFFERENT source (different url, or same url + different ref)
+      -> advance to the next candidate (cross-source / same-repo-different-ref
+      collision is auto-suffixed, never an error).
+
+    Args:
+        existing: The alias -> (url, ref) map from :func:`_read_all_source_aliases`.
+        base_alias: The sanitized manifest name.
+        entry_url: This entry's catalog-source URL.
+        entry_ref: This entry's verbatim ref spec.
+        force: The ``--force`` flag.
+
+    Returns:
+        A ``(alias, mode)`` tuple where mode is ``"new"``, ``"duplicate"``, or
+        ``"force_overwrite"``.
+
+    Raises:
+        SystemExit: When every candidate is exhausted (all taken by genuinely
+            different sources), which cannot be disambiguated automatically.
+    """
+    for candidate in _alias_candidate_sequence(base_alias, entry_url, entry_ref):
+        if candidate not in existing:
+            return candidate, "new"
+        existing_url, existing_ref = existing[candidate]
+        if existing_url == entry_url and existing_ref == entry_ref:
+            return candidate, ("force_overwrite" if force else "duplicate")
+        # Same alias, different source coordinates -> try the next suffix.
+    print(
+        f"ERROR: cannot auto-compute a unique alias for {entry_url}@{entry_ref}: "
+        f"every candidate alias ({base_alias} and its source-repo / ref suffixes) "
+        "is already mapped to a different source.\n"
+        "Pass --as <alias> to choose an explicit alias.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _resolve_override_alias(
+    existing: dict[str, tuple[str | None, str | None]],
+    alias: str,
+    entry_url: str,
+    entry_ref: str,
+    force: bool,
+) -> tuple[str, str]:
+    """Resolve the alias for an explicit ``--as`` override (spec Section 4.2).
+
+    Unlike the auto-compute path, an explicit ``--as`` alias is never suffixed:
+
+    - free -> use it; mode ``"new"``.
+    - taken by the SAME url+ref -> re-add of the existing package: ``"duplicate"``
+      without ``--force`` (the caller errors with a diff), ``"force_overwrite"``
+      with ``--force``.
+    - taken by a DIFFERENT source -> the ``--as`` alias is already taken: a hard
+      error without ``--force`` (no silent suffixing of an operator-chosen
+      alias), ``"force_overwrite"`` with ``--force`` (the operator's explicit
+      repoint).
+
+    Args:
+        existing: The alias -> (url, ref) map.
+        alias: The validated ``--as`` alias.
+        entry_url: This entry's catalog-source URL.
+        entry_ref: This entry's verbatim ref spec.
+        force: The ``--force`` flag.
+
+    Returns:
+        A ``(alias, mode)`` tuple where mode is ``"new"``, ``"duplicate"``, or
+        ``"force_overwrite"``.
+
+    Raises:
+        SystemExit: When the ``--as`` alias is already mapped to a different
+            source and ``--force`` is not set.
+    """
+    if alias not in existing:
+        return alias, "new"
+    existing_url, existing_ref = existing[alias]
+    if existing_url == entry_url and existing_ref == entry_ref:
+        return alias, ("force_overwrite" if force else "duplicate")
+    if force:
+        return alias, "force_overwrite"
+    print(
+        f"ERROR: --as alias '{alias}' is already mapped to {existing_url} "
+        f"(ref {existing_ref}); it cannot be reused for {entry_url} "
+        f"(ref {entry_ref}).\n"
+        f"Pick a different --as alias, use --force to overwrite, or "
+        f"'kanon remove {alias}' first.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _build_source_block_lines(
@@ -621,47 +927,48 @@ def _read_existing_source_block(
     return url, ref, path
 
 
-def _check_against_existing_blocks(
+def _emit_same_name_guard_error(
     kanon_file: pathlib.Path,
     source_name: str,
     new_url: str,
     new_ref: str,
     new_path: str,
-    force: bool,
 ) -> None:
-    """Detect a collision between the alias and an existing block in the file.
+    """Fail fast on a re-add of an existing package (the same-NAME guard).
 
-    Per spec Section 4.2 pre-flight paragraph: if the destination .kanon file
-    already contains any KANON_SOURCE_<alias>_* line, and --force is not set,
-    print the spec-canonical error message and exit non-zero.
+    Reached when the resolved alias is already mapped to the SAME source@ref
+    (spec Section 4.2 "re-add of existing package"). Prints the canonical error,
+    a unified-style diff of the existing block against the requested block, and
+    the guiding remediation message, then exits non-zero. A cross-source
+    collision never reaches this guard: it is auto-suffixed to a fresh alias by
+    :func:`_resolve_entry_alias`.
 
     Args:
-        kanon_file: Path to the .kanon file (may not exist).
-        source_name: The local alias (output of derive_source_name).
+        kanon_file: Path to the .kanon file (must contain the alias block).
+        source_name: The resolved local alias that collides.
         new_url: Requested manifest repo URL.
         new_ref: Requested verbatim ref spec.
         new_path: Requested repo-relative XML path.
-        force: When True, collision is permitted (no error).
 
     Raises:
-        SystemExit: When the alias already has a block and force is False.
+        SystemExit: Always (exit code 1).
     """
-    if force:
-        return
-
     existing_url, existing_ref, existing_path = _read_existing_source_block(kanon_file, source_name)
-
-    if existing_url is None and existing_ref is None and existing_path is None:
-        return
-
-    # At least one line exists -- collision detected.
+    prefix = f"{SOURCE_PREFIX}{source_name}"
+    diff_lines = [
+        f"-{prefix}{SOURCE_URL_SUFFIX}={existing_url}",
+        f"-{prefix}{SOURCE_REF_SUFFIX}={existing_ref}",
+        f"-{prefix}{SOURCE_PATH_SUFFIX}={existing_path}",
+        f"+{prefix}{SOURCE_URL_SUFFIX}={new_url}",
+        f"+{prefix}{SOURCE_REF_SUFFIX}={new_ref}",
+        f"+{prefix}{SOURCE_PATH_SUFFIX}={new_path}",
+    ]
     print(
-        f"ERROR: source alias '{source_name}' already mapped to "
-        f"{existing_url}/{existing_path} "
-        f"(ref {existing_ref}); requested mapping is "
-        f"{new_url}/{new_path} (ref {new_ref}).\n"
-        "Use --force to overwrite, or 'kanon remove "
-        f"{source_name}' first.",
+        f"ERROR: source alias '{source_name}' is already mapped to "
+        f"{existing_url}/{existing_path} (ref {existing_ref}); this is a re-add "
+        "of an existing package.\n" + "\n".join(diff_lines) + "\n"
+        f"Use --force to overwrite and re-pin its lock entry, or "
+        f"'kanon remove {source_name}' first.",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -711,6 +1018,79 @@ def _overwrite_source_block(
     dest.write_text("".join(result), encoding="utf-8")
 
     print(f"Overwrote {_source_block_key_names(source_name)} in {dest}")
+
+
+# ---------------------------------------------------------------------------
+# Lock re-pin helper (spec Section 4.2: --force re-pins the alias lock entry)
+# ---------------------------------------------------------------------------
+
+
+def _repin_lock_entry(
+    kanon_file: pathlib.Path,
+    alias: str,
+    url: str,
+    ref_spec: str,
+) -> None:
+    """Re-pin the ``alias`` lock entry after a ``--force`` overwrite.
+
+    When a ``.kanon.lock`` exists and already carries a ``[[sources]]`` entry for
+    ``alias``, the entry's ``url`` / ``ref_spec`` / ``resolved_ref`` /
+    ``resolved_sha`` are re-resolved against the new source coordinates while its
+    ``name`` (the dep's manifest NAME) is preserved (spec Section 4.2: an
+    overwrite keeps the dep's NAME; repointing to a different manifest is
+    ``remove`` + ``add``). The lockfile's ``kanon_hash`` is recomputed from the
+    just-overwritten ``.kanon`` so the lock does not drift from ``.kanon``.
+
+    The function is a deliberate no-op (returns without touching the lock) when
+    no lockfile exists or the lockfile carries no entry for ``alias``: ``add``
+    never manufactures a lock from scratch (that is ``install``'s role); it only
+    re-pins an already-locked alias.
+
+    Args:
+        kanon_file: Path to the ``.kanon`` file (its sibling lock is derived).
+        alias: The local alias whose lock entry is re-pinned.
+        url: The new manifest repo URL for the alias.
+        ref_spec: The new verbatim ref spec recorded as ``ref_spec``.
+
+    Raises:
+        SystemExit: When the new ref cannot be resolved to a SHA on the remote
+            (fail fast; the overwritten ``.kanon`` and the lock would otherwise
+            drift silently).
+    """
+    lock_path = derive_lock_file_path(
+        kanon_file,
+        cli_lock_file=None,
+        env_lock_file=os.environ.get(KANON_LOCK_FILE),
+    )
+    lockfile = read_lockfile_if_present(lock_path)
+    if lockfile is None:
+        return
+
+    target = next((entry for entry in lockfile.sources if entry.alias == alias), None)
+    if target is None:
+        return
+
+    try:
+        resolution = _resolve_ref_to_sha(url, ref_spec)
+    except ValueError as exc:
+        print(
+            f"ERROR: cannot re-pin lock entry for alias '{alias}': {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Re-pin the source coordinates; keep the dep's manifest NAME unchanged.
+    target.url = url
+    target.ref_spec = ref_spec
+    target.resolved_ref = resolution.resolved_ref
+    target.resolved_sha = resolution.sha
+
+    # Recompute the kanon_hash from the just-overwritten .kanon so .kanon and
+    # .kanon.lock stay consistent (the validate-lockfile drift check, FR-24).
+    lockfile.kanon_hash = kanon_hash(kanon_file)
+
+    write_lockfile(lockfile, lock_path)
+    print(f"Re-pinned lock entry for alias '{alias}' in {lock_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -801,8 +1181,15 @@ def run_add(args: argparse.Namespace) -> int:
     When --dry-run is set, prints the diff that would be applied and exits 0
     without modifying any file.
 
-    When --force is set, an existing KANON_SOURCE_<alias>_* block is
-    overwritten rather than treated as a hard error.
+    Alias keying (FR-6, spec Section 4.2): each entry's local alias is the
+    sanitized manifest name. A cross-source collision (the bare alias already
+    maps to a different source / ref) auto-suffixes deterministically -- the
+    sanitized source-repo name, then the sanitized ref -- so re-reading the
+    committed .kanon reproduces the same aliases. ``--as <alias>`` overrides the
+    auto-computed alias for the (single) entry. A re-add of the same alias at
+    the same source@ref is a true duplicate: a hard error (with a diff and the
+    guiding message) without ``--force``; with ``--force`` the block is
+    overwritten and its lock entry re-pinned while keeping the dep's ``NAME``.
 
     Args:
         args: Parsed argument namespace from argparse.
@@ -821,6 +1208,25 @@ def run_add(args: argparse.Namespace) -> int:
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
+    alias_override: str | None = getattr(args, "alias_override", None)
+
+    # An --as override targets a single alias; rejecting the multi-entry case up
+    # front (fail fast) avoids silently aliasing only one of several entries.
+    if alias_override is not None and len(args.entries) != 1:
+        print(
+            "ERROR: --as <alias> overrides the alias for a single entry; "
+            f"{len(args.entries)} entries were requested.\n"
+            "Run a separate 'kanon add <entry> --as <alias>' per overridden entry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if alias_override is not None:
+        try:
+            alias_override = _validate_alias_override(alias_override)
+        except AliasOverrideError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
 
     # Validate that a GITBASE org base is derivable from the catalog-source URL
     # early (before any file writes) so a malformed URL fails fast before cloning
@@ -836,6 +1242,8 @@ def run_add(args: argparse.Namespace) -> int:
         sys.exit(1)
 
     # Pre-flight: within-request collision detection (before any catalog work).
+    # add is single-source per invocation, so two entries normalising to the
+    # same manifest name from the one source are a genuine duplicate request.
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
     _check_within_request_collisions(raw_names)
 
@@ -845,11 +1253,16 @@ def run_add(args: argparse.Namespace) -> int:
     # Step 2: Build entry catalog (hard-errors on soft-spot rule 1 / 3 violations).
     catalog = _build_entry_catalog(manifest_root, url)
 
-    # Step 3-4: Resolution phase -- resolve every entry and run against-existing
-    # collision detection BEFORE any file write. This ensures that if any entry
-    # fails (e.g. zero PEP 440-valid tags, unknown entry name, collision), the
-    # destination .kanon file is not modified at all (AC-FUNC-004).
-    resolved_entries: list[tuple[str, str, list[str]]] = []
+    # Step 3-4: Resolution phase -- resolve every entry, compute its deterministic
+    # alias, and run the same-NAME guard BEFORE any file write. This ensures that
+    # if any entry fails (zero PEP 440-valid tags, unknown name, --as taken, or a
+    # re-add without --force), the destination .kanon is not modified at all
+    # (AC-FUNC-004). The ``existing`` alias map seeds from the committed .kanon
+    # and is updated per resolved entry so two entries in one invocation also
+    # auto-suffix deterministically.
+    existing_aliases = _read_all_source_aliases(kanon_file)
+    # Each resolved entry: (alias, mode, entry_url, lock_ref_spec, lines).
+    resolved_entries: list[tuple[str, str, str, str, list[str]]] = []
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
 
@@ -857,7 +1270,10 @@ def run_add(args: argparse.Namespace) -> int:
 
         resolved_revision = _resolve_spec(entry_url, spec)
 
-        source_name = derive_source_name(metadata.name)
+        base_alias = derive_source_name(metadata.name)
+        # The lock ref-spec records the operator's intent (the verbatim spec when
+        # supplied), falling back to the auto-resolved revision for the bare add.
+        lock_ref_spec = spec if spec is not None else resolved_revision
 
         rel_path = _xml_repo_relative_path(manifest_root, xml_path)
 
@@ -869,8 +1285,24 @@ def run_add(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
+        if alias_override is not None:
+            alias, mode = _resolve_override_alias(existing_aliases, alias_override, entry_url, resolved_revision, force)
+        else:
+            alias, mode = _resolve_entry_alias(existing_aliases, base_alias, entry_url, resolved_revision, force)
+
+        if mode == "duplicate":
+            # Re-add of the existing package at the same source@ref without
+            # --force: fail fast with a diff and the guiding message.
+            _emit_same_name_guard_error(
+                kanon_file=kanon_file,
+                source_name=alias,
+                new_url=entry_url,
+                new_ref=lock_ref_spec,
+                new_path=rel_path,
+            )
+
         lines = _build_source_block_lines(
-            source_name=source_name,
+            source_name=alias,
             url=entry_url,
             ref=resolved_revision,
             path=rel_path,
@@ -878,37 +1310,20 @@ def run_add(args: argparse.Namespace) -> int:
             gitbase=entry_gitbase,
         )
 
-        # Against-existing collision detection (runs for both normal and dry-run paths).
-        # Use the user's original version spec in the collision message so the
-        # error shows intent (e.g. "==2.0.0") rather than the resolved git ref
-        # (e.g. "refs/tags/v2.0.0").  When the user gave no explicit spec
-        # (spec is None), the resolved_revision is the auto-selected latest
-        # version and is the most informative value to display.
-        # Canonical fixture: tests/fixtures/errors/source-collision.txt.
-        # Spec section: spec/kanon-list-add-lock-features-spec.md Section 4.0.
-        _check_against_existing_blocks(
-            kanon_file=kanon_file,
-            source_name=source_name,
-            new_url=entry_url,
-            new_ref=spec if spec is not None else resolved_revision,
-            new_path=rel_path,
-            force=force,
-        )
-
-        resolved_entries.append((source_name, rel_path, lines))
+        # Record the resolved alias so a later entry in this same invocation
+        # auto-suffixes against it (deterministic within-request collision).
+        existing_aliases[alias] = (entry_url, resolved_revision)
+        resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines))
 
     # Step 5: Write phase -- all entries resolved successfully; now write to disk.
     # For --dry-run: print diffs without any file modification (no lock needed).
-    # For normal runs: acquire the workspace lock, then append/overwrite each
-    # alias block in argument order. No standard-header is written (spec Section
-    # 5.1): _append_source_block creates the file when absent.
     if dry_run:
-        for source_name, _rel_path, lines in resolved_entries:
+        for alias, mode, _entry_url, _lock_ref_spec, lines in resolved_entries:
             _render_dry_run_diff(
                 dest=kanon_file,
-                source_name=source_name,
+                source_name=alias,
                 lines=lines,
-                force=force,
+                force=(mode == "force_overwrite"),
             )
         return 0
 
@@ -917,26 +1332,27 @@ def run_add(args: argparse.Namespace) -> int:
     # half-written .kanon file.
     workspace_root = kanon_file.resolve().parent
     with kanon_workspace_lock(workspace_root):
-        for source_name, _rel_path, lines in resolved_entries:
-            if force and kanon_file.exists():
-                # Check whether an existing block is present; if so, overwrite it.
-                existing_url, _, _ = _read_existing_source_block(kanon_file, source_name)
-                if existing_url is not None:
-                    _overwrite_source_block(
-                        dest=kanon_file,
-                        source_name=source_name,
-                        lines=lines,
-                    )
-                else:
-                    _append_source_block(
-                        dest=kanon_file,
-                        source_name=source_name,
-                        lines=lines,
-                    )
+        for alias, mode, entry_url, lock_ref_spec, lines in resolved_entries:
+            if mode == "force_overwrite":
+                _overwrite_source_block(
+                    dest=kanon_file,
+                    source_name=alias,
+                    lines=lines,
+                )
+                # Re-pin the alias's lock entry (keeping its NAME) so .kanon and
+                # .kanon.lock do not drift after a --force overwrite (spec
+                # Section 4.2). No-op when no .kanon.lock exists or the alias is
+                # absent from it.
+                _repin_lock_entry(
+                    kanon_file=kanon_file,
+                    alias=alias,
+                    url=entry_url,
+                    ref_spec=lock_ref_spec,
+                )
             else:
                 _append_source_block(
                     dest=kanon_file,
-                    source_name=source_name,
+                    source_name=alias,
                     lines=lines,
                 )
 

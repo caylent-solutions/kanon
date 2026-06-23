@@ -116,18 +116,26 @@ _shtab_kanon___resolve_entry_to_repo_url_defaults_added=0
 _shtab_kanon_add_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
   "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
+  "--as[Override the auto-computed local alias for the (single) added
+entry. The alias charset is \[A-Za-z0-9_\] with no \'__\' run. When
+the alias is already mapped to a different source it is a hard
+error (use --force to overwrite, or \'kanon remove \<alias\>\'
+first). Without --as, the alias is the sanitized manifest name,
+auto-suffixed deterministically on a cross-source collision.]:alias_override:"
   "--kanon-file[Destination .kanon file path. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
-  "--force[Overwrite an existing KANON_SOURCE_\<name\>_\* block in the
-destination .kanon file. Without this flag, any collision
-between a requested source name and an existing block is a
-hard error. Collision detection pre-flight runs before any
-write whether or not --force is set.]"
+  "--force[Overwrite an existing alias block when re-adding the same
+package (same source\@ref), and re-pin its .kanon.lock entry
+while keeping the dep\'s NAME. Without this flag, a re-add of an
+existing alias is a hard error (with a diff and the guiding
+message). A cross-source collision (a different source for the
+same manifest name) is auto-suffixed deterministically and is
+never an error, with or without --force.]"
   "--dry-run[Print the diff that WOULD be written to the destination
-.kanon file (\'\+\' for added lines, \'-\' for removed lines
-under --force). Makes no on-disk change. Exits 0. Collision
-detection pre-flight still runs, so within-request and
-against-existing collisions are reported before a diff is
-shown (unless --force is also passed).]"
+.kanon file (\'\+\' for added lines, \'-\' for removed lines when a
+--force overwrite replaces an existing block). Makes no on-disk
+change. Exits 0. Alias resolution still runs first, so a
+within-request duplicate or a re-add of an existing alias
+(without --force) is reported before any diff is shown.]"
   "(*):One or more catalog entry names, optionally suffixed with \'\@\<spec\>\':"
 )
 

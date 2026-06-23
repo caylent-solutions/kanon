@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: help install install-dev lint lint-check lint-markdown format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -17,6 +17,9 @@ lint: lint-check format-check ## Run all lint checks (ruff check + ruff format -
 
 lint-check: ## Lint Python files (ruff check)
 	ruff check .
+
+lint-markdown: ## Lint kanon's own Markdown under docs/ and README.md (pymarkdownlnt, config in [tool.pymarkdown]: MD013 off, MD024 siblings_only; vendored docs/repo/ excluded)
+	uv run pymarkdownlnt scan -r -e 'docs/repo/*' docs/ README.md
 
 format: ## Auto-format Python files (ruff format)
 	ruff format .

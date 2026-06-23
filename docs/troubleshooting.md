@@ -714,7 +714,7 @@ Remediation:
 ```
 
 For two or more orphaned entries (N >= 2, names are sorted alphabetically and
-joined by `, `):
+joined by `,`):
 
 ```text
 ERROR: 2 orphaned lockfile entries: alpha, beta

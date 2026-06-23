@@ -63,7 +63,7 @@ The effective catalog source is resolved by
 When all four layers return no value, `kanon install` exits with a
 non-zero code and the canonical error:
 
-```
+```text
 ERROR: install requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>

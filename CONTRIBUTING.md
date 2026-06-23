@@ -142,6 +142,13 @@ Integration tests live in `tests/integration` and verify modules load and run en
 make test-integration
 ```
 
+Some integration fixtures `git init` fresh repos and reference them as `@main`,
+so your environment must set `git config --global init.defaultBranch main`
+before running them. See the "Test prerequisites" section in
+[docs/integration-testing.md](docs/integration-testing.md) for the full
+explanation. CI sets this automatically via `.github/actions/setup-kanon`, and
+the kanon devcontainer sets it in its postcreate script.
+
 ### Functional Tests
 
 Functional tests are located in the `tests/functional` directory. They test the CLI commands as used by actual users.

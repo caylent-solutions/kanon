@@ -125,8 +125,19 @@ dev = [
     "build>=1.4.3",
     "hatchling>=1.29.0",
     "mypy>=1.0.0",
+    "pymarkdownlnt>=0.9.38",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "types-defusedxml>=0.7.0",
     "yamllint>=1.38.0",
 ]
+
+# Markdown lint configuration consumed by `make lint-markdown` (pymarkdownlnt).
+# Mirrors the committed .markdownlint.json posture so the two linters agree:
+#   MD013 (line-length) is not enforced; MD024 (duplicate headings) is
+#   restricted to sibling headings only. No other rule is disabled.
+[tool.pymarkdown.plugins.md013]
+enabled = false
+
+[tool.pymarkdown.plugins.md024]
+siblings_only = true

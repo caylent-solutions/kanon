@@ -18,7 +18,7 @@ coupling across all sub-commands.
 
 Adds the `--catalog-source` flag to `parser`.
 
-```
+```text
 --catalog-source <git-url>@<ref>
 ```
 
@@ -57,7 +57,7 @@ automatically to every sub-command.
 
 Emit a shell completion script for kanon to stdout.
 
-```
+```bash
 kanon completion <shell>
 ```
 
@@ -104,7 +104,7 @@ Compare installed sources against the catalog and report which are behind.
 Reads the `.kanon` file, resolves the catalog, and emits one row per
 `KANON_SOURCE_<name>_*` block containing:
 
-```
+```text
 name | current | latest-matching-spec | latest-available | upgrade-type
 ```
 
@@ -180,7 +180,7 @@ pinned to that exact commit. All three of `current`, `latest-matching-spec`, and
 
 **Flags:**
 
-```
+```bash
 kanon outdated [--catalog-source <git-url>@<ref>]
                [--kanon-file <path>]
                [--lock-file <path>]
@@ -307,7 +307,7 @@ every node already has its resolved SHA).
    If the argument matches in two or more categories, the command exits non-zero with
    an error listing every matching interpretation (category name + matched value):
 
-   ```
+   ```text
    ERROR: argument 'Repo-Specs-Foo' is ambiguous -- matches multiple categories:
    XML manifest path 'Repo-Specs-Foo'; source name 'REPO_SPECS_FOO'.
    Pass the argument in its canonical form to disambiguate ...
@@ -319,7 +319,7 @@ every node already has its resolved SHA).
 
 5. For every chain in the tree passing through the matched node, print one line:
 
-   ```
+   ```text
    <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
    ```
 
@@ -335,7 +335,7 @@ every node already has its resolved SHA).
 
    When at least one candidate is within the threshold:
 
-   ```
+   ```text
    ERROR: fooo not found in resolved tree
    Did you mean one of:
      foo
@@ -344,7 +344,7 @@ every node already has its resolved SHA).
 
    When no candidate is within the threshold:
 
-   ```
+   ```text
    ERROR: xyzzy not found in resolved tree
    No close matches found.
    ```
@@ -434,7 +434,7 @@ The `--catalog-source` flag on this command is registered by
 Filter the historical-versions walker to only include versions that satisfy
 the given PEP 440 constraint. Used with `--all-versions`.
 
-```
+```bash
 kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source <url>@<ref>
 ```
 
@@ -458,7 +458,7 @@ deprecation message to stderr and exits with code `3`
 
 Use the replacement commands instead:
 
-```
+```bash
 kanon list --catalog-source <git-url>@<ref>      # search the catalog
 kanon add <entry> --catalog-source <git-url>@<ref>   # add an entry to .kanon
 kanon install                                    # fetch added entries

@@ -175,7 +175,7 @@ resulting file state.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_remove_*.py -v
 ```
 
@@ -251,7 +251,7 @@ declarations.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_install_*.py -v
 ```
 
@@ -326,7 +326,7 @@ real-catalog R002 content defects.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_catalog_audit_*.py tests/unit/test_catalog_audit_*.py -v
 ```
 
@@ -397,7 +397,7 @@ test was required per spec §4 E46.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_validate_xml.py tests/integration/test_validate_marketplace.py tests/integration/test_validate_metadata.py tests/integration/test_completion_bash.py tests/integration/test_completion_zsh.py -v
 ```
 
@@ -482,7 +482,7 @@ new multi-step test was required because:
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_install_*.py tests/integration/test_add_*.py tests/integration/test_remove_*.py tests/integration/test_full_lifecycle_synthetic.py tests/scenarios/ -v
 ```
 

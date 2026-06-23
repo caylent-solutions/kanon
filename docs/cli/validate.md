@@ -4,13 +4,13 @@ Validate manifest XML files and catalog metadata without network access.
 
 ## Synopsis
 
-```
+```bash
 kanon [--no-color] validate <target>
 ```
 
 ### Targets
 
-```
+```bash
 kanon validate xml        [--repo-root <path>]
 kanon validate marketplace [--repo-root <path>]
 kanon validate metadata   [--repo-root <path>] [--format {text,json}]
@@ -136,7 +136,7 @@ No git operations are performed. No `git ls-remote` calls. No cloning.
 
 `text` (default): one finding per line with `ERROR:`, `WARN:`, or `INFO:` prefix:
 
-```
+```text
 ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace.
 WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name.
 ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/a.xml, /path/b.xml.

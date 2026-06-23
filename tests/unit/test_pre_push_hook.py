@@ -294,3 +294,93 @@ def test_makefile_has_security_scan_target():
     assert "security-scan:" in content, (
         f"Makefile must have a 'security-scan' target. Makefile content (first 500 chars):\n{content[:500]}"
     )
+
+
+def _makefile_recipe(target: str) -> str:
+    """Return the recipe (tab-indented body) of a Makefile target.
+
+    Given a target name such as 'lint-markdown', collect every recipe line
+    (lines beginning with a tab) that follows the 'target:' declaration up to
+    the next non-indented, non-blank line.
+    """
+    lines = _makefile_content().splitlines()
+    target_idx = next(
+        (i for i, line in enumerate(lines) if line.startswith(f"{target}:")),
+        None,
+    )
+    assert target_idx is not None, f"Makefile must declare a '{target}' target"
+    recipe_lines = []
+    for line in lines[target_idx + 1 :]:
+        if line.startswith("\t"):
+            recipe_lines.append(line)
+        elif line.strip() and not line.startswith("\t"):
+            break
+    return "\n".join(recipe_lines)
+
+
+@pytest.mark.unit
+def test_makefile_has_lint_markdown_target():
+    """Validate that the Makefile exposes a 'lint-markdown' target.
+
+    Given: The project Makefile
+    When: Its contents are inspected
+    Then: A 'lint-markdown' target is declared
+
+    AC-LINT-MD-1
+    """
+    content = _makefile_content()
+    assert "lint-markdown:" in content, f"Makefile must declare a 'lint-markdown' target. Makefile content:\n{content}"
+
+
+@pytest.mark.unit
+def test_makefile_lint_markdown_is_phony():
+    """Validate that 'lint-markdown' is registered in the Makefile .PHONY list.
+
+    Given: The project Makefile
+    When: The .PHONY declaration is inspected
+    Then: 'lint-markdown' appears as a space-delimited token on a .PHONY line
+
+    AC-LINT-MD-1
+    """
+    phony_targets: list[str] = []
+    for line in _makefile_content().splitlines():
+        if line.startswith(".PHONY:"):
+            phony_targets.extend(line[len(".PHONY:") :].split())
+    assert "lint-markdown" in phony_targets, (
+        f"Makefile .PHONY declaration must include 'lint-markdown'. .PHONY tokens: {phony_targets}"
+    )
+
+
+@pytest.mark.unit
+def test_makefile_lint_markdown_recipe_scans_docs_and_readme():
+    """Validate that the 'lint-markdown' recipe runs pymarkdownlnt over docs/ and README.md.
+
+    Given: The project Makefile with a 'lint-markdown' target
+    When: The target's recipe is inspected
+    Then: It invokes pymarkdownlnt scanning both the docs/ tree and README.md
+
+    AC-LINT-MD-1, AC-LINT-MD-2
+    """
+    recipe = _makefile_recipe("lint-markdown")
+    assert "pymarkdownlnt" in recipe, f"lint-markdown recipe must invoke pymarkdownlnt. Recipe:\n{recipe}"
+    assert "docs/" in recipe, f"lint-markdown recipe must scan the docs/ tree. Recipe:\n{recipe}"
+    assert "README.md" in recipe, f"lint-markdown recipe must scan README.md. Recipe:\n{recipe}"
+
+
+@pytest.mark.unit
+def test_makefile_lint_markdown_excludes_vendored_repo_docs():
+    """Validate that the 'lint-markdown' recipe excludes the vendored docs/repo/ tree.
+
+    Given: The project Makefile with a 'lint-markdown' target
+    When: The target's recipe is inspected
+    Then: It passes pymarkdownlnt's --exclude (-e) option scoped to docs/repo/ so
+          the embedded upstream repo-tool docs are not linted by kanon's gate
+          (correct scoping of vendored content, not a rule disable)
+
+    AC-LINT-MD-1, AC-LINT-MD-4
+    """
+    recipe = _makefile_recipe("lint-markdown")
+    assert "docs/repo/" in recipe, f"lint-markdown recipe must exclude the vendored docs/repo/ tree. Recipe:\n{recipe}"
+    assert "-e" in recipe.split() or "--exclude" in recipe, (
+        f"lint-markdown recipe must use pymarkdownlnt's -e/--exclude option to scope out docs/repo/. Recipe:\n{recipe}"
+    )

@@ -73,7 +73,7 @@ If a test file outside `tests/fixtures/` must reference a provider-specific
 token (e.g., to verify that kanon correctly rejects a provider URL in input),
 add an exemption line to `tests/integration/provider_allowlist.txt`:
 
-```
+```text
 <repo-relative-path>:<justification>
 ```
 
@@ -95,7 +95,7 @@ source files under `src/kanon_cli/` MUST NOT appear in the allowlist.
 
 ### Example allowlist entry
 
-```
+```text
 tests/integration/test_url_rejection.py:Contains sample provider URLs in assertions that verify kanon rejects non-git provider REST endpoints; this is a negative test, not a production call.
 ```
 

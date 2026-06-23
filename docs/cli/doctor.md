@@ -4,7 +4,7 @@ Run workspace health checks against the current project directory.
 
 ## Synopsis
 
-```
+```bash
 kanon [--no-color] doctor [--kanon-file <path>] [--lock-file <path>] [--strict-drift] [--refresh-completion-cache] [--prune-cache] [--catalog-source <git-url>@<ref>]
 ```
 
@@ -75,14 +75,16 @@ Verifies that the `.kanon` file exists at the expected path and that a
 `.kanon.lock` lockfile is present.
 
 **Error when .kanon is absent (exit 1):**
-```
+
+```text
 ERROR: no kanon workspace in <cwd>: '.kanon' not found
   Remediation: Run 'kanon add ...' to create a .kanon file, or 'cd' to a
   directory that contains one.
 ```
 
 **Info notice when .kanon.lock is absent (exit 0):**
-```
+
+```text
 INFO: No lockfile present; run `kanon install` to generate one.
   Remediation: kanon install
 ```
@@ -98,7 +100,8 @@ indicates the `.kanon` file was edited directly after the last
 `kanon install` run.
 
 **Error (exit 1):**
-```
+
+```text
 ERROR: kanon_hash mismatch: .kanon was hand-edited since the last 'kanon install'.
   Remediation: Run 'kanon install --refresh-lock' to rebuild the lockfile.
 ```
@@ -112,7 +115,8 @@ A source present in the lockfile but absent from `.kanon` is an orphan
 `kanon install`).
 
 **Error per orphan (exit 1):**
-```
+
+```text
 ERROR: orphan lock entry: source 'X' is in .kanon.lock but absent from .kanon
   Remediation: Run 'kanon install' to prune (or 'kanon install --strict-lock'
   to keep the lockfile authoritative).
@@ -126,13 +130,15 @@ For every lockfile entry whose `revision_spec` resolves to a branch name
 the current branch tip SHA with the locked SHA.
 
 Without `--strict-drift`, drift is reported as an info notice (exit 0):
-```
+
+```text
 INFO: branch drift: source 'X' is locked to <old-sha> but 'main' is now at <new-sha>
   Remediation: Run 'kanon install --refresh-lock' to update the lockfile.
 ```
 
 With `--strict-drift`, drift is reported as an error (exit 1):
-```
+
+```text
 ERROR: branch drift: source 'X' is locked to <old-sha> but 'main' is now at <new-sha>
   Remediation: Run 'kanon install --refresh-lock' to update the lockfile.
 ```
@@ -148,7 +154,8 @@ Branch-pinned sources are skipped by this check (they are handled by
 subcheck 4 instead).
 
 **Error (exit 1):**
-```
+
+```text
 ERROR: dangling SHA: <sha> is no longer reachable from <url>; the remote
 may have force-pushed or pruned the commit.
   Remediation: Run 'kanon install --refresh-lock' to rebuild.
@@ -175,24 +182,26 @@ profile into an unrelated workspace (see spec Section 3.6).
 **Output printed to stdout:**
 
 When a source is configured (examples for each precedence level):
-```
+
+```text
 Effective catalog source: https://example.com/org/catalog.git@main (from --catalog-source CLI flag)
 Effective catalog source: https://example.com/org/catalog.git@main (from KANON_CATALOG_SOURCE env var)
 Effective catalog source: https://example.com/org/catalog.git@main (from .kanon.lock [catalog].source)
 ```
 
 When no source is configured (exit 0, but commands that need a catalog will fail):
-```
+
+```text
 Effective catalog source: (none configured); commands requiring a catalog source will fail.
 ```
 
-**Example: detecting a leaked env var**
+#### Example: detecting a leaked env var
 
 An operator has `KANON_CATALOG_SOURCE=https://corp.example.com/infra-catalog.git@main` in
 their `.bashrc`, exported globally. They `cd` into an unrelated project and run
 `kanon install`. To check before installing:
 
-```
+```text
 $ kanon doctor
 ...
 Effective catalog source: https://corp.example.com/infra-catalog.git@main (from KANON_CATALOG_SOURCE env var)
@@ -203,7 +212,7 @@ the catalog source comes from the environment, not from a local CLI flag or the
 project's lockfile. The operator can then unset the variable before running any
 side-effecting command:
 
-```
+```text
 $ unset KANON_CATALOG_SOURCE
 $ kanon doctor
 ...
@@ -224,7 +233,8 @@ scratch.
 This subcheck runs BEFORE subchecks 1-5, 7, 9, 10, and 11.
 
 **Info finding after refresh:**
-```
+
+```text
 INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.cache/kanon/completion-cache
 ```
 
@@ -240,12 +250,14 @@ completion callback failures (see E7 / `docs/shell-completions.md`).
 If `KANON_CACHE_DIR` is not set, this subcheck is silently skipped.
 
 **Info notice when the log is absent or empty:**
-```
+
+```text
 INFO: no completion errors recorded
 ```
 
 **Warning when recent errors are present:**
-```
+
+```text
 WARN: Recent completion errors (5):
 2026-01-01T12:00:00Z __complete_catalog_entries ValueError: empty response
 2026-01-01T12:00:01Z __complete_source_names FileNotFoundError: .kanon not found
@@ -278,13 +290,15 @@ When a static script's hash matches the freshly generated output, no finding
 is emitted for that shell.
 
 **Warning when a bash script is stale (exit 0 -- warn is not error):**
-```
+
+```text
 WARN: Stale bash completion script: /home/user/.local/share/bash-completion/completions/kanon does not match the output of 'kanon completion bash'. Re-run 'kanon completion bash > /home/user/.local/share/bash-completion/completions/kanon' to update it.
   Remediation: kanon completion bash > /home/user/.local/share/bash-completion/completions/kanon
 ```
 
 **Warning when a zsh script is stale:**
-```
+
+```text
 WARN: Stale zsh completion script: /home/user/.zsh/completions/_kanon does not match the output of 'kanon completion zsh'. Re-run 'kanon completion zsh > /home/user/.zsh/completions/_kanon' to update it.
   Remediation: kanon completion zsh > /home/user/.zsh/completions/_kanon
 ```
@@ -319,12 +333,14 @@ the operator can investigate (missing SSH key, unconfigured credential helper,
 network outage, repository moved) without blocking a workspace check.
 
 **Warning when a remote is unreachable (exit 0):**
-```
+
+```text
 WARN: remote unreachable: https://example.com/org/repo (exit code 128); stderr: repository not found
   Remediation: Check network access and git credentials for https://example.com/org/repo. See docs/git-auth-setup.md for SSH key and credential helper setup.
 ```
 
 The warning includes:
+
 - The canonicalized URL (`.git` suffix and user-info stripped).
 - The exit code returned by `git ls-remote --exit-code`.
 - The first line of stderr, truncated at `KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS`
@@ -338,7 +354,7 @@ Auth-error patterns matching `GIT_AUTH_ERROR_PATTERNS` (e.g., `Permission denied
 produce the same warning finding. The operator should configure their SSH agent
 or credential helper before re-running:
 
-```
+```text
 WARN: remote unreachable: https://github.com/org/repo (exit code 128); stderr: Permission denied (publickey).
   Remediation: Check network access and git credentials for https://github.com/org/repo. See docs/git-auth-setup.md for SSH key and credential helper setup.
 ```
@@ -366,12 +382,14 @@ This subcheck runs BEFORE subchecks 1-5, 7, 9, and 11, and AFTER subcheck 8
 when both flags are combined.
 
 **Info finding after pruning 2 files totalling 4096 bytes:**
-```
+
+```text
 INFO: Cache pruned: 2 file(s) removed (4096 bytes) with atime older than 30 days
 ```
 
 **Advisory finding for a stale install lock:**
-```
+
+```text
 INFO: Advisory: stale install lock found at /path/to/.kanon-data/.kanon-install.lock (mtime older than 1h). fcntl.flock self-cleans on process exit; this file is harmless.
 ```
 
@@ -379,9 +397,11 @@ When `KANON_CACHE_DIR` is not set, only the stale-lock scan runs; no cache
 files are pruned.
 
 **Combining both flags:**
-```
+
+```bash
 kanon doctor --refresh-completion-cache --prune-cache
 ```
+
 Refresh runs first (subcheck 8), then prune runs (subcheck 10). Both findings
 are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 
@@ -412,53 +432,62 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 ## Examples
 
 Run all health checks against the default `.kanon` file:
-```
+
+```bash
 kanon doctor
 ```
 
 Promote branch-drift findings to errors:
-```
+
+```bash
 kanon doctor --strict-drift
 ```
 
 Use a custom kanon file location:
-```
+
+```bash
 kanon doctor --kanon-file /path/to/my/.kanon
 ```
 
 Run checks with an explicit lock file path:
-```
+
+```bash
 kanon doctor --kanon-file /path/to/.kanon --lock-file /path/to/.kanon.lock
 ```
 
 Check which catalog source is active (subcheck 6) and override with a specific one:
-```
+
+```bash
 kanon doctor --catalog-source https://example.com/org/catalog.git@main
 ```
 
 Detect a leaked `KANON_CATALOG_SOURCE` env var (look for the provenance suffix in stdout):
-```
+
+```bash
 kanon doctor
 # Expected output when env var is set:
 # Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCE env var)
 ```
 
 Invalidate the completion cache (removes all files under `${KANON_CACHE_DIR}/completion-cache/`):
-```
+
+```bash
 kanon doctor --refresh-completion-cache
 # Expected stderr output:
 # INFO: Completion cache refreshed: 5 file(s) removed from /home/user/.cache/kanon/completion-cache
 ```
 
 Remove stale cache files older than 30 days and check for stale install locks:
-```
+
+```bash
 kanon doctor --prune-cache
 # Expected stderr output:
 # INFO: Cache pruned: 3 file(s) removed (24576 bytes) with atime older than 30 days
 ```
 
 Run both refresh and prune together:
-```
+
+```bash
 kanon doctor --refresh-completion-cache --prune-cache
 ```
 

@@ -216,17 +216,17 @@ automation across your organization without replacing your existing tools.
 
 ### Fully customizable
 
-* **Public or Private** -- Use public repositories or host everything privately within your organization
-* **Your Infrastructure** -- Point to your own Git repositories and package sources
-* **Your Standards** -- Define your own manifests, packages, and automation
-* **Portable** -- Teams retain access to automation even after external partnerships end
+- **Public or Private** -- Use public repositories or host everything privately within your organization
+- **Your Infrastructure** -- Point to your own Git repositories and package sources
+- **Your Standards** -- Define your own manifests, packages, and automation
+- **Portable** -- Teams retain access to automation even after external partnerships end
 
 ### Core Purpose
 
-* **Platform Dependency Management** -- Centralize and version your DevOps automation, shared knowledge, dependencies, and standards
-* **Flexible Overlay** -- Works alongside your preferred build tools and dependency managers, or standalone with no task runner at all
-* **Team Standards** -- Share tested, versioned automation, tasks, and approaches across teams dynamically
-* **Tool Agnostic** -- Adapts to your workflow, not the other way around
+- **Platform Dependency Management** -- Centralize and version your DevOps automation, shared knowledge, dependencies, and standards
+- **Flexible Overlay** -- Works alongside your preferred build tools and dependency managers, or standalone with no task runner at all
+- **Team Standards** -- Share tested, versioned automation, tasks, and approaches across teams dynamically
+- **Tool Agnostic** -- Adapts to your workflow, not the other way around
 
 ## Use Cases
 

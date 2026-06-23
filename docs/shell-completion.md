@@ -141,6 +141,7 @@ using the three-tier precedence chain:
 3. `./.kanon.lock` -- default path in the current directory.
 
 Emits, one per line (sorted, deduplicated):
+
 - Every top-level source name.
 - Every transitive include `path_in_repo` value (recursive through
   nested includes).
@@ -379,9 +380,7 @@ completion-installation context and initial setup instructions.
 Errors that occur inside `__complete_*` subcommands are written to
 the completion error log. The default path is:
 
-```text
-${KANON_CACHE_DIR}/completion-errors.log
-```
+`${KANON_CACHE_DIR}/completion-errors.log`
 
 Override the path via `KANON_COMPLETION_LOG`. The log is append-only
 and is never rotated automatically. Truncate or remove it manually,

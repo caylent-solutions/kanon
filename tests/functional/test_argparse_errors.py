@@ -269,7 +269,7 @@ class TestEmptyInvocationError:
         result = _run_kanon()
         assert result.returncode == 2
         combined = result.stdout + result.stderr
-        for subcommand in ("bootstrap", "install", "clean", "validate", "repo"):
+        for subcommand in ("install", "clean", "validate", "repo"):
             assert subcommand in combined, (
                 f"'kanon' output does not mention subcommand {subcommand!r}.\n"
                 f"  stdout: {result.stdout!r}\n"

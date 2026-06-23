@@ -2006,7 +2006,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         expected = (
             "Legacy catalog/ directory detected; this directory is unused by "
             "kanon >= 0.99.0 and should be deleted; "
-            "see docs/migration-bootstrap-to-add.md"
+            "see docs/migration-to-add.md"
         )
         assert rendered == expected
 
@@ -2015,7 +2015,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
 
         rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="2.0.0")
-        assert "docs/migration-bootstrap-to-add.md" in rendered
+        assert "docs/migration-to-add.md" in rendered
 
 
 @pytest.mark.unit

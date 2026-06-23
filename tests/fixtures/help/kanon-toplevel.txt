@@ -22,9 +22,6 @@ Manifest repo (catalog author):
 Shell integration:
   completion       Generate shell completion script
 
-Deprecated:
-  bootstrap        DEPRECATED -- use 'kanon add' / 'kanon list'. See docs/migration-bootstrap-to-add.md.
-
 Global options (always available):
   --version                      Print kanon version and exit.
   --help                         Show this and exit.

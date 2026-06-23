@@ -1,6 +1,6 @@
 """Multi-source .kanon file parser.
 
-Parses KEY=VALUE configuration files used by Kanon bootstrap. The .kanon
+Parses KEY=VALUE configuration files used by Kanon. The .kanon
 format supports:
   - Comments (lines starting with #) and blank lines
   - Shell variable expansion (``${VAR}``) resolved from environment

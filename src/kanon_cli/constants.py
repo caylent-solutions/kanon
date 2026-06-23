@@ -26,7 +26,7 @@ def _env_int(var: str, default: int) -> int:
 
 
 # -- Exit codes --
-# Reserved exit code for deprecated-invocation paths (e.g. kanon bootstrap).
+# Reserved exit code for deprecated-invocation paths.
 # 0 = success, 1 = runtime/usage error, 2 = argparse usage error, 3 = deprecated invocation.
 EXIT_CODE_DEPRECATED = 3
 
@@ -510,7 +510,7 @@ KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE = "strict mode: {count} warning(s) t
 KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
     "Legacy catalog/ directory detected; this directory is unused by "
     "kanon >= {version} and should be deleted; "
-    "see docs/migration-bootstrap-to-add.md"
+    "see docs/migration-to-add.md"
 )
 
 # -- Doctor subcheck Finding severity tokens (DEFECT-012 fix) --

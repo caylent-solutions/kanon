@@ -62,10 +62,6 @@ _SUBCOMMAND_DOCUMENTED_FLAGS: list[tuple[tuple[str, ...], list[str]]] = [
         ("clean",),
         ["kanonenv_path"],
     ),
-    # bootstrap is intentionally absent: it was removed in a major release and
-    # is now a uniform deprecation shim that exits 3 for every invocation
-    # (including --help). Its deprecation behavior is covered by the dedicated
-    # bootstrap test classes below, not by the generic --help-exits-0 contract.
     # validate: nested subcommands xml and marketplace
     (
         ("validate",),
@@ -166,10 +162,6 @@ _ARGUMENT_ERROR_CASES: list[tuple[tuple[str, ...], str, str]] = [
     (("--not-a-valid-kanon-flag",), "--not-a-valid-kanon-flag", "unknown top-level flag"),
     # Unknown subcommand: error message must name the invalid subcommand
     (("nosuchsubcommand",), "nosuchsubcommand", "unknown subcommand"),
-    # NOTE: bootstrap is NOT an argparse-error case. Unknown flags such as
-    # `--no-such-bootstrap-option` are intercepted before argparse and produce
-    # the exit-3 deprecation message, not an argparse "unrecognized arguments"
-    # error. Covered by TestBootstrapDeprecationShim below.
     # Unknown install flag: must name the flag
     (("install", "--no-such-install-option"), "--no-such-install-option", "unknown install flag"),
     # Unknown clean flag: must name the flag
@@ -267,7 +259,7 @@ class TestTopLevelSubcommandHelpContract:
         )
 
     def test_top_level_help_lists_all_subcommands(self) -> None:
-        """'kanon --help' must list all five registered top-level subcommands.
+        """'kanon --help' must list the registered top-level subcommands.
 
         The top-level help text is the entry point for discovering available
         commands. All registered subcommands must be visible there.
@@ -275,7 +267,7 @@ class TestTopLevelSubcommandHelpContract:
         result = _run_kanon("--help")
         assert result.returncode == 0
         combined = result.stdout + result.stderr
-        for subcmd in ("bootstrap", "install", "clean", "validate", "repo"):
+        for subcmd in ("install", "clean", "validate", "repo"):
             assert subcmd in combined, (
                 f"'kanon --help' does not mention top-level subcommand {subcmd!r}.\n"
                 f"  stdout: {result.stdout!r}\n"
@@ -511,23 +503,6 @@ class TestArgparseErrorArgumentName:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_bare_bootstrap_exits_3_with_deprecation_not_argparse_error(self) -> None:
-        """Bare 'kanon bootstrap' exits 3 with the deprecation message (NOT an argparse error).
-
-        Before the major release, bare `kanon bootstrap` raised an argparse
-        "missing required positional" error (exit 2). It now exits 3 with the
-        uniform deprecation message because the intercept runs before argparse.
-        """
-        result = _run_kanon("bootstrap")
-        assert result.returncode == 3, (
-            f"Bare 'kanon bootstrap' should exit 3 (deprecated), got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
-        assert "unrecognized arguments" not in result.stderr
-
     def test_validate_no_subcommand_names_required_choice(self) -> None:
         """'kanon validate' without xml or marketplace must produce a clear error.
 
@@ -567,21 +542,6 @@ class TestHelpContractChannelDiscipline:
         result = _run_kanon("install", "--help")
         assert result.returncode == 0
         assert len(result.stdout) > 0, f"'kanon install --help' produced no stdout output.\n  stderr: {result.stderr!r}"
-
-    def test_bootstrap_help_is_deprecation_on_stderr_not_stdout(self) -> None:
-        """'kanon bootstrap --help' is no longer help: it exits 3 with the message on stderr.
-
-        The deprecation message goes to stderr; stdout stays empty so that
-        pipelines parsing stdout never see the deprecation text.
-        """
-        result = _run_kanon("bootstrap", "--help")
-        assert result.returncode == 3, (
-            f"'kanon bootstrap --help' should exit 3 (deprecated), got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
-        )
-        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
     def test_validate_xml_help_on_stdout(self) -> None:
         """'kanon validate xml --help' must write help text to stdout."""

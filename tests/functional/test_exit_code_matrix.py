@@ -33,7 +33,6 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _run_kanon
 
@@ -768,9 +767,6 @@ class TestHelpExitsZero:
             ("install", "--help"),
             ("clean", "--help"),
             ("validate", "--help"),
-            # NOTE: ("bootstrap", "--help") is intentionally absent. bootstrap was
-            # removed in a major release; `bootstrap --help` now exits 3 with the
-            # deprecation message (see TestBootstrapExitsThree below).
         ],
     )
     def test_help_flags_exit_0_for_all_commands(self, command_args: tuple) -> None:
@@ -785,42 +781,6 @@ class TestHelpExitsZero:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# bootstrap exits 3 (EXIT_CODE_DEPRECATED) for every invocation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.functional
-class TestBootstrapExitsThree:
-    """`kanon bootstrap ...` exits 3 (EXIT_CODE_DEPRECATED) for every invocation.
-
-    bootstrap was removed in a major release. Every invocation -- bare, with an
-    entry, with `list`, with `--help`, or with an unknown flag -- exits 3 with
-    the deprecation message on stderr.
-    """
-
-    @pytest.mark.parametrize(
-        "command_args",
-        [
-            ("bootstrap",),
-            ("bootstrap", "list"),
-            ("bootstrap", "kanon"),
-            ("bootstrap", "--help"),
-            ("bootstrap", "-h"),
-            ("bootstrap", "history", "--marketplace-install"),
-        ],
-    )
-    def test_bootstrap_exits_3(self, command_args: tuple) -> None:
-        result = _run_kanon(*command_args)
-        assert result.returncode == EXIT_CODE_DEPRECATED, (
-            f"'kanon {' '.join(command_args)}' must exit {EXIT_CODE_DEPRECATED}; got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
-        assert "DEPRECATED" in result.stderr
-        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
 
 
 # ---------------------------------------------------------------------------

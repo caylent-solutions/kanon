@@ -328,7 +328,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         1,
         [
             "add",
-            "bootstrap",
             "catalog",
             "clean",
             "completion",
@@ -650,12 +649,13 @@ def test_static_completion_row(
 
 
 @pytest.mark.integration
-def test_bootstrap_offers_no_flag_completion(tmp_path: Path) -> None:
-    """`kanon bootstrap --<TAB>` offers no flag candidates.
+def test_bootstrap_offers_no_bootstrap_specific_flag_completion(tmp_path: Path) -> None:
+    """`kanon bootstrap --<TAB>` offers no bootstrap-specific flag candidates.
 
-    bootstrap was removed in a major release and is now a flagless deprecation
-    shim (the subparser declares only a REMAINDER catch-all and no options), so
-    the old `--output-dir`/`--catalog-source`/`--help` completions are gone.
+    bootstrap was removed in a major release and is no longer a registered
+    subcommand. Completion at `kanon bootstrap --` therefore falls through to
+    the top-level parser and offers only the global flags; the old
+    `--output-dir`/`--catalog-source` bootstrap completions are gone.
     """
     _assert_bash_version_gte_4()
     candidates = _bash_completion_runner(
@@ -665,8 +665,11 @@ def test_bootstrap_offers_no_flag_completion(tmp_path: Path) -> None:
         comp_cword=2,
     )
     flag_candidates = [c for c in candidates if c.startswith("-")]
-    assert flag_candidates == [], (
-        f"bootstrap must offer no flag completion (it is a flagless shim), got: {flag_candidates!r}"
+    assert "--output-dir" not in flag_candidates, (
+        f"bootstrap-specific '--output-dir' completion must be gone, got: {flag_candidates!r}"
+    )
+    assert "--catalog-source" not in flag_candidates, (
+        f"bootstrap-specific '--catalog-source' completion must be gone, got: {flag_candidates!r}"
     )
 
 

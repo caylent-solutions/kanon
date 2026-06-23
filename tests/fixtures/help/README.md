@@ -37,16 +37,6 @@ Examples:
 | `kanon-catalog-audit.txt` | `kanon catalog audit --help` (nested subparser child; covers `--check`, `--format`, Catalog source group; hyphenated filename mirrors the `catalog audit` argv path) |
 | `kanon-completion.txt` | `kanon completion --help` (shell completion script emitter; covers `<shell>` positional argument) |
 
-> **Note:** There is intentionally no `kanon-bootstrap.txt` fixture. `kanon
-> bootstrap` was removed in a major release (a breaking change). `kanon
-> bootstrap --help` is no longer help output -- every `kanon bootstrap ...`
-> invocation prints a deprecation message to **stderr** and exits **3**. The
-> deprecation behavior is covered by `tests/unit/test_bootstrap_deprecation.py`,
-> `tests/integration/test_bootstrap_shim.py`, and the functional bootstrap
-> tests; it is asserted by key substrings, not a byte-for-byte snapshot. The
-> top-level `kanon-toplevel.txt` snapshot still lists `bootstrap` under
-> "Deprecated".
-
 ## Regeneration Procedure
 
 If a fixture test fails because the CLI output changed intentionally (e.g., a

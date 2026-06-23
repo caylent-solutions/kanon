@@ -42,10 +42,6 @@ def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
 
 
 # Top-level subcommands whose '-h'/'--help' exits 0 with usage text.
-# NOTE: 'bootstrap' is intentionally excluded -- it was removed in a major
-# release and is now a uniform deprecation shim: every invocation (including
-# '-h'/'--help') exits 3 with the deprecation message. Its behavior is covered
-# by TestBootstrapHelpFlagsAreDeprecated below.
 _TOP_LEVEL_SUBCOMMANDS = [
     "install",
     "clean",
@@ -150,12 +146,11 @@ class TestTopLevelHelpFlags:
         )
 
     def test_double_dash_help_lists_subcommands(self) -> None:
-        """'kanon --help' must list the top-level subcommands, including deprecated 'bootstrap'."""
+        """'kanon --help' must list the top-level subcommands."""
         result = _run_kanon("--help")
         assert result.returncode == 0
         combined = result.stdout + result.stderr
-        # Top-level help is unchanged: it still lists bootstrap under Deprecated.
-        for subcommand in (*_TOP_LEVEL_SUBCOMMANDS, "bootstrap"):
+        for subcommand in _TOP_LEVEL_SUBCOMMANDS:
             assert subcommand in combined, (
                 f"'kanon --help' output does not mention subcommand {subcommand!r}.\n"
                 f"  stdout: {result.stdout!r}\n"
@@ -163,11 +158,11 @@ class TestTopLevelHelpFlags:
             )
 
     def test_single_dash_h_lists_subcommands(self) -> None:
-        """'kanon -h' must list the top-level subcommands, including deprecated 'bootstrap'."""
+        """'kanon -h' must list the top-level subcommands."""
         result = _run_kanon("-h")
         assert result.returncode == 0
         combined = result.stdout + result.stderr
-        for subcommand in (*_TOP_LEVEL_SUBCOMMANDS, "bootstrap"):
+        for subcommand in _TOP_LEVEL_SUBCOMMANDS:
             assert subcommand in combined, (
                 f"'kanon -h' output does not mention subcommand {subcommand!r}.\n"
                 f"  stdout: {result.stdout!r}\n"
@@ -180,36 +175,6 @@ class TestTopLevelHelpFlags:
             result = _run_kanon(flag)
             assert result.returncode == 0
             assert len(result.stdout) > 0, f"'kanon {flag}' produced empty stdout.\n  stderr: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# bootstrap '-h'/'--help' are no longer help: they emit the deprecation message
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.functional
-class TestBootstrapHelpFlagsAreDeprecated:
-    """`kanon bootstrap -h`/`--help` exit 3 with the deprecation message, not help.
-
-    `kanon bootstrap` was removed in a major release. The invocation is
-    intercepted before argparse, so '-h'/'--help' are NOT special-cased: they
-    print the deprecation message to stderr and exit 3.
-    """
-
-    @pytest.mark.parametrize("help_flag", ["-h", "--help"])
-    def test_bootstrap_help_exits_3(self, help_flag: str) -> None:
-        result = _run_kanon("bootstrap", help_flag)
-        assert result.returncode == 3, (
-            f"'kanon bootstrap {help_flag}' should exit 3 (deprecated), got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
-        )
-
-    @pytest.mark.parametrize("help_flag", ["-h", "--help"])
-    def test_bootstrap_help_message_on_stderr_only(self, help_flag: str) -> None:
-        result = _run_kanon("bootstrap", help_flag)
-        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
 
 # ---------------------------------------------------------------------------

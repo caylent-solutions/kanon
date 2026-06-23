@@ -7,8 +7,6 @@ Provides the top-level ``kanon`` command with subcommands:
   - ``kanon clean <kanonenv-path>`` -- Full teardown: uninstall, remove dirs
   - ``kanon validate xml [--repo-root PATH]`` -- Validate manifest XML files
   - ``kanon validate marketplace [--repo-root PATH]`` -- Validate marketplace XML manifests
-  - ``kanon bootstrap <package>`` -- Scaffold a new Kanon project from a catalog entry package
-  - ``kanon bootstrap list`` -- List available catalog entry packages
   - ``kanon repo <repo-args>`` -- Passthrough to the embedded repo tool
   - ``kanon why <project-url>`` -- Explain why a project is in the resolved tree
 """
@@ -24,11 +22,6 @@ from types import FrameType
 
 from kanon_cli import __version__
 from kanon_cli.commands.add import register as register_add
-from kanon_cli.commands.bootstrap import (
-    build_deprecation_message,
-    register as register_bootstrap,
-    select_bootstrap_tail,
-)
 from kanon_cli.commands.catalog import register as register_catalog
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
@@ -47,7 +40,6 @@ from kanon_cli.completions.project_versions import register as register_complete
 from kanon_cli.completions.cached_catalogs import register as register_complete_cached_catalogs
 from kanon_cli.completions.midtoken import register as register_resolve_entry_to_repo_url
 from kanon_cli.completions.source_names import register as register_complete_source_names
-from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
 from kanon_cli.repo import RepoCommandError
@@ -127,9 +119,6 @@ Manifest repo (catalog author):
 
 Shell integration:
   completion       Generate shell completion script
-
-Deprecated:
-  bootstrap        DEPRECATED -- use 'kanon add' / 'kanon list'. See docs/migration-bootstrap-to-add.md.
 
 Global options (always available):
   --version                      Print kanon version and exit.
@@ -246,7 +235,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     register_add(subparsers)
-    register_bootstrap(subparsers)
     register_catalog(subparsers)
     register_clean(subparsers)
     register_completion(subparsers)
@@ -287,16 +275,6 @@ def main(argv: list[str] | None = None) -> None:
     """
     signal.signal(signal.SIGTERM, _make_signal_handler(signal.SIGTERM))
     signal.signal(signal.SIGINT, _make_signal_handler(signal.SIGINT))
-
-    # `kanon bootstrap` was removed (major release, breaking change). Intercept it
-    # BEFORE argparse so EVERY invocation -- any args/flags, including --help and
-    # unknown flags -- emits the same deprecation message and exits non-zero,
-    # rather than argparse special-casing --help or rejecting unknown flags.
-    raw_argv = sys.argv[1:] if argv is None else argv
-    bootstrap_tail = select_bootstrap_tail(raw_argv)
-    if bootstrap_tail is not None:
-        print(build_deprecation_message(bootstrap_tail), file=sys.stderr)
-        sys.exit(EXIT_CODE_DEPRECATED)
 
     parser = build_parser()
     args = parser.parse_args(argv)

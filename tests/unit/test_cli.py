@@ -380,7 +380,6 @@ class TestGlobalFlagsSubcommandPropagation:
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
             "validate": ["xml"],
-            "bootstrap": ["list"],
             "list": [],
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],

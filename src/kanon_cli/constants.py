@@ -121,6 +121,18 @@ KANON_GIT_LS_REMOTE_TIMEOUT: int = _env_int("KANON_GIT_LS_REMOTE_TIMEOUT", 30)
 # File name for the per-project exclusive lock that serializes concurrent installs.
 INSTALL_LOCK_FILENAME = ".kanon-install.lock"
 
+# Acquisition timeout (in seconds) for the workspace lock taken by
+# kanon_workspace_lock (kanon install / add / remove / doctor mutations).
+# On expiry the acquisition fails fast with an actionable stale-lock-recovery
+# message (pid/host/timestamp); blocking is kernel-level, never a poll-sleep.
+# Overridable via the KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS environment variable.
+KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS: int = _env_int("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", 30)
+if KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS <= 0:
+    raise SystemExit(
+        f"ERROR: KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS must be a positive integer; "
+        f"got {KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS}"
+    )
+
 # -- Doctor command --
 # Subdirectory name under .kanon-data/ where completion-cache files are stored.
 KANON_COMPLETION_CACHE_DIR = "completion-cache"

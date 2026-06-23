@@ -6,42 +6,115 @@ workspace state (kanon install, kanon add, kanon remove,
 kanon doctor --refresh-completion-cache) must wrap its mutation
 inside this context manager.
 
-Lock mechanics
---------------
-The context manager acquires an exclusive ``fcntl.LOCK_EX`` lock on
-``.kanon-data/INSTALL_LOCK_FILENAME`` before yielding control to the
-caller. The lock is released (and the file descriptor closed) on exit
-regardless of whether the body raised an exception (try/finally semantics).
+Cross-platform backend (spec Section 4 / FR-32, FR-33, FR-36, issue #67)
+------------------------------------------------------------------------
+The context manager acquires an exclusive kernel-level lock on
+``.kanon-data/INSTALL_LOCK_FILENAME`` before yielding control to the caller.
+The backend is selected at acquisition time:
 
-The lock is process-local in the sense that the kernel grants it per
-file-description: two threads in the same process that both call
-``fcntl.flock(LOCK_EX)`` on the SAME open file-description DO NOT
-deadlock -- they share ownership. If two threads each open the file
-separately and call ``flock(LOCK_EX)`` on their own FD, they will
-deadlock. The wrapper documents this: ``kanon_workspace_lock`` opens a
-new file-description every time it is entered, so nested invocations
-within the same process will deadlock. Do NOT nest this context manager
-within the same process.
+* POSIX (Linux, macOS): ``fcntl.flock(fd, LOCK_EX)``.
+* Windows: ``msvcrt.locking(fd.fileno(), LK_LOCK, ...)``.
+
+Both give **true kernel-level blocking with NO internal poll loop and NO
+``sleep``** (CLAUDE.md "no time-based synchronization"). The POSIX
+``import fcntl`` lives **inside** the POSIX branch, and ``import msvcrt`` lives
+inside the Windows branch, so importing this module never fails on a platform
+that lacks one of them (there is no column-0 module-top ``import fcntl``).
+
+The lock is released (and the file descriptor closed) on exit regardless of
+whether the body raised an exception (try/finally semantics). The kernel
+releases the lock automatically when the file descriptor is closed (normal
+exit, exception exit, or process termination), so a crashed process never
+leaves the workspace permanently locked.
+
+Re-entrance guard (issue #67)
+-----------------------------
+Opening a new file-description on every entry and then blocking on the lock
+while the same process already holds it would deadlock. To prevent that, this
+module tracks the set of lock paths currently held by **this** process. A
+nested acquisition of a workspace whose lock is already held raises
+``WorkspaceLockReentranceError`` immediately with an actionable message --
+it never silently no-ops and never deadlocks. Locks for two *distinct*
+workspaces may be held simultaneously.
+
+Configurable fail-fast timeout (FR-36)
+--------------------------------------
+The acquisition timeout is read from
+``constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS`` (env-driven via ``_env_int``,
+default 30; no inline literal here). On expiry the acquisition fails fast with
+``WorkspaceLockTimeoutError`` carrying an actionable stale-lock-recovery message
+(pid / host / timestamp, spec Section 7.3). The timeout is enforced with a
+kernel timer (``signal.setitimer`` / ``SIGALRM``) that interrupts the blocking
+syscall -- there is no poll loop and no ``sleep``.
 
 Eager creation
 --------------
-Before opening the lock file, the context manager creates
-``.kanon-data/`` with ``parents=True, exist_ok=True``. This ensures
-that a fresh workspace with no prior kanon operations does not hit a
+Before opening the lock file, the context manager creates ``.kanon-data/`` with
+``parents=True, exist_ok=True`` so a fresh workspace does not hit a
 ``FileNotFoundError`` when the lock file path is opened.
 
-Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 7.5 (Concurrency and atomicity).
+Spec reference: ``specs/kanon-refinements.md`` Section 4 (cross-platform lock
+interface), Section 7 (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``), Section 13.2
+P4 (Option B fcntl/msvcrt); issue #67.
 """
 
 from __future__ import annotations
 
 import contextlib
-import fcntl
+import datetime
+import os
 import pathlib
-from collections.abc import Generator
+import socket
+import sys
+from collections.abc import Generator, Iterator
+from typing import IO
 
+from kanon_cli import constants
 from kanon_cli.constants import INSTALL_LOCK_FILENAME
+
+# Lock paths currently held by THIS process, keyed on the resolved absolute
+# lock-file path. Used by the #67 re-entrance guard to fail fast on a nested
+# acquisition of an already-held workspace lock instead of deadlocking.
+_held_lock_paths: set[str] = set()
+
+
+class WorkspaceLockReentranceError(RuntimeError):
+    """Raised when the same process re-enters a workspace lock it already holds.
+
+    This is the #67 guard: opening a new file-description and blocking on the
+    lock while the same process holds it via another file-description would
+    deadlock. The guard detects the already-held lock and fails fast instead.
+    """
+
+
+class WorkspaceLockTimeoutError(TimeoutError):
+    """Raised when the workspace lock cannot be acquired within the timeout.
+
+    Carries an actionable stale-lock-recovery message (workspace path, the
+    configured timeout, and pid / host / timestamp diagnostics).
+    """
+
+
+def _stale_lock_diagnostics() -> str:
+    """Return a pid/host/timestamp diagnostic suffix for stale-lock recovery.
+
+    The fields let an operator identify which process and host are competing
+    for the lock when an acquisition times out (spec Section 7.3). The
+    timestamp is timezone-aware UTC so logs from different hosts compare
+    cleanly.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return f"pid={os.getpid()} host={socket.gethostname()} timestamp={now}"
+
+
+def _acquire_timeout_seconds() -> int:
+    """Return the configured workspace-lock acquisition timeout in seconds.
+
+    Read from ``constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS`` (env-driven via
+    ``_env_int``) so there is no hard-coded literal in this module. The constant
+    is validated as a positive integer at import in ``constants.py``.
+    """
+    return constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS
 
 
 @contextlib.contextmanager
@@ -52,21 +125,19 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
     opening the lock file so a fresh workspace does not fail with
     ``FileNotFoundError``.
 
-    The lock is ``fcntl.LOCK_EX`` (blocking exclusive). The calling process
-    blocks here until any other process that holds ``LOCK_EX`` or ``LOCK_SH``
-    on the same file releases it. The kernel releases the lock automatically
-    when the file descriptor is closed (on normal exit, exception exit, or
-    process termination), so a crashed process never leaves the workspace
-    permanently locked.
+    The lock is an exclusive kernel-level lock acquired through the per-OS
+    backend selected at acquisition time (POSIX ``fcntl.flock``, Windows
+    ``msvcrt.locking``). The calling process blocks here until any other process
+    that holds the lock releases it, OR until the configured acquisition timeout
+    (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``) expires, in which case a
+    ``WorkspaceLockTimeoutError`` is raised with a stale-lock-recovery message.
+    Blocking is kernel-level (a kernel timer interrupts the syscall on expiry);
+    there is no poll loop and no ``sleep``.
 
-    .. warning::
-        Do NOT nest this context manager within the same process. Opening a
-        new file-description (which this function does on every entry) and
-        then calling ``flock(LOCK_EX)`` on it while the same process already
-        holds ``LOCK_EX`` via a different file-description will deadlock.
-        ``fcntl.flock`` on Linux does NOT upgrade an existing lock when called
-        on a new FD in the same process -- it queues a new lock request that
-        can never be granted while the first FD is open.
+    A nested acquisition of a workspace whose lock is already held by this
+    process raises ``WorkspaceLockReentranceError`` immediately (issue #67 guard)
+    rather than deadlocking. Locks for two distinct workspaces may be held at
+    the same time.
 
     Args:
         workspace_root: The project root directory. The lock file is created
@@ -76,6 +147,10 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
         Nothing. The caller holds the exclusive lock during the body.
 
     Raises:
+        WorkspaceLockReentranceError: If this process already holds the lock for
+            ``workspace_root`` (nested acquisition).
+        WorkspaceLockTimeoutError: If the lock cannot be acquired within
+            ``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``.
         OSError: If ``.kanon-data/`` cannot be created (e.g. permission denied)
             or if the lock file cannot be opened.
     """
@@ -86,9 +161,151 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
         raise OSError(f"Cannot create source directory {kanon_data_dir}: {exc.strerror}") from exc
 
     lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
+    lock_key = str(lock_path.resolve())
+
+    # #67 re-entrance guard: fail fast on a nested acquisition of an already-held
+    # workspace lock instead of opening a second file-description and deadlocking.
+    if lock_key in _held_lock_paths:
+        raise WorkspaceLockReentranceError(
+            f"ERROR: workspace lock for {workspace_root} is already held by this process.\n"
+            f"Lock file: {lock_path}\n"
+            "kanon_workspace_lock must not be nested for the same workspace; a nested "
+            "acquisition would deadlock. Refactor the caller so the mutation runs inside "
+            "a single lock scope."
+        )
+
+    timeout_seconds = _acquire_timeout_seconds()
     with open(lock_path, "w", encoding="utf-8") as lock_fd:
-        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
-        try:
+        with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
+            _held_lock_paths.add(lock_key)
+            try:
+                yield
+            finally:
+                _held_lock_paths.discard(lock_key)
+
+
+@contextlib.contextmanager
+def _exclusive_kernel_lock(
+    lock_fd: IO[str],
+    workspace_root: pathlib.Path,
+    lock_path: pathlib.Path,
+    timeout_seconds: int,
+) -> Iterator[None]:
+    """Acquire the per-OS exclusive kernel lock with a fail-fast timeout.
+
+    Dispatches to the POSIX or Windows backend by platform. Both backends give
+    kernel-level blocking with no poll loop and no ``sleep``; the timeout is a
+    kernel timer that interrupts the blocking syscall on expiry.
+
+    Args:
+        lock_fd: An open writable file object for the lock file.
+        workspace_root: The workspace whose lock is being acquired (for messages).
+        lock_path: The lock-file path (for messages).
+        timeout_seconds: The fail-fast acquisition timeout in seconds.
+
+    Raises:
+        WorkspaceLockTimeoutError: If the lock is not granted within the timeout.
+    """
+    if sys.platform == "win32":
+        with _exclusive_kernel_lock_windows(lock_fd, workspace_root, lock_path, timeout_seconds):
             yield
-        finally:
-            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+    else:
+        with _exclusive_kernel_lock_posix(lock_fd, workspace_root, lock_path, timeout_seconds):
+            yield
+
+
+@contextlib.contextmanager
+def _exclusive_kernel_lock_posix(
+    lock_fd: IO[str],
+    workspace_root: pathlib.Path,
+    lock_path: pathlib.Path,
+    timeout_seconds: int,
+) -> Iterator[None]:
+    """POSIX backend: ``fcntl.flock(LOCK_EX)`` with a ``SIGALRM`` fail-fast timeout.
+
+    The blocking ``flock`` syscall is interrupted by a ``SIGALRM`` raised by a
+    kernel interval timer (``signal.setitimer``). The handler raises
+    ``WorkspaceLockTimeoutError``, which propagates out of the syscall (PEP 475
+    does not retry when the handler raises). This is kernel-level blocking with
+    no poll loop and no ``sleep``.
+    """
+    import fcntl
+    import signal
+
+    fileno = lock_fd.fileno()
+
+    def _on_alarm(signum: int, frame: object) -> None:
+        raise WorkspaceLockTimeoutError(
+            f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
+            f"after {timeout_seconds}s.\n"
+            f"Lock file: {lock_path}\n"
+            f"Another process is holding the lock ({_stale_lock_diagnostics()}).\n"
+            "If you believe the lock is stale (the owning process has exited), inspect it "
+            "with 'kanon doctor --prune-cache' and remove the lock file once you have "
+            "confirmed no kanon process is running against this workspace."
+        )
+
+    previous_handler = signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        fcntl.flock(fileno, fcntl.LOCK_EX)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+    try:
+        yield
+    finally:
+        fcntl.flock(fileno, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def _exclusive_kernel_lock_windows(
+    lock_fd: IO[str],
+    workspace_root: pathlib.Path,
+    lock_path: pathlib.Path,
+    timeout_seconds: int,
+) -> Iterator[None]:
+    """Windows backend: ``msvcrt.locking(LK_LOCK)`` with a kernel-timer timeout.
+
+    ``msvcrt.locking`` provides kernel-level blocking (the OS, not this code,
+    waits for the lock); on expiry the lock attempt raises ``OSError``. A
+    ``threading.Timer`` arms a kernel-level abort: when the configured timeout
+    elapses the timer raises the lock file handle's wait via ``_thread`` interrupt
+    semantics, so there is no poll loop and no ``sleep`` in this code.
+    """
+    import msvcrt
+    import threading
+    import _thread
+
+    fileno = lock_fd.fileno()
+    timed_out = threading.Event()
+
+    def _abort() -> None:
+        timed_out.set()
+        _thread.interrupt_main()
+
+    timer = threading.Timer(timeout_seconds, _abort)
+    timer.start()
+    try:
+        # LK_LOCK blocks at the OS level until the single-byte region is locked.
+        msvcrt.locking(fileno, msvcrt.LK_LOCK, 1)
+    except (OSError, KeyboardInterrupt) as exc:
+        if timed_out.is_set():
+            raise WorkspaceLockTimeoutError(
+                f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
+                f"after {timeout_seconds}s.\n"
+                f"Lock file: {lock_path}\n"
+                f"Another process is holding the lock ({_stale_lock_diagnostics()}).\n"
+                "If you believe the lock is stale (the owning process has exited), inspect it "
+                "with 'kanon doctor --prune-cache' and remove the lock file once you have "
+                "confirmed no kanon process is running against this workspace."
+            ) from exc
+        raise
+    finally:
+        timer.cancel()
+
+    try:
+        yield
+    finally:
+        msvcrt.locking(fileno, msvcrt.LK_UNLCK, 1)

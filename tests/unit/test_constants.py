@@ -2309,3 +2309,87 @@ class TestKanonGitLsRemoteTimeoutConstant:
         importlib.reload(constants)
 
         assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 45
+
+
+@pytest.mark.unit
+class TestKanonWorkspaceLockTimeoutSeconds:
+    """Tests for KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS constant (E2-F1-S1-T1).
+
+    This constant controls the fail-fast acquisition timeout used by
+    kanon_workspace_lock. It is routed through _env_int (no hard-coded literal
+    in concurrency.py) and is overridable via the
+    KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS environment variable. Default is 30.
+    """
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS
+
+        assert isinstance(KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS, int)
+
+    def test_constant_is_positive_integer(self) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS is a positive integer."""
+        from kanon_cli.constants import KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS
+
+        assert KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS > 0
+
+    def test_constant_default_is_30(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS defaults to 30 when env var is unset."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+        assert constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS == 30
+
+    def test_constant_reads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS reflects the env var override."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS == 5
+        finally:
+            monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to a non-integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_zero_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to 0 raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_negative_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)

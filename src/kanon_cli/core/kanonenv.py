@@ -23,7 +23,12 @@ variables, validates required fields, and returns a structured dict.
 
 Security guards are applied before any data is returned:
   - Symlink detection (TOCTOU mitigation): the .kanon file must not be a symlink.
-  - Permission check: the .kanon file must not be group-writable or world-writable.
+  - Permission check: the .kanon file must not be writable by anyone other than
+    its owner. On POSIX this rejects the group-write and world-write mode bits;
+    on Windows the ACL-equivalent rejects a discretionary ACL (DACL) that grants
+    write access to any principal other than the file owner or the local
+    Administrators group. The control is selected per-OS at the check site and
+    is never silently skipped on either platform.
   - Path traversal rejection: KANON_SOURCE_<name>_PATH values must not contain '..'.
 """
 
@@ -31,6 +36,7 @@ import os
 import pathlib
 import re
 import stat
+import sys
 
 from kanon_cli.constants import (
     SHELL_VAR_PATTERN,
@@ -71,7 +77,11 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
 
     Security guards are applied before returning:
       - Symlink TOCTOU: the file must not be a symlink.
-      - Permissions: the file must not have group-write or world-write bits.
+      - Permissions: the file must not be writable by anyone other than its
+        owner. On POSIX the group-write and world-write mode bits are rejected;
+        on Windows the ACL-equivalent rejects any DACL entry that grants write
+        access to a principal other than the owner or local Administrators. The
+        per-OS control is selected at the check site and is never skipped.
       - Path traversal: no KANON_SOURCE_<name>_PATH value may contain '..'.
 
     Args:
@@ -102,7 +112,7 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
         raise FileNotFoundError(msg)
 
     _check_no_symlink(path)
-    _check_permissions(path)
+    _check_write_permission(path)
 
     raw_vars = _read_key_value_pairs(path)
     _check_no_path_traversal(raw_vars)
@@ -133,12 +143,43 @@ def _check_no_symlink(path: pathlib.Path) -> None:
         raise ValueError(msg)
 
 
+def _check_write_permission(path: pathlib.Path) -> None:
+    """Reject a .kanon file that is writable by anyone other than its owner.
+
+    Dispatches to the platform-specific write-permission control selected at
+    this single check site (Strategy by OS, not a fallback):
+
+      - On Windows (``sys.platform == "win32"``) the ACL-equivalent
+        (``_check_windows_acl``) reads the file's discretionary ACL via
+        ``GetFileSecurity`` and rejects any write grant to a principal other
+        than the owner or the local Administrators group.
+      - On every other platform the POSIX mode-bit control
+        (``_check_permissions``) rejects the group-write and world-write bits.
+
+    The Windows branch is never a silent no-op: a non-compliant ACL fails fast
+    with the same actionable ``ValueError`` shape the POSIX path raises.
+
+    Args:
+        path: Path to the .kanon file.
+
+    Raises:
+        ValueError: If the file grants write access beyond its owner (and, on
+            Windows, the local Administrators group).
+    """
+    if sys.platform == "win32":
+        _check_windows_acl(path)
+    else:
+        _check_permissions(path)
+
+
 def _check_permissions(path: pathlib.Path) -> None:
     """Raise ValueError if the .kanon file has group-write or world-write bits set.
 
     World-writable or group-writable .kanon files can be tampered with by
     unprivileged users, which could lead to privilege escalation or supply
-    chain attacks. Only owner-write access is permitted.
+    chain attacks. Only owner-write access is permitted. This is the POSIX
+    branch of the per-OS write-permission control selected by
+    ``_check_write_permission``.
 
     Args:
         path: Path to the .kanon file.
@@ -159,6 +200,125 @@ def _check_permissions(path: pathlib.Path) -> None:
             "Remove group-write and world-write bits (e.g. chmod 600 or chmod 644)."
         )
         raise ValueError(msg)
+
+
+def _evaluate_acl_write_principals(
+    write_principals: list[str],
+    allowed_principals: set[str],
+    path: pathlib.Path,
+) -> None:
+    """Reject a Windows ACL that grants write access beyond the allowed principals.
+
+    This is the platform-agnostic policy half of the Windows ACL-equivalent: it
+    is given the set of security principals that the file's DACL grants write
+    access to (``write_principals``, as string SIDs) and the set of principals
+    that are permitted to hold write access (``allowed_principals`` -- the file
+    owner SID and the local Administrators SID). Any write grant to a principal
+    outside ``allowed_principals`` fails fast with the same actionable error
+    shape the POSIX mode-bit path raises. Separating this decision from the
+    ``GetFileSecurity`` mechanism (``_check_windows_acl``) keeps the control
+    falsifiable and exercisable on every platform.
+
+    Args:
+        write_principals: String SIDs that the DACL grants write access to.
+        allowed_principals: String SIDs permitted to hold write access (owner
+            and local Administrators).
+        path: Path to the .kanon file (for the error message).
+
+    Raises:
+        ValueError: If any principal in ``write_principals`` is not present in
+            ``allowed_principals``.
+    """
+    disallowed = sorted({sid for sid in write_principals if sid not in allowed_principals})
+    if disallowed:
+        granted = ", ".join(disallowed)
+        msg = (
+            f".kanon file has an insecure ACL (write access granted to {granted}): {path}. "
+            "Restrict write access to the file owner and Administrators only "
+            "(e.g. 'icacls .kanon /inheritance:r /grant:r %USERNAME%:RW Administrators:F')."
+        )
+        raise ValueError(msg)
+
+
+def _check_windows_acl(path: pathlib.Path) -> None:
+    """Reject a .kanon file whose Windows DACL grants write access beyond owner/admin.
+
+    Windows ACL-equivalent of the POSIX group/world-writable mode-bit check
+    (FR-37). Reads the file's owner SID and discretionary ACL (DACL) via
+    ``win32security.GetFileSecurity``, derives the local Administrators
+    well-known SID, collects every principal that an allow ACE grants a
+    write-class right to, and delegates the accept/reject decision to
+    ``_evaluate_acl_write_principals``. The ``win32security`` /
+    ``ntsecuritycon`` imports live inside this Windows-only branch so the
+    module imports cleanly on POSIX (mirroring the per-OS backend import idiom
+    used elsewhere in this codebase). A non-compliant ACL fails fast; this
+    control is never a silent no-op on Windows.
+
+    Args:
+        path: Path to the .kanon file.
+
+    Raises:
+        ValueError: If the DACL grants write access to any principal other than
+            the file owner or the local Administrators group.
+    """
+    import ntsecuritycon
+    import win32security
+
+    write_mask = (
+        ntsecuritycon.FILE_WRITE_DATA
+        | ntsecuritycon.FILE_APPEND_DATA
+        | ntsecuritycon.WRITE_DAC
+        | ntsecuritycon.WRITE_OWNER
+        | ntsecuritycon.FILE_GENERIC_WRITE
+    )
+
+    descriptor = win32security.GetFileSecurity(
+        str(path),
+        win32security.OWNER_SECURITY_INFORMATION | win32security.DACL_SECURITY_INFORMATION,
+    )
+    owner_sid = descriptor.GetSecurityDescriptorOwner()
+    administrators_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid)
+    allowed_principals = {
+        win32security.ConvertSidToStringSid(owner_sid),
+        win32security.ConvertSidToStringSid(administrators_sid),
+    }
+
+    dacl = descriptor.GetSecurityDescriptorDacl()
+    if dacl is None:
+        msg = (
+            f".kanon file has a NULL discretionary ACL (grants full control to everyone): {path}. "
+            "Set an explicit ACL that restricts write access to the file owner and Administrators."
+        )
+        raise ValueError(msg)
+
+    write_principals: list[str] = []
+    for index in range(dacl.GetAceCount()):
+        ace_type, _ace_flags, access_mask, ace_sid = _split_windows_ace(dacl.GetAce(index))
+        if ace_type != win32security.ACCESS_ALLOWED_ACE_TYPE:
+            continue
+        if access_mask & write_mask:
+            write_principals.append(win32security.ConvertSidToStringSid(ace_sid))
+
+    _evaluate_acl_write_principals(write_principals, allowed_principals, path)
+
+
+def _split_windows_ace(ace: tuple) -> tuple:
+    """Decompose a pywin32 ACCESS_ALLOWED ACE tuple into its fields.
+
+    ``win32security.ACL.GetAce`` returns the ACE as
+    ``((ace_type, ace_flags), access_mask, sid)``. This helper unpacks that
+    nested shape into a flat ``(ace_type, ace_flags, access_mask, sid)`` tuple
+    so the caller does not duplicate the indexing. Kept as a module-level pure
+    function (no Windows-only imports) for Single Responsibility.
+
+    Args:
+        ace: An ACE tuple as returned by ``win32security.ACL.GetAce``.
+
+    Returns:
+        A flat tuple ``(ace_type, ace_flags, access_mask, sid)``.
+    """
+    (ace_type, ace_flags), access_mask, sid = ace
+    return ace_type, ace_flags, access_mask, sid
 
 
 def _check_no_path_traversal(raw_vars: dict[str, str]) -> None:

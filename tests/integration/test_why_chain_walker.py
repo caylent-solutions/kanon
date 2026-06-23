@@ -87,12 +87,11 @@ def why_fixture(tmp_path: pathlib.Path):
     """
     kanon_file = tmp_path / ".kanon"
     kanon_content = textwrap.dedent(f"""\
-        GITBASE=https://github.com
-        CLAUDE_MARKETPLACES_DIR=/tmp/mkts
-        KANON_MARKETPLACE_INSTALL=false
         KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog
-        KANON_SOURCE_{_SOURCE_NAME}_REVISION=main
+        KANON_SOURCE_{_SOURCE_NAME}_REF=main
         KANON_SOURCE_{_SOURCE_NAME}_PATH=./foo
+        KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}
+        KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com
     """)
     kanon_file.write_text(kanon_content)
     kanon_file.chmod(0o644)
@@ -189,11 +188,12 @@ class TestWhyChainWalkerIntegration:
         )
 
     def test_single_chain_via_subprocess(self, why_fixture: dict) -> None:
-        """kanon why <project-url> prints annotation line + one chain line (AC-TEST-002, AC-TEST-003).
+        """kanon why <project-url> prints annotation + alias-render + one chain line (AC-TEST-002, AC-TEST-003).
 
-        After the match-annotation enhancement the output is two non-empty lines:
+        After the match-annotation and alias-render enhancements the output is three non-empty lines:
           Line 1: matched <category> '<token>'
-          Line 2: <chain>
+          Line 2: <alias> -> <name> from <url>@<ref>
+          Line 3: <chain>
         """
         result = self._run_why(why_fixture)
 
@@ -202,22 +202,25 @@ class TestWhyChainWalkerIntegration:
         )
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected 2 output lines (annotation + chain), got {len(lines)}: {lines!r}"
+        assert len(lines) == 3, (
+            f"Expected 3 output lines (annotation + alias-render + chain), got {len(lines)}: {lines!r}"
+        )
         assert lines[0].startswith("matched "), (
             f"First line must be the match annotation starting with 'matched ', got: {lines[0]!r}"
         )
 
     def test_chain_contains_source_name(self, why_fixture: dict) -> None:
-        """Output chain line (second line) must start with the top-level source name (AC-FUNC-002).
+        """Output chain line (last line) must start with the top-level source name (AC-FUNC-002).
 
-        The first output line is the match annotation; the second is the chain.
+        The first output line is the match annotation, then one alias-render line
+        (<alias> -> <name> from <url>@<ref>), and the last line is the chain.
         """
         result = self._run_why(why_fixture)
 
         assert result.returncode == 0
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) >= 2, f"Expected annotation + chain line, got: {lines!r}"
-        chain_line = lines[1]
+        assert len(lines) >= 3, f"Expected annotation + alias-render + chain line, got: {lines!r}"
+        chain_line = lines[-1]
         assert chain_line.startswith(why_fixture["source_name"]), (
             f"Chain line must start with source name {why_fixture['source_name']!r}, got: {chain_line!r}"
         )
@@ -260,9 +263,10 @@ class TestWhyChainWalkerIntegration:
     def test_scp_url_canonicalization_matches(self, why_fixture: dict) -> None:
         """SCP shorthand git@github.com:org/baz.git matches the https:// project URL (AC-FUNC-003).
 
-        After the match-annotation enhancement the output is two non-empty lines:
+        After the match-annotation and alias-render enhancements the output is three non-empty lines:
           Line 1: matched <category> '<token>'
-          Line 2: <chain>
+          Line 2: <alias> -> <name> from <url>@<ref>
+          Line 3: <chain>
         """
         scp_url = "git@github.com:org/baz.git"
         result = self._run_why(why_fixture, url=scp_url)
@@ -271,7 +275,7 @@ class TestWhyChainWalkerIntegration:
             f"kanon why with SCP URL must exit 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected annotation + chain line, got {len(lines)}: {lines!r}"
+        assert len(lines) == 3, f"Expected annotation + alias-render + chain line, got {len(lines)}: {lines!r}"
         assert lines[0].startswith("matched "), f"First line must be the match annotation, got: {lines[0]!r}"
 
     def test_full_ac_cycle_001(self, why_fixture: dict) -> None:
@@ -281,9 +285,10 @@ class TestWhyChainWalkerIntegration:
         sha=ccc...) and project baz (sha=bbb...) in its lockfile entry.
         .kanon references FOO. .kanon.lock pins every node.
         Invoke: kanon why <baz-url>.
-        Assert: stdout contains exactly two non-empty lines:
+        Assert: stdout contains exactly three non-empty lines:
           Line 1: match annotation (e.g. "matched url '<canonical-url>'")
-          Line 2: the full include-node chain FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
+          Line 2: alias-render "FOO -> FOO from <url>@<ref>"
+          Line 3: the full include-node chain FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         with exit code 0.
         """
         result = self._run_why(why_fixture)
@@ -291,7 +296,7 @@ class TestWhyChainWalkerIntegration:
         assert result.returncode == 0, f"Exit code must be 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected annotation + chain line (2 lines), got: {lines!r}"
+        assert len(lines) == 3, f"Expected annotation + alias-render + chain line (3 lines), got: {lines!r}"
 
         # Line 0 is the match annotation
         annotation_line = lines[0]
@@ -299,8 +304,14 @@ class TestWhyChainWalkerIntegration:
             f"First line must be the match annotation, got: {annotation_line!r}"
         )
 
-        # Line 1 is the chain
-        chain_line = lines[1]
+        # Line 1 is the alias-render: "<alias> -> <name> from <url>@<ref>"
+        alias_render_line = lines[1]
+        assert alias_render_line.startswith(f"{_SOURCE_NAME} -> "), (
+            f"Second line must be the alias-render for {_SOURCE_NAME!r}, got: {alias_render_line!r}"
+        )
+
+        # Line 2 is the chain
+        chain_line = lines[2]
 
         # Source at start
         assert chain_line.startswith(_SOURCE_NAME), f"Chain must start with '{_SOURCE_NAME}', got: {chain_line!r}"

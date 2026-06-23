@@ -236,8 +236,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         # install is hermetic: a populated KANON_CATALOG_SOURCES is ignored, so its
         # presence does not affect this test; this test exercises the OSError ->
@@ -267,8 +269,10 @@ class TestInstallLifecycle:
         kanonenv.write_text(
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         with (
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
@@ -285,8 +289,10 @@ class TestInstallLifecycle:
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -322,8 +328,10 @@ class TestInstallLifecycle:
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -356,8 +364,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -379,8 +389,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         manager = MagicMock()
@@ -406,8 +418,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=*\n"
+            "KANON_SOURCE_build_REF=*\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -459,8 +473,10 @@ class TestInstallWorkspaceLock:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         assert not (tmp_path / ".kanon-data").exists()
@@ -496,8 +512,10 @@ class TestInstallWorkspaceLock:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -736,8 +754,10 @@ class TestInstallMarketplaceLockfileState:
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = tmp_path / ".kanon.lock"
 
@@ -770,8 +790,10 @@ class TestInstallMarketplaceLockfileState:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = tmp_path / ".kanon.lock"
 
@@ -823,8 +845,10 @@ class TestInstallWorkspaceDirEnvVar:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = cwd_dir / ".kanon.lock"
 
@@ -860,8 +884,10 @@ class TestInstallWorkspaceDirEnvVar:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = cwd_dir / ".kanon.lock"
 
@@ -895,8 +921,10 @@ class TestInstallWorkspaceDirEnvVar:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = cwd_dir / ".kanon.lock"
 
@@ -932,8 +960,10 @@ class TestInstallWorkspaceDirEnvVar:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = cwd_dir / ".kanon.lock"
 

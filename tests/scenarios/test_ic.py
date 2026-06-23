@@ -92,8 +92,10 @@ def _kanonenv_content(manifest_url: str, *, extra_lines: list[str] | None = None
     lines = [
         "KANON_MARKETPLACE_INSTALL=false",
         f"KANON_SOURCE_primary_URL={manifest_url}",
-        "KANON_SOURCE_primary_REVISION=main",
+        "KANON_SOURCE_primary_REF=main",
         "KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml",
+        "KANON_SOURCE_primary_NAME=primary",
+        f"KANON_SOURCE_primary_GITBASE={manifest_url}",
     ]
     if extra_lines:
         lines.extend(extra_lines)
@@ -172,8 +174,10 @@ class TestIC:
             "KANON_MARKETPLACE_INSTALL=false\n"
             "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\n"
             f"KANON_SOURCE_primary_URL={manifest_url}\n"
-            "KANON_SOURCE_primary_REVISION=main\n"
+            "KANON_SOURCE_primary_REF=main\n"
             "KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml\n"
+            "KANON_SOURCE_primary_NAME=primary\n"
+            f"KANON_SOURCE_primary_GITBASE={manifest_url}\n"
         )
         kanon_file = work_dir / ".kanon"
         kanon_file.write_text(kanon_text)
@@ -213,8 +217,10 @@ class TestIC:
             "# Blank lines above and below should be ignored\n"
             "\n"
             f"KANON_SOURCE_primary_URL={manifest_url}\n"
-            "KANON_SOURCE_primary_REVISION=main\n"
+            "KANON_SOURCE_primary_REF=main\n"
             "KANON_SOURCE_primary_PATH=repo-specs/alpha-only.xml\n"
+            "KANON_SOURCE_primary_NAME=primary\n"
+            f"KANON_SOURCE_primary_GITBASE={manifest_url}\n"
             "\n"
             "# Trailing comment\n"
         )

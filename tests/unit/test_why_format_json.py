@@ -109,8 +109,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file

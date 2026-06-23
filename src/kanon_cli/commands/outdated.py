@@ -121,7 +121,7 @@ def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
     classifications for forward-compatibility.
 
     Args:
-        rev: The raw REVISION string from a ``KANON_SOURCE_<name>_REVISION``
+        rev: The raw ref string from a ``KANON_SOURCE_<alias>_REF``
             entry.
 
     Returns:
@@ -212,7 +212,7 @@ class OutdatedRow:
     """One row in the 'kanon outdated' table output.
 
     Attributes:
-        name: The KANON_SOURCE_<name> key (lowercased from the env-var name).
+        name: The source alias (the ``<alias>`` token in the KANON_SOURCE_<alias>_* keys).
         current: The version string for the currently installed ref (from
             lockfile when present, or live-resolved).
         latest_matching_spec: The highest available version satisfying the
@@ -310,9 +310,9 @@ def _build_row(
       ``upgrade-type`` is always ``none``.
 
     Args:
-        name: The source name (e.g. ``FOO``).
+        name: The source alias (e.g. ``FOO``).
         source: The source dict from ``parse_kanonenv`` with keys ``url``,
-            ``revision``, and ``path``.
+            ``ref``, and ``path``.
         available_tags: Full list of tag refs fetched from the source's git URL.
             Used only for tag-pinned sources; ignored for branch- and SHA-pinned.
         lock_ref: The resolved_ref stored in the lockfile for this source, or
@@ -330,7 +330,7 @@ def _build_row(
         RuntimeError: If the ``git`` binary is not found or ``git ls-remote``
             exits with a non-zero return code (branch-pinned path).
     """
-    revision = source["revision"]
+    revision = source["ref"]
     url = source["url"]
     shape = _classify_revision_shape(revision)
 
@@ -888,10 +888,15 @@ def run(args: argparse.Namespace) -> int:
 
     # -- Build rows for each source --
     rows: list[OutdatedRow] = []
+    alias_renders: list[str] = []
     for name in kanonenv["KANON_SOURCES"]:
         source = kanonenv["sources"][name]
         url = source["url"]
-        revision = source["revision"]
+        revision = source["ref"]
+        # Alias-render (spec Section 5.1 / FR-59, FR-6): map the local alias to
+        # the original catalog manifest name via the parsed ``_NAME`` field and
+        # the source coordinates. Rendered as ``alias -> name from <url>@<ref>``.
+        alias_renders.append(f"{name} -> {source['name']} from {url}@{revision}")
 
         # Fetch tags only for tag-pinned sources; branch- and SHA-pinned sources
         # do not use the tag list so fetching it would be a wasted network call.
@@ -911,7 +916,7 @@ def run(args: argparse.Namespace) -> int:
         try:
             row = _build_row(
                 name=name,
-                source={"url": url, "revision": revision, "path": source["path"]},
+                source={"url": url, "ref": revision, "path": source["path"]},
                 available_tags=available_tags,
                 lock_ref=lock_ref,
             )
@@ -925,8 +930,14 @@ def run(args: argparse.Namespace) -> int:
     if args.format == KANON_OUTDATED_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 
-        _emit_json_payload(_build_outdated_payload(rows), sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT)
+        payload = {
+            "aliases": alias_renders,
+            "sources": _build_outdated_payload(rows),
+        }
+        _emit_json_payload(payload, sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT)
     else:
+        for alias_render in alias_renders:
+            print(alias_render)
         print(_format_table(rows), end="")
 
     # -- Exit code gate (AC-FUNC-002 / AC-FUNC-004) --

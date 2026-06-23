@@ -38,8 +38,10 @@ _MINIMAL_KANONENV_CONTENT = (
     "GITBASE=https://example.com/\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
     f"KANON_SOURCE_test_URL={_TEST_URL}\n"
-    "KANON_SOURCE_test_REVISION=~=1.0.0\n"
+    "KANON_SOURCE_test_REF=~=1.0.0\n"
     "KANON_SOURCE_test_PATH=repo-specs/default.xml\n"
+    "KANON_SOURCE_test_NAME=test\n"
+    "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
 
 

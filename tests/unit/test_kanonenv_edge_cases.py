@@ -19,7 +19,11 @@ from kanon_cli.core.kanonenv import parse_kanonenv
 # Reused across tests that need a valid file suffix to isolate the edge case.
 # ---------------------------------------------------------------------------
 _VALID_SOURCE_LINES = (
-    "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
+    "KANON_SOURCE_build_URL=https://example.com\n"
+    "KANON_SOURCE_build_REF=main\n"
+    "KANON_SOURCE_build_PATH=meta.xml\n"
+    "KANON_SOURCE_build_NAME=build\n"
+    "KANON_SOURCE_build_GITBASE=https://example.com\n"
 )
 
 
@@ -116,7 +120,7 @@ class TestCrlfLineEndings:
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["build"]
         assert result["sources"]["build"]["url"] == "https://example.com"
-        assert result["sources"]["build"]["revision"] == "main"
+        assert result["sources"]["build"]["ref"] == "main"
         assert result["sources"]["build"]["path"] == "meta.xml"
 
     def test_crlf_and_lf_produce_equal_results(self, tmp_path: pathlib.Path) -> None:
@@ -142,14 +146,16 @@ class TestCrlfLineEndings:
         """A file mixing CRLF and LF line endings must parse all keys correctly."""
         content = (
             "KANON_SOURCE_build_URL=https://example.com\r\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\r\n"
+            "KANON_SOURCE_build_NAME=build\r\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\r\n"
         )
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_bytes(content.encode("utf-8"))
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["build"]
-        assert result["sources"]["build"]["revision"] == "main"
+        assert result["sources"]["build"]["ref"] == "main"
 
 
 @pytest.mark.unit
@@ -171,9 +177,11 @@ class TestCommentLines:
             "# Header comment\n"
             "KANON_SOURCE_build_URL=https://example.com\n"
             "# URL comment\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "# Revision comment\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
             "# Trailing comment\n"
         )
         result = parse_kanonenv(kanonenv)

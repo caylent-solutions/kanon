@@ -49,8 +49,10 @@ def _write_kanon(directory, sources):
     lines = []
     for alias, data in sources.items():
         lines.append(f"KANON_SOURCE_{alias}_URL={data['url']}")
-        lines.append(f"KANON_SOURCE_{alias}_REVISION={data['revision']}")
+        lines.append(f"KANON_SOURCE_{alias}_REF={data['revision']}")
         lines.append(f"KANON_SOURCE_{alias}_PATH={data['path']}")
+        lines.append(f"KANON_SOURCE_{alias}_NAME={alias}")
+        lines.append(f"KANON_SOURCE_{alias}_GITBASE={data['url']}")
     path = directory / _KANONENV_FILENAME
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -159,7 +161,7 @@ def test_validate_lockfile_duplicate_alias_exits_nonzero(tmp_path):
     kanon_path = tmp_path / _KANONENV_FILENAME
     kanon_path.write_text(
         "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-        "KANON_SOURCE_alpha_REVISION=main\n"
+        "KANON_SOURCE_alpha_REF=main\n"
         "KANON_SOURCE_alpha_PATH=p1\n"
         "KANON_SOURCE_alpha_URL=https://example.com/dup.git\n",
         encoding="utf-8",

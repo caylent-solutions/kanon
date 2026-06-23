@@ -128,8 +128,10 @@ def _write_kanon(
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_alpha_URL={source_url}\n"
-        f"KANON_SOURCE_alpha_REVISION={revision}\n"
+        f"KANON_SOURCE_alpha_REF={revision}\n"
         f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+        f"KANON_SOURCE_alpha_NAME=alpha\n"
+        f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path

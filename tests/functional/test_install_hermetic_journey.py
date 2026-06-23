@@ -87,8 +87,10 @@ def _write_kanon(project_dir: pathlib.Path, source_url: str) -> pathlib.Path:
         f"CLAUDE_MARKETPLACES_DIR={project_dir}/mktplc\n"
         "KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{_SOURCE_ALIAS}_URL={source_url}\n"
-        f"KANON_SOURCE_{_SOURCE_ALIAS}_REVISION={_EXACT_REVISION}\n"
-        f"KANON_SOURCE_{_SOURCE_ALIAS}_PATH={_MANIFEST_FILENAME}\n",
+        f"KANON_SOURCE_{_SOURCE_ALIAS}_REF={_EXACT_REVISION}\n"
+        f"KANON_SOURCE_{_SOURCE_ALIAS}_PATH={_MANIFEST_FILENAME}\n"
+        f"KANON_SOURCE_{_SOURCE_ALIAS}_NAME={_SOURCE_ALIAS}\n"
+        f"KANON_SOURCE_{_SOURCE_ALIAS}_GITBASE={source_url}\n",
         encoding="utf-8",
     )
     kanon_path.chmod(0o600)

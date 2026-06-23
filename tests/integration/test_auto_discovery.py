@@ -20,7 +20,7 @@ def _write_kanonenv(directory: Path) -> Path:
     """Write a minimal .kanon file in directory and return its path."""
     kanonenv = directory / ".kanon"
     kanonenv.write_text(
-        "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+        "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n"
     )
     return kanonenv
 

@@ -692,7 +692,7 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
         for source_name in kanonenv["KANON_SOURCES"]:
             source_data = kanonenv["sources"][source_name]
             url: str = source_data["url"]
-            revision: str = source_data["revision"]
+            revision: str = source_data["ref"]
             manifest_path: str = source_data["path"]
 
             try:
@@ -1161,6 +1161,67 @@ def _node_display(node: ChainNode) -> str:
     return f"{node.name}@{node.sha}"
 
 
+def _build_alias_renders(kanon_path: pathlib.Path) -> dict[str, str]:
+    """Build the alias -> render-string map from the parsed ``.kanon`` file.
+
+    For each source block the render string is ``alias -> name from <url>@<ref>``
+    (spec Section 5.1 / FR-59, FR-6), where ``name`` is the per-dependency
+    ``KANON_SOURCE_<alias>_NAME`` value (the original catalog manifest name) and
+    ``ref`` is the verbatim ``KANON_SOURCE_<alias>_REF`` spec. The map is keyed by
+    the alias so callers can render only the aliases that appear in the resolved
+    chains.
+
+    Args:
+        kanon_path: Path to the ``.kanon`` file.
+
+    Returns:
+        Dict mapping each source alias to its ``alias -> name from <url>@<ref>``
+        render string.
+
+    Raises:
+        ValueError: From ``parse_kanonenv`` when the ``.kanon`` file is malformed
+            or missing required source variables.
+    """
+    kanonenv = parse_kanonenv(kanon_path)
+    renders: dict[str, str] = {}
+    for alias in kanonenv["KANON_SOURCES"]:
+        source = kanonenv["sources"][alias]
+        renders[alias] = f"{alias} -> {source['name']} from {source['url']}@{source['ref']}"
+    return renders
+
+
+def _alias_renders_for_chains(
+    chains: list[list[ChainNode]],
+    alias_renders: dict[str, str],
+) -> list[str]:
+    """Return the alias-render strings for every source node present in the chains.
+
+    Walks each chain's leading source node, looks its name up in
+    ``alias_renders`` (the alias -> ``alias -> name from <url>@<ref>`` map), and
+    returns the render strings in first-seen order with no duplicates. Source
+    aliases that have no entry in ``alias_renders`` (e.g. live-resolve-only
+    sources not present in the parsed ``.kanon`` map) are skipped without error.
+
+    Args:
+        chains: The resolved chains; each chain begins with a source node.
+        alias_renders: The alias -> render-string map from ``_build_alias_renders``.
+
+    Returns:
+        The ordered, de-duplicated list of render strings for the chains' sources.
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for chain in chains:
+        if not chain:
+            continue
+        source_alias = chain[0].name
+        if source_alias in seen or source_alias not in alias_renders:
+            continue
+        seen.add(source_alias)
+        ordered.append(alias_renders[source_alias])
+    return ordered
+
+
 def _render_text(chains: list[list[ChainNode]]) -> list[str]:
     """Render a list of chains to the text-format output lines.
 
@@ -1462,17 +1523,27 @@ def run(args: argparse.Namespace) -> int:
     last_quote = hit.label.rindex("'")
     matched_token = hit.label[first_quote + 1 : last_quote]
 
+    # -- Build the alias-render strings for the sources in the matched chains --
+    # The alias -> name from <source>@<ref> render (spec Section 5.1 / FR-59,
+    # FR-6) is sourced from the parsed .kanon per-dependency _NAME / _REF / _URL
+    # fields, keyed by alias.
+    alias_renders_map = _build_alias_renders(kanon_path)
+    chain_alias_renders = _alias_renders_for_chains(chains, alias_renders_map)
+
     # -- Render and emit output --
     if args.format == KANON_WHY_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 
         why_payload = {
             "matched": {"category": hit.category, "token": matched_token},
+            "aliases": chain_alias_renders,
             "chains": _build_why_payload(chains),
         }
         _emit_json_payload(why_payload, sort_keys=False, indent=KANON_WHY_JSON_INDENT)
     else:
         print(f"matched {hit.category} '{matched_token}'")
+        for alias_render in chain_alias_renders:
+            print(alias_render)
         lines = _render_text(chains)
         for line in lines:
             print(line)

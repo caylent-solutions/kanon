@@ -42,12 +42,11 @@ from tests.integration.test_add_core import (
 # ---------------------------------------------------------------------------
 
 _KANON_REFS_HEADS_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
 
 

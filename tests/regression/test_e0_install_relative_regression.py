@@ -239,7 +239,11 @@ def test_regression_install_receives_absolute_path_for_relative_inputs(
     kanon_file = (tmp_path / rel_path).resolve()
     kanon_file.parent.mkdir(parents=True, exist_ok=True)
     kanon_file.write_text(
-        "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+        "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+        "KANON_SOURCE_s_REF=main\n"
+        "KANON_SOURCE_s_PATH=m.xml\n"
+        "KANON_SOURCE_s_NAME=s\n"
+        "KANON_SOURCE_s_GITBASE=https://example.com\n"
     )
     monkeypatch.chdir(tmp_path)
 

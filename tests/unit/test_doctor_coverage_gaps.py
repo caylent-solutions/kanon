@@ -54,8 +54,10 @@ def _write_minimal_kanon(kanon_file: pathlib.Path) -> None:
     """
     kanon_file.write_text(
         "KANON_SOURCE_meta_URL=https://example.com/catalog.git\n"
-        "KANON_SOURCE_meta_REVISION=main\n"
-        "KANON_SOURCE_meta_PATH=repo-specs/meta.xml\n",
+        "KANON_SOURCE_meta_REF=main\n"
+        "KANON_SOURCE_meta_PATH=repo-specs/meta.xml\n"
+        "KANON_SOURCE_meta_NAME=meta\n"
+        "KANON_SOURCE_meta_GITBASE=https://example.com\n",
         encoding="utf-8",
     )
 
@@ -481,8 +483,10 @@ class TestDoctorCommandOrphanLockFindings:
         """
         kanon_file.write_text(
             f"KANON_SOURCE_{source_name}_URL=https://example.com/repo.git\n"
-            f"KANON_SOURCE_{source_name}_REVISION=main\n"
-            f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n",
+            f"KANON_SOURCE_{source_name}_REF=main\n"
+            f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+            f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -498,8 +502,10 @@ class TestDoctorCommandOrphanLockFindings:
         """
         kanon_file.write_text(
             "KANON_SOURCE_REALSRC_URL=https://example.com/real.git\n"
-            "KANON_SOURCE_REALSRC_REVISION=main\n"
-            "KANON_SOURCE_REALSRC_PATH=repo-specs/real.xml\n",
+            "KANON_SOURCE_REALSRC_REF=main\n"
+            "KANON_SOURCE_REALSRC_PATH=repo-specs/real.xml\n"
+            "KANON_SOURCE_REALSRC_NAME=REALSRC\n"
+            "KANON_SOURCE_REALSRC_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 

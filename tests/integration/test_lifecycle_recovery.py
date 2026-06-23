@@ -37,8 +37,10 @@ def _single_source_content(name: str = "primary") -> str:
     """Return minimal .kanon content for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -46,11 +48,15 @@ def _two_source_content(name_a: str = "alpha", name_b: str = "beta") -> str:
     """Return .kanon content for two independent sources."""
     return (
         f"KANON_SOURCE_{name_a}_URL=https://example.com/{name_a}.git\n"
-        f"KANON_SOURCE_{name_a}_REVISION=main\n"
+        f"KANON_SOURCE_{name_a}_REF=main\n"
         f"KANON_SOURCE_{name_a}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name_a}_NAME={name_a}\n"
+        f"KANON_SOURCE_{name_a}_GITBASE=https://example.com\n"
         f"KANON_SOURCE_{name_b}_URL=https://example.com/{name_b}.git\n"
-        f"KANON_SOURCE_{name_b}_REVISION=main\n"
+        f"KANON_SOURCE_{name_b}_REF=main\n"
         f"KANON_SOURCE_{name_b}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name_b}_NAME={name_b}\n"
+        f"KANON_SOURCE_{name_b}_GITBASE=https://example.com\n"
     )
 
 

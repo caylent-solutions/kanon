@@ -18,10 +18,10 @@ _shtab_kanon_commands() {
     "completion:Emit the shell completion script for kanon to stdout."
     "doctor:Run workspace health checks against the current project directory."
     "install:Execute the full Kanon install lifecycle."
-    "list:Print one catalog entry name per line to stdout, sorted"
     "outdated:Compare each KANON_SOURCE_\<name\>_\* block in the .kanon file against"
-    "remove:Remove the three KANON_SOURCE_\<name\>_\{URL,REVISION,PATH\} lines for one"
+    "remove:Remove the KANON_SOURCE_\<alias\>_\{URL,REF,PATH,NAME,GITBASE\} block for"
     "repo:Run kanon\'s repo subcommands."
+    "search:Print one catalog entry name per line to stdout, sorted"
     "validate:Validate manifest XML files for well-formedness and correctness."
     "why:Reads the .kanon file, resolves the full dependency tree"
   )
@@ -128,14 +128,6 @@ under --force). Makes no on-disk change. Exits 0. Collision
 detection pre-flight still runs, so within-request and
 against-existing collisions are reported before a diff is
 shown (unless --force is also passed).]"
-  "--marketplace-install[Write KANON_MARKETPLACE_INSTALL\=true in the .kanon header.
-Takes precedence over the KANON_MARKETPLACE_INSTALL environment
-variable. Only applied when the .kanon file is created (not on
-append). Mutually exclusive with --no-marketplace-install.]"
-  "--no-marketplace-install[Write KANON_MARKETPLACE_INSTALL\=false in the .kanon header.
-Takes precedence over the KANON_MARKETPLACE_INSTALL environment
-variable. Only applied when the .kanon file is created (not on
-append). Mutually exclusive with --marketplace-install.]"
   "(*):One or more catalog entry names, optionally suffixed with \'\@\<spec\>\':"
 )
 
@@ -193,9 +185,8 @@ _shtab_kanon_doctor_defaults_added=0
 
 _shtab_kanon_install_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
-  "--refresh-lock[Ignore the existing lockfile, re-resolve every transitive version from scratch, and overwrite .kanon.lock with the new state. Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source\; the lockfile fallback is disabled on this path.]"
-  "--refresh-lock-source[Re-resolve exactly one top-level source\'s full chain while preserving every other source\'s lockfile entries verbatim. NAME may be a source name (the KANON_SOURCE_\<name\> key) or a catalog entry name resolved via derive_source_name. Requires a CLI-supplied or KANON_CATALOG_SOURCES env-var catalog source\; the lockfile fallback is disabled on this path.]:refresh_lock_source:"
+  "--refresh-lock[Ignore the existing lockfile, re-resolve every transitive version from scratch against the committed .kanon source declarations, and overwrite .kanon.lock with the new state.]"
+  "--refresh-lock-source[Re-resolve exactly one top-level source\'s full chain from the committed .kanon while preserving every other source\'s lockfile entries verbatim. NAME may be a source name (the KANON_SOURCE_\<name\> key) or a catalog entry name resolved via derive_source_name.]:refresh_lock_source:"
   "--strict-lock[Upgrade orphaned lock entries to a hard error. An orphaned lock entry is a source present in .kanon.lock but absent from .kanon (e.g. after \'kanon remove\'). Without this flag, orphaned entries are pruned and an info-line is emitted per orphan. With this flag, kanon exits with an error listing every orphaned source. Remediation\: run without --strict-lock to prune, or restore the missing KANON_SOURCE_\<name\>_\* triples in .kanon.]"
   "--strict-drift[Upgrade branch drift to a hard error. Branch drift occurs when the lockfile records a SHA for a branch-shaped source but the branch\'s current tip on the remote is a different SHA. Without this flag, the locked SHA is reused and an info-line is emitted. With this flag, kanon exits with an error listing every drifted source. Remediation\: run \'kanon install --refresh-lock-source \<source\>\' to accept the new branch tip.]"
   "--lock-file[Path to the lock file. Defaults to \<kanon-file\>.lock (derived from --kanon-file). The KANON_LOCK_FILE environment variable is consulted when this flag is absent\; the CLI flag takes precedence when both are set.]:lock_file:"
@@ -204,26 +195,6 @@ _shtab_kanon_install_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_install_defaults_added=0
-
-_shtab_kanon_list_options=(
-  "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
-  "--format[Output format. \'names\' (default)\: one entry name per line, pipeable into kanon add. \'json\'\: structured JSON array. Default mode and --detail mode emit \{name, display-name, type, description, version\} objects\; --all-versions mode emits \{name, version, ref, sha\} objects. The KANON_LIST_FORMAT environment variable sets the format when this flag is absent\; the CLI flag takes precedence when both are set. --format json is incompatible with --tree (hard error at validation time).]:list_format:(names json)"
-  "--detail[Print a human-readable multi-line record per entry (display-name, description, version, type). Human-readable only -- not pipeable into kanon add. For machine consumers, combine with --format json.]"
-  "--tree[Render a three-layer ASCII dependency tree per entry\: the catalog entry (root), the XML manifests reachable via transitive \<include\> directives, and the \<project\> repos referenced by those manifests. Each node shows the version resolved at command-execution time. Mutually exclusive with --all-versions. Subject to the threshold guardrail (KANON_TREE_NO_FILTER_THRESHOLD, default 20)\: when the catalog exceeds the threshold, supply a filter -- positional substring, --regex, --max-depth 0 -- or pass --no-filter-required.]"
-  "--max-depth[Cap the tree depth rendered by --tree. 0 \= root entry node only (no XML or project layers). 1 \= root \+ XML layer only. Default\: unlimited. --max-depth 0 also satisfies the threshold guardrail as a valid filter.]:max_depth:"
-  "--no-filter-required[Bypass the threshold guardrail for --tree. Normally, catalogs with more than KANON_TREE_NO_FILTER_THRESHOLD (default 20) entries require a filter (positional substring, --regex, or --max-depth 0) to avoid accidental full-catalog tree renders. Pass this flag to bypass the check.]"
-  "--all-versions[Walk all historical tagged versions of the manifest repo and emit one \<name\>\@\<version\> row per catalog entry per version. Versions are ordered newest-first by PEP 440 natural sort\; entries within each version are sorted lexicographically. Mutually exclusive with --tree. Default cap\: KANON_LIST_LIMIT (default 50, overridable via env var). Use --limit N or --no-limit to control the number of versions walked.]"
-  "--limit[Cap the number of versions walked by --all-versions. Default\: KANON_LIST_LIMIT (default 50, overridable via the KANON_LIST_LIMIT environment variable). Mutually exclusive with --no-limit.]:limit:"
-  "--no-limit[Walk all PEP 440-valid tags when using --all-versions, with no cap. Equivalent to --limit \<very-large-number\>. Mutually exclusive with --limit.]"
-  "--since-version[Filter the versions walked by --all-versions to those matching a PEP 440 specifier constraint (e.g. \'\>\=1.0,\<2.0\'). The constraint is evaluated against the PEP 440 version parsed from each tag name. Tags that do not parse as PEP 440 are skipped. Example\: --since-version \'\>\=1.0,\<2.0\']:since_version:"
-  "--regex[Regular-expression filter (Python re.search). When supplied, only entries whose name, display-name, description, or keywords match the pattern are returned. The keywords field matches when any element satisfies re.search. Mutually exclusive with the positional \<substring\>. Use --match-fields to restrict the fields checked. Example\: --regex \'\^foo\']:regex:"
-  "--match-fields[Comma-separated list of fields to check when filtering. Legal values\: name, display-name, description, keywords. Default (when --match-fields is not supplied)\: all four fields. Requires the positional \<substring\> or --regex to be present\; supplying --match-fields without a filter is a hard error. Example\: --match-fields keywords]:match_fields:"
-  ":Optional case-sensitive substring filter. When supplied, only entries whose name, display-name, description, or keywords contain the substring are returned. Mutually exclusive with --regex. Use --match-fields to restrict the fields checked.:"
-)
-
-# guard to ensure default positional specs are added only once per session
-_shtab_kanon_list_defaults_added=0
 
 _shtab_kanon_outdated_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -246,7 +217,7 @@ printed to stdout with a \'-\' prefix. Makes no on-disk change. Exits 0.
 The file-writing rules (line-ending preservation, blank-run collapse,
 trailing-newline normalisation) apply only to the normal write path,
 not to the dry-run output.]"
-  "(*):One or more source names to remove. Each may be the canonical source:"
+  "(*):One or more source aliases to remove. Each may be the canonical alias:"
 )
 
 # guard to ensure default positional specs are added only once per session
@@ -260,6 +231,26 @@ _shtab_kanon_repo_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_repo_defaults_added=0
+
+_shtab_kanon_search_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
+  "--format[Output format. \'names\' (default)\: one entry name per line, pipeable into kanon add. \'json\'\: structured JSON array. Default mode and --detail mode emit \{name, display-name, type, description, version\} objects\; -A\/--all mode emits \{name, version, ref, sha\} objects. The KANON_LIST_FORMAT environment variable sets the format when this flag is absent\; the CLI flag takes precedence when both are set. --format json is incompatible with --tree (hard error at validation time).]:list_format:(names json)"
+  "--detail[Print a human-readable multi-line record per entry (display-name, description, version, type). Human-readable only -- not pipeable into kanon add. For machine consumers, combine with --format json.]"
+  "--tree[Render a three-layer ASCII dependency tree per entry\: the catalog entry (root), the XML manifests reachable via transitive \<include\> directives, and the \<project\> repos referenced by those manifests. Each node shows the version resolved at command-execution time. Mutually exclusive with -A\/--all. Subject to the threshold guardrail (KANON_TREE_NO_FILTER_THRESHOLD, default 20)\: when the catalog exceeds the threshold, supply a filter -- positional substring, --regex, --max-depth 0 -- or pass --no-filter-required.]"
+  "--max-depth[Cap the tree depth rendered by --tree. 0 \= root entry node only (no XML or project layers). 1 \= root \+ XML layer only. Default\: unlimited. --max-depth 0 also satisfies the threshold guardrail as a valid filter.]:max_depth:"
+  "--no-filter-required[Bypass the threshold guardrail for --tree. Normally, catalogs with more than KANON_TREE_NO_FILTER_THRESHOLD (default 20) entries require a filter (positional substring, --regex, or --max-depth 0) to avoid accidental full-catalog tree renders. Pass this flag to bypass the check.]"
+  {-A,--all}"[Show all tagged versions of each matching manifest instead of the latest-only default. Walks all historical tagged versions of the manifest repo and emits one \<name\>\@\<version\> row per catalog entry per version. Versions are ordered newest-first by PEP 440 natural sort\; entries within each version are sorted lexicographically. Mutually exclusive with --tree. Default cap\: KANON_LIST_LIMIT (default 50, overridable via env var). Use --limit N or --no-limit to control the number of versions walked.]"
+  "--limit[Cap the number of versions walked by -A\/--all. Default\: KANON_LIST_LIMIT (default 50, overridable via the KANON_LIST_LIMIT environment variable). Mutually exclusive with --no-limit.]:limit:"
+  "--no-limit[Walk all PEP 440-valid tags when using -A\/--all, with no cap. Equivalent to --limit \<very-large-number\>. Mutually exclusive with --limit.]"
+  "--since-version[Filter the versions walked by -A\/--all to those matching a PEP 440 specifier constraint (e.g. \'\>\=1.0,\<2.0\'). The constraint is evaluated against the PEP 440 version parsed from each tag name. Tags that do not parse as PEP 440 are skipped. Example\: --since-version \'\>\=1.0,\<2.0\']:since_version:"
+  "--regex[Regular-expression filter (Python re.search). When supplied, only entries whose name, display-name, description, or keywords match the pattern are returned. The keywords field matches when any element satisfies re.search. Mutually exclusive with the positional \<substring\>. Use --match-fields to restrict the fields checked. Example\: --regex \'\^foo\']:regex:"
+  "--match-fields[Comma-separated list of fields to check when filtering. Legal values\: name, display-name, description, keywords. Default (when --match-fields is not supplied)\: all four fields. Requires the positional \<substring\> or --regex to be present\; supplying --match-fields without a filter is a hard error. Example\: --match-fields keywords]:match_fields:"
+  ":Optional case-sensitive substring filter. When supplied, only entries whose name, display-name, description, or keywords contain the substring are returned. Mutually exclusive with --regex. Use --match-fields to restrict the fields checked.:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_search_defaults_added=0
 
 _shtab_kanon_validate_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -346,10 +337,10 @@ _shtab_kanon() {
         completion) _arguments -C -s $_shtab_kanon_completion_options ;;
         doctor) _arguments -C -s $_shtab_kanon_doctor_options ;;
         install) _arguments -C -s $_shtab_kanon_install_options ;;
-        list) _arguments -C -s $_shtab_kanon_list_options ;;
         outdated) _arguments -C -s $_shtab_kanon_outdated_options ;;
         remove) _arguments -C -s $_shtab_kanon_remove_options ;;
         repo) _arguments -C -s $_shtab_kanon_repo_options ;;
+        search) _arguments -C -s $_shtab_kanon_search_options ;;
         validate) _shtab_kanon_validate ;;
         why) _arguments -C -s $_shtab_kanon_why_options ;;
       esac

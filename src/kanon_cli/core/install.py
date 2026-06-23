@@ -995,13 +995,13 @@ def _refresh_one_source(
     Raises:
         ValueError: If the ref is not found on the remote or if git ls-remote fails.
     """
-    resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+    resolved_revision = resolve_version(source_data["url"], source_data["ref"])
     ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
     return SourceEntry(
         alias=source_name,
         name=source_name,
         url=source_data["url"],
-        ref_spec=source_data["revision"],
+        ref_spec=source_data["ref"],
         resolved_ref=ref_resolution.resolved_ref,
         resolved_sha=ref_resolution.sha,
         path=source_data["path"],
@@ -1828,7 +1828,7 @@ def _run_install(
         mismatch_config = parse_kanonenv(kanonenv_path)
         mismatch_source_names: list[str] = mismatch_config["KANON_SOURCES"]
         mismatch_revision_specs: dict[str, str] = {
-            name: mismatch_config["sources"][name]["revision"] for name in mismatch_source_names
+            name: mismatch_config["sources"][name]["ref"] for name in mismatch_source_names
         }
 
         if strict_lock:
@@ -2000,7 +2000,7 @@ def _run_install(
         # resolution branch below agree.
         reconcile_replay = install_state is InstallState.RECONCILE and _should_replay_source(
             name,
-            source_data["revision"],
+            source_data["ref"],
             existing_lockfile,
         )
 
@@ -2116,21 +2116,21 @@ def _run_install(
                 resolved_entries.append(pinned)
             else:
                 # Source in .kanon but not in lockfile -- resolve fresh.
-                resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+                resolved_revision = resolve_version(source_data["url"], source_data["ref"])
                 ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
                 resolved_entries.append(
                     SourceEntry(
                         alias=name,
                         name=name,
                         url=source_data["url"],
-                        ref_spec=source_data["revision"],
+                        ref_spec=source_data["ref"],
                         resolved_ref=ref_resolution.resolved_ref,
                         resolved_sha=ref_resolution.sha,
                         path=source_data["path"],
                     )
                 )
         else:
-            resolved_revision = resolve_version(source_data["url"], source_data["revision"])
+            resolved_revision = resolve_version(source_data["url"], source_data["ref"])
             # Resolve the actual commit SHA and the matched ref for the lockfile entry.
             # ValueError propagates unconditionally (fail-fast; no silent degradation).
             ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
@@ -2139,7 +2139,7 @@ def _run_install(
                     alias=name,
                     name=name,
                     url=source_data["url"],
-                    ref_spec=source_data["revision"],
+                    ref_spec=source_data["ref"],
                     resolved_ref=ref_resolution.resolved_ref,
                     resolved_sha=ref_resolution.sha,
                     path=source_data["path"],

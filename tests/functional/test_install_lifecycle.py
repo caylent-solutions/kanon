@@ -22,8 +22,10 @@ class TestInstallLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 
@@ -53,11 +55,15 @@ class TestInstallLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_REF=main\n"
                 "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_NAME=alpha\n"
+                "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
                 "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_REF=main\n"
                 "KANON_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_NAME=bravo\n"
+                "KANON_SOURCE_bravo_GITBASE=https://example.com\n"
             ),
         )
 
@@ -91,11 +97,15 @@ class TestInstallLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_REF=main\n"
                 "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_NAME=alpha\n"
+                "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
                 "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_REF=main\n"
                 "KANON_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_NAME=bravo\n"
+                "KANON_SOURCE_bravo_GITBASE=https://example.com\n"
             ),
         )
 
@@ -119,8 +129,10 @@ class TestInstallLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 

@@ -56,8 +56,10 @@ def _valid_single_source_content(source_name: str = "primary") -> str:
     return (
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
 
 
@@ -76,11 +78,15 @@ def _valid_two_source_content(source_alpha: str = "alpha", source_bravo: str = "
     return (
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_alpha}_URL={url_alpha}\n"
-        f"KANON_SOURCE_{source_alpha}_REVISION=main\n"
+        f"KANON_SOURCE_{source_alpha}_REF=main\n"
         f"KANON_SOURCE_{source_alpha}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_alpha}_NAME={source_alpha}\n"
+        f"KANON_SOURCE_{source_alpha}_GITBASE=https://example.com\n"
         f"KANON_SOURCE_{source_bravo}_URL={url_bravo}\n"
-        f"KANON_SOURCE_{source_bravo}_REVISION=main\n"
+        f"KANON_SOURCE_{source_bravo}_REF=main\n"
         f"KANON_SOURCE_{source_bravo}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_bravo}_NAME={source_bravo}\n"
+        f"KANON_SOURCE_{source_bravo}_GITBASE=https://example.com\n"
     )
 
 
@@ -148,9 +154,9 @@ class TestParseFailureExitsOne:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture,
     ) -> None:
-        """A .kanon source missing KANON_SOURCE_<name>_REVISION causes exit code 1.
+        """A .kanon source missing KANON_SOURCE_<name>_REF causes exit code 1.
 
-        An incomplete source definition (URL and PATH defined, REVISION absent)
+        An incomplete source definition (URL and PATH defined, REF absent)
         fails validation. The CLI must exit 1 with a clear error on stderr naming
         the missing variable.
         """
@@ -165,12 +171,10 @@ class TestParseFailureExitsOne:
             main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
 
         assert exc_info.value.code == 1, (
-            f"install must exit 1 when source REVISION is missing; got code {exc_info.value.code}"
+            f"install must exit 1 when source REF is missing; got code {exc_info.value.code}"
         )
         captured = capsys.readouterr()
-        assert "Error" in captured.err, (
-            f"stderr must contain 'Error' for a missing REVISION; got stderr={captured.err!r}"
-        )
+        assert "Error" in captured.err, f"stderr must contain 'Error' for a missing REF; got stderr={captured.err!r}"
 
     def test_missing_path_variable_exits_1_with_parse_error(
         self,
@@ -179,13 +183,13 @@ class TestParseFailureExitsOne:
     ) -> None:
         """A .kanon source missing KANON_SOURCE_<name>_PATH causes exit code 1.
 
-        An incomplete source definition (URL and REVISION defined, PATH absent)
+        An incomplete source definition (URL and REF defined, PATH absent)
         fails validation. The CLI must exit 1 with an error on stderr.
         """
         content = (
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_incomplete_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_incomplete_REVISION=main\n"
+            "KANON_SOURCE_incomplete_REF=main\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
 
@@ -201,8 +205,8 @@ class TestParseFailureExitsOne:
     @pytest.mark.parametrize(
         "missing_suffix,kept_suffixes",
         [
-            ("_REVISION", ("_URL", "_PATH")),
-            ("_PATH", ("_URL", "_REVISION")),
+            ("_REF", ("_URL", "_PATH")),
+            ("_PATH", ("_URL", "_REF")),
         ],
     )
     def test_parse_error_output_goes_to_stderr_not_stdout(
@@ -221,7 +225,7 @@ class TestParseFailureExitsOne:
             var = f"KANON_SOURCE_src{suffix}"
             if suffix == "_URL":
                 lines.append(f"{var}=https://example.com/repo.git\n")
-            elif suffix == "_REVISION":
+            elif suffix == "_REF":
                 lines.append(f"{var}=main\n")
             elif suffix == "_PATH":
                 lines.append(f"{var}=repo-specs/manifest.xml\n")

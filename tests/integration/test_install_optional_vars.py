@@ -50,12 +50,14 @@ def _minimal_source_block(name: str = "primary") -> str:
         name: Source name to use in variable keys.
 
     Returns:
-        A string with three required KANON_SOURCE_* variable lines.
+        A string with the required KANON_SOURCE_* variable lines.
     """
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 

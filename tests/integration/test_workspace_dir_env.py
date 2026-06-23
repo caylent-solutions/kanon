@@ -37,8 +37,10 @@ def _url_kanonenv(directory: pathlib.Path, source_name: str = "build") -> pathli
     kanonenv = directory / ".kanon"
     kanonenv.write_text(
         f"KANON_SOURCE_{source_name}_URL=https://example.com/{source_name}.git\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -46,17 +48,20 @@ def _url_kanonenv(directory: pathlib.Path, source_name: str = "build") -> pathli
 def _path_source_kanonenv(directory: pathlib.Path, source_name: str = "builders-plugins") -> pathlib.Path:
     """Write a .kanon file with a URL-based source simulating a direct path= catalog entry.
 
-    In the kanon .kanon file format, all sources require URL + REVISION + PATH.
-    The 'path=' catalog entry type (F8) is a catalog-level concept; at the
-    .kanon level it still resolves to the standard three-key format.  This
-    helper uses the same URL source format as _url_kanonenv but names the
-    source 'builders-plugins' to mirror the F8 fixture entry name.
+    In the kanon .kanon file format, all sources require the five alias-keyed
+    variables: URL, REF, PATH, NAME, and GITBASE.  The 'path=' catalog entry
+    type (F8) is a catalog-level concept; at the .kanon level it still resolves
+    to the standard alias-keyed source block.  This helper uses the same URL
+    source format as _url_kanonenv but names the source 'builders-plugins' to
+    mirror the F8 fixture entry name.
     """
     kanonenv = directory / ".kanon"
     kanonenv.write_text(
         f"KANON_SOURCE_{source_name}_URL=https://example.com/{source_name}.git\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 

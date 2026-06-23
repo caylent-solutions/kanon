@@ -45,8 +45,10 @@ def _write_kanonenv(
     """
     lines = [
         "KANON_SOURCE_primary_URL=https://example.com/primary.git",
-        "KANON_SOURCE_primary_REVISION=main",
+        "KANON_SOURCE_primary_REF=main",
         "KANON_SOURCE_primary_PATH=meta.xml",
+        "KANON_SOURCE_primary_NAME=primary",
+        "KANON_SOURCE_primary_GITBASE=https://example.com",
         f"KANON_MARKETPLACE_INSTALL={'true' if marketplace_install else 'false'}",
     ]
     if marketplace_dir is not None:

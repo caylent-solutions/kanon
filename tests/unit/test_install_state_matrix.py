@@ -43,8 +43,10 @@ GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_REF=main
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 """
 
 _KANON_SINGLE_SOURCE_MODIFIED = """\
@@ -52,8 +54,10 @@ GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=2.0.0
+KANON_SOURCE_alpha_REF=2.0.0
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 """
 
 _VALID_SHA40 = "a" * 40

@@ -70,15 +70,15 @@ def kanon_hash(kanon_path: pathlib.Path) -> str:
 
 
 def _serialise_sources(sources: dict[str, dict[str, str]]) -> bytes:
-    """Serialise the source triples to bytes for hashing.
+    """Serialise the alias-keyed source blocks to bytes for hashing.
 
-    Sorts sources by name (lexicographic, case-sensitive) and encodes each
-    as ``name\\turl\\trevision\\tpath\\n`` in UTF-8. Raises ``KanonHashError``
+    Sorts sources by alias (lexicographic, case-sensitive) and encodes each
+    as ``alias\\turl\\tref\\tpath\\n`` in UTF-8. Raises ``KanonHashError``
     if any field value contains a tab, newline, or NUL byte.
 
     Args:
-        sources: Dict mapping source name to a dict with ``url``,
-            ``revision``, and ``path`` keys, as returned by
+        sources: Dict mapping source alias to a dict with ``url``,
+            ``ref``, and ``path`` keys, as returned by
             ``parse_kanonenv``.
 
     Returns:
@@ -88,16 +88,16 @@ def _serialise_sources(sources: dict[str, dict[str, str]]) -> bytes:
         KanonHashError: If any field value contains a forbidden character.
     """
     parts: list[bytes] = []
-    for name in sorted(sources.keys()):
-        source = sources[name]
+    for alias in sorted(sources.keys()):
+        source = sources[alias]
         url = source["url"]
-        revision = source["revision"]
+        ref = source["ref"]
         path = source["path"]
-        _check_field(name, "NAME", name)
-        _check_field(name, "URL", url)
-        _check_field(name, "REVISION", revision)
-        _check_field(name, "PATH", path)
-        parts.append(f"{name}\t{url}\t{revision}\t{path}\n".encode("utf-8"))
+        _check_field(alias, "ALIAS", alias)
+        _check_field(alias, "URL", url)
+        _check_field(alias, "REF", ref)
+        _check_field(alias, "PATH", path)
+        parts.append(f"{alias}\t{url}\t{ref}\t{path}\n".encode("utf-8"))
     return b"".join(parts)
 
 
@@ -105,8 +105,8 @@ def _check_field(source_name: str, field_name: str, value: str) -> None:
     """Raise KanonHashError if ``value`` contains any forbidden character.
 
     Args:
-        source_name: The KANON_SOURCE_<name> identifier, used in the error.
-        field_name: One of ``NAME``, ``URL``, ``REVISION``, or ``PATH``.
+        source_name: The KANON_SOURCE_<alias> identifier, used in the error.
+        field_name: One of ``ALIAS``, ``URL``, ``REF``, or ``PATH``.
         value: The field value to validate.
 
     Raises:
@@ -115,10 +115,16 @@ def _check_field(source_name: str, field_name: str, value: str) -> None:
     for char in _FORBIDDEN_CHARS:
         if char in value:
             codepoint = _CHAR_CODEPOINT[char]
+            if field_name == "ALIAS":
+                remediation = (
+                    f"Rename the source alias '{source_name}' in the "
+                    f"KANON_SOURCE_<alias>_* keys to remove the character."
+                )
+            else:
+                remediation = f"Remove the character from the KANON_SOURCE_{source_name}_{field_name} value."
             msg = (
                 f"Source '{source_name}' field {field_name} contains "
                 f"forbidden character {codepoint}: the value cannot be "
-                f"serialised for hashing. Remove the character from the "
-                f"KANON_SOURCE_{source_name}_{field_name} value."
+                f"serialised for hashing. {remediation}"
             )
             raise KanonHashError(msg)

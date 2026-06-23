@@ -151,8 +151,10 @@ def _write_kanon(
     """Write a .kanon file for the ``pk`` source pointing at a manifest repo."""
     lines = [
         f"KANON_SOURCE_pk_URL={manifest_repo_url}",
-        f"KANON_SOURCE_pk_REVISION={revision}",
+        f"KANON_SOURCE_pk_REF={revision}",
         f"KANON_SOURCE_pk_PATH={manifest_path}",
+        "KANON_SOURCE_pk_NAME=pk",
+        f"KANON_SOURCE_pk_GITBASE={manifest_repo_url}",
     ]
     if extra_lines:
         lines.extend(extra_lines)
@@ -378,7 +380,7 @@ class TestPK:
         assert not (work_dir / ".packages").exists(), ".packages/ not removed by second clean"
 
     def test_pk_07_env_override_revision(self, tmp_path: pathlib.Path) -> None:
-        """PK-07: env override of KANON_SOURCE_pk_REVISION resolves to 2.1.0."""
+        """PK-07: env override of KANON_SOURCE_pk_REF resolves to 2.1.0."""
         pkg_dir = tmp_path / "repos"
         pkg_dir.mkdir()
         mfst_repos = tmp_path / "mfst-repos"
@@ -396,7 +398,7 @@ class TestPK:
         result = kanon_install(
             work_dir,
             extra_env={
-                "KANON_SOURCE_pk_REVISION": "refs/tags/~=2.0.0",
+                "KANON_SOURCE_pk_REF": "refs/tags/~=2.0.0",
                 "KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main",
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
@@ -575,11 +577,15 @@ class TestPK:
         kanon_file = work_dir / ".kanon"
         kanon_file.write_text(
             f"KANON_SOURCE_a_URL={mfst_a.as_uri()}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=pk12.xml\n"
+            "KANON_SOURCE_a_NAME=a\n"
+            f"KANON_SOURCE_a_GITBASE={mfst_a.as_uri()}\n"
             f"KANON_SOURCE_b_URL={mfst_b.as_uri()}\n"
-            "KANON_SOURCE_b_REVISION=main\n"
+            "KANON_SOURCE_b_REF=main\n"
             "KANON_SOURCE_b_PATH=pk12.xml\n"
+            "KANON_SOURCE_b_NAME=b\n"
+            f"KANON_SOURCE_b_GITBASE={mfst_b.as_uri()}\n"
         )
 
         result = kanon_install(

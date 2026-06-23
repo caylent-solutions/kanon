@@ -39,24 +39,24 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
 """)
 
 _KANON_SINGLE_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
 
 _KANON_TWO_SOURCES_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper_a}_URL={url_a}
-    KANON_SOURCE_{name_upper_a}_REVISION={revision_a}
+    KANON_SOURCE_{name_upper_a}_REF={revision_a}
     KANON_SOURCE_{name_upper_a}_PATH=./{name_lower_a}
+    KANON_SOURCE_{name_upper_a}_NAME={name_upper_a}
+    KANON_SOURCE_{name_upper_a}_GITBASE=https://example.com
     KANON_SOURCE_{name_upper_b}_URL={url_b}
-    KANON_SOURCE_{name_upper_b}_REVISION={revision_b}
+    KANON_SOURCE_{name_upper_b}_REF={revision_b}
     KANON_SOURCE_{name_upper_b}_PATH=./{name_lower_b}
+    KANON_SOURCE_{name_upper_b}_NAME={name_upper_b}
+    KANON_SOURCE_{name_upper_b}_GITBASE=https://example.com
 """)
 
 

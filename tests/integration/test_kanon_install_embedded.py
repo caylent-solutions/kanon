@@ -28,8 +28,10 @@ def _minimal_kanonenv_content(name: str = "primary") -> str:
     """Return a minimal .kanon content string for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -127,15 +129,17 @@ class TestInstallVersionConstraintResolution:
     """AC-FUNC-011: Install with version constraint resolves to correct tag."""
 
     def test_install_version_constraint_resolves_to_correct_tag(self, tmp_path: Path) -> None:
-        """Verify that a KANON_SOURCE_*_REVISION with a PEP 440 constraint
+        """Verify that a KANON_SOURCE_*_REF with a PEP 440 constraint
         resolves to the best matching tag via git ls-remote before repo_init is called.
         """
         kanonenv = _write_kanonenv(
             tmp_path,
             (
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=refs/tags/~=1.0.0\n"
+                "KANON_SOURCE_primary_REF=refs/tags/~=1.0.0\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
             ),
         )
 
@@ -213,8 +217,10 @@ class TestInstallMarketplaceDisabled:
             (
                 "KANON_MARKETPLACE_INSTALL=false\n"
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=main\n"
+                "KANON_SOURCE_primary_REF=main\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
             ),
         )
 
@@ -330,8 +336,10 @@ class TestInstallRelativeKanonPath:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_primary_URL={manifest_url}\n"
-            "KANON_SOURCE_primary_REVISION=main\n"
-            "KANON_SOURCE_primary_PATH=default.xml\n",
+            "KANON_SOURCE_primary_REF=main\n"
+            "KANON_SOURCE_primary_PATH=default.xml\n"
+            "KANON_SOURCE_primary_NAME=primary\n"
+            "KANON_SOURCE_primary_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 

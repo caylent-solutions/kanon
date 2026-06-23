@@ -80,7 +80,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_upgrade_type(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -101,7 +101,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_latest_columns_show_truncated_head(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -125,7 +125,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_current_column(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -155,7 +155,7 @@ class TestBranchPinnedDrift:
     def test_drift_upgrade_type(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -176,7 +176,7 @@ class TestBranchPinnedDrift:
     def test_drift_current_shows_locked_truncated_sha(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -195,7 +195,7 @@ class TestBranchPinnedDrift:
     def test_drift_latest_columns_show_head_truncated(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -224,7 +224,7 @@ class TestBranchPinnedDriftBranchNames:
     def test_branch_drift_parametrized(self, branch_name: str) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": branch_name,
+            "ref": branch_name,
             "path": "./src",
         }
         with patch(
@@ -255,7 +255,7 @@ class TestBranchPinnedNoLockfile:
     def test_no_lockfile_current_equals_head_truncated(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -277,7 +277,7 @@ class TestBranchPinnedNoLockfile:
         """Without lockfile, current == head, so upgrade-type=none."""
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -296,7 +296,7 @@ class TestBranchPinnedNoLockfile:
     def test_no_lockfile_latest_columns_show_head(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -328,7 +328,7 @@ class TestShaPinned:
         sha_12 = "a" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
         row = _build_row(
@@ -348,7 +348,7 @@ class TestShaPinned:
         sha_12 = "b" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_64,
+            "ref": sha_64,
             "path": "./src",
         }
         row = _build_row(
@@ -369,7 +369,7 @@ class TestShaPinned:
         sha_12 = "c" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
         row = _build_row(
@@ -390,7 +390,7 @@ class TestShaPinned:
         sha_12 = "d" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
         # Even with a different lock_ref, upgrade-type should be none for SHA-pinned
@@ -426,7 +426,7 @@ class TestShaTruncation:
         """Branch HEAD SHA is truncated to exactly 12 leading hex chars."""
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -553,8 +553,10 @@ class TestRunDispatchBranchPinned:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -600,8 +602,10 @@ class TestRunDispatchShaPinned:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            f"KANON_SOURCE_FOO_REVISION={sha_40}\n"
+            f"KANON_SOURCE_FOO_REF={sha_40}\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -740,8 +744,10 @@ class TestRunBranchPinnedErrorPaths:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
 
         args = _make_args(
@@ -770,8 +776,10 @@ class TestRunBranchPinnedErrorPaths:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
 
         args = _make_args(

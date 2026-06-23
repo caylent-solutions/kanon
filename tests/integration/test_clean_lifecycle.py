@@ -40,8 +40,10 @@ def _write_kanonenv(directory: pathlib.Path, extra_lines: str = "") -> pathlib.P
     """
     base = (
         "KANON_SOURCE_primary_URL=https://example.com/primary.git\n"
-        "KANON_SOURCE_primary_REVISION=main\n"
+        "KANON_SOURCE_primary_REF=main\n"
         "KANON_SOURCE_primary_PATH=meta.xml\n"
+        "KANON_SOURCE_primary_NAME=primary\n"
+        "KANON_SOURCE_primary_GITBASE=https://example.com\n"
     )
     kanonenv = directory / ".kanon"
     kanonenv.write_text(base + extra_lines)
@@ -399,11 +401,15 @@ class TestCleanMarketplaceTrue:
             f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
             f"KANON_SOURCE_source_alpha_URL=file://{bare_alpha}\n"
-            f"KANON_SOURCE_source_alpha_REVISION=main\n"
+            f"KANON_SOURCE_source_alpha_REF=main\n"
             f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
+            f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
+            f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
             f"KANON_SOURCE_source_bravo_URL=file://{bare_bravo}\n"
-            f"KANON_SOURCE_source_bravo_REVISION=main\n"
+            f"KANON_SOURCE_source_bravo_REF=main\n"
             f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
+            f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
+            f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n"
         )
         kanonenv = kanonenv.resolve()
 

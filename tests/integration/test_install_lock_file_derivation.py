@@ -24,8 +24,10 @@ import pytest
 
 _KANON_CONTENT = (
     "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-    "KANON_SOURCE_primary_REVISION=main\n"
+    "KANON_SOURCE_primary_REF=main\n"
     "KANON_SOURCE_primary_PATH=meta.xml\n"
+    "KANON_SOURCE_primary_NAME=primary\n"
+    "KANON_SOURCE_primary_GITBASE=https://example.com\n"
 )
 
 

@@ -20,8 +20,10 @@ class TestCleanLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
         (tmp_path / ".packages" / "pkg").mkdir(parents=True)
@@ -40,8 +42,10 @@ class TestCleanLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
                 "KANON_MARKETPLACE_INSTALL=true\n"
                 f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
             ),
@@ -62,8 +66,10 @@ class TestCleanLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
         (tmp_path / ".packages" / "pkg").mkdir(parents=True)
@@ -80,8 +86,10 @@ class TestCleanLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 

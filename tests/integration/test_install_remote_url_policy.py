@@ -70,8 +70,10 @@ def _write_http_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     kanonenv.write_text(
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_mysource_URL=http://example.com/repo.git\n"
-        "KANON_SOURCE_mysource_REVISION=main\n"
+        "KANON_SOURCE_mysource_REF=main\n"
         "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+        "KANON_SOURCE_mysource_NAME=mysource\n"
+        "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -89,8 +91,10 @@ def _write_https_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     kanonenv.write_text(
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_mysource_URL=https://example.com/repo.git\n"
-        "KANON_SOURCE_mysource_REVISION=main\n"
+        "KANON_SOURCE_mysource_REF=main\n"
         "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+        "KANON_SOURCE_mysource_NAME=mysource\n"
+        "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -405,8 +409,10 @@ class TestInstallCliExitCodes:
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=http://example.com/repo.git\n"
-            "KANON_SOURCE_mysource_REVISION=main\n"
+            "KANON_SOURCE_mysource_REF=main\n"
             "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_mysource_NAME=mysource\n"
+            "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
 
         env = {k: v for k, v in os.environ.items() if k != "KANON_ALLOW_INSECURE_REMOTES"}
@@ -447,8 +453,10 @@ class TestInstallCliExitCodes:
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=http://example.com/repo.git\n"
-            "KANON_SOURCE_mysource_REVISION=main\n"
+            "KANON_SOURCE_mysource_REF=main\n"
             "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_mysource_NAME=mysource\n"
+            "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
 
         env = {**os.environ, "KANON_ALLOW_INSECURE_REMOTES": "1"}
@@ -487,8 +495,10 @@ class TestInstallCliExitCodes:
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_mysource_REVISION=main\n"
+            "KANON_SOURCE_mysource_REF=main\n"
             "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_mysource_NAME=mysource\n"
+            "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
 
         env = {k: v for k, v in os.environ.items() if k != "KANON_ALLOW_INSECURE_REMOTES"}
@@ -532,8 +542,10 @@ class TestInstallCliExitCodes:
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=http://example.com/repo.git\n"
-            "KANON_SOURCE_mysource_REVISION=main\n"
+            "KANON_SOURCE_mysource_REF=main\n"
             "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_mysource_NAME=mysource\n"
+            "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
         env_no_override = {k: v for k, v in os.environ.items() if k != "KANON_ALLOW_INSECURE_REMOTES"}
         result_http = subprocess.run(
@@ -560,8 +572,10 @@ class TestInstallCliExitCodes:
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_mysource_REVISION=main\n"
+            "KANON_SOURCE_mysource_REF=main\n"
             "KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_mysource_NAME=mysource\n"
+            "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
 
         # Step 3: Rerun without override -- policy check must now pass.

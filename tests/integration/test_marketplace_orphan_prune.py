@@ -129,8 +129,10 @@ def _write_kanonenv_single_source(
         "KANON_MARKETPLACE_INSTALL=true\n"
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
         f"KANON_SOURCE_{source_name}_URL={source_url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/{source_name}-marketplace.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -148,8 +150,10 @@ def _write_kanonenv_sources(
     ]
     for source_name, source_url in sources:
         lines.append(f"KANON_SOURCE_{source_name}_URL={source_url}")
-        lines.append(f"KANON_SOURCE_{source_name}_REVISION=main")
+        lines.append(f"KANON_SOURCE_{source_name}_REF=main")
         lines.append(f"KANON_SOURCE_{source_name}_PATH=repo-specs/{source_name}-marketplace.xml")
+        lines.append(f"KANON_SOURCE_{source_name}_NAME={source_name}")
+        lines.append(f"KANON_SOURCE_{source_name}_GITBASE=https://example.com")
     kanonenv = directory / ".kanon"
     kanonenv.write_text("\n".join(lines) + "\n")
     return kanonenv.resolve()

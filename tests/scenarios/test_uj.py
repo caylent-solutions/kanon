@@ -596,8 +596,10 @@ class TestUJ:
 
         kanon_text = (
             f"KANON_SOURCE_a_URL={manifest_url}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=repo-specs/pkg-alpha-only.xml\n"
+            "KANON_SOURCE_a_NAME=a\n"
+            f"KANON_SOURCE_a_GITBASE={manifest_url}\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "HOME_NOTE=${HOME}\n"
         )
@@ -619,7 +621,7 @@ class TestUJ:
 
         bad_kanon_text = (
             "KANON_SOURCE_a_URL=${UNDEFINED_KANON_VAR}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=repo-specs/pkg-alpha-only.xml\n"
         )
         (work_dir_bad / ".kanon").write_text(bad_kanon_text)

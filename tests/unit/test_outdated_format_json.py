@@ -432,8 +432,10 @@ class TestRunJsonDispatch:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=foo-manifest\n"
+            "KANON_SOURCE_FOO_GITBASE=file:///some\n"
         )
         kanon_file.chmod(0o644)
 
@@ -453,9 +455,14 @@ class TestRunJsonDispatch:
         assert result == 0
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        obj = parsed[0]
+        # The JSON payload is an object with the alias renders and the source rows
+        # (spec Section 5.1 / FR-59: alias -> name from <source>@<ref> via _NAME).
+        assert isinstance(parsed, dict)
+        assert parsed["aliases"] == ["FOO -> foo-manifest from file:///some/repo@>=1.0.0,<1.1"]
+        sources = parsed["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 1
+        obj = sources[0]
         assert obj["name"] == "FOO"
         assert set(obj.keys()) == {
             "name",

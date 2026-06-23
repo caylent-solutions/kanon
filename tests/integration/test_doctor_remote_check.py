@@ -169,8 +169,10 @@ def _build_workspace(
     kanon_lines = []
     for s in sources:
         kanon_lines.append(f"KANON_SOURCE_{s['name']}_URL={s['url']}")
-        kanon_lines.append(f"KANON_SOURCE_{s['name']}_REVISION={s['revision_spec']}")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_REF={s['revision_spec']}")
         kanon_lines.append(f"KANON_SOURCE_{s['name']}_PATH=repo-specs/meta.xml")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_NAME={s['name']}")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_GITBASE=https://example.com")
     kanon_lines.append("KANON_MARKETPLACE_INSTALL=false")
 
     kanon_path = workspace / ".kanon"
@@ -226,8 +228,10 @@ class TestDoctorRemoteReachabilityFullCli:
         kanon_path = tmp_path / ".kanon"
         kanon_path.write_text(
             "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            "KANON_SOURCE_src_REVISION=main\n"
+            "KANON_SOURCE_src_REF=main\n"
             "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            "KANON_SOURCE_src_NAME=src\n"
+            "KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n",
             encoding="utf-8",
         )

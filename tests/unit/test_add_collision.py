@@ -38,11 +38,13 @@ def _make_metadata(
 
 
 def _make_triple_block(source_name: str, url: str, revision: str, path: str) -> str:
-    """Build the three KANON_SOURCE_* lines as a block (with leading blank line)."""
+    """Build the five KANON_SOURCE_* lines as a block (with leading blank line)."""
     return (
         f"\nKANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_REF={revision}\n"
         f"KANON_SOURCE_{source_name}_PATH={path}\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
 
 
@@ -175,7 +177,7 @@ class TestAgainstExistingBlocksCollision:
                 kanon_file=kanon_file,
                 source_name="entry_a",
                 new_url="https://example.com/new.git",
-                new_revision="refs/tags/2.0.0",
+                new_ref="refs/tags/2.0.0",
                 new_path="repo-specs/entry-a-marketplace.xml",
                 force=False,
             )
@@ -203,7 +205,7 @@ class TestAgainstExistingBlocksCollision:
                 kanon_file=kanon_file,
                 source_name="foo",
                 new_url="https://new.example.com/repo.git",
-                new_revision="refs/tags/2.0.0",
+                new_ref="refs/tags/2.0.0",
                 new_path="repo-specs/foo-marketplace.xml",
                 force=False,
             )
@@ -239,7 +241,7 @@ class TestAgainstExistingBlocksCollision:
                 kanon_file=kanon_file,
                 source_name="my_source",
                 new_url="https://example.com/new.git",
-                new_revision="refs/tags/2.0.0",
+                new_ref="refs/tags/2.0.0",
                 new_path="repo-specs/my-source-marketplace.xml",
                 force=False,
             )
@@ -258,7 +260,7 @@ class TestAgainstExistingBlocksCollision:
             kanon_file=kanon_file,
             source_name="fresh_entry",
             new_url="https://example.com/new.git",
-            new_revision="refs/tags/1.0.0",
+            new_ref="refs/tags/1.0.0",
             new_path="repo-specs/fresh-entry-marketplace.xml",
             force=False,
         )
@@ -283,7 +285,7 @@ class TestAgainstExistingBlocksCollision:
             kanon_file=kanon_file,
             source_name="entry_a",
             new_url="https://example.com/new.git",
-            new_revision="refs/tags/2.0.0",
+            new_ref="refs/tags/2.0.0",
             new_path="repo-specs/entry-a-marketplace.xml",
             force=True,
         )
@@ -300,7 +302,7 @@ class TestAgainstExistingBlocksCollision:
             kanon_file=kanon_file,
             source_name="fresh_entry",
             new_url="https://example.com/new.git",
-            new_revision="refs/tags/1.0.0",
+            new_ref="refs/tags/1.0.0",
             new_path="repo-specs/fresh-entry-marketplace.xml",
             force=False,
         )
@@ -331,7 +333,7 @@ class TestAgainstExistingBlocksCollision:
                 kanon_file=kanon_file,
                 source_name="foo_bar",  # derive_source_name("Foo-Bar") = "foo_bar"
                 new_url="https://example.com/new.git",
-                new_revision="refs/tags/2.0.0",
+                new_ref="refs/tags/2.0.0",
                 new_path="repo-specs/foo-bar-marketplace.xml",
                 force=False,
             )
@@ -359,7 +361,7 @@ class TestAgainstExistingBlocksCollision:
                 kanon_file=kanon_file,
                 source_name="foo",
                 new_url="https://new.example.com/repo.git",
-                new_revision="refs/tags/2.0.0",
+                new_ref="refs/tags/2.0.0",
                 new_path="repo-specs/foo-marketplace.xml",
                 force=False,
             )
@@ -378,7 +380,7 @@ class TestForceOverwrite:
 
     def test_force_overwrites_existing_triple(self, tmp_path: pathlib.Path) -> None:
         """With --force, existing triple lines are replaced by the new triple."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
@@ -391,25 +393,27 @@ class TestForceOverwrite:
             )
         )
 
-        _overwrite_triple_block(
+        _overwrite_source_block(
             dest=kanon_file,
             source_name="entry_a",
             lines=[
                 "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-                "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+                "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
                 "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+                "KANON_SOURCE_entry_a_NAME=entry_a",
+                "KANON_SOURCE_entry_a_GITBASE=https://example.com",
             ],
         )
 
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
         assert "https://old.example.com/repo.git" not in content
         assert "refs/tags/1.0.0" not in content
 
     def test_force_preserves_surrounding_content(self, tmp_path: pathlib.Path) -> None:
         """Surrounding content (header, other triples) is preserved byte-for-byte."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
@@ -428,13 +432,15 @@ class TestForceOverwrite:
             )
         )
 
-        _overwrite_triple_block(
+        _overwrite_source_block(
             dest=kanon_file,
             source_name="entry_a",
             lines=[
                 "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-                "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+                "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
                 "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+                "KANON_SOURCE_entry_a_NAME=entry_a",
+                "KANON_SOURCE_entry_a_GITBASE=https://example.com",
             ],
         )
 
@@ -442,37 +448,41 @@ class TestForceOverwrite:
         # Surrounding content preserved
         assert "GITBASE=" in content
         assert "KANON_SOURCE_other_entry_URL=https://other.example.com/repo.git" in content
-        assert "KANON_SOURCE_other_entry_REVISION=refs/tags/3.0.0" in content
+        assert "KANON_SOURCE_other_entry_REF=refs/tags/3.0.0" in content
         # New triple present
         assert "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
         # Old triple gone
         assert "https://old.example.com/repo.git" not in content
         assert "refs/tags/1.0.0" not in content
 
     def test_force_overwrite_preserves_line_order(self, tmp_path: pathlib.Path) -> None:
         """Line order of remaining content is preserved after overwrite."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         original = (
             "HEADER_LINE=value\n"
             "\n"
             "KANON_SOURCE_entry_a_URL=https://old.example.com/repo.git\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
+            "KANON_SOURCE_entry_a_NAME=entry_a\n"
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com\n"
             "\n"
             "OTHER_VAR=other_value\n"
         )
         kanon_file.write_text(original)
 
-        _overwrite_triple_block(
+        _overwrite_source_block(
             dest=kanon_file,
             source_name="entry_a",
             lines=[
                 "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-                "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+                "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
                 "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+                "KANON_SOURCE_entry_a_NAME=entry_a",
+                "KANON_SOURCE_entry_a_GITBASE=https://example.com",
             ],
         )
 
@@ -484,8 +494,8 @@ class TestForceOverwrite:
         assert pos_header < pos_url < pos_other
 
     def test_force_prints_summary_to_stdout(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """_overwrite_triple_block prints a summary line to stdout."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        """_overwrite_source_block prints a summary line to stdout."""
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
@@ -498,13 +508,15 @@ class TestForceOverwrite:
             )
         )
 
-        _overwrite_triple_block(
+        _overwrite_source_block(
             dest=kanon_file,
             source_name="entry_a",
             lines=[
                 "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-                "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+                "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
                 "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+                "KANON_SOURCE_entry_a_NAME=entry_a",
+                "KANON_SOURCE_entry_a_GITBASE=https://example.com",
             ],
         )
         captured = capsys.readouterr()
@@ -531,8 +543,10 @@ class TestDryRunDiff:
 
         lines = [
             "KANON_SOURCE_entry_a_URL=https://example.com/repo.git",
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0",
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0",
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+            "KANON_SOURCE_entry_a_NAME=entry_a",
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com",
         ]
 
         _render_dry_run_diff(
@@ -558,8 +572,10 @@ class TestDryRunDiff:
 
         lines = [
             "KANON_SOURCE_entry_a_URL=https://example.com/repo.git",
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0",
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0",
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+            "KANON_SOURCE_entry_a_NAME=entry_a",
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com",
         ]
 
         _render_dry_run_diff(
@@ -594,8 +610,10 @@ class TestDryRunDiff:
 
         new_lines = [
             "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+            "KANON_SOURCE_entry_a_NAME=entry_a",
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com",
         ]
 
         _render_dry_run_diff(
@@ -607,10 +625,10 @@ class TestDryRunDiff:
         captured = capsys.readouterr()
         # Old lines should appear with '-' prefix
         assert "-KANON_SOURCE_entry_a_URL=https://old.example.com/repo.git" in captured.out
-        assert "-KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in captured.out
+        assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in captured.out
         # New lines should appear with '+' prefix
         assert "+KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git" in captured.out
-        assert "+KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in captured.out
+        assert "+KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in captured.out
 
     def test_dry_run_force_does_not_modify_file(self, tmp_path: pathlib.Path) -> None:
         """--dry-run --force does not modify the file."""
@@ -627,8 +645,10 @@ class TestDryRunDiff:
 
         new_lines = [
             "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git",
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0",
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml",
+            "KANON_SOURCE_entry_a_NAME=entry_a",
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com",
         ]
 
         _render_dry_run_diff(
@@ -648,11 +668,11 @@ class TestDryRunDiff:
 
 @pytest.mark.unit
 class TestReadExistingTripleBlock:
-    """_read_existing_triple_block extracts the three lines for a source name."""
+    """_read_existing_source_block extracts the three lines for a source name."""
 
     def test_reads_existing_triple(self, tmp_path: pathlib.Path) -> None:
         """Returns the three KANON_SOURCE_<name>_* lines from a file."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
@@ -665,27 +685,27 @@ class TestReadExistingTripleBlock:
             )
         )
 
-        url, revision, path = _read_existing_triple_block(kanon_file, "entry_a")
+        url, revision, path = _read_existing_source_block(kanon_file, "entry_a")
         assert url == "https://example.com/repo.git"
         assert revision == "refs/tags/1.0.0"
         assert path == "repo-specs/entry-a-marketplace.xml"
 
     def test_returns_none_tuple_when_not_found(self, tmp_path: pathlib.Path) -> None:
         """Returns (None, None, None) when source name is not in the file."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(HEADER)
 
-        result = _read_existing_triple_block(kanon_file, "missing_entry")
+        result = _read_existing_source_block(kanon_file, "missing_entry")
         assert result == (None, None, None)
 
     def test_returns_none_tuple_when_file_absent(self, tmp_path: pathlib.Path) -> None:
         """Returns (None, None, None) when the file does not exist."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
-        result = _read_existing_triple_block(kanon_file, "entry_a")
+        result = _read_existing_source_block(kanon_file, "entry_a")
         assert result == (None, None, None)
 
 
@@ -888,7 +908,7 @@ class TestRunAddDryRunAndForcePaths:
     def test_run_add_force_existing_block_calls_overwrite(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """With --force and an existing block, _overwrite_triple_block is called."""
+        """With --force and an existing block, _overwrite_source_block is called."""
         from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
@@ -900,8 +920,10 @@ class TestRunAddDryRunAndForcePaths:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             "KANON_SOURCE_entry_a_URL=https://old.example.com/repo.git\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
+            "KANON_SOURCE_entry_a_NAME=entry_a\n"
+            "KANON_SOURCE_entry_a_GITBASE=https://example.com\n"
         )
 
         meta = self._make_metadata("entry-a")
@@ -928,7 +950,7 @@ class TestRunAddDryRunAndForcePaths:
         assert result == 0
         # File must be overwritten with new revision
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
         assert "refs/tags/1.0.0" not in content
 
     def test_run_add_force_new_entry_calls_append(
@@ -970,4 +992,4 @@ class TestRunAddDryRunAndForcePaths:
         assert result == 0
         # Triple appended (no existing block to overwrite)
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content

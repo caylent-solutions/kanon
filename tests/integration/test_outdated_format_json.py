@@ -10,7 +10,10 @@ Builds real file:// fixture repos with two sources:
               latest-available=<B-12>, upgrade-type=drift.
 
 Invokes 'kanon outdated --format json' via subprocess, parses stdout with
-json.loads, and asserts both shape and per-source field values.
+json.loads, and asserts both shape and per-source field values. The JSON
+payload is an object ``{"aliases": [...], "sources": [...]}`` where the row
+dicts live under ``"sources"`` and the per-source render strings under
+``"aliases"``.
 
 AC-TEST-002, AC-CYCLE-001
 """
@@ -245,7 +248,7 @@ class TestOutdatedFormatJson:
     """
 
     def test_single_tag_pinned_source_json_shape(self, tmp_path: pathlib.Path) -> None:
-        """Single tag-pinned source: JSON array has one element with correct fields.
+        """Single tag-pinned source: JSON 'sources' list has one element with correct fields.
 
         AC-TEST-002: subprocess invocation with --format json; json.loads; shape and values.
         """
@@ -263,12 +266,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL={project_url}\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -314,10 +316,17 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
+        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert all(isinstance(render, str) and render for render in parsed["aliases"])
+        assert "FOO" in parsed["aliases"][0]
 
-        obj = parsed[0]
+        obj = parsed["sources"][0]
         assert set(obj.keys()) == {
             "name",
             "current",
@@ -364,15 +373,16 @@ class TestOutdatedFormatJson:
 
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL={foo_url}\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
             f"KANON_SOURCE_MYLIB_URL={mylib_url}\n"
-            "KANON_SOURCE_MYLIB_REVISION=main\n"
+            "KANON_SOURCE_MYLIB_REF=main\n"
             "KANON_SOURCE_MYLIB_PATH=./mylib\n"
+            "KANON_SOURCE_MYLIB_NAME=MYLIB\n"
+            "KANON_SOURCE_MYLIB_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -427,11 +437,23 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 2, f"Expected 2 sources, got {len(parsed)}: {parsed}"
+        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        sources = parsed["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 2, f"Expected 2 sources, got {len(sources)}: {sources}"
+
+        # The aliases list carries one render string per source.
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 2
+        assert all(isinstance(render, str) and render for render in parsed["aliases"])
+        alias_text = "\n".join(parsed["aliases"])
+        assert "FOO" in alias_text
+        assert "MYLIB" in alias_text
 
         # Build lookup by name for stable assertions regardless of order
-        by_name = {obj["name"]: obj for obj in parsed}
+        by_name = {obj["name"]: obj for obj in sources}
 
         # --- Assert FOO (tag-pinned, patch upgrade) ---
         assert "FOO" in by_name, f"Expected 'FOO' in JSON output, got names: {list(by_name.keys())}"
@@ -482,12 +504,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_BAZ_URL={project_url}\n"
-            "KANON_SOURCE_BAZ_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_BAZ_REF=>=1.0.0\n"
             "KANON_SOURCE_BAZ_PATH=./baz\n"
+            "KANON_SOURCE_BAZ_NAME=BAZ\n"
+            "KANON_SOURCE_BAZ_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -507,9 +528,15 @@ class TestOutdatedFormatJson:
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        obj = parsed[0]
+        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert "BAZ" in parsed["aliases"][0]
+        obj = parsed["sources"][0]
         assert obj["name"] == "BAZ"
         assert set(obj.keys()) == {
             "name",
@@ -539,12 +566,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_QUX_URL={project_url}\n"
-            "KANON_SOURCE_QUX_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_QUX_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_QUX_PATH=./qux\n"
+            "KANON_SOURCE_QUX_NAME=QUX\n"
+            "KANON_SOURCE_QUX_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -591,8 +617,13 @@ class TestOutdatedFormatJson:
             f"got {result.returncode}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Output is still valid JSON
+        # Output is still valid JSON: object {"aliases": [...], "sources": [...]}.
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        assert parsed[0]["upgrade-type"] == "patch"
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert "QUX" in parsed["aliases"][0]
+        assert parsed["sources"][0]["upgrade-type"] == "patch"

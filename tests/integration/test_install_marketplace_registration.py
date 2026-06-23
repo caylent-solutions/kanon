@@ -90,11 +90,15 @@ def _write_kanonenv_two_sources(
         f"KANON_MARKETPLACE_INSTALL={flag_value}\n"
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
         f"KANON_SOURCE_source_alpha_URL={source_alpha_url}\n"
-        f"KANON_SOURCE_source_alpha_REVISION=main\n"
+        f"KANON_SOURCE_source_alpha_REF=main\n"
         f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
+        f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
+        f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
         f"KANON_SOURCE_source_bravo_URL={source_bravo_url}\n"
-        f"KANON_SOURCE_source_bravo_REVISION=main\n"
+        f"KANON_SOURCE_source_bravo_REF=main\n"
         f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
+        f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
+        f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 

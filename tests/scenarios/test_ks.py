@@ -19,7 +19,7 @@ Fixture design
   ``refs/tags/<expected_tag>`` in its output.
 
 Verification: after ``kanon install`` resolves a ``.kanon``
-``KANON_SOURCE_pep_REVISION=<constraint>`` to a KS-fixture tag, running
+``KANON_SOURCE_pep_REF=<constraint>`` to a KS-fixture tag, running
 ``kanon repo manifest --revision-as-tag`` inside the synced source dir
 produces XML with ``revision="refs/tags/<expected_tag>"`` for the catalog
 project.
@@ -372,9 +372,9 @@ class TestKS:
     def test_ks_24_env_var_override_revision(
         self, tmp_path: pathlib.Path, ks_repos: tuple[pathlib.Path, pathlib.Path]
     ) -> None:
-        """KS-24: env-var KANON_SOURCE_pep_REVISION overrides the .kanon file value.
+        """KS-24: env-var KANON_SOURCE_pep_REF overrides the .kanon file value.
 
-        The .kanon declares ``REVISION=main``; the env var supplies
+        The .kanon declares ``REF=main``; the env var supplies
         ``refs/tags/~=1.0.0`` which resolves to 1.0.1.  Pass criteria:
         ``kanon install`` exits 0 and ``--revision-as-tag`` shows
         ``refs/tags/1.0.1``.
@@ -390,7 +390,7 @@ class TestKS:
         install_result = kanon_install(
             work_dir,
             extra_env={
-                "KANON_SOURCE_pep_REVISION": "refs/tags/~=1.0.0",
+                "KANON_SOURCE_pep_REF": "refs/tags/~=1.0.0",
                 "KANON_CATALOG_SOURCE": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
@@ -414,7 +414,7 @@ class TestKS:
     ) -> None:
         """KS-25: undefined shell variable in REVISION causes non-zero exit naming the var.
 
-        The .kanon stores ``REVISION=${UNDEFINED_KS_VAR}``.  Pass criteria:
+        The .kanon stores ``REF=${UNDEFINED_KS_VAR}``.  Pass criteria:
         non-zero exit code; ``UNDEFINED_KS_VAR`` appears in stderr.
         """
         ks_fix, _ = ks_repos
@@ -422,7 +422,7 @@ class TestKS:
         work_dir.mkdir()
         (work_dir / ".kanon").write_text(
             f"KANON_SOURCE_pep_URL={ks_fix.as_uri()}\n"
-            "KANON_SOURCE_pep_REVISION=${UNDEFINED_KS_VAR}\n"
+            "KANON_SOURCE_pep_REF=${UNDEFINED_KS_VAR}\n"
             "KANON_SOURCE_pep_PATH=default.xml\n"
         )
         catalog_source = f"{ks_fix.as_uri()}@main"

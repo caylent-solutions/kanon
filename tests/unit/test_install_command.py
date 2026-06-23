@@ -19,8 +19,10 @@ class TestRunNoPipx:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = kanonenv
@@ -62,8 +64,10 @@ _VALID_KANONENV = (
     "GITBASE=https://example.com/\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
     "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-    "KANON_SOURCE_test_REVISION=main\n"
+    "KANON_SOURCE_test_REF=main\n"
     "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+    "KANON_SOURCE_test_NAME=test\n"
+    "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
 
 
@@ -209,8 +213,10 @@ class TestAutoDiscovery:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = None
@@ -230,8 +236,10 @@ class TestAutoDiscovery:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = kanonenv

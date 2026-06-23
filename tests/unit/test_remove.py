@@ -2,8 +2,8 @@
 
 Covers:
 - Entry-name vs source-name input paths (AC-FUNC-004)
-- Non-contiguous three-lines scanner (AC-FUNC-005)
-- Fewer-than-three-keys hard error (AC-FUNC-006, parameterised)
+- Non-contiguous block scanner (AC-FUNC-005)
+- Fewer-than-expected-keys hard error (AC-FUNC-006, parameterised)
 - Missing .kanon hard error (AC-FUNC-007)
 - Multi-source atomicity rule (AC-FUNC-008)
 - Summary line output (AC-FUNC-009)
@@ -183,28 +183,32 @@ class TestRegisterSubparser:
 class TestScanSourceLines:
     """_scan_source_lines() returns line indices matching KANON_SOURCE_<name>_* keys."""
 
-    def test_finds_all_three_contiguous(self) -> None:
+    def test_finds_all_five_contiguous(self) -> None:
         lines = [
             "GITBASE=x\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
         result = _scan_source_lines(lines, "foo_bar")
-        assert result == {1, 2, 3}
+        assert result == {1, 2, 3, 4, 5}
 
-    def test_finds_all_three_non_contiguous(self) -> None:
+    def test_finds_all_five_non_contiguous(self) -> None:
         lines = [
             "GITBASE=x\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
             "# comment interleaved\n",
             "KANON_SOURCE_baz_URL=https://other.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "# another comment\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
         result = _scan_source_lines(lines, "foo_bar")
-        assert result == {1, 4, 6}
+        assert result == {1, 4, 6, 7, 8}
 
     def test_returns_empty_set_when_none_found(self) -> None:
         lines = [
@@ -235,12 +239,14 @@ class TestScanSourceLines:
         lines = [
             "# KANON_SOURCE_foo_bar_URL=commented-out\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
         result = _scan_source_lines(lines, "foo_bar")
         # Comment line (index 0) should NOT be included
-        assert result == {1, 2, 3}
+        assert result == {1, 2, 3, 4, 5}
 
 
 # ---------------------------------------------------------------------------
@@ -252,26 +258,28 @@ class TestScanSourceLines:
 class TestCollectRemovalLines:
     """_collect_removal_lines() validates count and returns indices to remove."""
 
-    def test_returns_three_indices_happy_path(self) -> None:
+    def test_returns_five_indices_happy_path(self) -> None:
         lines = [
             "GITBASE=x\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
         result = _collect_removal_lines(lines, "foo_bar", "Foo-Bar")
-        assert result == {1, 2, 3}
+        assert result == {1, 2, 3, 4, 5}
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2],
-        ids=["found=0", "found=1", "found=2"],
+        [0, 1, 2, 3, 4],
+        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
     )
-    def test_raises_system_exit_on_fewer_than_three(
+    def test_raises_system_exit_on_fewer_than_five(
         self, found_count: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Fewer than 3 matching keys is a hard error with spec-canonical message."""
-        key_suffixes = ["_URL", "_REVISION", "_PATH"]
+        """Fewer than 5 matching keys is a hard error with spec-canonical message."""
+        key_suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
         lines = [f"KANON_SOURCE_foo_bar{suffix}=value\n" for suffix in key_suffixes[:found_count]]
         lines.insert(0, "GITBASE=x\n")
 
@@ -282,8 +290,7 @@ class TestCollectRemovalLines:
         stderr = capsys.readouterr().err
         assert "Foo-Bar" in stderr
         assert "foo_bar" in stderr
-        assert str(found_count) in stderr
-        assert "3" in stderr
+        assert f"found {found_count} of 5 expected" in stderr
 
     def test_error_message_contains_spec_canonical_wording(self, capsys: pytest.CaptureFixture[str]) -> None:
         """The error message follows the spec-canonical wording."""
@@ -293,9 +300,9 @@ class TestCollectRemovalLines:
             _collect_removal_lines(lines, "foo_bar", "Foo-Bar")
 
         stderr = capsys.readouterr().err
-        # Spec-canonical: "not fully present in .kanon; found <n> of 3 expected"
+        # Spec-canonical: "not fully present in .kanon; found <n> of 5 expected"
         assert "not fully present in .kanon" in stderr
-        assert "found 1 of 3 expected" in stderr
+        assert "found 1 of 5 expected" in stderr
         assert "KANON_SOURCE_foo_bar_" in stderr
 
 
@@ -345,8 +352,10 @@ class TestRunRemoveInputPaths:
         CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
         KANON_MARKETPLACE_INSTALL=true
         KANON_SOURCE_foo_bar_URL=https://example.com/repo.git
-        KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0
+        KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0
         KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml
+        KANON_SOURCE_foo_bar_NAME=foo_bar
+        KANON_SOURCE_foo_bar_GITBASE=https://example.com
     """)
 
     _EXPECTED_AFTER_REMOVAL = textwrap.dedent("""\
@@ -366,8 +375,10 @@ class TestRunRemoveInputPaths:
         assert exit_code == 0
         result = kanon_file.read_text()
         assert "KANON_SOURCE_foo_bar_URL" not in result
-        assert "KANON_SOURCE_foo_bar_REVISION" not in result
+        assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
+        assert "KANON_SOURCE_foo_bar_NAME" not in result
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in result
 
     def test_source_name_input_removes_block(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """Input 'foo_bar' stays as 'foo_bar' and removes the block."""
@@ -380,8 +391,10 @@ class TestRunRemoveInputPaths:
         assert exit_code == 0
         result = kanon_file.read_text()
         assert "KANON_SOURCE_foo_bar_URL" not in result
-        assert "KANON_SOURCE_foo_bar_REVISION" not in result
+        assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
+        assert "KANON_SOURCE_foo_bar_NAME" not in result
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in result
 
     def test_entry_name_and_source_name_produce_same_result(self, tmp_path: pathlib.Path) -> None:
         """Both 'Foo-Bar' and 'foo_bar' produce identical output files."""
@@ -416,17 +429,19 @@ class TestRunRemoveInputPaths:
 
 @pytest.mark.unit
 class TestRunRemoveNonContiguous:
-    """Scanner finds and removes three lines even when non-contiguous (AC-FUNC-005)."""
+    """Scanner finds and removes the full block even when non-contiguous (AC-FUNC-005)."""
 
-    def test_removes_non_contiguous_triple(self, tmp_path: pathlib.Path) -> None:
+    def test_removes_non_contiguous_block(self, tmp_path: pathlib.Path) -> None:
         content = textwrap.dedent("""\
             GITBASE=https://example.com
             KANON_SOURCE_foo_bar_URL=https://example.com/repo.git
             # interleaved comment
             KANON_SOURCE_baz_URL=https://other.com/baz.git
-            KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0
+            KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0
             # another comment
             KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml
+            KANON_SOURCE_foo_bar_NAME=foo_bar
+            KANON_SOURCE_foo_bar_GITBASE=https://example.com
         """)
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -438,8 +453,10 @@ class TestRunRemoveNonContiguous:
         result = kanon_file.read_text()
         # foo_bar keys removed
         assert "KANON_SOURCE_foo_bar_URL" not in result
-        assert "KANON_SOURCE_foo_bar_REVISION" not in result
+        assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
+        assert "KANON_SOURCE_foo_bar_NAME" not in result
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in result
         # Other content preserved
         assert "GITBASE=https://example.com" in result
         assert "# interleaved comment" in result
@@ -452,10 +469,14 @@ class TestRunRemoveNonContiguous:
             "LINE_A=1\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
             "LINE_B=2\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "LINE_C=3\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
             "LINE_D=4\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "LINE_E=5\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
+            "LINE_F=6\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -465,22 +486,22 @@ class TestRunRemoveNonContiguous:
 
         result = kanon_file.read_text()
         lines = [ln for ln in result.splitlines() if ln.strip()]
-        assert lines == ["LINE_A=1", "LINE_B=2", "LINE_C=3", "LINE_D=4"]
+        assert lines == ["LINE_A=1", "LINE_B=2", "LINE_C=3", "LINE_D=4", "LINE_E=5", "LINE_F=6"]
 
 
 # ---------------------------------------------------------------------------
-# run_remove -- fewer-than-three-keys hard error (AC-FUNC-006)
+# run_remove -- fewer-than-expected-keys hard error (AC-FUNC-006)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestRunRemoveFewerThanThreeKeys:
+class TestRunRemoveFewerThanExpectedKeys:
     """Missing keys produce a spec-canonical hard error; file is NOT modified (AC-FUNC-006)."""
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2],
-        ids=["found=0", "found=1", "found=2"],
+        [0, 1, 2, 3, 4],
+        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
     )
     def test_exits_nonzero_with_n_keys(
         self,
@@ -488,7 +509,7 @@ class TestRunRemoveFewerThanThreeKeys:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        suffixes = ["_URL", "_REVISION", "_PATH"]
+        suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
         lines = ["GITBASE=x\n"]
         for suffix in suffixes[:found_count]:
             lines.append(f"KANON_SOURCE_foo_bar{suffix}=value\n")
@@ -503,20 +524,19 @@ class TestRunRemoveFewerThanThreeKeys:
         assert exc_info.value.code != 0
         stderr = capsys.readouterr().err
         assert "foo_bar" in stderr
-        assert str(found_count) in stderr
-        assert "3" in stderr
+        assert f"found {found_count} of 5 expected" in stderr
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2],
-        ids=["found=0", "found=1", "found=2"],
+        [0, 1, 2, 3, 4],
+        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
     )
     def test_file_not_modified_on_error(
         self,
         found_count: int,
         tmp_path: pathlib.Path,
     ) -> None:
-        suffixes = ["_URL", "_REVISION", "_PATH"]
+        suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
         lines = ["GITBASE=x\n"]
         for suffix in suffixes[:found_count]:
             lines.append(f"KANON_SOURCE_foo_bar{suffix}=value\n")
@@ -541,12 +561,14 @@ class TestRunRemoveFewerThanThreeKeys:
 class TestRunRemoveSummaryOutput:
     """run_remove() writes one summary line to stdout per removed source (AC-FUNC-009)."""
 
-    def test_summary_line_mentions_three_keys(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_summary_line_mentions_five_keys(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -556,15 +578,19 @@ class TestRunRemoveSummaryOutput:
 
         stdout = capsys.readouterr().out
         assert "KANON_SOURCE_foo_bar_URL" in stdout
-        assert "KANON_SOURCE_foo_bar_REVISION" in stdout or "_REVISION" in stdout
-        assert "KANON_SOURCE_foo_bar_PATH" in stdout or "_PATH" in stdout
+        assert "KANON_SOURCE_foo_bar_REF" in stdout
+        assert "KANON_SOURCE_foo_bar_PATH" in stdout
+        assert "KANON_SOURCE_foo_bar_NAME" in stdout
+        assert "KANON_SOURCE_foo_bar_GITBASE" in stdout
 
     def test_summary_mentions_kanon_file_path(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -579,11 +605,15 @@ class TestRunRemoveSummaryOutput:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "KANON_SOURCE_baz_qux_URL=https://example.com/baz.git\n"
-            "KANON_SOURCE_baz_qux_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_baz_qux_REF=refs/tags/2.0.0\n"
             "KANON_SOURCE_baz_qux_PATH=repo-specs/baz-marketplace.xml\n"
+            "KANON_SOURCE_baz_qux_NAME=baz_qux\n"
+            "KANON_SOURCE_baz_qux_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -610,13 +640,15 @@ class TestRunRemoveAtomicity:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         original = content
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
-        # "foo_bar" is valid (3 keys), "nonexistent" has 0 keys
+        # "foo_bar" is valid (5 keys), "nonexistent" has 0 keys
         args = _make_args(["foo_bar", "nonexistent"], str(kanon_file))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -631,11 +663,15 @@ class TestRunRemoveAtomicity:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "KANON_SOURCE_baz_qux_URL=https://example.com/baz.git\n"
-            "KANON_SOURCE_baz_qux_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_baz_qux_REF=refs/tags/2.0.0\n"
             "KANON_SOURCE_baz_qux_PATH=repo-specs/baz-marketplace.xml\n"
+            "KANON_SOURCE_baz_qux_NAME=baz_qux\n"
+            "KANON_SOURCE_baz_qux_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -672,8 +708,10 @@ class TestRunRemoveWorkspaceLock:
         content = (
             "GITBASE=https://git.example.com\n"
             "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-            "KANON_SOURCE_alpha_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_alpha_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_alpha_PATH=repo-specs/alpha-marketplace.xml\n"
+            "KANON_SOURCE_alpha_NAME=alpha\n"
+            "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -700,8 +738,10 @@ class TestRunRemoveWorkspaceLock:
         content = (
             "GITBASE=https://git.example.com\n"
             "KANON_SOURCE_beta_URL=https://example.com/beta.git\n"
-            "KANON_SOURCE_beta_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_beta_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_beta_PATH=repo-specs/beta-marketplace.xml\n"
+            "KANON_SOURCE_beta_NAME=beta\n"
+            "KANON_SOURCE_beta_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
@@ -729,8 +769,10 @@ class TestRunRemoveForce:
     _KNOWN_CONTENT = (
         "GITBASE=https://git.example.com\n"
         "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
-        "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+        "KANON_SOURCE_known_a_REF=refs/tags/1.0.0\n"
         "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+        "KANON_SOURCE_known_a_NAME=known_a\n"
+        "KANON_SOURCE_known_a_GITBASE=https://example.com\n"
     )
 
     def test_force_unknown_only_exits_0(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -759,12 +801,14 @@ class TestRunRemoveForce:
     def test_force_known_and_unknown_removes_known_exits_0(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """AC-FUNC-002: remove known unknown --force removes the known triple; unknown is skipped; exits 0."""
+        """AC-FUNC-002: remove known unknown --force removes the known block; unknown is skipped; exits 0."""
         content = (
             "GITBASE=https://git.example.com\n"
             "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
-            "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_known_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+            "KANON_SOURCE_known_a_NAME=known_a\n"
+            "KANON_SOURCE_known_a_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -775,8 +819,10 @@ class TestRunRemoveForce:
         assert result == 0
         after = kanon_file.read_text()
         assert "KANON_SOURCE_known_a_URL" not in after
-        assert "KANON_SOURCE_known_a_REVISION" not in after
+        assert "KANON_SOURCE_known_a_REF" not in after
         assert "KANON_SOURCE_known_a_PATH" not in after
+        assert "KANON_SOURCE_known_a_NAME" not in after
+        assert "KANON_SOURCE_known_a_GITBASE" not in after
         assert "GITBASE=https://git.example.com" in after
 
     def test_no_force_unknown_exits_1(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -842,11 +888,15 @@ class TestRunRemoveForce:
         content = (
             "GITBASE=https://git.example.com\n"
             "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
-            "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_known_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+            "KANON_SOURCE_known_a_NAME=known_a\n"
+            "KANON_SOURCE_known_a_GITBASE=https://example.com\n"
             "KANON_SOURCE_known_b_URL=https://example.com/known_b.git\n"
-            "KANON_SOURCE_known_b_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_known_b_REF=refs/tags/2.0.0\n"
             "KANON_SOURCE_known_b_PATH=repo-specs/known_b.xml\n"
+            "KANON_SOURCE_known_b_NAME=known_b\n"
+            "KANON_SOURCE_known_b_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)

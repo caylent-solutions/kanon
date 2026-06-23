@@ -401,7 +401,7 @@ def validate_lockfile_command(args) -> None:
         sys.exit(1)
 
     kanon_aliases = list(parsed["KANON_SOURCES"])
-    kanon_ref_specs = {alias: data["revision"] for alias, data in parsed["sources"].items()}
+    kanon_ref_specs = {alias: data["ref"] for alias, data in parsed["sources"].items()}
 
     try:
         check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile)

@@ -45,8 +45,10 @@ _VALID_MANIFEST_CONTENT = textwrap.dedent("""\
 
 _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/src.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=default.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
 
 

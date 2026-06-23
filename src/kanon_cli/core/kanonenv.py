@@ -5,17 +5,20 @@ format supports:
   - Comments (lines starting with #) and blank lines
   - Shell variable expansion (``${VAR}``) resolved from environment
   - Environment variable overrides (env vars take precedence over file values)
-  - Auto-discovered named source groups from ``KANON_SOURCE_<name>_URL`` keys
+  - Auto-discovered alias-keyed source groups from ``KANON_SOURCE_<alias>_URL`` keys
   - Boolean parsing for KANON_MARKETPLACE_INSTALL
 
-Source names are auto-discovered by scanning for keys matching the
-``KANON_SOURCE_<name>_URL`` pattern. Names are sorted alphabetically for
+Source aliases are auto-discovered by scanning for keys matching the
+``KANON_SOURCE_<alias>_URL`` pattern. Aliases are sorted alphabetically for
 deterministic ordering. Each discovered source must also define
-``KANON_SOURCE_<name>_REVISION`` and ``KANON_SOURCE_<name>_PATH``.
+``KANON_SOURCE_<alias>_REF`` (the verbatim version spec),
+``KANON_SOURCE_<alias>_PATH`` (the repo-relative manifest path),
+``KANON_SOURCE_<alias>_NAME`` (the original catalog manifest name), and
+``KANON_SOURCE_<alias>_GITBASE`` (the org base for ``${GITBASE}`` resolution).
 
-If a partial source definition is found (``_REVISION`` or ``_PATH`` present
+If a partial source definition is found (any required non-URL suffix present
 without a corresponding ``_URL``), a ``ValueError`` is raised naming the
-exact missing ``KANON_SOURCE_<name>_URL`` variable so callers can surface
+exact missing ``KANON_SOURCE_<alias>_URL`` variable so callers can surface
 it to stderr verbatim.
 
 The parser reads the file, applies environment overrides, expands shell
@@ -93,18 +96,18 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
         - ``KANON_SOURCES``: list of source names (auto-discovered,
           sorted alphabetically)
         - ``KANON_MARKETPLACE_INSTALL``: bool (defaults to False)
-        - ``sources``: dict mapping each source name to a dict with
-          ``url``, ``revision``, and ``path`` keys
+        - ``sources``: dict mapping each source alias to a dict with
+          ``url``, ``ref``, ``path``, ``name``, and ``gitbase`` keys
         - ``globals``: dict of all other KEY=VALUE pairs
 
     Raises:
         FileNotFoundError: If the file does not exist.
         ValueError: If the file is a symlink, if the file has unsafe
             permissions (group-writable or world-writable), if any
-            KANON_SOURCE_<name>_PATH value contains '..', if
+            KANON_SOURCE_<alias>_PATH value contains '..', if
             KANON_SOURCES is explicitly set (no longer supported),
             if no sources are discovered, if a named source is missing
-            required variables (URL, REVISION, PATH), or if a shell
+            required variables (URL, REF, PATH, NAME, GITBASE), or if a shell
             variable reference cannot be resolved.
     """
     if not path.exists():
@@ -438,28 +441,28 @@ def _expand_value(value: str) -> str:
 
 
 def _discover_source_names(expanded: dict[str, str]) -> list[str]:
-    """Auto-discover source names from ``KANON_SOURCE_<name>_URL`` keys.
+    """Auto-discover source aliases from ``KANON_SOURCE_<alias>_URL`` keys.
 
-    Scans all keys for the ``KANON_SOURCE_<name>_URL`` pattern, extracts
-    the ``<name>`` portion, and returns a sorted list for deterministic
+    Scans all keys for the ``KANON_SOURCE_<alias>_URL`` pattern, extracts
+    the ``<alias>`` portion, and returns a sorted list for deterministic
     ordering.
 
-    Also scans for keys matching ``KANON_SOURCE_<name>_(REVISION|PATH)``
-    to detect sources that are partially defined without a URL; raises
-    ``ValueError`` naming the exact missing URL variable so callers can
-    surface it verbatim.
+    Also scans for keys matching any required non-URL suffix
+    (``KANON_SOURCE_<alias>_(REF|PATH|NAME|GITBASE)``) to detect sources that
+    are partially defined without a URL; raises ``ValueError`` naming the exact
+    missing URL variable so callers can surface it verbatim.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
 
     Returns:
-        Sorted list of discovered source names.
+        Sorted list of discovered source aliases.
 
     Raises:
-        NoSourcesError: If no ``KANON_SOURCE_<name>_URL`` keys are found
+        NoSourcesError: If no ``KANON_SOURCE_<alias>_URL`` keys are found
             (a ``ValueError`` subclass; the zero-source case).
-        ValueError: If a source name is inferred from a non-URL suffix but the
-            corresponding ``KANON_SOURCE_<name>_URL`` key is absent.
+        ValueError: If a source alias is inferred from a non-URL suffix but the
+            corresponding ``KANON_SOURCE_<alias>_URL`` key is absent.
     """
     url_names: set[str] = set()
     for key in expanded:
@@ -485,8 +488,9 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
     if not url_names:
         msg = (
             "No sources found. Define at least one source using "
-            "KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, "
-            "and KANON_SOURCE_<name>_PATH variables in .kanon"
+            "KANON_SOURCE_<alias>_URL, KANON_SOURCE_<alias>_REF, "
+            "KANON_SOURCE_<alias>_PATH, KANON_SOURCE_<alias>_NAME, "
+            "and KANON_SOURCE_<alias>_GITBASE variables in .kanon"
         )
         raise NoSourcesError(msg)
 
@@ -537,21 +541,23 @@ def validate_sources(
     expanded: dict[str, str],
     source_names: list[str],
 ) -> None:
-    """Validate that all named sources have required variables.
+    """Validate that all aliased sources have required variables.
 
-    Each source name in ``source_names`` must have three corresponding
-    variables defined in ``expanded``:
-      - ``KANON_SOURCE_<name>_URL``
-      - ``KANON_SOURCE_<name>_REVISION``
-      - ``KANON_SOURCE_<name>_PATH``
+    Each alias in ``source_names`` must have every required suffix defined in
+    ``expanded`` (the alias-keyed block, spec Section 5.1):
+      - ``KANON_SOURCE_<alias>_URL``
+      - ``KANON_SOURCE_<alias>_REF``
+      - ``KANON_SOURCE_<alias>_PATH``
+      - ``KANON_SOURCE_<alias>_NAME``
+      - ``KANON_SOURCE_<alias>_GITBASE``
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs from the .kanon file.
-        source_names: List of source names (auto-discovered, alphabetical).
+        source_names: List of source aliases (auto-discovered, alphabetical).
 
     Raises:
-        ValueError: If any named source is missing a required variable.
-            The error message includes both the source name and the
+        ValueError: If any aliased source is missing a required variable.
+            The error message includes both the alias and the
             missing variable name for actionable diagnostics.
     """
     for name in source_names:
@@ -573,7 +579,7 @@ def _extract_sources(
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict mapping source name to {url, revision, path}.
+        Dict mapping source alias to {url, ref, path, name, gitbase}.
 
     Raises:
         ValueError: If a source is missing a required variable.

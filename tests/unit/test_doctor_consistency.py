@@ -341,8 +341,10 @@ class TestCheckDanglingShas:
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -375,8 +377,10 @@ class TestCheckDanglingShas:
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -412,8 +416,10 @@ class TestCheckDanglingShas:
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -448,11 +454,15 @@ class TestCheckDanglingShas:
         sha2 = "b" * 40
         kanon_content = (
             f"KANON_SOURCE_src1_URL=https://example.com/org/repo1.git\n"
-            f"KANON_SOURCE_src1_REVISION={sha1}\n"
+            f"KANON_SOURCE_src1_REF={sha1}\n"
             f"KANON_SOURCE_src1_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src1_NAME=src1\n"
+            f"KANON_SOURCE_src1_GITBASE=https://example.com\n"
             f"KANON_SOURCE_src2_URL=https://example.com/org/repo2.git\n"
-            f"KANON_SOURCE_src2_REVISION={sha2}\n"
+            f"KANON_SOURCE_src2_REF={sha2}\n"
             f"KANON_SOURCE_src2_PATH=repo-specs/meta2.xml\n"
+            f"KANON_SOURCE_src2_NAME=src2\n"
+            f"KANON_SOURCE_src2_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)

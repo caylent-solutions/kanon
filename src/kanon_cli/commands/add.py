@@ -1,15 +1,19 @@
-"""kanon add subcommand: append dependency triples to a .kanon file.
+"""kanon add subcommand: append alias-keyed dependency blocks to a .kanon file.
 
 Resolves one or more catalog entries from a manifest repo and writes the
-three KANON_SOURCE_<source_name>_{URL,REVISION,PATH} lines to the
-destination .kanon file. Creates the file with the standard header if it
-does not already exist.
+alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block to the
+destination .kanon file (spec Section 5.1 / FR-5, FR-6). There is no global
+``[catalog]`` block and no standard header: the per-dependency blocks fully
+replace the single global header, so ``add`` writes neither a
+``KANON_MARKETPLACE_INSTALL`` header line nor a ``GITBASE`` header line. The
+``GITBASE`` org base is recorded per dependency in ``KANON_SOURCE_<alias>_GITBASE``.
 
-Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 4.2 (Behaviour steps 1-5), Section 4.0 (last-@ spec split),
-Section 4.2 flag-table rows --force and --dry-run,
-Section 4.2 collision detection pre-flight,
-Section 2.1 (worked example step 3), Section 1.1 (.kanon file definition).
+Spec reference: ``specs/kanon-refinements.md`` Section 5.1 (alias-keyed
+``.kanon`` blocks, ``_REVISION`` -> ``_REF``, ``_NAME`` / ``_GITBASE``, no
+``[catalog]``), Section 4.2 (``add`` alias keying), plus
+``spec/kanon-list-add-lock-features-spec.md`` Section 4.0 (last-@ spec split),
+Section 4.2 collision detection pre-flight, Section 4.2 flag-table rows
+--force and --dry-run.
 """
 
 import argparse
@@ -24,10 +28,14 @@ import urllib.parse
 from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
-    KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    SOURCE_PATH_SUFFIX,
+    SOURCE_PREFIX,
+    SOURCE_REF_SUFFIX,
+    SOURCE_SUFFIXES,
+    SOURCE_URL_SUFFIX,
     TAG_ERROR_DISPLAY_CAP,
 )
 from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
@@ -68,8 +76,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         help="Add one or more catalog entries to the .kanon file.",
         description=(
             "Resolve catalog entries from a manifest repo and append the\n"
-            "KANON_SOURCE_<name>_{URL,REVISION,PATH} triple to the destination\n"
-            ".kanon file. Creates the file with a standard header when absent.\n\n"
+            "alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block\n"
+            "to the destination .kanon file. No global header is written.\n\n"
             "Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440\n"
             "constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in\n"
             "each argument is the delimiter -- see spec Section 4.0 resolver rules.\n"
@@ -138,32 +146,13 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    marketplace_group = parser.add_mutually_exclusive_group()
-    marketplace_group.add_argument(
-        "--marketplace-install",
-        dest="marketplace_install",
-        action="store_true",
-        default=None,
-        help=(
-            "Write KANON_MARKETPLACE_INSTALL=true in the .kanon header.\n"
-            "Takes precedence over the KANON_MARKETPLACE_INSTALL environment\n"
-            "variable. Only applied when the .kanon file is created (not on\n"
-            "append). Mutually exclusive with --no-marketplace-install."
-        ),
-    )
-    marketplace_group.add_argument(
-        "--no-marketplace-install",
-        dest="marketplace_install",
-        action="store_false",
-        help=(
-            "Write KANON_MARKETPLACE_INSTALL=false in the .kanon header.\n"
-            "Takes precedence over the KANON_MARKETPLACE_INSTALL environment\n"
-            "variable. Only applied when the .kanon file is created (not on\n"
-            "append). Mutually exclusive with --marketplace-install."
-        ),
-    )
+    # The per-dependency KANON_SOURCE_<alias>_MARKETPLACE field and its
+    # --marketplace-install / --no-marketplace-install flags are introduced by
+    # the add source-explicit task (E4-F1-S3, AC-25). This task removes the
+    # global KANON_MARKETPLACE_INSTALL header writer, so no marketplace flag is
+    # registered here.
 
-    parser.set_defaults(func=run_add, marketplace_install=None)
+    parser.set_defaults(func=run_add)
 
 
 # ---------------------------------------------------------------------------
@@ -287,91 +276,84 @@ def _split_name_spec(raw: str) -> tuple[str, str | None]:
     return name, spec if spec else None
 
 
-def _build_triple_lines(
+def _build_source_block_lines(
     source_name: str,
     url: str,
-    revision: str,
+    ref: str,
     path: str,
+    name: str,
+    gitbase: str,
 ) -> list[str]:
-    """Construct the three KANON_SOURCE_<source_name>_* lines.
+    """Construct the alias-keyed KANON_SOURCE_<alias>_* block lines.
+
+    Emits the alias-keyed per-dependency block (spec Section 5.1 / FR-5, FR-6):
+    ``_URL``, ``_REF`` (the verbatim version spec), ``_PATH``, ``_NAME`` (the
+    original catalog manifest name), and ``_GITBASE`` (the org base for
+    ``${GITBASE}`` resolution). There is no ``_REVISION`` line and no global
+    ``[catalog]`` block.
 
     Args:
-        source_name: Normalised source name (from derive_source_name).
+        source_name: The local alias (from ``derive_source_name``).
         url: Manifest repo git URL.
-        revision: Resolved version spec (e.g. refs/tags/1.2.0).
+        ref: Verbatim version spec (e.g. ``1.2.0``, ``main``, ``>=1.0,<2.0``).
         path: Repo-relative path to the marketplace XML file.
+        name: Original catalog manifest name (the pre-sanitization entry name).
+        gitbase: Org base for ``${GITBASE}`` resolution (derived from the URL).
 
     Returns:
-        A list of exactly three strings: URL, REVISION, PATH lines.
+        A list of exactly five strings: URL, REF, PATH, NAME, GITBASE lines.
     """
+    prefix = f"{SOURCE_PREFIX}{source_name}"
+    # The suffix tokens are written as literals (rather than interpolated from
+    # the suffix constants) so this single canonical writer states the on-disk
+    # alias-block schema verbatim: _URL, _REF, _PATH, _NAME, _GITBASE.
     return [
-        f"KANON_SOURCE_{source_name}_URL={url}",
-        f"KANON_SOURCE_{source_name}_REVISION={revision}",
-        f"KANON_SOURCE_{source_name}_PATH={path}",
+        f"{prefix}_URL={url}",
+        f"{prefix}_REF={ref}",
+        f"{prefix}_PATH={path}",
+        f"{prefix}_NAME={name}",
+        f"{prefix}_GITBASE={gitbase}",
     ]
 
 
-def _write_standard_header(
-    dest: pathlib.Path,
-    gitbase: str,
-    marketplace_install: str,
-) -> None:
-    """Write the standard .kanon header lines to dest, if dest does not exist.
-
-    Creates dest and writes the three standard header lines with derived values.
-    Schema 3.0.0 (spec Section 0 / Section 5.1 / FR-1) removed the global
-    ``[catalog]`` block: catalog sources are per-dependency, so no global
-    catalog-source line is recorded in ``.kanon`` and ``kanon install`` is
-    hermetic (it never reads a global catalog source back).
-
-    Does nothing when dest already exists -- the caller owns the decision of
-    whether to create or append, so an existing file must never be rewritten
-    by this helper. The header is therefore written ONLY on the first
-    ``kanon add`` invocation (fresh file path).
-
-    The GITBASE value is derived from the catalog-source URL by the caller via
-    ``_derive_gitbase_from_catalog_source``; the marketplace_install value is
-    sourced from the ``KANON_MARKETPLACE_INSTALL`` environment variable (defaulting
-    to ``"false"``). Neither value is ever a literal placeholder string.
+def _source_block_key_names(source_name: str) -> str:
+    """Return the comma-joined KANON_SOURCE_<alias>_* key names for a summary line.
 
     Args:
-        dest: Destination .kanon file path.
-        gitbase: The derived GITBASE value (scheme + authority from catalog URL).
-        marketplace_install: The KANON_MARKETPLACE_INSTALL value (from env or default).
+        source_name: The local alias.
+
+    Returns:
+        The comma-joined list of every key in the alias-keyed source block, in
+        the canonical suffix order from ``SOURCE_SUFFIXES``.
     """
-    if dest.exists():
-        return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    header = (
-        f"GITBASE={gitbase}\n{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}\nKANON_MARKETPLACE_INSTALL={marketplace_install}\n"
-    )
-    dest.write_text(header, encoding="utf-8")
+    return ", ".join(f"{SOURCE_PREFIX}{source_name}{suffix}" for suffix in SOURCE_SUFFIXES)
 
 
-def _append_triple_block(
+def _append_source_block(
     dest: pathlib.Path,
     source_name: str,
     lines: list[str],
 ) -> None:
-    """Append the triple lines to dest and print a summary to stdout.
+    """Append the alias-keyed block lines to dest and print a summary to stdout.
+
+    Creates the destination file (and parent directories) when it does not yet
+    exist. A blank separator line is written before the block only when the file
+    already has content, so a freshly-created ``.kanon`` does not start with a
+    leading blank line.
 
     Args:
-        dest: Destination .kanon file path (must exist before calling).
-        source_name: Normalised source name, used in the stdout summary.
-        lines: The three KANON_SOURCE_* lines to append.
+        dest: Destination .kanon file path (created if absent).
+        source_name: The local alias, used in the stdout summary.
+        lines: The KANON_SOURCE_<alias>_* block lines to append.
     """
-    with dest.open("a") as fh:
-        fh.write("\n")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    needs_separator = dest.exists() and dest.read_text(encoding="utf-8").strip() != ""
+    with dest.open("a", encoding="utf-8") as fh:
+        if needs_separator:
+            fh.write("\n")
         for line in lines:
             fh.write(line + "\n")
-    key_names = ", ".join(
-        [
-            f"KANON_SOURCE_{source_name}_URL",
-            f"KANON_SOURCE_{source_name}_REVISION",
-            f"KANON_SOURCE_{source_name}_PATH",
-        ]
-    )
-    print(f"Wrote {key_names} to {dest}")
+    print(f"Wrote {_source_block_key_names(source_name)} to {dest}")
 
 
 def _build_entry_catalog(
@@ -599,82 +581,85 @@ def _check_within_request_collisions(entry_names: list[str]) -> None:
         seen[source] = raw
 
 
-def _read_existing_triple_block(
+def _read_existing_source_block(
     kanon_file: pathlib.Path,
     source_name: str,
 ) -> tuple[str | None, str | None, str | None]:
-    """Read the URL, REVISION, and PATH values for an existing source-name block.
+    """Read the URL, REF, and PATH values for an existing alias block.
 
-    Scans the destination .kanon file for lines matching
-    KANON_SOURCE_<source_name>_{URL,REVISION,PATH}=<value>.
+    Scans the destination .kanon file for the alias-keyed block lines
+    KANON_SOURCE_<alias>_{URL,REF,PATH}=<value>. The ``_NAME`` and ``_GITBASE``
+    lines are not surfaced here because the collision message and the dry-run
+    diff report only the source coordinates (URL / REF / PATH); presence of any
+    block line is what drives collision detection.
 
     Args:
         kanon_file: Path to the .kanon file (may not exist).
-        source_name: Normalised source name (output of derive_source_name).
+        source_name: The local alias (output of derive_source_name).
 
     Returns:
-        A 3-tuple (url, revision, path). Each element is the value string if
-        found, or None when absent.
+        A 3-tuple (url, ref, path). Each element is the value string if found,
+        or None when absent.
     """
     if not kanon_file.exists():
         return None, None, None
 
-    prefix = f"KANON_SOURCE_{source_name}_"
+    prefix = f"{SOURCE_PREFIX}{source_name}"
     url: str | None = None
-    revision: str | None = None
+    ref: str | None = None
     path: str | None = None
 
     for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if line.startswith(f"{prefix}URL="):
-            url = line[len(f"{prefix}URL=") :]
-        elif line.startswith(f"{prefix}REVISION="):
-            revision = line[len(f"{prefix}REVISION=") :]
-        elif line.startswith(f"{prefix}PATH="):
-            path = line[len(f"{prefix}PATH=") :]
+        if line.startswith(f"{prefix}{SOURCE_URL_SUFFIX}="):
+            url = line[len(f"{prefix}{SOURCE_URL_SUFFIX}=") :]
+        elif line.startswith(f"{prefix}{SOURCE_REF_SUFFIX}="):
+            ref = line[len(f"{prefix}{SOURCE_REF_SUFFIX}=") :]
+        elif line.startswith(f"{prefix}{SOURCE_PATH_SUFFIX}="):
+            path = line[len(f"{prefix}{SOURCE_PATH_SUFFIX}=") :]
 
-    return url, revision, path
+    return url, ref, path
 
 
 def _check_against_existing_blocks(
     kanon_file: pathlib.Path,
     source_name: str,
     new_url: str,
-    new_revision: str,
+    new_ref: str,
     new_path: str,
     force: bool,
 ) -> None:
-    """Detect a collision between source_name and an existing block in the file.
+    """Detect a collision between the alias and an existing block in the file.
 
     Per spec Section 4.2 pre-flight paragraph: if the destination .kanon file
-    already contains any KANON_SOURCE_<source_name>_* line, and --force is not
-    set, print the spec-canonical error message and exit non-zero.
+    already contains any KANON_SOURCE_<alias>_* line, and --force is not set,
+    print the spec-canonical error message and exit non-zero.
 
     Args:
         kanon_file: Path to the .kanon file (may not exist).
-        source_name: Normalised source name (output of derive_source_name).
+        source_name: The local alias (output of derive_source_name).
         new_url: Requested manifest repo URL.
-        new_revision: Requested revision spec.
+        new_ref: Requested verbatim ref spec.
         new_path: Requested repo-relative XML path.
         force: When True, collision is permitted (no error).
 
     Raises:
-        SystemExit: When the source name already has a block and force is False.
+        SystemExit: When the alias already has a block and force is False.
     """
     if force:
         return
 
-    existing_url, existing_revision, existing_path = _read_existing_triple_block(kanon_file, source_name)
+    existing_url, existing_ref, existing_path = _read_existing_source_block(kanon_file, source_name)
 
-    if existing_url is None and existing_revision is None and existing_path is None:
+    if existing_url is None and existing_ref is None and existing_path is None:
         return
 
     # At least one line exists -- collision detected.
     print(
-        f"ERROR: source-name '{source_name}' already mapped to "
+        f"ERROR: source alias '{source_name}' already mapped to "
         f"{existing_url}/{existing_path} "
-        f"(revision {existing_revision}); requested mapping is "
-        f"{new_url}/{new_path} (revision {new_revision}).\n"
+        f"(ref {existing_ref}); requested mapping is "
+        f"{new_url}/{new_path} (ref {new_ref}).\n"
         "Use --force to overwrite, or 'kanon remove "
         f"{source_name}' first.",
         file=sys.stderr,
@@ -687,24 +672,24 @@ def _check_against_existing_blocks(
 # ---------------------------------------------------------------------------
 
 
-def _overwrite_triple_block(
+def _overwrite_source_block(
     dest: pathlib.Path,
     source_name: str,
     lines: list[str],
 ) -> None:
-    """Replace the three KANON_SOURCE_<source_name>_* lines in dest.
+    """Replace the KANON_SOURCE_<alias>_* block lines in dest.
 
-    Reads the entire file, removes any line whose key begins with
-    KANON_SOURCE_<source_name>_{URL,REVISION,PATH}=, and inserts the
-    three new lines in place of the first removed line (preserving order).
+    Reads the entire file, removes any line whose key is one of the alias-keyed
+    block keys (every suffix in ``SOURCE_SUFFIXES``), and inserts the new block
+    lines in place of the first removed line (preserving order).
 
     Args:
-        dest: Destination .kanon file (must exist and contain the triple).
-        source_name: Normalised source name.
-        lines: The three replacement KANON_SOURCE_* lines.
+        dest: Destination .kanon file (must exist and contain the block).
+        source_name: The local alias.
+        lines: The replacement KANON_SOURCE_<alias>_* block lines.
     """
-    prefix = f"KANON_SOURCE_{source_name}_"
-    triple_keys = {f"{prefix}URL", f"{prefix}REVISION", f"{prefix}PATH"}
+    prefix = f"{SOURCE_PREFIX}{source_name}"
+    block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
 
     existing_lines = dest.read_text(encoding="utf-8").splitlines(keepends=True)
     result: list[str] = []
@@ -713,7 +698,7 @@ def _overwrite_triple_block(
     for raw_line in existing_lines:
         stripped = raw_line.rstrip("\n").rstrip("\r")
         key = stripped.split("=", 1)[0] if "=" in stripped else stripped
-        if key in triple_keys:
+        if key in block_keys:
             if not inserted:
                 # Insert replacement block at the position of the first matched line.
                 for new_line in lines:
@@ -725,19 +710,36 @@ def _overwrite_triple_block(
 
     dest.write_text("".join(result), encoding="utf-8")
 
-    key_names = ", ".join(
-        [
-            f"KANON_SOURCE_{source_name}_URL",
-            f"KANON_SOURCE_{source_name}_REVISION",
-            f"KANON_SOURCE_{source_name}_PATH",
-        ]
-    )
-    print(f"Overwrote {key_names} in {dest}")
+    print(f"Overwrote {_source_block_key_names(source_name)} in {dest}")
 
 
 # ---------------------------------------------------------------------------
 # Dry-run renderer
 # ---------------------------------------------------------------------------
+
+
+def _existing_block_lines(dest: pathlib.Path, source_name: str) -> list[str]:
+    """Return every existing KANON_SOURCE_<alias>_* line in dest, in file order.
+
+    Args:
+        dest: Destination .kanon file path (may not exist).
+        source_name: The local alias.
+
+    Returns:
+        The stripped block lines for the alias in their original file order;
+        empty when the file is absent or contains no block lines for the alias.
+    """
+    if not dest.exists():
+        return []
+    prefix = f"{SOURCE_PREFIX}{source_name}"
+    block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
+    matched: list[str] = []
+    for raw_line in dest.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        key = stripped.split("=", 1)[0] if "=" in stripped else stripped
+        if key in block_keys:
+            matched.append(stripped)
+    return matched
 
 
 def _render_dry_run_diff(
@@ -748,25 +750,20 @@ def _render_dry_run_diff(
 ) -> None:
     """Print the diff that WOULD be applied to dest without modifying the file.
 
-    When force is False (no collision expected), each line is printed with a
-    '+' prefix. When force is True, existing triple lines appear with '-'
-    prefix first, then replacement lines with '+' prefix.
+    When force is False (no collision expected), each block line is printed with
+    a '+' prefix. When force is True and a block already exists, the existing
+    block lines appear with a '-' prefix first, then the replacement lines with
+    a '+' prefix.
 
     Args:
         dest: Destination .kanon file path.
-        source_name: Normalised source name.
-        lines: The three replacement KANON_SOURCE_* lines.
+        source_name: The local alias.
+        lines: The replacement KANON_SOURCE_<alias>_* block lines.
         force: Whether the operation would overwrite an existing block.
     """
-    if force and dest.exists():
-        existing_url, existing_revision, existing_path = _read_existing_triple_block(dest, source_name)
-        if existing_url is not None or existing_revision is not None or existing_path is not None:
-            prefix = f"KANON_SOURCE_{source_name}_"
-            old_lines = [
-                f"{prefix}URL={existing_url}",
-                f"{prefix}REVISION={existing_revision}",
-                f"{prefix}PATH={existing_path}",
-            ]
+    if force:
+        old_lines = _existing_block_lines(dest, source_name)
+        if old_lines:
             for old_line in old_lines:
                 print(f"-{old_line}")
             for new_line in lines:
@@ -785,10 +782,10 @@ def _render_dry_run_diff(
 def run_add(args: argparse.Namespace) -> int:
     """Entry-point function for the 'kanon add' subcommand.
 
-    Resolves each requested catalog entry, constructs the three
-    KANON_SOURCE_* lines, and appends (or overwrites) them in the
-    destination .kanon file. Creates the file with a standard header when
-    absent.
+    Resolves each requested catalog entry, constructs the alias-keyed
+    KANON_SOURCE_<alias>_* block lines, and appends (or overwrites) them in the
+    destination .kanon file. Creates the file when absent; no standard header is
+    written (spec Section 5.1).
 
     The implementation uses a two-phase approach to satisfy AC-FUNC-004
     (destination .kanon is unchanged after any error):
@@ -796,12 +793,15 @@ def run_add(args: argparse.Namespace) -> int:
     - **Resolution phase** (Steps 1-4): all catalog lookups, tag resolution,
       and against-existing collision detection run first. No file writes occur.
     - **Write phase** (Step 5): only after every entry is fully resolved and
-      validated does the header write and triple append/overwrite execute.
+      validated does the alias-block append/overwrite execute. There is no
+      standard-header write (spec Section 5.1): the per-dependency block carries
+      its own ``_GITBASE`` and there is no global ``[catalog]`` /
+      ``KANON_MARKETPLACE_INSTALL`` header line.
 
     When --dry-run is set, prints the diff that would be applied and exits 0
     without modifying any file.
 
-    When --force is set, an existing KANON_SOURCE_<name>_* block is
+    When --force is set, an existing KANON_SOURCE_<alias>_* block is
     overwritten rather than treated as a hard error.
 
     Args:
@@ -822,24 +822,18 @@ def run_add(args: argparse.Namespace) -> int:
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
 
-    # Derive GITBASE and marketplace_install early (before any file writes) so
-    # any derivation failure exits before cloning the manifest repo.
-    # The catalog_source has the form <url>@<ref>; strip the trailing @<ref>
-    # to obtain the bare URL for GITBASE derivation.
+    # Validate that a GITBASE org base is derivable from the catalog-source URL
+    # early (before any file writes) so a malformed URL fails fast before cloning
+    # the manifest repo. The per-dependency _GITBASE written into each block is
+    # derived from that dependency's own entry URL in the resolution loop below.
+    # The catalog_source has the form <url>@<ref>; strip the trailing @<ref> to
+    # obtain the bare URL for the early derivation guard.
     catalog_source_url = catalog_source[: catalog_source.rfind("@")] if "@" in catalog_source else catalog_source
     try:
-        gitbase = _derive_gitbase_from_catalog_source(catalog_source_url)
+        _derive_gitbase_from_catalog_source(catalog_source_url)
     except CatalogSourceURLDerivationError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    # Resolve KANON_MARKETPLACE_INSTALL with precedence: flag > env > default.
-    # args.marketplace_install is None when no flag was passed, True for
-    # --marketplace-install, and False for --no-marketplace-install.
-    flag_value: bool | None = getattr(args, "marketplace_install", None)
-    if flag_value is not None:
-        marketplace_install = "true" if flag_value else "false"
-    else:
-        marketplace_install = os.environ.get("KANON_MARKETPLACE_INSTALL", "false").strip()
 
     # Pre-flight: within-request collision detection (before any catalog work).
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
@@ -867,11 +861,21 @@ def run_add(args: argparse.Namespace) -> int:
 
         rel_path = _xml_repo_relative_path(manifest_root, xml_path)
 
-        lines = _build_triple_lines(
+        # Per-dependency GITBASE org base, derived from this entry's own URL
+        # (spec Section 5.1). Failure to derive fails fast (no silent default).
+        try:
+            entry_gitbase = _derive_gitbase_from_catalog_source(entry_url)
+        except CatalogSourceURLDerivationError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+
+        lines = _build_source_block_lines(
             source_name=source_name,
             url=entry_url,
-            revision=resolved_revision,
+            ref=resolved_revision,
             path=rel_path,
+            name=metadata.name,
+            gitbase=entry_gitbase,
         )
 
         # Against-existing collision detection (runs for both normal and dry-run paths).
@@ -886,7 +890,7 @@ def run_add(args: argparse.Namespace) -> int:
             kanon_file=kanon_file,
             source_name=source_name,
             new_url=entry_url,
-            new_revision=spec if spec is not None else resolved_revision,
+            new_ref=spec if spec is not None else resolved_revision,
             new_path=rel_path,
             force=force,
         )
@@ -895,8 +899,9 @@ def run_add(args: argparse.Namespace) -> int:
 
     # Step 5: Write phase -- all entries resolved successfully; now write to disk.
     # For --dry-run: print diffs without any file modification (no lock needed).
-    # For normal runs: acquire the workspace lock, ensure the header exists,
-    # then append/overwrite each triple.
+    # For normal runs: acquire the workspace lock, then append/overwrite each
+    # alias block in argument order. No standard-header is written (spec Section
+    # 5.1): _append_source_block creates the file when absent.
     if dry_run:
         for source_name, _rel_path, lines in resolved_entries:
             _render_dry_run_diff(
@@ -912,28 +917,24 @@ def run_add(args: argparse.Namespace) -> int:
     # half-written .kanon file.
     workspace_root = kanon_file.resolve().parent
     with kanon_workspace_lock(workspace_root):
-        # Create header if file does not exist, then append or overwrite each
-        # resolved triple in argument order.
-        _write_standard_header(kanon_file, gitbase, marketplace_install)
-
         for source_name, _rel_path, lines in resolved_entries:
             if force and kanon_file.exists():
                 # Check whether an existing block is present; if so, overwrite it.
-                existing_url, _, _ = _read_existing_triple_block(kanon_file, source_name)
+                existing_url, _, _ = _read_existing_source_block(kanon_file, source_name)
                 if existing_url is not None:
-                    _overwrite_triple_block(
+                    _overwrite_source_block(
                         dest=kanon_file,
                         source_name=source_name,
                         lines=lines,
                     )
                 else:
-                    _append_triple_block(
+                    _append_source_block(
                         dest=kanon_file,
                         source_name=source_name,
                         lines=lines,
                     )
             else:
-                _append_triple_block(
+                _append_source_block(
                     dest=kanon_file,
                     source_name=source_name,
                     lines=lines,

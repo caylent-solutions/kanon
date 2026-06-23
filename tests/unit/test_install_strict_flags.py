@@ -57,8 +57,10 @@ def _write_kanon_single(
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_REF={revision}\n"
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path

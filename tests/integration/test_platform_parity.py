@@ -41,8 +41,10 @@ _SRC_DIR = _REPO_ROOT / "src"
 
 _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/src.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=repo-specs/default.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
 
 # Determine the current OS for platform-conditional behavior in docstrings.

@@ -1,14 +1,16 @@
-"""kanon remove subcommand: strip dependency triples from a .kanon file.
+"""kanon remove subcommand: strip alias-keyed dependency blocks from a .kanon file.
 
-Accepts one or more names (each may be the canonical source name such as
+Accepts one or more aliases (each may be the canonical alias such as
 ``foo_bar`` or the original entry name such as ``Foo-Bar``); normalises each
-via :func:`derive_source_name` before lookup; and removes the three
-``KANON_SOURCE_<normalized>_{URL,REVISION,PATH}`` lines wherever they appear
-in the file (they need not be contiguous).
+via :func:`derive_source_name` before lookup; and removes every alias-keyed
+``KANON_SOURCE_<alias>_*`` line of the block (``_URL``, ``_REF``, ``_PATH``,
+``_NAME``, ``_GITBASE``) wherever they appear in the file (they need not be
+contiguous).
 
-Atomicity guarantee: the file is only written when ALL requested names are
-validated successfully. If any name fails the fewer-than-three-keys check the
-command exits non-zero and the file is unchanged.
+Atomicity guarantee: the file is only written when ALL requested aliases are
+validated successfully. If any alias is not fully present (fewer than the
+expected number of block keys) the command exits non-zero and the file is
+unchanged.
 
 File-writing rules (spec Section 4.3 Behaviour step 4):
 
@@ -35,6 +37,8 @@ import sys
 from kanon_cli.constants import (
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
+    SOURCE_PREFIX,
+    SOURCE_SUFFIXES,
 )
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
@@ -69,16 +73,17 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "remove",
         add_help=True,
-        help="Remove one or more source-name dependency triples from the .kanon file.",
+        help="Remove one or more alias-keyed dependency blocks from the .kanon file.",
         description=(
-            "Remove the three KANON_SOURCE_<name>_{URL,REVISION,PATH} lines for one\n"
-            "or more entries from the .kanon file.\n\n"
-            "Each <name> may be EITHER the canonical source name (e.g. foo_bar) OR\n"
+            "Remove the KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block for\n"
+            "one or more entries from the .kanon file.\n\n"
+            "Each <name> may be EITHER the canonical alias (e.g. foo_bar) OR\n"
             "the original entry name (e.g. Foo-Bar); both are normalised via\n"
             "derive_source_name() before lookup.\n\n"
-            "Atomicity rule: if ANY requested name is not fully present (fewer than\n"
-            "three matching keys), the command exits non-zero and the file is NOT\n"
-            "modified. Either every requested removal succeeds or nothing changes.\n\n"
+            "Atomicity rule: if ANY requested alias is not fully present (fewer than\n"
+            "the expected number of block keys), the command exits non-zero and the\n"
+            "file is NOT modified. Either every requested removal succeeds or\n"
+            "nothing changes.\n\n"
             f"The --kanon-file path defaults to '{KANON_KANON_FILE_DEFAULT}' and may be overridden by\n"
             f"the {KANON_KANON_FILE_ENV} environment variable (CLI flag takes\n"
             "precedence when both are set).\n\n"
@@ -98,9 +103,9 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         metavar="<name>",
         nargs="+",
         help=(
-            "One or more source names to remove. Each may be the canonical source\n"
-            "name (e.g. foo_bar) or the original entry name (e.g. Foo-Bar); both\n"
-            "forms normalise to the same KANON_SOURCE_<name>_* keys."
+            "One or more source aliases to remove. Each may be the canonical alias\n"
+            "(e.g. foo_bar) or the original entry name (e.g. Foo-Bar); both\n"
+            "forms normalise to the same KANON_SOURCE_<alias>_* keys."
         ),
     )
 
@@ -152,25 +157,22 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
 
 
 def _scan_source_lines(lines: list[str], normalized: str) -> set[int]:
-    """Return the set of line indices that match KANON_SOURCE_<normalized>_* keys.
+    """Return the set of line indices that match KANON_SOURCE_<alias>_* block keys.
 
-    Only recognises the three canonical suffixes: ``_URL``, ``_REVISION``,
-    and ``_PATH``. Comment lines (stripped content starting with ``#``) are
-    ignored even if they contain the prefix string.
+    Recognises every canonical block suffix in ``SOURCE_SUFFIXES`` (``_URL``,
+    ``_REF``, ``_PATH``, ``_NAME``, ``_GITBASE``). Comment lines (stripped
+    content starting with ``#``) are ignored even if they contain the prefix
+    string.
 
     Args:
         lines: All lines of the .kanon file (with newline characters retained).
-        normalized: The normalised source name token (e.g. ``foo_bar``).
+        normalized: The normalised alias token (e.g. ``foo_bar``).
 
     Returns:
         A set of zero-based line indices for the matching lines.
     """
-    prefix = f"KANON_SOURCE_{normalized}_"
-    target_keys = {
-        f"{prefix}URL",
-        f"{prefix}REVISION",
-        f"{prefix}PATH",
-    }
+    prefix = f"{SOURCE_PREFIX}{normalized}"
+    target_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
     matched: set[int] = set()
     for idx, raw_line in enumerate(lines):
         stripped = raw_line.strip()
@@ -187,29 +189,31 @@ def _collect_removal_lines(
     normalized: str,
     input_name: str,
 ) -> set[int]:
-    """Validate that exactly three matching lines exist and return their indices.
+    """Validate that the full alias block is present and return its line indices.
 
     Delegates scanning to :func:`_scan_source_lines`. Hard-errors with the
-    spec-canonical message if fewer than three keys are found.
+    spec-canonical message if fewer than the expected number of block keys
+    (``len(SOURCE_SUFFIXES)``) are found.
 
     Args:
         lines: All lines of the .kanon file.
-        normalized: The normalised source name token (e.g. ``foo_bar``).
+        normalized: The normalised alias token (e.g. ``foo_bar``).
         input_name: The original user-supplied name (used in error messages).
 
     Returns:
-        A set of exactly three line indices to remove.
+        A set of the line indices to remove (one per present block key).
 
     Raises:
-        SystemExit: When fewer than three matching keys are found.
+        SystemExit: When fewer than the expected number of block keys are found.
     """
+    expected = len(SOURCE_SUFFIXES)
     matched = _scan_source_lines(lines, normalized)
     found = len(matched)
-    if found < 3:
+    if found < expected:
         print(
-            f"ERROR: source '{input_name}' (normalized form '{normalized}') "
+            f"ERROR: source alias '{input_name}' (normalized form '{normalized}') "
             f"not fully present in .kanon; "
-            f"found {found} of 3 expected KANON_SOURCE_{normalized}_* keys",
+            f"found {found} of {expected} expected KANON_SOURCE_{normalized}_* keys",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -415,7 +419,7 @@ def run_remove(args: argparse.Namespace) -> int:
 
     # Emit one summary line per removed source (outside lock -- read-only).
     for _input_name, normalized, _indices in removal_plan:
-        key_names = f"KANON_SOURCE_{normalized}_URL, KANON_SOURCE_{normalized}_REVISION, KANON_SOURCE_{normalized}_PATH"
+        key_names = ", ".join(f"{SOURCE_PREFIX}{normalized}{suffix}" for suffix in SOURCE_SUFFIXES)
         print(f"Removed {key_names} from {kanon_file}")
 
     return 0

@@ -201,8 +201,10 @@ def _write_kanon(
     for name, manifest_bare, revision in sources:
         url = manifest_bare.as_uri()
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH=manifest.xml")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text("\n".join(lines) + "\n")
     kanon_path.chmod(0o600)

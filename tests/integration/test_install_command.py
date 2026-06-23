@@ -29,8 +29,10 @@ _VALID_KANONENV_CONTENT = (
     f"GITBASE={_TEST_GITBASE_URL}\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
     f"KANON_SOURCE_test_URL={_TEST_KANON_SOURCE_URL}\n"
-    "KANON_SOURCE_test_REVISION=main\n"
+    "KANON_SOURCE_test_REF=main\n"
     "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+    "KANON_SOURCE_test_NAME=test\n"
+    "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]

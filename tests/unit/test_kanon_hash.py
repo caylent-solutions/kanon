@@ -49,8 +49,10 @@ def _write_kanon(
         lines.extend(prefix_lines)
     for name, url, revision, path in sources:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH={path}")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
     if suffix_lines:
         lines.extend(suffix_lines)
     kanon_file = tmp_path / filename
@@ -392,8 +394,10 @@ class TestKanonHashTabInUrl:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             f"KANON_SOURCE_alpha_URL={url_with_tab}\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
-            "KANON_SOURCE_alpha_PATH=repo-specs/alpha/meta.xml\n",
+            "KANON_SOURCE_alpha_REF=main\n"
+            "KANON_SOURCE_alpha_PATH=repo-specs/alpha/meta.xml\n"
+            "KANON_SOURCE_alpha_NAME=alpha\n"
+            "KANON_SOURCE_alpha_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
         with pytest.raises(KanonHashError) as exc_info:
@@ -407,8 +411,10 @@ class TestKanonHashTabInUrl:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_mysvc_URL=https://x.com/r\tepo.git\n"
-            "KANON_SOURCE_mysvc_REVISION=main\n"
-            "KANON_SOURCE_mysvc_PATH=specs/meta.xml\n",
+            "KANON_SOURCE_mysvc_REF=main\n"
+            "KANON_SOURCE_mysvc_PATH=specs/meta.xml\n"
+            "KANON_SOURCE_mysvc_NAME=mysvc\n"
+            "KANON_SOURCE_mysvc_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
         with pytest.raises(KanonHashError, match="mysvc"):
@@ -435,7 +441,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -446,7 +452,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\tpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -458,7 +464,7 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x09" in msg
 
     def test_nul_in_name_via_monkeypatch(
@@ -472,7 +478,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -483,7 +489,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\x00pha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -495,7 +501,7 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x00" in msg
 
     def test_newline_in_name_via_monkeypatch(
@@ -509,7 +515,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -520,7 +526,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\npha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -532,7 +538,7 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x0A" in msg
 
 
@@ -556,7 +562,7 @@ class TestKanonHashNewlineInPath:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -567,7 +573,7 @@ class TestKanonHashNewlineInPath:
                 "sources": {
                     "alpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta\nxml",
                     }
                 },
@@ -604,7 +610,7 @@ class TestKanonHashNulInRevision:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -615,7 +621,7 @@ class TestKanonHashNulInRevision:
                 "sources": {
                     "alpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "ma\x00in",
+                        "ref": "ma\x00in",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -628,7 +634,7 @@ class TestKanonHashNulInRevision:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
         assert "alpha" in msg
-        assert "REVISION" in msg
+        assert "REF" in msg
         assert "0x00" in msg
 
 

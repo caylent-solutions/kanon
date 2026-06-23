@@ -312,8 +312,10 @@ class TestFullJourneyBootstrapInstallClean:
 
         kanonenv_content = (
             f"KANON_SOURCE_main_URL=file://{manifest_bare}\n"
-            "KANON_SOURCE_main_REVISION=main\n"
+            "KANON_SOURCE_main_REF=main\n"
             "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n"
         )
 
         project_dir = tmp_path / "project"
@@ -393,8 +395,10 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
             f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             f"KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
-            f"KANON_SOURCE_mp_REVISION=main\n"
-            f"KANON_SOURCE_mp_PATH=default.xml\n",
+            f"KANON_SOURCE_mp_REF=main\n"
+            f"KANON_SOURCE_mp_PATH=default.xml\n"
+            f"KANON_SOURCE_mp_NAME=mp\n"
+            f"KANON_SOURCE_mp_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -538,8 +542,10 @@ class TestFullJourneyBootstrapInstallValidateClean:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             f"KANON_SOURCE_main_URL=file://{manifest_repo_bare}\n"
-            "KANON_SOURCE_main_REVISION=main\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            "KANON_SOURCE_main_REF=main\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -603,7 +609,7 @@ class TestFullJourneyWithVersionConstraints:
 
         Steps:
         1. Create a manifest repo bare with tags 1.0.0 and 1.1.0 and 2.0.0.
-        2. Create a .kanon with KANON_SOURCE_main_REVISION=refs/tags/>=1.0.0,<2.0.0.
+        2. Create a .kanon with KANON_SOURCE_main_REF=refs/tags/>=1.0.0,<2.0.0.
         3. Mock resolve_version to return refs/tags/1.1.0 (highest matching).
         4. Run install. Verify the mock was called with the constraint.
         5. Clean. Verify clean state.
@@ -625,8 +631,10 @@ class TestFullJourneyWithVersionConstraints:
         constraint = "refs/tags/>=1.0.0,<2.0.0"
         kanonenv_path.write_text(
             f"KANON_SOURCE_main_URL=file://{manifest_bare}\n"
-            f"KANON_SOURCE_main_REVISION={constraint}\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            f"KANON_SOURCE_main_REF={constraint}\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -692,8 +700,10 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=default.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=default.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -760,11 +770,15 @@ class TestFullJourneyMultiSourceWithMarketplace:
             f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             "KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
-            "KANON_SOURCE_mp_REVISION=main\n"
+            "KANON_SOURCE_mp_REF=main\n"
             "KANON_SOURCE_mp_PATH=default.xml\n"
+            "KANON_SOURCE_mp_NAME=mp\n"
+            "KANON_SOURCE_mp_GITBASE=https://example.com\n"
             "KANON_SOURCE_pkgs_URL=https://example.com/pkgs.git\n"
-            "KANON_SOURCE_pkgs_REVISION=main\n"
-            "KANON_SOURCE_pkgs_PATH=meta.xml\n",
+            "KANON_SOURCE_pkgs_REF=main\n"
+            "KANON_SOURCE_pkgs_PATH=meta.xml\n"
+            "KANON_SOURCE_pkgs_NAME=pkgs\n"
+            "KANON_SOURCE_pkgs_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -875,8 +889,10 @@ class TestFullJourneyEnvVarOverrides:
         kanonenv_path.write_text(
             "GITBASE=default-base\n"
             "KANON_SOURCE_main_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_main_REVISION=main\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            "KANON_SOURCE_main_REF=main\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -941,8 +957,10 @@ class TestFullJourneyInstallTwiceThenClean:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=default.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=default.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -1020,11 +1038,15 @@ class TestFullJourneyErrorRecovery:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_bad_URL=https://invalid.example.com/bad.git\n"
-            "KANON_SOURCE_bad_REVISION=main\n"
+            "KANON_SOURCE_bad_REF=main\n"
             "KANON_SOURCE_bad_PATH=default.xml\n"
+            "KANON_SOURCE_bad_NAME=bad\n"
+            "KANON_SOURCE_bad_GITBASE=https://example.com\n"
             "KANON_SOURCE_good_URL=https://example.com/good.git\n"
-            "KANON_SOURCE_good_REVISION=main\n"
-            "KANON_SOURCE_good_PATH=default.xml\n",
+            "KANON_SOURCE_good_REF=main\n"
+            "KANON_SOURCE_good_PATH=default.xml\n"
+            "KANON_SOURCE_good_NAME=good\n"
+            "KANON_SOURCE_good_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 

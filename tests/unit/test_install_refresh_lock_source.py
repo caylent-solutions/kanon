@@ -54,11 +54,15 @@ GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_REF=main
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 KANON_SOURCE_beta_URL=https://git.example.com/beta.git
-KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_REF=main
 KANON_SOURCE_beta_PATH=manifest.xml
+KANON_SOURCE_beta_NAME=beta
+KANON_SOURCE_beta_GITBASE=https://example.com
 """
 
 
@@ -217,11 +221,15 @@ GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_tool_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_tool_REVISION=main
+KANON_SOURCE_alpha_tool_REF=main
 KANON_SOURCE_alpha_tool_PATH=manifest.xml
+KANON_SOURCE_alpha_tool_NAME=alpha_tool
+KANON_SOURCE_alpha_tool_GITBASE=https://example.com
 KANON_SOURCE_beta_URL=https://git.example.com/beta.git
-KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_REF=main
 KANON_SOURCE_beta_PATH=manifest.xml
+KANON_SOURCE_beta_NAME=beta
+KANON_SOURCE_beta_GITBASE=https://example.com
 """
         kanon_path = _write_kanon(tmp_path, kanon_content)
         alpha_entry = _make_source_entry(name="alpha_tool", url="https://git.example.com/alpha.git")

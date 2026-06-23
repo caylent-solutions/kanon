@@ -73,8 +73,10 @@ class TestConstantsModule:
 
     def test_source_suffixes_tuple(self) -> None:
         assert "_URL" in SOURCE_SUFFIXES
-        assert "_REVISION" in SOURCE_SUFFIXES
+        assert "_REF" in SOURCE_SUFFIXES
         assert "_PATH" in SOURCE_SUFFIXES
+        assert "_NAME" in SOURCE_SUFFIXES
+        assert "_GITBASE" in SOURCE_SUFFIXES
 
     def test_kanonenv_filename(self) -> None:
         assert KANONENV_FILENAME == ".kanon"
@@ -219,7 +221,7 @@ class TestCleanLifecycle:
     def test_clean_removes_packages_and_kanon_data(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         (tmp_path / ".packages").mkdir()
         (tmp_path / ".kanon-data").mkdir()
@@ -242,8 +244,10 @@ class TestKanonenvEdgeCases:
             tmp_path,
             "# This is a comment\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         for key in result.get("globals", {}):
@@ -253,8 +257,10 @@ class TestKanonenvEdgeCases:
         kanonenv = _write_kanonenv(
             tmp_path,
             "\n\nKANON_SOURCE_s_URL=https://example.com/s.git\n\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["s"]
@@ -262,7 +268,7 @@ class TestKanonenvEdgeCases:
     def test_value_with_embedded_equals(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com?a=1&b=2\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com?a=1&b=2\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"]["s"]["url"] == "https://example.com?a=1&b=2"
@@ -270,7 +276,7 @@ class TestKanonenvEdgeCases:
     def test_install_with_mocked_repo_api(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         with (
             patch("kanon_cli.repo.repo_init"),

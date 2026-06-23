@@ -292,17 +292,21 @@ def write_kanonenv(
     marketplace_install: str | None = None,
     extra_lines: Iterable[str] = (),
 ) -> pathlib.Path:
-    """Write a `.kanon` file declaring `sources` as KANON_SOURCE_<name>_* triplets.
+    """Write a `.kanon` file declaring `sources` as KANON_SOURCE_<alias>_* blocks.
 
-    Each `sources` entry: `(name, url, revision, path)`. `marketplace_install`
-    appends `KANON_MARKETPLACE_INSTALL=<value>`. `extra_lines` are appended
-    verbatim.
+    Each `sources` entry: `(alias, url, ref, path)`. The required `_NAME`
+    (the alias) and `_GITBASE` (the source url) block keys are filled in
+    automatically so the alias-keyed block parses (spec Section 5.1).
+    `marketplace_install` appends `KANON_MARKETPLACE_INSTALL=<value>`.
+    `extra_lines` are appended verbatim.
     """
     lines: list[str] = []
     for name, url, revision, path in sources:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH={path}")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
     if marketplace_install is not None:
         lines.append(f"KANON_MARKETPLACE_INSTALL={marketplace_install}")
     lines.extend(extra_lines)

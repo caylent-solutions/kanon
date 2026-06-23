@@ -24,7 +24,7 @@ that must be remediated source-side (in T3), NOT by changing the fixture.
 The fixtures are the canonical reference; the source must match them.
 
 Trigger procedure per slug:
-- ``missing-catalog-source``: ``kanon list`` with neither env var nor flag set.
+- ``missing-catalog-source``: ``kanon search`` with neither env var nor flag set.
 - ``lockfile-hash-mismatch``: ``kanon install --strict-lock`` with a ``.kanon``
   file and a lockfile whose ``kanon_hash`` field intentionally differs from the
   actual hash of the ``.kanon`` file.  (Plain ``kanon install`` reconciles the
@@ -229,7 +229,7 @@ def _build_trigger_workspace(slug: str, tmp_path: pathlib.Path) -> pathlib.Path:
 
     Each slug maps to a distinct workspace layout:
 
-    - ``missing-catalog-source``: empty directory; ``kanon list`` with no
+    - ``missing-catalog-source``: empty directory; ``kanon search`` with no
       catalog source set will fire immediately.
     - ``lockfile-hash-mismatch``: a ``.kanon`` file plus a ``.kanon.lock``
       whose ``kanon_hash`` has been set to a deliberately wrong value; the CLI
@@ -270,7 +270,11 @@ def _build_trigger_workspace(slug: str, tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _build_missing_catalog_source(tmp_path: pathlib.Path) -> pathlib.Path:
-    """Workspace for missing-catalog-source: an empty directory."""
+    """Workspace for missing-catalog-source: an empty directory.
+
+    ``kanon search`` with no catalog source set (neither flag nor env var)
+    fires the missing-catalog-source error immediately.
+    """
     ws = tmp_path / "ws"
     ws.mkdir()
     return ws
@@ -301,8 +305,10 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         "KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git\n"
-        "KANON_SOURCE_example_pkg_REVISION=main\n"
-        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n",
+        "KANON_SOURCE_example_pkg_REF=main\n"
+        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n"
+        "KANON_SOURCE_example_pkg_NAME=example_pkg\n"
+        "KANON_SOURCE_example_pkg_GITBASE=https://example.com/org\n",
         encoding="utf-8",
     )
 
@@ -342,8 +348,10 @@ def _build_lockfile_sha_unreachable(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         "KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git\n"
-        "KANON_SOURCE_example_pkg_REVISION=main\n"
-        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n",
+        "KANON_SOURCE_example_pkg_REF=main\n"
+        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n"
+        "KANON_SOURCE_example_pkg_NAME=example_pkg\n"
+        "KANON_SOURCE_example_pkg_GITBASE=https://example.com/org\n",
         encoding="utf-8",
     )
     actual_hash = _kanon_hash(kanon_file)
@@ -418,8 +426,10 @@ def _build_source_collision(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         f"KANON_SOURCE_example_pkg_URL={_CANONICAL_CATALOG_URL}\n"
-        "KANON_SOURCE_example_pkg_REVISION===1.0.0\n"
-        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n",
+        "KANON_SOURCE_example_pkg_REF===1.0.0\n"
+        "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n"
+        "KANON_SOURCE_example_pkg_NAME=example_pkg\n"
+        f"KANON_SOURCE_example_pkg_GITBASE={_CANONICAL_CATALOG_URL}\n",
         encoding="utf-8",
     )
     return ws
@@ -442,11 +452,15 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         "KANON_SOURCE_source_a_URL=https://example.com/vendor/shared-lib.git\n"
-        "KANON_SOURCE_source_a_REVISION=main\n"
+        "KANON_SOURCE_source_a_REF=main\n"
         "KANON_SOURCE_source_a_PATH=repo-specs/shared-lib-marketplace.xml\n"
+        "KANON_SOURCE_source_a_NAME=source_a\n"
+        "KANON_SOURCE_source_a_GITBASE=https://example.com/vendor\n"
         "KANON_SOURCE_source_b_URL=https://example.com/vendor/shared-lib.git\n"
-        "KANON_SOURCE_source_b_REVISION=main\n"
-        "KANON_SOURCE_source_b_PATH=repo-specs/shared-lib-marketplace.xml\n",
+        "KANON_SOURCE_source_b_REF=main\n"
+        "KANON_SOURCE_source_b_PATH=repo-specs/shared-lib-marketplace.xml\n"
+        "KANON_SOURCE_source_b_NAME=source_b\n"
+        "KANON_SOURCE_source_b_GITBASE=https://example.com/vendor\n",
         encoding="utf-8",
     )
     actual_hash = _kanon_hash(kanon_file)
@@ -602,8 +616,8 @@ def _make_cli_args(slug: str, tmp_path: pathlib.Path) -> tuple[list[str], "dict[
     ws = tmp_path / "ws"
 
     if slug == "missing-catalog-source":
-        # No catalog source in env or flag -- kanon list fires immediately.
-        return ["list"], {"KANON_CATALOG_SOURCES": ""}
+        # No catalog source in env or flag -- kanon search fires immediately.
+        return ["search"], {"KANON_CATALOG_SOURCES": ""}
 
     if slug == "lockfile-hash-mismatch":
         # Under the npm-like reconcile contract, plain `kanon install` reconciles a

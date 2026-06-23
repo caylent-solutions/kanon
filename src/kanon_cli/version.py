@@ -373,7 +373,7 @@ def _classify_revision_shape(revision: str) -> RevisionShape:
     3. Otherwise it is BRANCH-pinned.
 
     Args:
-        revision: The REVISION string from a KANON_SOURCE_<name>_REVISION
+        revision: The ref string from a KANON_SOURCE_<alias>_REF
             environment variable (e.g. ``main``, ``>=1.0.0``, ``a3b4c5...``).
 
     Returns:

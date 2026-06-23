@@ -97,8 +97,8 @@ class TestKanonAddNoPlaceholders:
            ``<YOUR_GIT_ORG_BASE_URL>``.
         2. The generated `.kanon` does NOT contain the literal string
            ``<true|false>``.
-        3. The generated `.kanon` contains a ``GITBASE=`` line whose value equals
-           the scheme + authority derived from the catalog-source URL.
+        3. The generated `.kanon` contains a ``KANON_SOURCE_foo_GITBASE=`` line
+           whose value equals the org base derived from the catalog-source URL.
 
         Against unfixed code all three assertions fail because `kanon add`
         currently writes ``GITBASE=<YOUR_GIT_ORG_BASE_URL>`` and
@@ -144,10 +144,10 @@ class TestKanonAddNoPlaceholders:
         )
 
         expected_gitbase = _derive_expected_gitbase(catalog_source)
-        gitbase_lines = [line for line in content.splitlines() if line.startswith("GITBASE=")]
+        gitbase_lines = [line for line in content.splitlines() if line.startswith("KANON_SOURCE_foo_GITBASE=")]
         assert gitbase_lines, (
-            "No GITBASE= line found in .kanon. "
-            f"Expected a line starting with 'GITBASE={expected_gitbase}'.\n"
+            "No KANON_SOURCE_foo_GITBASE= line found in .kanon. "
+            f"Expected a line starting with 'KANON_SOURCE_foo_GITBASE={expected_gitbase}'.\n"
             f"Actual .kanon content:\n{content}"
         )
         actual_gitbase_value = gitbase_lines[0].split("=", 1)[1]
@@ -178,8 +178,9 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
 
         The `.kanon` is hand-written with:
         - ``GITBASE=<YOUR_GIT_ORG_BASE_URL>`` on line 1 (the offending placeholder)
-        - A valid ``KANON_SOURCE_foo_*`` triple so the parser reaches the
-          placeholder-validator step rather than failing on missing sources.
+        - A complete five-key ``KANON_SOURCE_foo_*`` block so the parser succeeds
+          and install reaches the placeholder-validator step rather than failing
+          on missing source variables.
 
         Against unfixed code the test fails because `kanon install` passes the
         literal placeholder through to `repo sync` and fails with a 404 or
@@ -206,8 +207,10 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
             KANON_MARKETPLACE_INSTALL=false
 
             KANON_SOURCE_foo_URL={catalog_source}
-            KANON_SOURCE_foo_REVISION=refs/heads/main
+            KANON_SOURCE_foo_REF=refs/heads/main
             KANON_SOURCE_foo_PATH=repos/foo
+            KANON_SOURCE_foo_NAME=foo
+            KANON_SOURCE_foo_GITBASE=https://example.com
             """)
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(kanon_content)

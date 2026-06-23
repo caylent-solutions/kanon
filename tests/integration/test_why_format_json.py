@@ -85,12 +85,11 @@ def why_json_fixture(tmp_path: pathlib.Path):
     """
     kanon_file = tmp_path / ".kanon"
     kanon_content = textwrap.dedent(f"""\
-        GITBASE=https://github.com
-        CLAUDE_MARKETPLACES_DIR=/tmp/mkts
-        KANON_MARKETPLACE_INSTALL=false
         KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog
-        KANON_SOURCE_{_SOURCE_NAME}_REVISION=main
+        KANON_SOURCE_{_SOURCE_NAME}_REF=main
         KANON_SOURCE_{_SOURCE_NAME}_PATH=./foo
+        KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}
+        KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com
     """)
     kanon_file.write_text(kanon_content)
     kanon_file.chmod(0o644)
@@ -187,14 +186,19 @@ class TestWhyFormatJsonIntegration:
     def test_json_output_is_well_formed(self, why_json_fixture: dict) -> None:
         """Output from --format json is parseable by json.loads and is a dict (AC-FUNC-001).
 
-        The new JSON shape is {"matched": {"category": ..., "token": ...}, "chains": [...]}.
+        The JSON shape is
+        {"matched": {"category": ..., "token": ...}, "aliases": [...], "chains": [...]}.
         """
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0, f"Expected exit 0, got {result.returncode}. stderr: {result.stderr}"
         parsed = json.loads(result.stdout)
         assert isinstance(parsed, dict), f"Expected dict from json.loads, got {type(parsed).__name__}: {parsed!r}"
         assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
+        assert "aliases" in parsed, f"Expected 'aliases' key in output, got: {list(parsed.keys())}"
         assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
+        assert isinstance(parsed["aliases"], list), (
+            f"Expected 'aliases' to be a list, got {type(parsed['aliases']).__name__}: {parsed['aliases']!r}"
+        )
 
     def test_json_array_length_one(self, why_json_fixture: dict) -> None:
         """JSON output chains array has one chain for a single-chain tree (AC-FUNC-001)."""
@@ -363,12 +367,11 @@ class TestWhyFormatJsonIntegration:
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "GITBASE=https://github.com\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=https://github.com/org/catalog\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 

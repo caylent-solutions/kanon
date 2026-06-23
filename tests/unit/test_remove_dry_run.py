@@ -58,52 +58,63 @@ def _file_sha256(path: pathlib.Path) -> str:
 class TestRenderRemoveDryRunDiff:
     """_render_remove_dry_run_diff() prints '-' prefixed lines for removed keys."""
 
-    def test_single_source_prints_three_minus_lines(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Single-source diff shows three '-' lines for URL, REVISION, PATH."""
+    def test_single_source_prints_five_minus_lines(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Single-source diff shows five '-' lines for URL, REF, PATH, NAME, GITBASE."""
         lines = [
             "GITBASE=x\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
-        removal_indices = {1, 2, 3}
+        removal_indices = {1, 2, 3, 4, 5}
         _render_remove_dry_run_diff(lines, removal_indices)
 
         out = capsys.readouterr().out
         assert "-KANON_SOURCE_foo_bar_URL=https://example.com/repo.git" in out
-        assert "-KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0" in out
+        assert "-KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0" in out
         assert "-KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml" in out
+        assert "-KANON_SOURCE_foo_bar_NAME=foo_bar" in out
+        assert "-KANON_SOURCE_foo_bar_GITBASE=https://example.com" in out
 
-    def test_all_three_lines_have_minus_prefix(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_all_five_lines_have_minus_prefix(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Every removed line is prefixed with '-'."""
         lines = [
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
-        removal_indices = {0, 1, 2}
+        removal_indices = {0, 1, 2, 3, 4}
         _render_remove_dry_run_diff(lines, removal_indices)
 
         out = capsys.readouterr().out
         output_lines = [ln for ln in out.splitlines() if ln.strip()]
         assert all(ln.startswith("-") for ln in output_lines)
-        assert len(output_lines) == 3
+        assert len(output_lines) == 5
 
     def test_non_removal_lines_not_printed(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Lines not in removal_indices are NOT printed."""
         lines = [
             "GITBASE=x\n",
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
             "OTHER=y\n",
         ]
-        removal_indices = {1, 2, 3}
+        removal_indices = {1, 2, 3, 4, 5}
         _render_remove_dry_run_diff(lines, removal_indices)
 
         out = capsys.readouterr().out
-        assert "GITBASE" not in out
-        assert "OTHER" not in out
+        # The standalone header (GITBASE=x) and OTHER=y are not in the removal set
+        # and must not be printed. Note: the removed KANON_SOURCE_foo_bar_GITBASE
+        # line is printed, so we assert on the full non-removed line content here.
+        assert "GITBASE=x" not in out
+        assert "OTHER=y" not in out
 
     @pytest.mark.parametrize(
         "source_name,indices",
@@ -123,15 +134,19 @@ class TestRenderRemoveDryRunDiff:
         lines = [
             "GITBASE=x\n",
             f"KANON_SOURCE_{source_name}_URL=https://example.com/repo.git\n",
-            f"KANON_SOURCE_{source_name}_REVISION=refs/tags/1.0.0\n",
+            f"KANON_SOURCE_{source_name}_REF=refs/tags/1.0.0\n",
             f"KANON_SOURCE_{source_name}_PATH=repo-specs/marketplace.xml\n",
+            f"KANON_SOURCE_{source_name}_NAME={source_name}\n",
+            f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
             "GITBASE2=y\n",
             f"KANON_SOURCE_{source_name}_URL=dup\n",  # extra line to test index selection
-            f"KANON_SOURCE_{source_name}_REVISION=dup\n",
+            f"KANON_SOURCE_{source_name}_REF=dup\n",
             f"KANON_SOURCE_{source_name}_PATH=dup\n",
+            f"KANON_SOURCE_{source_name}_NAME=dup\n",
+            f"KANON_SOURCE_{source_name}_GITBASE=dup\n",
         ]
         # Only render the first block
-        first_indices = {1, 2, 3}
+        first_indices = {1, 2, 3, 4, 5}
         _render_remove_dry_run_diff(lines, first_indices)
 
         out = capsys.readouterr().out
@@ -141,18 +156,22 @@ class TestRenderRemoveDryRunDiff:
         """Multi-source: all removal indices for two sources appear in the diff."""
         lines = [
             "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n",
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n",
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n",
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo.xml\n",
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
             "KANON_SOURCE_baz_qux_URL=https://example.com/baz.git\n",
-            "KANON_SOURCE_baz_qux_REVISION=refs/tags/2.0.0\n",
+            "KANON_SOURCE_baz_qux_REF=refs/tags/2.0.0\n",
             "KANON_SOURCE_baz_qux_PATH=repo-specs/baz.xml\n",
+            "KANON_SOURCE_baz_qux_NAME=baz_qux\n",
+            "KANON_SOURCE_baz_qux_GITBASE=https://example.com\n",
         ]
-        removal_indices = {0, 1, 2, 3, 4, 5}
+        removal_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         _render_remove_dry_run_diff(lines, removal_indices)
 
         out = capsys.readouterr().out
         output_lines = [ln for ln in out.splitlines() if ln.strip()]
-        assert len(output_lines) == 6
+        assert len(output_lines) == 10
         assert all(ln.startswith("-") for ln in output_lines)
 
     def test_empty_removal_set_prints_nothing(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -185,8 +204,10 @@ class TestRunRemoveDryRun:
     _KANON_CONTENT = (
         "GITBASE=https://example.com\n"
         "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-        "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+        "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
         "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+        "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+        "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
     )
 
     def test_dry_run_exits_zero(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -228,7 +249,7 @@ class TestRunRemoveDryRun:
     def test_dry_run_prints_minus_prefixed_lines(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--dry-run output contains '-' prefixed lines for the removed triple."""
+        """--dry-run output contains '-' prefixed lines for the removed block."""
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(self._KANON_CONTENT)
         args = _make_args(["foo_bar"], str(kanon_file), dry_run=True)
@@ -237,21 +258,27 @@ class TestRunRemoveDryRun:
 
         out = capsys.readouterr().out
         assert "-KANON_SOURCE_foo_bar_URL=https://example.com/repo.git" in out
-        assert "-KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0" in out
+        assert "-KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0" in out
         assert "-KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml" in out
+        assert "-KANON_SOURCE_foo_bar_NAME=foo_bar" in out
+        assert "-KANON_SOURCE_foo_bar_GITBASE=https://example.com" in out
 
     def test_dry_run_multi_source_prints_all_minus_lines(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Multi-source --dry-run prints minus lines for all three keys of each source."""
+        """Multi-source --dry-run prints minus lines for all five keys of each source."""
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "KANON_SOURCE_baz_qux_URL=https://example.com/baz.git\n"
-            "KANON_SOURCE_baz_qux_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_baz_qux_REF=refs/tags/2.0.0\n"
             "KANON_SOURCE_baz_qux_PATH=repo-specs/baz.xml\n"
+            "KANON_SOURCE_baz_qux_NAME=baz_qux\n"
+            "KANON_SOURCE_baz_qux_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -276,8 +303,10 @@ class TestRunRemoveDryRun:
         content = (
             "GITBASE=https://example.com\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)

@@ -5,9 +5,9 @@ git tags and invokes 'kanon add <name> --catalog-source <file>@<ref>'
 via subprocess.run.
 
 Covers:
-- Happy path: create .kanon with standard header + triple (no existing file).
-- Append path: existing .kanon gets only the triple appended (no duplicate header).
-- Spec path: 'kanon add name@==1.0.0' writes REVISION=refs/tags/1.0.0.
+- Happy path: create .kanon with the per-dependency source block (no existing file).
+- Append path: existing .kanon gets only the source block appended.
+- Spec path: 'kanon add name@==1.0.0' writes _REF=refs/tags/1.0.0.
 - Default-spec path: highest PEP 440 tag is selected when no @<spec> given.
 - Multiple entries: two entries are written in argument order.
 - Unknown entry: exits non-zero with an error message.
@@ -165,7 +165,7 @@ def _run_kanon(
 
 @pytest.mark.integration
 class TestAddCoreCreateWithHeader:
-    """kanon add creates .kanon with standard header when file does not exist (AC-FUNC-004)."""
+    """kanon add creates .kanon with the per-dependency source block when file does not exist (AC-FUNC-004)."""
 
     def test_exit_0_on_happy_path(self, tmp_path: pathlib.Path) -> None:
         """kanon add exits 0 when entry exists and destination file is absent."""
@@ -193,8 +193,8 @@ class TestAddCoreCreateWithHeader:
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
 
-    def test_file_created_with_standard_header(self, tmp_path: pathlib.Path) -> None:
-        """Destination .kanon file is created with the standard header."""
+    def test_file_created_without_global_header(self, tmp_path: pathlib.Path) -> None:
+        """Destination .kanon file is created with no global header (no [catalog], no header GITBASE/marketplace lines)."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -217,12 +217,17 @@ class TestAddCoreCreateWithHeader:
         )
         assert kanon_file.exists(), "Expected .kanon file to be created"
         content = kanon_file.read_text()
-        assert "GITBASE=" in content
-        assert "CLAUDE_MARKETPLACES_DIR=" in content
-        assert "KANON_MARKETPLACE_INSTALL=" in content
+        # add writes only the per-dependency source block: no global header.
+        assert "[catalog]" not in content
+        assert "KANON_MARKETPLACE_INSTALL=" not in content
+        # The per-dependency block carries its own GITBASE (KANON_SOURCE_<alias>_GITBASE),
+        # but there is no bare global GITBASE= header line.
+        assert "\nGITBASE=" not in content
+        assert not content.startswith("GITBASE=")
+        assert "KANON_SOURCE_entry_a_GITBASE=" in content
 
-    def test_file_contains_triple_lines(self, tmp_path: pathlib.Path) -> None:
-        """Destination .kanon file contains the three KANON_SOURCE_* lines."""
+    def test_file_contains_source_block_lines(self, tmp_path: pathlib.Path) -> None:
+        """Destination .kanon file contains the KANON_SOURCE_* block lines."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -245,11 +250,13 @@ class TestAddCoreCreateWithHeader:
         )
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=" in content
-        assert "KANON_SOURCE_entry_a_REVISION=" in content
+        assert "KANON_SOURCE_entry_a_REF=" in content
         assert "KANON_SOURCE_entry_a_PATH=" in content
+        assert "KANON_SOURCE_entry_a_NAME=" in content
+        assert "KANON_SOURCE_entry_a_GITBASE=" in content
 
     def test_revision_is_highest_pep440_tag(self, tmp_path: pathlib.Path) -> None:
-        """REVISION line equals refs/tags/<highest tag> (AC-FUNC-009, AC-CYCLE-001)."""
+        """_REF line equals refs/tags/<highest tag> (AC-FUNC-009, AC-CYCLE-001)."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -271,7 +278,7 @@ class TestAddCoreCreateWithHeader:
             cwd=workspace,
         )
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.2.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.2.0" in content
 
     def test_stdout_summary_line_printed(self, tmp_path: pathlib.Path) -> None:
         """stdout contains the summary line naming the source name (AC-FUNC-012, AC-CYCLE-001)."""
@@ -300,10 +307,10 @@ class TestAddCoreCreateWithHeader:
 
 @pytest.mark.integration
 class TestAddCoreAppendToExisting:
-    """kanon add appends triple to existing .kanon without duplicating header (AC-FUNC-005, AC-CYCLE-001)."""
+    """kanon add appends the source block to existing .kanon, preserving prior content (AC-FUNC-005, AC-CYCLE-001)."""
 
-    def test_no_duplicate_header(self, tmp_path: pathlib.Path) -> None:
-        """Running kanon add on an existing file does not duplicate the header."""
+    def test_existing_content_preserved(self, tmp_path: pathlib.Path) -> None:
+        """Running kanon add on an existing file appends the block and preserves prior lines."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-b"],
@@ -313,12 +320,8 @@ class TestAddCoreAppendToExisting:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # Pre-create the file with the header already present.
-        kanon_file.write_text(
-            "GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
-            "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=<true|false>\n"
-        )
+        # Pre-create the file with an unrelated existing line.
+        kanon_file.write_text("EXISTING=value\n")
 
         result = _run_kanon(
             [
@@ -333,11 +336,12 @@ class TestAddCoreAppendToExisting:
         )
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         content = kanon_file.read_text()
-        # GITBASE must appear exactly once
-        assert content.count("GITBASE=") == 1
+        # Prior content is preserved and the per-dependency block is appended once.
+        assert "EXISTING=value" in content
+        assert content.count("KANON_SOURCE_entry_b_URL=") == 1
 
-    def test_triple_appended_with_explicit_spec(self, tmp_path: pathlib.Path) -> None:
-        """Explicit @==1.0.0 spec results in REVISION=refs/tags/1.0.0 (AC-CYCLE-001)."""
+    def test_block_appended_with_explicit_spec(self, tmp_path: pathlib.Path) -> None:
+        """Explicit @==1.0.0 spec results in _REF=refs/tags/1.0.0 (AC-CYCLE-001)."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-b"],
@@ -361,7 +365,7 @@ class TestAddCoreAppendToExisting:
         )
         content = kanon_file.read_text()
         assert "EXISTING=value" in content
-        assert "KANON_SOURCE_entry_b_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0" in content
 
     def test_no_catalog_dir_consulted(self, tmp_path: pathlib.Path) -> None:
         """Command succeeds even when manifest repo has no catalog/ directory (AC-FUNC-008)."""
@@ -500,7 +504,7 @@ class TestAddCoreSourceNameDerivation:
         assert result.returncode == 0, f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         content = kanon_file.read_text()
         assert "KANON_SOURCE_foo_bar_URL=" in content
-        assert "KANON_SOURCE_foo_bar_REVISION=" in content
+        assert "KANON_SOURCE_foo_bar_REF=" in content
         assert "KANON_SOURCE_foo_bar_PATH=" in content
 
 
@@ -565,9 +569,7 @@ class TestAddCustomKanonFile:
         assert kanon_file.exists(), "Expected custom.kanon to be created at the --kanon-file path"
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=" in content, f"Expected source URL line in custom.kanon; got:\n{content}"
-        assert "KANON_SOURCE_entry_a_REVISION=" in content, (
-            f"Expected source REVISION line in custom.kanon; got:\n{content}"
-        )
+        assert "KANON_SOURCE_entry_a_REF=" in content, f"Expected source REF line in custom.kanon; got:\n{content}"
         assert "KANON_SOURCE_entry_a_PATH=" in content, f"Expected source PATH line in custom.kanon; got:\n{content}"
         default_kanon = workspace / ".kanon"
         assert not default_kanon.exists(), "Default .kanon must NOT be created when --kanon-file overrides it"
@@ -608,8 +610,6 @@ class TestAddEnvKanonFilePrecedence:
         assert flag_path.exists(), "Expected flag.kanon to be created at the --kanon-file path"
         content = flag_path.read_text()
         assert "KANON_SOURCE_entry_b_URL=" in content, f"Expected source URL line in flag.kanon; got:\n{content}"
-        assert "KANON_SOURCE_entry_b_REVISION=" in content, (
-            f"Expected source REVISION line in flag.kanon; got:\n{content}"
-        )
+        assert "KANON_SOURCE_entry_b_REF=" in content, f"Expected source REF line in flag.kanon; got:\n{content}"
         assert "KANON_SOURCE_entry_b_PATH=" in content, f"Expected source PATH line in flag.kanon; got:\n{content}"
         assert not env_path.exists(), "env.kanon must NOT be written when --kanon-file flag overrides KANON_KANON_FILE"

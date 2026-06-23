@@ -40,8 +40,10 @@ def _write_single_source_kanonenv(directory: pathlib.Path, source_name: str = "p
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://example.com/{source_name}.git\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -65,11 +67,15 @@ def _write_two_source_kanonenv(
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_alpha}_URL=https://example.com/{source_alpha}.git\n"
-        f"KANON_SOURCE_{source_alpha}_REVISION=main\n"
+        f"KANON_SOURCE_{source_alpha}_REF=main\n"
         f"KANON_SOURCE_{source_alpha}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_alpha}_NAME={source_alpha}\n"
+        f"KANON_SOURCE_{source_alpha}_GITBASE=https://example.com\n"
         f"KANON_SOURCE_{source_bravo}_URL=https://example.com/{source_bravo}.git\n"
-        f"KANON_SOURCE_{source_bravo}_REVISION=main\n"
+        f"KANON_SOURCE_{source_bravo}_REF=main\n"
         f"KANON_SOURCE_{source_bravo}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_bravo}_NAME={source_bravo}\n"
+        f"KANON_SOURCE_{source_bravo}_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 

@@ -140,11 +140,15 @@ def _write_two_source_kanon(
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_alpha_URL={alpha_url}\n"
-        f"KANON_SOURCE_alpha_REVISION={alpha_revision}\n"
+        f"KANON_SOURCE_alpha_REF={alpha_revision}\n"
         f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+        f"KANON_SOURCE_alpha_NAME=alpha\n"
+        f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
         f"KANON_SOURCE_beta_URL={beta_url}\n"
-        f"KANON_SOURCE_beta_REVISION={beta_revision}\n"
+        f"KANON_SOURCE_beta_REF={beta_revision}\n"
         f"KANON_SOURCE_beta_PATH=manifest.xml\n"
+        f"KANON_SOURCE_beta_NAME=beta\n"
+        f"KANON_SOURCE_beta_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path
@@ -470,11 +474,15 @@ def _write_two_source_kanon_for_bare(
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mktplc\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_srca_URL={srca_url}\n"
-        f"KANON_SOURCE_srca_REVISION={srca_revision}\n"
+        f"KANON_SOURCE_srca_REF={srca_revision}\n"
         f"KANON_SOURCE_srca_PATH=manifest.xml\n"
+        f"KANON_SOURCE_srca_NAME=srca\n"
+        f"KANON_SOURCE_srca_GITBASE=https://example.com\n"
         f"KANON_SOURCE_srcb_URL={srcb_url}\n"
-        f"KANON_SOURCE_srcb_REVISION={srcb_revision}\n"
+        f"KANON_SOURCE_srcb_REF={srcb_revision}\n"
         f"KANON_SOURCE_srcb_PATH=manifest.xml\n"
+        f"KANON_SOURCE_srcb_NAME=srcb\n"
+        f"KANON_SOURCE_srcb_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path

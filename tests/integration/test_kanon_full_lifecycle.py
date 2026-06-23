@@ -36,8 +36,10 @@ def _single_source_content(name: str = "primary") -> str:
     """Return minimal .kanon content for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -45,11 +47,15 @@ def _two_source_content() -> str:
     """Return .kanon content for two independent sources."""
     return (
         "KANON_SOURCE_repo_URL=https://example.com/repo.git\n"
-        "KANON_SOURCE_repo_REVISION=main\n"
+        "KANON_SOURCE_repo_REF=main\n"
         "KANON_SOURCE_repo_PATH=meta.xml\n"
+        "KANON_SOURCE_repo_NAME=repo\n"
+        "KANON_SOURCE_repo_GITBASE=https://example.com\n"
         "KANON_SOURCE_marketplace_URL=https://example.com/marketplace.git\n"
-        "KANON_SOURCE_marketplace_REVISION=main\n"
+        "KANON_SOURCE_marketplace_REF=main\n"
         "KANON_SOURCE_marketplace_PATH=marketplace.xml\n"
+        "KANON_SOURCE_marketplace_NAME=marketplace\n"
+        "KANON_SOURCE_marketplace_GITBASE=https://example.com\n"
     )
 
 

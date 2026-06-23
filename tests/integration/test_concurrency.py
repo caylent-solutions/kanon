@@ -73,8 +73,10 @@ def _write_kanonenv(directory: pathlib.Path, source_name: str = "primary") -> pa
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://example.com/{source_name}.git\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
-        f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n",
+        f"KANON_SOURCE_{source_name}_REF=main\n"
+        f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
         encoding="utf-8",
     )
     return kanonenv.resolve()
@@ -99,11 +101,15 @@ def _write_two_source_kanonenv(
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_alpha}_URL=https://example.com/{source_alpha}.git\n"
-        f"KANON_SOURCE_{source_alpha}_REVISION=main\n"
+        f"KANON_SOURCE_{source_alpha}_REF=main\n"
         f"KANON_SOURCE_{source_alpha}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_alpha}_NAME={source_alpha}\n"
+        f"KANON_SOURCE_{source_alpha}_GITBASE=https://example.com\n"
         f"KANON_SOURCE_{source_bravo}_URL=https://example.com/{source_bravo}.git\n"
-        f"KANON_SOURCE_{source_bravo}_REVISION=main\n"
-        f"KANON_SOURCE_{source_bravo}_PATH=repo-specs/manifest.xml\n",
+        f"KANON_SOURCE_{source_bravo}_REF=main\n"
+        f"KANON_SOURCE_{source_bravo}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_bravo}_NAME={source_bravo}\n"
+        f"KANON_SOURCE_{source_bravo}_GITBASE=https://example.com\n",
         encoding="utf-8",
     )
     return kanonenv.resolve()
@@ -829,8 +835,10 @@ class TestCLIConcurrentInstallDeterminism:
         kanonenv.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_x_URL=https://example.com/x.git\n"
-            "KANON_SOURCE_x_REVISION=main\n"
-            "KANON_SOURCE_x_PATH=manifest.xml\n",
+            "KANON_SOURCE_x_REF=main\n"
+            "KANON_SOURCE_x_PATH=manifest.xml\n"
+            "KANON_SOURCE_x_NAME=x\n"
+            "KANON_SOURCE_x_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
         env = _build_subprocess_env()

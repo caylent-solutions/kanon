@@ -25,8 +25,10 @@ def _minimal_kanonenv_content(name: str = "primary") -> str:
     """Return minimal .kanon content for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -195,8 +197,10 @@ class TestCleanMarketplaceBehavior:
                 "KANON_MARKETPLACE_INSTALL=true\n"
                 f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=main\n"
+                "KANON_SOURCE_primary_REF=main\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
             ),
         )
         (tmp_path / ".packages").mkdir()

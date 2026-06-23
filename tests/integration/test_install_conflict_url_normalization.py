@@ -86,11 +86,15 @@ def _write_two_source_kanon(
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_alpha_URL={source_a_url}\n"
-        f"KANON_SOURCE_alpha_REVISION={source_a_rev}\n"
+        f"KANON_SOURCE_alpha_REF={source_a_rev}\n"
         f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+        f"KANON_SOURCE_alpha_NAME=alpha\n"
+        f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
         f"KANON_SOURCE_bravo_URL={source_b_url}\n"
-        f"KANON_SOURCE_bravo_REVISION={source_b_rev}\n"
+        f"KANON_SOURCE_bravo_REF={source_b_rev}\n"
         f"KANON_SOURCE_bravo_PATH=manifest.xml\n"
+        f"KANON_SOURCE_bravo_NAME=bravo\n"
+        f"KANON_SOURCE_bravo_GITBASE=https://example.com\n"
     )
     return kanon_path.resolve()
 
@@ -114,8 +118,10 @@ def _write_single_source_kanon(
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_alpha_URL={source_url}\n"
-        f"KANON_SOURCE_alpha_REVISION={source_rev}\n"
+        f"KANON_SOURCE_alpha_REF={source_rev}\n"
         f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+        f"KANON_SOURCE_alpha_NAME=alpha\n"
+        f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
     )
     return kanon_path.resolve()
 

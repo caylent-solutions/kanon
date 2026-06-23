@@ -133,8 +133,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file
@@ -894,10 +896,13 @@ class TestLiveResolveTree:
             "sources": {
                 source_name: {
                     "url": url,
-                    "revision": revision,
+                    "ref": revision,
                     "path": "./foo",
+                    "name": source_name,
+                    "gitbase": "https://github.com/org",
                 }
             },
+            "globals": {},
         }
 
     def test_raises_live_resolve_error_when_ref_resolution_fails(self, tmp_path: pathlib.Path) -> None:

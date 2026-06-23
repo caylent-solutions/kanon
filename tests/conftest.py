@@ -51,8 +51,14 @@ def bare_text_io_calls(source_path: pathlib.Path) -> list[tuple[int, str]]:
 
 
 # Minimal valid .kanon content used across integration and functional tests.
+# Alias-keyed per-dependency block (spec Section 5.1): every required suffix
+# (_URL, _REF, _PATH, _NAME, _GITBASE) must be present for the source to parse.
 MINIMAL_KANONENV = (
-    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+    "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+    "KANON_SOURCE_s_REF=main\n"
+    "KANON_SOURCE_s_PATH=m.xml\n"
+    "KANON_SOURCE_s_NAME=s\n"
+    "KANON_SOURCE_s_GITBASE=https://example.com\n"
 )
 
 # Default catalog source used by tests that need a catalog source but are not
@@ -150,11 +156,15 @@ def sample_kanonenv(tmp_path: pathlib.Path) -> pathlib.Path:
         "CLAUDE_MARKETPLACES_DIR=.claude-marketplaces\n"
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_build_URL=https://example.com/org/build-repo.git\n"
-        "KANON_SOURCE_build_REVISION=main\n"
+        "KANON_SOURCE_build_REF=main\n"
         "KANON_SOURCE_build_PATH=repo-specs/common/meta.xml\n"
+        "KANON_SOURCE_build_NAME=build\n"
+        "KANON_SOURCE_build_GITBASE=https://example.com/org\n"
         "KANON_SOURCE_marketplaces_URL=https://example.com/org/mp-repo.git\n"
-        "KANON_SOURCE_marketplaces_REVISION=main\n"
+        "KANON_SOURCE_marketplaces_REF=main\n"
         "KANON_SOURCE_marketplaces_PATH=repo-specs/common/marketplaces.xml\n"
+        "KANON_SOURCE_marketplaces_NAME=marketplaces\n"
+        "KANON_SOURCE_marketplaces_GITBASE=https://example.com/org\n"
     )
     return kanonenv
 
@@ -183,8 +193,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file
@@ -261,8 +273,10 @@ def _write_lockfile(
 #: Minimal valid .kanon content used by doctor unit tests.
 DOCTOR_MINIMAL_KANON_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com/org\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
 )
 
@@ -381,8 +395,10 @@ def write_kanon_doctor_integration(
     kanon_file = directory / ".kanon"
     kanon_file.write_text(
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_REF={revision}\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com/org\n"
         "KANON_MARKETPLACE_INSTALL=false\n",
         encoding="utf-8",
     )

@@ -119,8 +119,10 @@ def _source_block(name: str, url: str, revision: str) -> str:
         url = f"file://{url}"
     return (
         f"KANON_SOURCE_{name}_URL={url}\n"
-        f"KANON_SOURCE_{name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{name}_REF={revision}\n"
         f"KANON_SOURCE_{name}_PATH=manifest.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 

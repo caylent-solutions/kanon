@@ -31,8 +31,10 @@ def _make_kanonenv(tmp_path: pathlib.Path, path_value: str = _SAFE_PATH) -> path
     kanonenv = tmp_path / ".kanon"
     kanonenv.write_text(
         f"KANON_SOURCE_{_SOURCE_NAME}_URL={_SAFE_URL}\n"
-        f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_SAFE_REVISION}\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_REF={_SAFE_REVISION}\n"
         f"KANON_SOURCE_{_SOURCE_NAME}_PATH={path_value}\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
     )
     return kanonenv
 
@@ -106,12 +108,12 @@ class TestCommandInjectionViaEnvVarNotExecuted:
         as a literal string -- no shell expansion occurs inside parse_kanonenv.
         """
         kanonenv = _make_kanonenv(tmp_path, _SAFE_PATH)
-        env_var = f"KANON_SOURCE_{_SOURCE_NAME}_REVISION"
+        env_var = f"KANON_SOURCE_{_SOURCE_NAME}_REF"
         monkeypatch.setenv(env_var, injection_payload)
         # parse_kanonenv must not raise, and must return the payload verbatim
         result = parse_kanonenv(kanonenv)
-        assert result["sources"][_SOURCE_NAME]["revision"] == injection_payload, (
-            f"Expected literal payload in revision, got {result['sources'][_SOURCE_NAME]['revision']!r}"
+        assert result["sources"][_SOURCE_NAME]["ref"] == injection_payload, (
+            f"Expected literal payload in ref, got {result['sources'][_SOURCE_NAME]['ref']!r}"
         )
 
     def test_dollar_sign_in_url_env_var_stored_literally(
@@ -154,8 +156,10 @@ class TestCommandInjectionViaXmlAttributeNotExecuted:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             f"KANON_SOURCE_{_SOURCE_NAME}_URL={_SAFE_URL}\n"
-            f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_SAFE_REVISION}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_REF={_SAFE_REVISION}\n"
             f"KANON_SOURCE_{_SOURCE_NAME}_PATH={xml_payload}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
         )
         # The parser reads KEY=VALUE pairs as plain strings -- it does not
         # perform XML interpretation, so the payload is stored verbatim.
@@ -168,8 +172,10 @@ class TestCommandInjectionViaXmlAttributeNotExecuted:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             f"KANON_SOURCE_{_SOURCE_NAME}_URL={xml_url}\n"
-            f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_SAFE_REVISION}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_REF={_SAFE_REVISION}\n"
             f"KANON_SOURCE_{_SOURCE_NAME}_PATH={_SAFE_PATH}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"][_SOURCE_NAME]["url"] == xml_url
@@ -194,8 +200,10 @@ class TestSymlinkToctouMitigated:
         external_kanon = external_dir / ".kanon"
         external_kanon.write_text(
             f"KANON_SOURCE_{_SOURCE_NAME}_URL={_SAFE_URL}\n"
-            f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_SAFE_REVISION}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_REF={_SAFE_REVISION}\n"
             f"KANON_SOURCE_{_SOURCE_NAME}_PATH={_SAFE_PATH}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
         )
 
         project_dir = tmp_path / "project"
@@ -223,8 +231,10 @@ class TestSymlinkToctouMitigated:
         real_file = tmp_path / "actual_kanon"
         real_file.write_text(
             f"KANON_SOURCE_{_SOURCE_NAME}_URL={_SAFE_URL}\n"
-            f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_SAFE_REVISION}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_REF={_SAFE_REVISION}\n"
             f"KANON_SOURCE_{_SOURCE_NAME}_PATH={_SAFE_PATH}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+            f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
         )
         symlink_kanon = tmp_path / ".kanon"
         symlink_kanon.symlink_to(real_file)

@@ -125,8 +125,10 @@ def _write_kanon(directory: pathlib.Path, source_name: str, remote_url: str) -> 
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL={remote_url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path
@@ -445,8 +447,10 @@ class TestStrictLockEndToEnd:
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_alpha_URL=file://{fixture_alpha}\n"
-            f"KANON_SOURCE_alpha_REVISION=main\n"
+            f"KANON_SOURCE_alpha_REF=main\n"
             f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+            f"KANON_SOURCE_alpha_NAME=alpha\n"
+            f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
         )
         kanon_path.chmod(0o600)
 
@@ -510,8 +514,10 @@ class TestStrictLockEndToEnd:
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_alpha_URL=file://{fixture_alpha}\n"
-            f"KANON_SOURCE_alpha_REVISION=main\n"
+            f"KANON_SOURCE_alpha_REF=main\n"
             f"KANON_SOURCE_alpha_PATH=manifest.xml\n"
+            f"KANON_SOURCE_alpha_NAME=alpha\n"
+            f"KANON_SOURCE_alpha_GITBASE=https://example.com\n"
         )
         kanon_path.chmod(0o600)
 
@@ -597,8 +603,10 @@ class TestStrictLockOrphanErrorMessage:
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_{source_name}_URL={source_url}\n"
-            f"KANON_SOURCE_{source_name}_REVISION=main\n"
+            f"KANON_SOURCE_{source_name}_REF=main\n"
             f"KANON_SOURCE_{source_name}_PATH=manifest.xml\n"
+            f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+            f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
         )
         kanon_path.chmod(0o600)
         return kanon_path
@@ -958,11 +966,11 @@ class TestStrictLockDefaultAutoPrune:
         kanon_path: pathlib.Path,
         source_name: str,
     ) -> None:
-        """Remove the three KANON_SOURCE_<source_name>_* lines from .kanon.
+        """Remove the KANON_SOURCE_<source_name>_* lines from .kanon.
 
-        Reads the file, filters out the three key lines (URL, REVISION, PATH),
-        and writes back the remainder.  Raises RuntimeError if fewer than three
-        lines are removed (guard against misconfigured test setup).
+        Reads the file, filters out the per-source key lines (URL, REF, PATH,
+        NAME, GITBASE), and writes back the remainder.  Raises RuntimeError if
+        fewer than five lines are removed (guard against misconfigured test setup).
 
         The source_name must match the token written by 'kanon add' exactly,
         which is the derive_source_name() output (lowercase, hyphens -> underscores).
@@ -977,11 +985,11 @@ class TestStrictLockDefaultAutoPrune:
         prefix = f"KANON_SOURCE_{source_name}_"
         filtered = [ln for ln in lines if not ln.startswith(prefix)]
         removed_count = len(lines) - len(filtered)
-        if removed_count < 3:
+        if removed_count < 5:
             raise RuntimeError(
-                f"Expected to remove 3 KANON_SOURCE_{source_name}_* lines from "
+                f"Expected to remove 5 KANON_SOURCE_{source_name}_* lines from "
                 f"{kanon_path}; only removed {removed_count}. "
-                f"Check that kanon add wrote all three triples for {source_name!r}."
+                f"Check that kanon add wrote all five keys for {source_name!r}."
             )
         kanon_path.write_text("".join(filtered))
         kanon_path.chmod(0o600)

@@ -221,8 +221,10 @@ def _write_kanon_file(
     url = manifest_bare.as_uri()
     lines = [
         f"KANON_SOURCE_{source_name}_URL={url}",
-        f"KANON_SOURCE_{source_name}_REVISION={revision}",
+        f"KANON_SOURCE_{source_name}_REF={revision}",
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml",
+        f"KANON_SOURCE_{source_name}_NAME={source_name}",
+        f"KANON_SOURCE_{source_name}_GITBASE={url}",
     ]
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text("\n".join(lines) + "\n")

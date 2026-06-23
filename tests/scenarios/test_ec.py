@@ -9,7 +9,7 @@ Scenarios automated:
 - EC-01: Missing .kanon file
 - EC-02: Empty .kanon file
 - EC-03: Undefined shell variable
-- EC-04: Missing source URL (REVISION + PATH but no URL)
+- EC-04: Missing source URL (REF + PATH but no URL)
 - EC-05: KANON_SOURCES explicitly set (legacy, no longer supported)
 - EC-06: KANON_MARKETPLACE_INSTALL=true without CLAUDE_MARKETPLACES_DIR
 - EC-07: No subcommand
@@ -48,7 +48,7 @@ class TestEC:
     def test_ec_03_undefined_shell_variable(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / ".kanon").write_text(
             "KANON_SOURCE_test_URL=${UNDEFINED_VAR_THAT_DOES_NOT_EXIST}\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=meta.xml\n"
         )
         result = run_kanon("install", ".kanon", cwd=tmp_path)
@@ -56,7 +56,7 @@ class TestEC:
         assert "Undefined shell variable" in result.stderr, f"stderr={result.stderr!r}"
 
     def test_ec_04_missing_source_url(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".kanon").write_text("KANON_SOURCE_test_REVISION=main\nKANON_SOURCE_test_PATH=meta.xml\n")
+        (tmp_path / ".kanon").write_text("KANON_SOURCE_test_REF=main\nKANON_SOURCE_test_PATH=meta.xml\n")
         result = run_kanon("install", ".kanon", cwd=tmp_path)
         assert result.returncode == 1, f"stderr={result.stderr!r}"
         assert "KANON_SOURCE_test_URL is required but not set" in result.stderr, f"stderr={result.stderr!r}"
@@ -65,7 +65,7 @@ class TestEC:
         (tmp_path / ".kanon").write_text(
             "KANON_SOURCES=build\n"
             "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
         )
         result = run_kanon("install", ".kanon", cwd=tmp_path)
@@ -76,8 +76,10 @@ class TestEC:
         (tmp_path / ".kanon").write_text(
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_primary_URL=file:///does/not/matter\n"
-            "KANON_SOURCE_primary_REVISION=main\n"
+            "KANON_SOURCE_primary_REF=main\n"
             "KANON_SOURCE_primary_PATH=meta.xml\n"
+            "KANON_SOURCE_primary_NAME=primary\n"
+            "KANON_SOURCE_primary_GITBASE=file:///does/not/matter\n"
         )
         # Inherit the parent env but strip CLAUDE_MARKETPLACES_DIR so the
         # subprocess hits the documented "not defined" branch.

@@ -228,12 +228,14 @@ class TestMixedLineEndingsWarning:
 
     def test_mixed_line_endings_emits_warning(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A .kanon file with mixed LF and CRLF triggers a stderr warning."""
-        # Balanced mixed: 2 CRLF and 2 LF (tie -> normalise to LF)
+        # Balanced mixed: 3 CRLF and 3 LF (tie -> normalise to LF)
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -253,8 +255,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -270,8 +274,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -288,8 +294,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -305,8 +313,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\r\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\r\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\r\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\r\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -333,8 +343,10 @@ class TestCommentPreservation:
             "GITBASE=x\n"
             "# This is a comment about foo_bar\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -350,8 +362,10 @@ class TestCommentPreservation:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# This trailing comment should survive\n"
         )
         kanon_file = tmp_path / ".kanon"
@@ -369,8 +383,10 @@ class TestCommentPreservation:
             "GITBASE=x\n"
             "# Comment before foo_bar block\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# Comment after foo_bar block\n"
         )
         kanon_file = tmp_path / ".kanon"
@@ -384,14 +400,16 @@ class TestCommentPreservation:
         assert "# Comment after foo_bar block" in result
 
     def test_only_kanon_source_lines_removed_not_comments(self, tmp_path: pathlib.Path) -> None:
-        """Only the three KANON_SOURCE_* lines are removed; all other lines survive."""
+        """Only the five KANON_SOURCE_* lines are removed; all other lines survive."""
         content = (
             "GITBASE=x\n"
             "# Comment 1\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "# Comment 2 (between URL and REVISION)\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "# Comment 2 (between URL and REF)\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# Comment 3\n"
             "OTHER_VAR=value\n"
         )
@@ -404,14 +422,16 @@ class TestCommentPreservation:
         result = kanon_file.read_text()
         # All comments preserved
         assert "# Comment 1" in result
-        assert "# Comment 2 (between URL and REVISION)" in result
+        assert "# Comment 2 (between URL and REF)" in result
         assert "# Comment 3" in result
         # Other var preserved
         assert "OTHER_VAR=value" in result
         # KANON_SOURCE lines removed
         assert "KANON_SOURCE_foo_bar_URL" not in result
-        assert "KANON_SOURCE_foo_bar_REVISION" not in result
+        assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
+        assert "KANON_SOURCE_foo_bar_NAME" not in result
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -428,8 +448,10 @@ class TestLineEndingPreservation:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -447,8 +469,10 @@ class TestLineEndingPreservation:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\r\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\r\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\r\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\r\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))

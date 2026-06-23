@@ -33,12 +33,11 @@ _GIT_USER_EMAIL = "test@example.com"
 # {url} -- file:// URL to the bare project repo
 # {revision} -- branch name (e.g. "main")
 _KANON_BRANCH_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
 
 
@@ -357,7 +356,13 @@ class TestOutdatedBranchDrift:
         )
         assert sha_b_12 in result.stdout, f"Expected HEAD SHA {sha_b_12!r} in output:\n{result.stdout}"
         assert "none" in result.stdout, f"Expected upgrade-type=none in output:\n{result.stdout}"
-        assert "drift" not in result.stdout, f"Expected no drift when locked SHA == HEAD:\n{result.stdout}"
+        # Inspect only the STABLE table row's upgrade-type column. A whole-stdout
+        # substring check would false-match 'drift' inside the leading
+        # 'alias -> name from <url>@<ref>' render line whenever the fixture path
+        # contains that substring (e.g. the temp dir for this test name).
+        stable_row = next(line for line in result.stdout.splitlines() if line.startswith("STABLE") and "|" in line)
+        assert "none" in stable_row, f"Expected upgrade-type=none in STABLE row:\n{stable_row}"
+        assert "drift" not in stable_row, f"Expected no drift when locked SHA == HEAD:\n{stable_row}"
 
     def test_branch_pinned_no_lockfile_live_resolve(self, tmp_path: pathlib.Path) -> None:
         """AC-FUNC-003: no lockfile -- current is live-resolved HEAD, upgrade-type=none."""

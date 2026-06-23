@@ -33,8 +33,10 @@ def _write_kanon(directory: pathlib.Path, url: str, scheme: str = "http") -> pat
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_mysource_URL={url}\n"
-        f"KANON_SOURCE_mysource_REVISION=main\n"
+        f"KANON_SOURCE_mysource_REF=main\n"
         f"KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_mysource_NAME=mysource\n"
+        f"KANON_SOURCE_mysource_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 

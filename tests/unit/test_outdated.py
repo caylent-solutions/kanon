@@ -123,7 +123,7 @@ class TestMissingCatalogSource:
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source=None, kanon_file=str(kanon_file))
@@ -141,7 +141,7 @@ class TestMissingCatalogSource:
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source=None, kanon_file=str(kanon_file))
@@ -163,7 +163,7 @@ class TestMalformedCatalogSourceFormat:
         """A catalog source with no '@ref' delimiter must exit non-zero."""
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         # A URL with no '@<ref>' suffix is malformed per _parse_catalog_source
@@ -180,7 +180,7 @@ class TestMalformedCatalogSourceFormat:
         """Error message for malformed format must go to stderr with ERROR: prefix."""
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source="no-ref-delimiter-here", kanon_file=str(kanon_file))
@@ -231,7 +231,7 @@ class TestBuildRowFromLockfile:
         """When a lock_sha is provided, current column must use it."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -255,7 +255,7 @@ class TestBuildRowFromLockfile:
         """When locked ref equals latest matching spec, upgrade_type is none."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -277,7 +277,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec has a higher minor than current, upgrade_type is minor."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -299,7 +299,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec has a higher major than current, upgrade_type is major."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -321,7 +321,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec is a prerelease, upgrade_type is prerelease."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -352,7 +352,7 @@ class TestBuildRowLiveResolve:
         """Without a lockfile, current is resolved from the constraint + available tags."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -385,7 +385,7 @@ class TestZeroPep440TagsError:
         """_build_row must propagate the loud error from _resolve_constraint_from_tags."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         # All tags are non-PEP 440 -- matches the loud-error path from E1-F1-S1-T2
@@ -405,7 +405,7 @@ class TestZeroPep440TagsError:
         """The loud error message must include the catalog audit remediation pointer."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         non_pep440_tags = ["refs/tags/release-1.0.0"]
@@ -617,8 +617,10 @@ class TestRunHappyPath:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -652,8 +654,10 @@ class TestRunHappyPath:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -703,8 +707,10 @@ class TestRunHappyPath:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 

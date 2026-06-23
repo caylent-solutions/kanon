@@ -52,12 +52,11 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
 # {url} -- file:// URL to the bare project repo
 # {revision} -- PEP 440 constraint string (e.g. ">=1.0.0,<1.1")
 _KANON_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
 
 
@@ -348,7 +347,7 @@ class TestOutdatedCoreTableOutput:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///fake\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///fake\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
         )
         kanon_file.chmod(0o644)
 

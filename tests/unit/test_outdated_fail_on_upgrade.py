@@ -48,7 +48,7 @@ def _make_args(
 def _write_kanon_file(path: pathlib.Path, sources: list[dict[str, str]]) -> None:
     """Write a .kanon file with the given sources.
 
-    Each source dict must have keys: name (uppercase), url, revision, path.
+    Each source dict must have keys: name (uppercase), url, ref, path.
     """
     lines = [
         "GITBASE=file:///unused",
@@ -58,8 +58,10 @@ def _write_kanon_file(path: pathlib.Path, sources: list[dict[str, str]]) -> None
     for source in sources:
         name = source["name"]
         lines.append(f"KANON_SOURCE_{name}_URL={source['url']}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={source['revision']}")
+        lines.append(f"KANON_SOURCE_{name}_REF={source['ref']}")
         lines.append(f"KANON_SOURCE_{name}_PATH={source['path']}")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE=https://example.com")
     path.write_text("\n".join(lines) + "\n")
     path.chmod(0o644)
 
@@ -166,7 +168,7 @@ class TestRunExitCodeWithUpgradeTypes:
 
         _write_kanon_file(
             kanon_file,
-            [{"name": "FOO", "url": "file:///some/repo", "revision": revision, "path": "./foo"}],
+            [{"name": "FOO", "url": "file:///some/repo", "ref": revision, "path": "./foo"}],
         )
 
         # Write a lockfile so _resolve_lock_ref returns the desired lock_ref
@@ -223,7 +225,7 @@ class TestDriftUpgradeTypeWithFlag:
 
         _write_kanon_file(
             kanon_file,
-            [{"name": "DRIFT", "url": "file:///some/repo", "revision": "main", "path": "./drift"}],
+            [{"name": "DRIFT", "url": "file:///some/repo", "ref": "main", "path": "./drift"}],
         )
 
         # Write a lockfile with resolved_sha = old_sha; HEAD will return new_sha -> drift
@@ -267,7 +269,7 @@ class TestDriftUpgradeTypeWithFlag:
 
         _write_kanon_file(
             kanon_file,
-            [{"name": "DRIFT", "url": "file:///some/repo", "revision": "main", "path": "./drift"}],
+            [{"name": "DRIFT", "url": "file:///some/repo", "ref": "main", "path": "./drift"}],
         )
 
         lock_file = tmp_path / ".kanon.lock"
@@ -318,7 +320,7 @@ class TestRowContentUnchangedByFlag:
         kanon_file = tmp_path / ".kanon"
         _write_kanon_file(
             kanon_file,
-            [{"name": "FOO", "url": "file:///some/repo", "revision": ">=1.0.0,<1.1", "path": "./foo"}],
+            [{"name": "FOO", "url": "file:///some/repo", "ref": ">=1.0.0,<1.1", "path": "./foo"}],
         )
 
         sha = "a" * 40
@@ -395,8 +397,10 @@ class TestZeroSourcesWithFlag:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_PLACEHOLDER_URL=file:///x\n"
-            "KANON_SOURCE_PLACEHOLDER_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_PLACEHOLDER_REF=>=1.0.0\n"
             "KANON_SOURCE_PLACEHOLDER_PATH=./x\n"
+            "KANON_SOURCE_PLACEHOLDER_NAME=PLACEHOLDER\n"
+            "KANON_SOURCE_PLACEHOLDER_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 

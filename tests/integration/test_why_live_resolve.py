@@ -1179,7 +1179,7 @@ class TestLiveResolveTreeStructure:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_foo_URL=file:///irrelevant/path\n"
-            "KANON_SOURCE_foo_REVISION=main\n"
+            "KANON_SOURCE_foo_REF=main\n"
             "KANON_SOURCE_foo_PATH=marketplace.xml\n",
             encoding="utf-8",
         )

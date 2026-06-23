@@ -204,7 +204,7 @@ class TestAddDryRun:
             cwd=workspace,
         )
         assert "+KANON_SOURCE_entry_a_URL=" in result.stdout
-        assert "+KANON_SOURCE_entry_a_REVISION=" in result.stdout
+        assert "+KANON_SOURCE_entry_a_REF=" in result.stdout
         assert "+KANON_SOURCE_entry_a_PATH=" in result.stdout
 
     def test_dry_run_does_not_modify_file_content(self, tmp_path: pathlib.Path) -> None:
@@ -261,7 +261,7 @@ class TestAddDryRun:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
         sha_before = _sha256(kanon_file)
@@ -282,8 +282,8 @@ class TestAddDryRun:
 
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         # Must show minus lines for removed and plus lines for added
-        assert "-KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in result.stdout
-        assert "+KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in result.stdout
+        assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
+        assert "+KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in result.stdout
         # File must not be modified
         assert _sha256(kanon_file) == sha_before, "File content changed during --dry-run --force"
 
@@ -313,7 +313,7 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -347,7 +347,7 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -365,8 +365,8 @@ class TestAddForce:
         )
 
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" not in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" not in content
 
     def test_force_preserves_surrounding_content(self, tmp_path: pathlib.Path) -> None:
         """--force preserves header and other blocks byte-for-byte."""
@@ -384,11 +384,11 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_b_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_b_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_b_PATH=repo-specs/entry-b-marketplace.xml\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -406,13 +406,13 @@ class TestAddForce:
         )
 
         content = kanon_file.read_text()
-        # Header preserved
+        # Pre-existing header line preserved
         assert "GITBASE=" in content
         # entry-b block preserved
-        assert "KANON_SOURCE_entry_b_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0" in content
         # entry-a updated
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" not in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" not in content
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +440,7 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -473,7 +473,7 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -513,7 +513,7 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -546,7 +546,7 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
         kanon_file.write_text(original_content)
@@ -687,8 +687,10 @@ class TestAddCycleEvidence:
         assert result.returncode == 0, f"Step 2 failed.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         content_after_add = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=" in content_after_add
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content_after_add
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_add
         assert "KANON_SOURCE_entry_a_PATH=" in content_after_add
+        assert "KANON_SOURCE_entry_a_NAME=" in content_after_add
+        assert "KANON_SOURCE_entry_a_GITBASE=" in content_after_add
 
         # Step 3: kanon add entry-a (collision) => hard error
         result2 = _run_kanon(
@@ -724,7 +726,7 @@ class TestAddCycleEvidence:
         assert result3.returncode == 0, f"Step 4 failed.\nstdout: {result3.stdout!r}\nstderr: {result3.stderr!r}"
         content_after_force = kanon_file.read_text()
         # Block still present (same tags, same content)
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content_after_force
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_force
 
         # Step 5: kanon add entry-a --dry-run => diff, no file change
         sha_before_dry = _sha256(kanon_file)

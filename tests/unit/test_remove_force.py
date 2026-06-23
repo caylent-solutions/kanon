@@ -40,22 +40,26 @@ def _make_args(
     )
 
 
-_KNOWN_A_TRIPLE = (
+_KNOWN_A_BLOCK = (
     "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
-    "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+    "KANON_SOURCE_known_a_REF=refs/tags/1.0.0\n"
     "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+    "KANON_SOURCE_known_a_NAME=known_a\n"
+    "KANON_SOURCE_known_a_GITBASE=https://example.com\n"
 )
 
-_KNOWN_B_TRIPLE = (
+_KNOWN_B_BLOCK = (
     "KANON_SOURCE_known_b_URL=https://example.com/known_b.git\n"
-    "KANON_SOURCE_known_b_REVISION=refs/tags/2.0.0\n"
+    "KANON_SOURCE_known_b_REF=refs/tags/2.0.0\n"
     "KANON_SOURCE_known_b_PATH=repo-specs/known_b.xml\n"
+    "KANON_SOURCE_known_b_NAME=known_b\n"
+    "KANON_SOURCE_known_b_GITBASE=https://example.com\n"
 )
 
 _HEADER = "GITBASE=https://git.example.com\n"
 
-# Fixture content: header + known_a triple + known_b triple
-_TWO_KNOWN_CONTENT = _HEADER + _KNOWN_A_TRIPLE + _KNOWN_B_TRIPLE
+# Fixture content: header + known_a block + known_b block
+_TWO_KNOWN_CONTENT = _HEADER + _KNOWN_A_BLOCK + _KNOWN_B_BLOCK
 
 
 # ---------------------------------------------------------------------------
@@ -167,13 +171,15 @@ def test_remove_force_scenarios(
             "File content must be byte-for-byte unchanged when no successful removal occurred"
         )
     else:
-        # AC-FUNC-002: known_a triple must be removed, file must differ
+        # AC-FUNC-002: known_a block must be removed, file must differ
         after = kanon_file.read_text()
         assert "KANON_SOURCE_known_a_URL" not in after, (
-            "known_a triple must be removed when it is fully present and --force is set"
+            "known_a block must be removed when it is fully present and --force is set"
         )
-        assert "KANON_SOURCE_known_a_REVISION" not in after
+        assert "KANON_SOURCE_known_a_REF" not in after
         assert "KANON_SOURCE_known_a_PATH" not in after
+        assert "KANON_SOURCE_known_a_NAME" not in after
+        assert "KANON_SOURCE_known_a_GITBASE" not in after
         assert "GITBASE=https://git.example.com" in after, "Non-removed header lines must be preserved"
 
     # AC-FUNC-004 additional assertion: dry-run + force produces no '-' lines in stdout
@@ -198,7 +204,7 @@ def test_force_on_unknown_source_exits_0(
 ) -> None:
     """Scenario 1: kanon remove unknown_source --force on a .kanon with no unknown keys.
 
-    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples.
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REF,PATH,NAME,GITBASE} blocks.
     Invocation: kanon remove unknown_source --force
     Assertion: exit code is 0 AND .kanon content is byte-for-byte unchanged.
     """
@@ -226,9 +232,9 @@ def test_force_on_mixed_known_and_unknown_removes_known(
 ) -> None:
     """Scenario 2: kanon remove known_source unknown_source --force removes known, skips unknown.
 
-    Setup: .kanon contains KANON_SOURCE_known_a_{URL,REVISION,PATH} triples.
+    Setup: .kanon contains KANON_SOURCE_known_a_{URL,REF,PATH,NAME,GITBASE} blocks.
     Invocation: kanon remove known_a unknown_source --force
-    Assertion: exit code is 0 AND the three KANON_SOURCE_known_a_* lines are absent
+    Assertion: exit code is 0 AND the five KANON_SOURCE_known_a_* lines are absent
     from the post-write .kanon AND the file write applies the existing line-ending,
     blank-run collapse, and trailing-newline normalisation rules.
     """
@@ -241,8 +247,10 @@ def test_force_on_mixed_known_and_unknown_removes_known(
     assert result == 0, f"Expected exit code 0, got {result}"
     after = kanon_file.read_text()
     assert "KANON_SOURCE_known_a_URL" not in after, "KANON_SOURCE_known_a_URL must be absent after removal"
-    assert "KANON_SOURCE_known_a_REVISION" not in after, "KANON_SOURCE_known_a_REVISION must be absent after removal"
+    assert "KANON_SOURCE_known_a_REF" not in after, "KANON_SOURCE_known_a_REF must be absent after removal"
     assert "KANON_SOURCE_known_a_PATH" not in after, "KANON_SOURCE_known_a_PATH must be absent after removal"
+    assert "KANON_SOURCE_known_a_NAME" not in after, "KANON_SOURCE_known_a_NAME must be absent after removal"
+    assert "KANON_SOURCE_known_a_GITBASE" not in after, "KANON_SOURCE_known_a_GITBASE must be absent after removal"
     assert after != _TWO_KNOWN_CONTENT, "File must differ from original after known source removal"
     assert after.endswith("\n"), "File must end with a trailing newline per normalisation rules"
     captured = capsys.readouterr()
@@ -258,7 +266,7 @@ def test_no_force_on_unknown_source_errors(
 ) -> None:
     """Scenario 3: kanon remove unknown_source (no --force) errors with R232 message.
 
-    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REF,PATH,NAME,GITBASE} blocks
     (no KANON_SOURCE_unknown_source_* keys).
     Invocation: kanon remove unknown_source (--force OMITTED)
     Assertion: exit code is 1 AND stderr contains the canonical R232 message AND
@@ -290,7 +298,7 @@ def test_force_with_dry_run_no_changes(
 ) -> None:
     """Scenario 4: kanon remove unknown_source --dry-run --force produces empty diff.
 
-    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REVISION,PATH} triples
+    Setup: .kanon contains only KANON_SOURCE_known_source_{URL,REF,PATH,NAME,GITBASE} blocks
     (identical to scenario 1 setup).
     Invocation: kanon remove unknown_source --dry-run --force
     Assertion: exit code is 0 AND stdout contains no lines beginning with '-'

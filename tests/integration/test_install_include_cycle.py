@@ -40,8 +40,10 @@ def _write_kanonenv(directory: pathlib.Path, manifest_path: str) -> pathlib.Path
     kanonenv.write_text(
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-        "KANON_SOURCE_test_REVISION=main\n"
+        "KANON_SOURCE_test_REF=main\n"
         f"KANON_SOURCE_test_PATH={manifest_path}\n"
+        "KANON_SOURCE_test_NAME=test\n"
+        "KANON_SOURCE_test_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 

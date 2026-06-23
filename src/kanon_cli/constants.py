@@ -43,11 +43,32 @@ PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
 TAG_ERROR_DISPLAY_CAP = 10
 
 # -- kanonenv parsing --
+# Alias-keyed .kanon per-dependency block (spec Section 5.1 / FR-5, FR-6).
+# Each dependency is one block keyed by a local alias. Every suffix below is a
+# required part of a complete source block; a partial block (any required key
+# missing) fails fast with no silent default. The optional `_MARKETPLACE` flag
+# (absence == false) is owned by the add source-explicit task and is not a
+# required member of the parsed source group.
 SOURCE_PREFIX = "KANON_SOURCE_"
 SOURCE_URL_SUFFIX = "_URL"
-SOURCE_NON_URL_SUFFIXES = ("_REVISION", "_PATH")
+SOURCE_REF_SUFFIX = "_REF"
+SOURCE_PATH_SUFFIX = "_PATH"
+SOURCE_NAME_SUFFIX = "_NAME"
+SOURCE_GITBASE_SUFFIX = "_GITBASE"
+SOURCE_NON_URL_SUFFIXES = (
+    SOURCE_REF_SUFFIX,
+    SOURCE_PATH_SUFFIX,
+    SOURCE_NAME_SUFFIX,
+    SOURCE_GITBASE_SUFFIX,
+)
 SOURCE_SUFFIXES = (SOURCE_URL_SUFFIX,) + SOURCE_NON_URL_SUFFIXES
-SUFFIX_TO_KEY = {"_URL": "url", "_REVISION": "revision", "_PATH": "path"}
+SUFFIX_TO_KEY = {
+    SOURCE_URL_SUFFIX: "url",
+    SOURCE_REF_SUFFIX: "ref",
+    SOURCE_PATH_SUFFIX: "path",
+    SOURCE_NAME_SUFFIX: "name",
+    SOURCE_GITBASE_SUFFIX: "gitbase",
+}
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # -- Workspace directory --

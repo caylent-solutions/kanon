@@ -33,7 +33,6 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _run_kanon
 
 # ---------------------------------------------------------------------------
@@ -55,8 +54,10 @@ from tests.functional.conftest import _run_kanon
 
 _VALID_KANONENV_CONTENT = (
     "KANON_SOURCE_primary_URL=https://example.com/primary.git\n"
-    "KANON_SOURCE_primary_REVISION=main\n"
+    "KANON_SOURCE_primary_REF=main\n"
     "KANON_SOURCE_primary_PATH=repo-specs/manifest.xml\n"
+    "KANON_SOURCE_primary_NAME=primary\n"
+    "KANON_SOURCE_primary_GITBASE=https://example.com\n"
 )
 
 _INVALID_KANONENV_CONTENT = (
@@ -147,7 +148,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
                 exit_code = 0
             except SystemExit as exc:
                 exit_code = exc.code
@@ -171,7 +172,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
             except SystemExit:
                 pass
 
@@ -200,7 +201,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
             except SystemExit:
                 pass
 
@@ -362,9 +363,9 @@ class TestInstallManifestParseErrorExitsOne:
         )
 
     def test_missing_source_revision_exits_1(self, tmp_path: pathlib.Path) -> None:
-        """install with a source missing KANON_SOURCE_*_REVISION exits 1.
+        """install with a source missing KANON_SOURCE_*_REF exits 1.
 
-        An incomplete source definition (URL and PATH defined, REVISION absent)
+        An incomplete source definition (URL and PATH defined, REF absent)
         must cause exit 1, not a crash.
         """
         incomplete = (
@@ -372,7 +373,7 @@ class TestInstallManifestParseErrorExitsOne:
         )
         result = _run_kanon("install", str(_write_kanonenv(tmp_path, incomplete)))
         assert result.returncode == 1, (
-            f"install with incomplete source (missing REVISION) must exit 1; got {result.returncode}.\n"
+            f"install with incomplete source (missing REF) must exit 1; got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -381,7 +382,7 @@ class TestInstallManifestParseErrorExitsOne:
         "missing_suffix,kept_pairs",
         [
             (
-                "REVISION",
+                "REF",
                 [
                     ("URL", "https://example.com/repo.git"),
                     ("PATH", "repo-specs/manifest.xml"),
@@ -391,7 +392,7 @@ class TestInstallManifestParseErrorExitsOne:
                 "PATH",
                 [
                     ("URL", "https://example.com/repo.git"),
-                    ("REVISION", "main"),
+                    ("REF", "main"),
                 ],
             ),
         ],
@@ -453,7 +454,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when repo_sync fails with a network error; got exit code {exc_info.value.code!r}"
@@ -484,7 +485,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"repo sync failure must write 'Error' to stderr; got stderr={captured.err!r}"
@@ -514,7 +515,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error:" not in captured.out, (
@@ -554,7 +555,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for network error {error_message!r}; got exit code {exc_info.value.code!r}"

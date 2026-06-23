@@ -324,6 +324,18 @@ class TestFullLifecycleSynthetic:
                 f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
             )
 
+            # ``kanon add`` no longer writes a global standard header (spec
+            # Section 5.1: per-dependency blocks replace the global header, and
+            # the per-dep KANON_SOURCE_<alias>_MARKETPLACE field arrives in the
+            # add source-explicit task E4-F1-S3). This E35 lifecycle still drives
+            # the global marketplace-install path, so the marketplace flag and
+            # the marketplace directory are written directly into the committed
+            # .kanon for the install step to read (parse_kanonenv only honours an
+            # env override for a key that is already present in the file).
+            with kanon_path.open("a", encoding="utf-8") as _fh:
+                _fh.write(f"CLAUDE_MARKETPLACES_DIR={entry_marketplace_dir}\n")
+                _fh.write("KANON_MARKETPLACE_INSTALL=true\n")
+
             # ------------------------------------------------------------------
             # Step 2c: assert no <...> placeholder survives in .kanon (E28)
             # ------------------------------------------------------------------

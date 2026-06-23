@@ -20,7 +20,11 @@ from kanon_cli.core.lockfile import (
 )
 
 _MINIMAL_KANONENV = (
-    "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
+    "KANON_SOURCE_build_URL=https://example.com\n"
+    "KANON_SOURCE_build_REF=main\n"
+    "KANON_SOURCE_build_PATH=meta.xml\n"
+    "KANON_SOURCE_build_NAME=build\n"
+    "KANON_SOURCE_build_GITBASE=https://example.com\n"
 )
 
 
@@ -320,8 +324,10 @@ def _write_kanon_sources(
     ]
     for name in source_names:
         lines.append(f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git")
-        lines.append(f"KANON_SOURCE_{name}_REVISION=main")
+        lines.append(f"KANON_SOURCE_{name}_REF=main")
         lines.append(f"KANON_SOURCE_{name}_PATH=repo-specs/{name}.xml")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE=https://example.com")
     kanonenv = directory / ".kanon"
     kanonenv.write_text("\n".join(lines) + "\n")
     return kanonenv

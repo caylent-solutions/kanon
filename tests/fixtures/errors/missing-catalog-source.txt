@@ -1,4 +1,4 @@
-ERROR: list requires a catalog source.
+ERROR: search requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>       # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
   KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var (one entry per line), then re-run

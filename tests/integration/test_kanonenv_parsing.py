@@ -33,8 +33,10 @@ class TestKanonenvParsingSingleSource:
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=default.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=default.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["build"]
@@ -43,7 +45,11 @@ class TestKanonenvParsingSingleSource:
     def test_source_url_field_present(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"]["s"]["url"] == "https://example.com/s.git"
@@ -51,17 +57,23 @@ class TestKanonenvParsingSingleSource:
     def test_source_revision_field_present(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=v1.0.0\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+            "KANON_SOURCE_s_REF=v1.0.0\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
-        assert result["sources"]["s"]["revision"] == "v1.0.0"
+        assert result["sources"]["s"]["ref"] == "v1.0.0"
 
     def test_source_path_field_present(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=repo-specs/manifest.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=repo-specs/manifest.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"]["s"]["path"] == "repo-specs/manifest.xml"
@@ -69,7 +81,11 @@ class TestKanonenvParsingSingleSource:
     def test_marketplace_install_defaults_false(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_MARKETPLACE_INSTALL"] is False
@@ -79,8 +95,10 @@ class TestKanonenvParsingSingleSource:
             tmp_path,
             "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_MARKETPLACE_INSTALL"] is True
@@ -94,11 +112,15 @@ class TestKanonenvParsingMultiSource:
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_alpha_URL=https://example.com/a.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=m.xml\n"
+            "KANON_SOURCE_alpha_NAME=alpha\n"
+            "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
             "KANON_SOURCE_beta_URL=https://example.com/b.git\n"
-            "KANON_SOURCE_beta_REVISION=main\n"
-            "KANON_SOURCE_beta_PATH=m.xml\n",
+            "KANON_SOURCE_beta_REF=main\n"
+            "KANON_SOURCE_beta_PATH=m.xml\n"
+            "KANON_SOURCE_beta_NAME=beta\n"
+            "KANON_SOURCE_beta_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["alpha", "beta"]
@@ -107,11 +129,15 @@ class TestKanonenvParsingMultiSource:
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_zzz_URL=https://example.com/z.git\n"
-            "KANON_SOURCE_zzz_REVISION=main\n"
+            "KANON_SOURCE_zzz_REF=main\n"
             "KANON_SOURCE_zzz_PATH=m.xml\n"
+            "KANON_SOURCE_zzz_NAME=zzz\n"
+            "KANON_SOURCE_zzz_GITBASE=https://example.com\n"
             "KANON_SOURCE_aaa_URL=https://example.com/a.git\n"
-            "KANON_SOURCE_aaa_REVISION=main\n"
-            "KANON_SOURCE_aaa_PATH=m.xml\n",
+            "KANON_SOURCE_aaa_REF=main\n"
+            "KANON_SOURCE_aaa_PATH=m.xml\n"
+            "KANON_SOURCE_aaa_NAME=aaa\n"
+            "KANON_SOURCE_aaa_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["aaa", "zzz"]
@@ -122,8 +148,10 @@ class TestKanonenvParsingMultiSource:
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://github.com/\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["globals"]["REPO_REV"] == "v2.0.0"
@@ -139,8 +167,10 @@ class TestKanonenvParsingShellExpansion:
             tmp_path,
             "CLAUDE_DIR=${HOME}/.claude\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         expected = os.environ.get("HOME", "")
@@ -151,8 +181,10 @@ class TestKanonenvParsingShellExpansion:
             tmp_path,
             "BAD=${UNDEFINED_KANON_TEST_VAR_XYZ_12345}\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         with pytest.raises(ValueError, match="UNDEFINED_KANON_TEST_VAR_XYZ_12345"):
             parse_kanonenv(kanonenv)
@@ -167,8 +199,10 @@ class TestKanonenvParsingEnvOverrides:
             tmp_path,
             "REPO_REV=v1.0.0\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         monkeypatch.setenv("REPO_REV", "v99.0.0")
         result = parse_kanonenv(kanonenv)
@@ -188,12 +222,15 @@ class TestKanonenvParsingValidation:
         with pytest.raises(ValueError, match="No sources found"):
             parse_kanonenv(kanonenv)
 
-    def test_missing_revision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
+    def test_missing_ref_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
-        with pytest.raises(ValueError, match="KANON_SOURCE_s_REVISION"):
+        with pytest.raises(ValueError, match="KANON_SOURCE_s_REF"):
             parse_kanonenv(kanonenv)
 
     def test_kanon_sources_key_raises_value_error(self, tmp_path: pathlib.Path) -> None:
@@ -201,8 +238,10 @@ class TestKanonenvParsingValidation:
             tmp_path,
             "KANON_SOURCES=build\n"
             "KANON_SOURCE_build_URL=https://example.com/b.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=m.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=m.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
         )
         with pytest.raises(ValueError, match="no longer supported"):
             parse_kanonenv(kanonenv)
@@ -210,15 +249,17 @@ class TestKanonenvParsingValidation:
     def test_validate_sources_passes_for_complete_source(self) -> None:
         expanded = {
             "KANON_SOURCE_ok_URL": "https://example.com/ok.git",
-            "KANON_SOURCE_ok_REVISION": "main",
+            "KANON_SOURCE_ok_REF": "main",
             "KANON_SOURCE_ok_PATH": "m.xml",
+            "KANON_SOURCE_ok_NAME": "ok",
+            "KANON_SOURCE_ok_GITBASE": "https://example.com",
         }
         validate_sources(expanded, ["ok"])
 
     def test_missing_url_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\n",
         )
         with pytest.raises(ValueError, match=r"KANON_SOURCE_\w+_URL"):
             parse_kanonenv(kanonenv)
@@ -226,7 +267,7 @@ class TestKanonenvParsingValidation:
     def test_missing_path_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\n",
         )
         with pytest.raises(ValueError, match="KANON_SOURCE_s_PATH"):
             parse_kanonenv(kanonenv)
@@ -234,7 +275,7 @@ class TestKanonenvParsingValidation:
     def test_validate_sources_raises_for_missing_path(self) -> None:
         expanded = {
             "KANON_SOURCE_t_URL": "https://example.com/t.git",
-            "KANON_SOURCE_t_REVISION": "main",
+            "KANON_SOURCE_t_REF": "main",
         }
         with pytest.raises(ValueError, match="KANON_SOURCE_t_PATH"):
             validate_sources(expanded, ["t"])

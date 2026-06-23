@@ -73,8 +73,10 @@ def _write_kanonenv(directory: pathlib.Path, source_name: str = "primary") -> pa
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://example.com/{source_name}.git\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
-        f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n",
+        f"KANON_SOURCE_{source_name}_REF=main\n"
+        f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
         encoding="utf-8",
     )
     return kanonenv.resolve()

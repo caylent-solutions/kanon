@@ -84,12 +84,11 @@ def why_suggestion_fixture(tmp_path: pathlib.Path):
     # Write .kanon file
     kanon_file = tmp_path / ".kanon"
     kanon_file.write_text(
-        f"GITBASE=https://github.com\n"
-        f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
-        f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{_SOURCE_NAME}_REVISION=main\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_REF=main\n"
         f"KANON_SOURCE_{_SOURCE_NAME}_PATH=./foo\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+        f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
     )
     kanon_file.chmod(0o644)
 

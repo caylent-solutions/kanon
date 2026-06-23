@@ -16,11 +16,19 @@ Also covers read_entries_with_freshness() contract (AC-FUNC-008).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
-from kanon_cli.completions.cache import Freshness, classify, read_entries_with_freshness
+from kanon_cli.completions.cache import (
+    Freshness,
+    classify,
+    read_entries_with_freshness,
+    read_search_versions_with_freshness,
+    search_entry_dir,
+    write_search_versions,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -186,3 +194,99 @@ def test_cycle_just_expired_returns_stale(tmp_path: Path) -> None:
 
     assert freshness == Freshness.STALE
     assert entries == ["foo", "bar"]
+
+
+# ---------------------------------------------------------------------------
+# Search-path TTL cache extension (E3-F1-S4-T1, spec Section 4.1 / FR-25 / AC-17)
+# ---------------------------------------------------------------------------
+
+_SEARCH_URL = "https://example.com/org/catalog.git"
+_SEARCH_REF = "main"
+
+
+@pytest.fixture()
+def _isolated_search_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the cache root at tmp_path so the chmod walk terminates safely."""
+    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    return tmp_path
+
+
+@pytest.mark.unit
+def test_search_versions_cache_miss_returns_empty_missing(_isolated_search_cache: Path) -> None:
+    """A never-written search source returns ([], MISSING) (cache miss)."""
+    versions, freshness = read_search_versions_with_freshness(_SEARCH_URL, _SEARCH_REF, ttl_seconds=300, now=1_000_000)
+    assert freshness is Freshness.MISSING
+    assert versions == []
+
+
+@pytest.mark.unit
+def test_search_versions_fresh_reuse_within_ttl(_isolated_search_cache: Path) -> None:
+    """A written enumeration is reused FRESH within the TTL (no re-enumeration)."""
+    written = ["alpha@1.2.0", "alpha@1.1.0", "alpha@latest"]
+    write_search_versions(_SEARCH_URL, _SEARCH_REF, written, now=1_000_000)
+
+    # now within the TTL window of the stamped fetched_at.
+    versions, freshness = read_search_versions_with_freshness(_SEARCH_URL, _SEARCH_REF, ttl_seconds=300, now=1_000_100)
+    assert freshness is Freshness.FRESH
+    assert versions == written
+
+
+@pytest.mark.unit
+def test_search_versions_stale_past_ttl_still_returns_entries(_isolated_search_cache: Path) -> None:
+    """Past the TTL the entry is STALE but its versions are still returned.
+
+    STALE (not MISSING) is the trigger for re-enumeration in the search path while
+    the stale data remains usable; the caller re-enumerates on STALE.
+    """
+    written = ["beta@2.0.0", "beta@latest"]
+    write_search_versions(_SEARCH_URL, _SEARCH_REF, written, now=1_000_000)
+
+    # now is well past the TTL window.
+    versions, freshness = read_search_versions_with_freshness(
+        _SEARCH_URL, _SEARCH_REF, ttl_seconds=300, now=1_000_000 + 301
+    )
+    assert freshness is Freshness.STALE
+    assert versions == written
+
+
+@pytest.mark.unit
+def test_search_versions_per_source_isolation(_isolated_search_cache: Path) -> None:
+    """Distinct source@ref keys map to distinct cache entries (no cross-talk)."""
+    write_search_versions(_SEARCH_URL, "main", ["alpha@1.0.0"], now=1_000_000)
+    write_search_versions(_SEARCH_URL, "dev", ["alpha@9.9.9"], now=1_000_000)
+
+    main_versions, _ = read_search_versions_with_freshness(_SEARCH_URL, "main", ttl_seconds=300, now=1_000_010)
+    dev_versions, _ = read_search_versions_with_freshness(_SEARCH_URL, "dev", ttl_seconds=300, now=1_000_010)
+    assert main_versions == ["alpha@1.0.0"]
+    assert dev_versions == ["alpha@9.9.9"]
+    # The two entries live in different per-key directories.
+    assert search_entry_dir(_SEARCH_URL, "main") != search_entry_dir(_SEARCH_URL, "dev")
+
+
+@pytest.mark.unit
+def test_search_versions_dir_under_search_namespace(_isolated_search_cache: Path) -> None:
+    """The search cache is namespaced under cache_dir()/search/<sha>."""
+    entry_dir = search_entry_dir(_SEARCH_URL, _SEARCH_REF)
+    assert entry_dir.parent == _isolated_search_cache / "search"
+    # The directory name is a 64-char SHA-256 hex digest.
+    assert len(entry_dir.name) == 64
+    assert all(c in "0123456789abcdef" for c in entry_dir.name)
+
+
+@pytest.mark.unit
+def test_search_versions_write_stamps_fetched_at(_isolated_search_cache: Path) -> None:
+    """write_search_versions stamps fetched_at.txt with the supplied epoch."""
+    write_search_versions(_SEARCH_URL, _SEARCH_REF, ["alpha@1.0.0"], now=1_234_567)
+    fetched_at = search_entry_dir(_SEARCH_URL, _SEARCH_REF) / "fetched_at.txt"
+    assert fetched_at.exists()
+    assert int(fetched_at.read_text(encoding="utf-8").strip()) == 1_234_567
+
+
+@pytest.mark.unit
+def test_search_versions_files_are_owner_private(_isolated_search_cache: Path) -> None:
+    """The search cache files are written 0600 (user-private, spec Section 3.6)."""
+    write_search_versions(_SEARCH_URL, _SEARCH_REF, ["alpha@1.0.0"], now=1_000_000)
+    entry_dir = search_entry_dir(_SEARCH_URL, _SEARCH_REF)
+    versions_file = entry_dir / "versions.txt"
+    mode = os.stat(versions_file).st_mode & 0o777
+    assert mode == 0o600

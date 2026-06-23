@@ -24,7 +24,16 @@ import pytest
 
 from unittest.mock import patch
 
-from kanon_cli.completions.cache import fork_background_refresh, maybe_update_accessed_at, write_entries
+from kanon_cli.completions.cache import (
+    Freshness,
+    fork_background_refresh,
+    maybe_update_accessed_at,
+    read_entries_with_freshness,
+    read_search_versions_with_freshness,
+    search_entry_dir,
+    write_entries,
+    write_search_versions,
+)
 from tests.conftest import bare_text_io_calls
 
 
@@ -357,3 +366,90 @@ def test_fork_background_refresh_routes_through_spawn_detached(
         # Verify a callable was passed as the first positional argument (the
         # logging wrapper around refresh_fn, not refresh_fn itself).
         assert callable(mock_spawn.call_args[0][0]), "spawn_detached must receive a callable as its first argument"
+
+
+# ---------------------------------------------------------------------------
+# Search-path cache extension (E3-F1-S4-T1, spec Section 4.1 / FR-25 / AC-17)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSearchEntryDir:
+    """search_entry_dir namespaces the search enumeration cache separately."""
+
+    def test_dir_is_sha256_of_url_at_ref(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The entry dir is cache_dir()/search/<sha256-of-url@ref>."""
+        import hashlib
+
+        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        url = "https://example.com/org/catalog.git"
+        ref = "main"
+        expected_sha = hashlib.sha256(f"{url}@{ref}".encode()).hexdigest()
+        entry_dir = search_entry_dir(url, ref)
+        assert entry_dir == tmp_path / "search" / expected_sha
+
+    def test_distinct_refs_yield_distinct_dirs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        url = "https://example.com/org/catalog.git"
+        assert search_entry_dir(url, "main") != search_entry_dir(url, "v1.0.0")
+
+
+@pytest.mark.unit
+class TestReadEntriesWithFreshnessFilename:
+    """read_entries_with_freshness reads a caller-supplied entries filename."""
+
+    def test_reads_named_entries_file(self, tmp_path: Path) -> None:
+        """A non-default entries_filename (versions.txt) is read on a FRESH hit."""
+        entry_dir = tmp_path / "entry"
+        entry_dir.mkdir()
+        (entry_dir / "versions.txt").write_text("alpha@1.0.0\nalpha@latest\n", encoding="utf-8")
+        (entry_dir / "fetched_at.txt").write_text("999900", encoding="utf-8")
+
+        entries, freshness = read_entries_with_freshness(
+            entry_dir, ttl_seconds=300, now=1_000_000, entries_filename="versions.txt"
+        )
+        assert freshness is Freshness.FRESH
+        assert entries == ["alpha@1.0.0", "alpha@latest"]
+
+    def test_default_filename_is_index_txt(self, tmp_path: Path) -> None:
+        """Without entries_filename the default index.txt is read (back-compat)."""
+        entry_dir = tmp_path / "entry"
+        entry_dir.mkdir()
+        (entry_dir / "index.txt").write_text("foo\nbar\n", encoding="utf-8")
+        (entry_dir / "fetched_at.txt").write_text("999900", encoding="utf-8")
+
+        entries, freshness = read_entries_with_freshness(entry_dir, ttl_seconds=300, now=1_000_000)
+        assert freshness is Freshness.FRESH
+        assert entries == ["foo", "bar"]
+
+
+@pytest.mark.unit
+class TestSearchVersionsRoundTrip:
+    """write_search_versions then read_search_versions_with_freshness round-trips."""
+
+    def test_round_trip_preserves_order(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        url = "https://example.com/org/catalog.git"
+        ref = "main"
+        written = ["alpha@1.2.0", "alpha@1.1.0", "alpha@1.0.0", "alpha@latest"]
+
+        write_search_versions(url, ref, written, now=1_000_000)
+        read_back, freshness = read_search_versions_with_freshness(url, ref, ttl_seconds=300, now=1_000_050)
+
+        assert freshness is Freshness.FRESH
+        assert read_back == written
+
+    def test_at_delimited_lines_survive_sanitizer(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The @-delimited cache lines are NOT dropped by the completion sanitizer.
+
+        A tab delimiter would be dropped (control char < 0x20); the @ delimiter
+        used by the search-path encoding survives, so the versions persist.
+        """
+        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        url = "https://example.com/org/catalog.git"
+        ref = "main"
+        write_search_versions(url, ref, ["my-entry@2.3.4"], now=1_000_000)
+
+        versions_file = search_entry_dir(url, ref) / "versions.txt"
+        content = versions_file.read_text(encoding="utf-8")
+        assert "my-entry@2.3.4" in content

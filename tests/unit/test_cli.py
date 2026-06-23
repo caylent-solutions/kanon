@@ -635,10 +635,32 @@ class TestSearchSubcommandRegistration:
         assert exc_info.value.code == 2
 
     def test_search_subcommand_has_catalog_source_flag(self) -> None:
-        """The 'search' subcommand accepts --catalog-source (from shared factory)."""
+        """The 'search' --catalog-source flag is repeatable (append) -> a list.
+
+        ``search`` accepts many sources (spec Section 4.1 / FR-9), so the shared
+        factory registers it with ``action="append"``; a single occurrence parses
+        into a one-element list.
+        """
         parser = build_parser()
         args = parser.parse_args(["search", "--catalog-source", "https://example.com/repo.git@main"])
-        assert args.catalog_source == "https://example.com/repo.git@main"
+        assert args.catalog_source == ["https://example.com/repo.git@main"]
+
+    def test_search_subcommand_catalog_source_repeatable(self) -> None:
+        """Repeated --catalog-source flags on 'search' append into an ordered list."""
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "search",
+                "--catalog-source",
+                "https://example.com/a.git@main",
+                "--catalog-source",
+                "https://example.com/b.git@main",
+            ]
+        )
+        assert args.catalog_source == [
+            "https://example.com/a.git@main",
+            "https://example.com/b.git@main",
+        ]
 
     def test_search_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--catalog-source defaults to None when unset and env var is absent."""

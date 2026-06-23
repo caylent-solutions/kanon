@@ -57,7 +57,13 @@ class TestAddCatalogSourceArgMetavar:
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgDefault:
-    """add_catalog_source_arg reads the default from KANON_CATALOG_SOURCES at parser-build time."""
+    """add_catalog_source_arg carries a LAZY default=None (no env read at build time).
+
+    The env var read at parser-build time was removed (E3-F1-S4-T1): a multi-source
+    KANON_CATALOG_SOURCES would otherwise raise MultipleCatalogSourcesError while
+    *building* the parser, crashing every command. The env is now resolved inside
+    each command handler instead.
+    """
 
     def test_default_none_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
@@ -68,22 +74,37 @@ class TestAddCatalogSourceArgDefault:
         args = parser.parse_args([])
         assert args.catalog_source is None
 
-    def test_default_from_env_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_none_even_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The parser default is None regardless of the env var (lazy resolution)."""
         monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
-        # Re-import to pick up env at parser-build time.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@v1"
+        assert args.catalog_source is None
+
+    def test_no_crash_when_env_lists_multiple_sources(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Building the parser with a multi-source env var must NOT raise.
+
+        This is the regression the lazy default fixes: a >1-source
+        KANON_CATALOG_SOURCES previously raised MultipleCatalogSourcesError at
+        parser-build time, making the whole CLI uninvokable.
+        """
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/a.git@main\nhttps://h/b.git@main")
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser)  # must not raise
+        args = parser.parse_args([])
+        assert args.catalog_source is None
 
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgPrecedence:
-    """CLI flag wins over KANON_CATALOG_SOURCES env var (spec Section 4 header)."""
+    """The flag value parses verbatim; env resolution is deferred to the handler."""
 
-    def test_cli_flag_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cli_flag_value_parses_verbatim(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
@@ -92,14 +113,14 @@ class TestAddCatalogSourceArgPrecedence:
         args = parser.parse_args(["--catalog-source", "https://h/r.git@cli-ref"])
         assert args.catalog_source == "https://h/r.git@cli-ref"
 
-    def test_env_used_when_flag_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_none_when_flag_absent_regardless_of_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@env-ref"
+        assert args.catalog_source is None
 
     def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
@@ -109,6 +130,37 @@ class TestAddCatalogSourceArgPrecedence:
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
         assert args.catalog_source is None
+
+
+@pytest.mark.unit
+class TestAddCatalogSourceArgMultiple:
+    """allow_multiple=True registers a repeatable (append) --catalog-source flag."""
+
+    def test_repeated_flags_append_into_list(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args(
+            ["--catalog-source", "https://h/a.git@main", "--catalog-source", "https://h/b.git@main"]
+        )
+        assert args.catalog_source == ["https://h/a.git@main", "https://h/b.git@main"]
+
+    def test_absent_flag_is_none(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args([])
+        assert args.catalog_source is None
+
+    def test_single_flag_is_one_element_list(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args(["--catalog-source", "https://h/a.git@main"])
+        assert args.catalog_source == ["https://h/a.git@main"]
 
 
 @pytest.mark.unit
@@ -160,14 +212,19 @@ class TestCycleEndToEnd:
         args = parser.parse_args(["--catalog-source", "https://h/r.git@main"])
         assert args.catalog_source == "https://h/r.git@main"
 
-    def test_cycle_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cycle_env_var_not_read_at_build_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The env var is NOT read at parser-build time -> default stays None.
+
+        Env resolution is deferred to the command handler (lazy default), so the
+        parsed namespace carries None when the flag is absent even with the env set.
+        """
         monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@v1"
+        assert args.catalog_source is None
 
 
 # ---------------------------------------------------------------------------

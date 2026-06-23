@@ -54,6 +54,7 @@ from kanon_cli.constants import (
     WHY_SCOPE_TRANSITIVE,
 )
 from kanon_cli.utils.levenshtein import levenshtein_distance
+from kanon_cli.core.catalog import resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.install import _resolve_ref_to_sha
@@ -1473,8 +1474,13 @@ def run(args: argparse.Namespace) -> int:
         lockfile = read_lockfile(lock_file_path)
         tree = _build_tree_from_lockfile(lockfile)
     else:
-        # Live-resolve path: requires catalog source.
-        if not args.catalog_source:
+        # Live-resolve path: requires catalog source. The --catalog-source flag
+        # carries a lazy default=None (cli_args.py); resolve KANON_CATALOG_SOURCES
+        # here so the single configured entry is honoured when the flag is absent
+        # (the env read is deferred out of the parser to avoid a multi-source
+        # MultipleCatalogSourcesError crashing parser construction).
+        catalog_source: str | None = args.catalog_source or resolve_env_catalog_source()
+        if not catalog_source:
             print(
                 MISSING_CATALOG_ERROR_TEMPLATE.format(command="kanon why"),
                 file=sys.stderr,
@@ -1483,7 +1489,7 @@ def run(args: argparse.Namespace) -> int:
             sys.exit(1)
         # Delegate to live resolver.
         try:
-            tree = _live_resolve_tree(kanon_path, args.catalog_source)
+            tree = _live_resolve_tree(kanon_path, catalog_source)
         except LiveResolveError as exc:
             print(str(exc), file=sys.stderr)
             sys.exit(1)

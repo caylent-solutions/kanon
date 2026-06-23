@@ -285,6 +285,31 @@ def resolve_env_catalog_source() -> str | None:
     return f"{url}@{ref}"
 
 
+def resolve_env_catalog_sources() -> list[str]:
+    """Return the full plural ``KANON_CATALOG_SOURCES`` discovery set.
+
+    Reads and parses ``KANON_CATALOG_SOURCES`` (plural) via
+    :func:`parse_catalog_sources` and returns every configured source as a raw,
+    deduplicated ``<url>@<ref>`` string in first-seen order. Unlike
+    :func:`resolve_env_catalog_source` (singular), this resolver is
+    multi-source-tolerant: it never raises :class:`MultipleCatalogSourcesError`.
+    It is the discovery set consumed by ``kanon search``, which enumerates every
+    configured source concurrently (spec Section 4.1 / FR-9 / FR-25).
+
+    Returns:
+        Order-preserving, deduplicated list of ``<url>@<ref>`` source strings.
+        Empty when the env var is unset or contains only blank lines.
+
+    Raises:
+        ValueError: When a configured entry is malformed (propagated from
+            :func:`parse_catalog_sources`); a bad entry is never silently
+            skipped (fail fast, spec Section 4.1 "Errors").
+    """
+    raw = os.environ.get(CATALOG_SOURCES_ENV_VAR)
+    entries = parse_catalog_sources(raw)
+    return [f"{url}@{ref}" for url, ref in entries]
+
+
 def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
     """Resolve the catalog directory from a ``<git_url>@<ref>`` catalog source.
 

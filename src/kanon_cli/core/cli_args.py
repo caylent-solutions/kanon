@@ -8,10 +8,17 @@ Spec reference: ``spec/kanon-list-add-lock-features-spec.md`` Section 3
 primitives table row 2 (CLI flag + env var for catalog source) and
 Section 3.5 (Standards audit and tightening).
 
-Environment-variable coupling: the catalog source default is the single
-entry configured in the plural ``KANON_CATALOG_SOURCES`` env var, resolved
-via ``kanon_cli.core.catalog.resolve_env_catalog_source`` -- the env var
-name is never hard-coded here.
+Environment-variable coupling: the ``--catalog-source`` flag carries a lazy
+``default=None``; it never reads ``KANON_CATALOG_SOURCES`` at parser-build time.
+Each command resolves the env var inside its own handler (single-source commands
+via ``kanon_cli.core.catalog.resolve_env_catalog_source`` when exactly one source
+is configured; ``search`` via ``resolve_env_catalog_sources`` for the plural
+discovery set). Reading the env var at parser-build time is forbidden: a
+``KANON_CATALOG_SOURCES`` value listing more than one source would otherwise raise
+``MultipleCatalogSourcesError`` while *building* the parser, making the whole CLI
+uninvokable for every command (add/search/doctor/why/outdated) -- the resolution
+must be deferred to the handler so multi-source configs only fail (or succeed, for
+``search``) at the point a single source is actually required.
 
 Global flags factory: ``add_global_flags(parser)`` adds the three
 spec-required global flags -- ``--quiet``, ``--verbose``, and
@@ -31,34 +38,59 @@ import logging
 import os
 
 import kanon_cli.constants as constants
-from kanon_cli.core.catalog import resolve_env_catalog_source
+
+# Canonical --catalog-source help text. Single source of truth for every command
+# that resolves a manifest repo; the multi-source ``search`` variant appends one
+# extra sentence rather than forking the whole string (DRY).
+_CATALOG_SOURCE_HELP = (
+    "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
+    "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
+    "Required when KANON_CATALOG_SOURCES configures no single source."
+)
+
+_CATALOG_SOURCE_HELP_MULTIPLE = (
+    _CATALOG_SOURCE_HELP + " May be repeated to search several sources; "
+    "the supplied flags fully replace KANON_CATALOG_SOURCES for this invocation."
+)
 
 
-def add_catalog_source_arg(parser: argparse.ArgumentParser) -> None:
+def add_catalog_source_arg(parser: argparse.ArgumentParser, *, allow_multiple: bool = False) -> None:
     """Add the --catalog-source flag to the given argparse parser.
 
-    The flag accepts a ``<git-url>@<ref>`` string identifying a manifest
-    repo at a specific revision. Couples to the plural ``KANON_CATALOG_SOURCES``
-    env var via the ``default=`` mechanism: the default is the single source
-    configured in ``KANON_CATALOG_SOURCES`` (resolved at parser build time via
-    ``resolve_env_catalog_source``). The CLI flag wins when both are set, per
-    spec Section 4 header; a ``KANON_CATALOG_SOURCES`` value listing more than
-    one source fails fast (the operator must disambiguate with the flag).
+    The flag accepts a ``<git-url>@<ref>`` string identifying a manifest repo at
+    a specific revision. The flag carries a lazy ``default=None`` and never reads
+    ``KANON_CATALOG_SOURCES`` at parser-build time: each command resolves the env
+    var inside its own handler (single-source commands when exactly one source is
+    configured; ``search`` for the plural discovery set). This deferral is
+    mandatory -- reading the env var here would raise ``MultipleCatalogSourcesError``
+    while *building* the parser whenever more than one source is configured,
+    crashing every command before it can run.
 
     Args:
         parser: The ``ArgumentParser`` (or sub-parser) to extend.
+        allow_multiple: When True (used by ``search``), the flag is repeatable
+            (``action="append"``): each ``--catalog-source`` occurrence appends to
+            a list, so ``args.catalog_source`` is a ``list[str] | None``. When
+            False (the single-source default for add/why/outdated/doctor), the flag
+            is single-valued and ``args.catalog_source`` is a ``str | None``.
     """
-    parser.add_argument(
-        "--catalog-source",
-        dest="catalog_source",
-        default=resolve_env_catalog_source(),
-        metavar="<git-url>@<ref>",
-        help=(
-            "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
-            "Required when KANON_CATALOG_SOURCES configures no single source."
-        ),
-    )
+    if allow_multiple:
+        parser.add_argument(
+            "--catalog-source",
+            dest="catalog_source",
+            action="append",
+            default=None,
+            metavar="<git-url>@<ref>",
+            help=_CATALOG_SOURCE_HELP_MULTIPLE,
+        )
+    else:
+        parser.add_argument(
+            "--catalog-source",
+            dest="catalog_source",
+            default=None,
+            metavar="<git-url>@<ref>",
+            help=_CATALOG_SOURCE_HELP,
+        )
 
 
 def add_global_flags(parser: argparse.ArgumentParser) -> None:

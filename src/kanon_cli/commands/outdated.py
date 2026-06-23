@@ -54,7 +54,7 @@ from kanon_cli.constants import (
     REVISION_REF_PREFIX_TAGS,
     REVISION_REF_PREFIXES,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import read_lockfile
@@ -851,7 +851,12 @@ def run(args: argparse.Namespace) -> int:
         one row has an upgrade-type other than ``none``.
     """
     # -- Validate catalog source (AC-FUNC-009) --
-    if not args.catalog_source:
+    # The --catalog-source flag carries a lazy default=None (cli_args.py); resolve
+    # KANON_CATALOG_SOURCES here so the single configured entry is honoured when
+    # the flag is absent (the env read is deferred out of the parser to avoid a
+    # multi-source MultipleCatalogSourcesError crashing parser construction).
+    catalog_source: str | None = args.catalog_source or resolve_env_catalog_source()
+    if not catalog_source:
         print(
             MISSING_CATALOG_ERROR_TEMPLATE.format(command="kanon outdated"),
             file=sys.stderr,
@@ -874,7 +879,7 @@ def run(args: argparse.Namespace) -> int:
 
     # -- Validate catalog source format (raises hard error on malformed input) --
     try:
-        _parse_catalog_source(args.catalog_source)
+        _parse_catalog_source(catalog_source)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

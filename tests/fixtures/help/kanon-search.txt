@@ -60,7 +60,10 @@ options:
                         Remote catalog source as '<git_url>@<ref>' where ref
                         is a branch, tag, or 'latest'. Overrides the
                         KANON_CATALOG_SOURCES env var. Required when
-                        KANON_CATALOG_SOURCES configures no single source.
+                        KANON_CATALOG_SOURCES configures no single source. May
+                        be repeated to search several sources; the supplied
+                        flags fully replace KANON_CATALOG_SOURCES for this
+                        invocation.
   --format {names,json}
                         Output format. 'names' (default): one entry name per
                         line, pipeable into kanon add. 'json': structured JSON

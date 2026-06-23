@@ -155,6 +155,17 @@ MISSING_CATALOG_ERROR_TEMPLATE = (
 # Spec Section 4.1: "manifest repo contains 0 entries".
 LIST_EMPTY_CATALOG_NOTE = "manifest repo contains 0 entries"
 
+# Stderr note emitted by `kanon search` when, across every configured source, no
+# matching catalog entry was found (after the optional name/regex filter).
+# Spec Section 4.1: "Empty result -> exit 0, 'no matches'."
+SEARCH_NO_MATCHES_NOTE = "no matches"
+
+# Stderr warning template emitted by `kanon search` when a configured catalog
+# source is unreachable. The whole search is NOT hard-failed: the source is
+# skipped and the remaining sources are still searched (spec Section 4.1 /
+# FLAG-B "skip + warn"). Call with .format(source=<url>@<ref>, reason=<detail>).
+SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE = "WARNING: skipping unreachable catalog source {source}: {reason}"
+
 # -- Configuration file --
 KANONENV_FILENAME = ".kanon"
 
@@ -388,6 +399,16 @@ KANON_TREE_NO_FILTER_THRESHOLD: int = _env_int("KANON_TREE_NO_FILTER_THRESHOLD",
 # neither --limit N nor --no-limit is explicitly passed.
 # Overridable via the KANON_LIST_LIMIT environment variable.
 KANON_LIST_LIMIT: int = _env_int("KANON_LIST_LIMIT", 50)
+
+# -- kanon search concurrent multi-source enumeration --
+# Upper bound on the number of worker threads used to enumerate catalog version
+# tags across the configured sources concurrently (spec Section 4.1 / FR-25).
+# The effective worker count is min(this value, number of sources). Must be a
+# positive integer; overridable via the KANON_SEARCH_MAX_WORKERS environment
+# variable (no hard-coded value baked into the enumeration code path).
+KANON_SEARCH_MAX_WORKERS: int = _env_int("KANON_SEARCH_MAX_WORKERS", 8)
+if KANON_SEARCH_MAX_WORKERS <= 0:
+    raise ValueError(f"ERROR: KANON_SEARCH_MAX_WORKERS must be a positive integer; got {KANON_SEARCH_MAX_WORKERS}")
 
 # -- kanon add --
 # Environment variable name for the destination .kanon file path.

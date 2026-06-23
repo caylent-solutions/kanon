@@ -37,6 +37,7 @@ Environment variables:
 """
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -45,6 +46,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -52,13 +54,25 @@ import defusedxml.ElementTree as ET
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from kanon_cli.completions.cache import (
+    Freshness,
+    read_search_versions_with_freshness,
+    write_search_versions,
+)
 from kanon_cli.constants import (
+    KANON_COMPLETION_CACHE_TTL,
     KANON_LIST_LIMIT,
+    KANON_SEARCH_MAX_WORKERS,
     KANON_TREE_NO_FILTER_THRESHOLD,
     LIST_EMPTY_CATALOG_NOTE,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    SEARCH_NO_MATCHES_NOTE,
+    SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE,
 )
-from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
+from kanon_cli.core.catalog import (
+    _parse_catalog_source,
+    resolve_env_catalog_sources,
+)
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.metadata import (
     CatalogMetadata,
@@ -66,7 +80,18 @@ from kanon_cli.core.metadata import (
     _parse_catalog_metadata,
     find_catalog_entry_files,
 )
-from kanon_cli.version import is_version_constraint, resolve_version
+from kanon_cli.version import _list_branch_head, is_version_constraint, resolve_version
+
+# Marker stored/displayed for the branch-tip "latest" version (spec Section 4.1:
+# branch-tip "latest" via _list_branch_head). The marker keeps the cached
+# versions.txt human-inspectable and lets the renderer label the tip distinctly
+# from a PEP 440 release tag.
+_LATEST_TIP_MARKER = "latest"
+
+# Branch name that carries release enumeration. Release tags are all cut from
+# this branch, so `search -A` lists every refs/tags/<name>/* regardless of @ref;
+# any other branch shows only its tip (spec Section 4.1 / Section 6 / FR-25).
+_RELEASE_BRANCH = "main"
 
 # -- Detail formatter private constants --
 _DETAIL_MISSING_PLACEHOLDER = "<missing>"
@@ -208,6 +233,367 @@ def _list_tags_from_url(url: str) -> list[tuple[str, str]]:
         if ref.startswith("refs/tags/") and not ref.endswith("^{}"):
             pairs.append((ref, sha))
     return pairs
+
+
+# ---------------------------------------------------------------------------
+# Concurrent, TTL-cached version enumeration (spec Section 4.1 / FR-25)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourceEnumeration:
+    """Result of enumerating the versions of one matching entry within one source.
+
+    Attributes:
+        source: The resolved catalog source string (``<url>@<ref>``) the entry
+            was enumerated from. Used for the per-source group header.
+        entry_name: The catalog entry (manifest) name.
+        versions: PEP 440 release-tag version strings for this entry, sorted
+            newest-first. Empty when the entry has no ``refs/tags/<name>/*`` tags.
+        has_latest: True when a branch-tip "latest" was resolved for this entry
+            (``_list_branch_head`` succeeded), False otherwise.
+    """
+
+    source: str
+    entry_name: str
+    versions: tuple[str, ...]
+    has_latest: bool
+
+
+class SourceUnreachableError(RuntimeError):
+    """Raised when a catalog source cannot be reached during enumeration.
+
+    Carries the resolved source string so the caller can emit the spec
+    skip+warn diagnostic (Section 4.1 / FLAG-B) without hard-failing the whole
+    search.
+    """
+
+    def __init__(self, source: str, reason: str) -> None:
+        self.source = source
+        self.reason = reason
+        super().__init__(f"catalog source {source} is unreachable: {reason}")
+
+
+def _resolve_search_ttl() -> int:
+    """Return the env-driven TTL (seconds) for the search enumeration cache.
+
+    Reuses the completion-cache TTL knob (spec Section 4.1: reuse the
+    ``completions/cache.py`` TTL pattern). The value is read from
+    ``KANON_COMPLETION_CACHE_TTL`` at call time so the env override is honoured;
+    no TTL value is hard-coded in the enumeration code path.
+
+    Returns:
+        The cache TTL in seconds.
+
+    Raises:
+        ValueError: When the env override is set to a non-integer value
+            (fail fast; never silently fall back to the default).
+    """
+    raw = os.environ.get("KANON_COMPLETION_CACHE_TTL")
+    if raw is None:
+        return KANON_COMPLETION_CACHE_TTL
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"KANON_COMPLETION_CACHE_TTL={raw!r} is not a valid integer (expected seconds)") from exc
+
+
+def _list_namespaced_version_tags(url: str, entry_name: str) -> list[str]:
+    """Return PEP 440 version strings under ``refs/tags/<entry_name>/`` for a repo.
+
+    Runs ``git ls-remote --tags <url> refs/tags/<entry_name>/*`` (a prefix filter,
+    no ancestry walk and no tree reads -- spec Section 4.1 / Section 6), strips the
+    ``refs/tags/<entry_name>/`` prefix, drops peeled ``^{}`` deref lines, keeps only
+    last components that parse as PEP 440, and returns them sorted newest-first.
+
+    Args:
+        url: Git repository URL of the catalog manifest repo.
+        entry_name: The catalog entry name whose tag namespace is enumerated.
+
+    Returns:
+        Newest-first list of PEP 440 version strings. Empty when the entry has no
+        ``refs/tags/<entry_name>/*`` tags.
+
+    Raises:
+        SourceUnreachableError: When the underlying ``git ls-remote`` exits
+            non-zero or the git binary is missing (the caller decides whether to
+            skip+warn or propagate).
+    """
+    pattern = f"refs/tags/{entry_name}/*"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--tags", url, pattern],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise SourceUnreachableError(url, "git binary not found on PATH") from exc
+
+    if result.returncode != 0:
+        raise SourceUnreachableError(url, result.stderr.strip() or f"git ls-remote exited {result.returncode}")
+
+    prefix = f"refs/tags/{entry_name}/"
+    versions: list[Version] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line or "\t" not in line:
+            continue
+        _sha, ref = line.split("\t", 1)
+        ref = ref.strip()
+        if ref.endswith("^{}") or not ref.startswith(prefix):
+            continue
+        suffix = ref[len(prefix) :]
+        try:
+            versions.append(Version(suffix))
+        except InvalidVersion:
+            continue
+    versions.sort(reverse=True)
+    return [str(v) for v in versions]
+
+
+def _enumerate_entry_versions(url: str, ref: str, entry_name: str) -> SourceEnumeration:
+    """Enumerate the versions of one matching entry within one source (uncached).
+
+    Versions = the catalog release tags under ``refs/tags/<entry_name>/`` plus the
+    branch-tip "latest" via ``_list_branch_head`` (spec Section 4.1). Release
+    enumeration applies to ``main`` only: when ``ref`` is ``main`` (or ``latest``,
+    which resolves to the release branch tip), every ``refs/tags/<entry_name>/*``
+    tag is listed regardless of ``@ref``; for any other branch there is no release
+    enumeration -- only that branch's tip is shown (Section 6 / FR-25).
+
+    Args:
+        url: Catalog manifest repo URL.
+        ref: The catalog source ref (branch / tag / ``latest``).
+        entry_name: The catalog entry name to enumerate.
+
+    Returns:
+        A :class:`SourceEnumeration` for this entry.
+
+    Raises:
+        SourceUnreachableError: Propagated from the underlying git calls when the
+            source is unreachable.
+    """
+    branch = _RELEASE_BRANCH if ref == "latest" else ref
+    is_release_branch = branch == _RELEASE_BRANCH
+
+    versions: list[str] = []
+    if is_release_branch:
+        # Release enumeration: list every refs/tags/<name>/* (all cut from main).
+        versions = _list_namespaced_version_tags(url, entry_name)
+
+    # Branch-tip "latest": resolve the tip of the (release or non-release) branch.
+    # A non-main branch shows only its tip (no release enumeration above).
+    try:
+        _list_branch_head(url, branch)
+        has_latest = True
+    except ValueError:
+        # Branch ref not found on the remote -- no tip to show; not unreachable.
+        has_latest = False
+    except RuntimeError as exc:
+        raise SourceUnreachableError(url, str(exc)) from exc
+
+    return SourceEnumeration(
+        source=f"{url}@{ref}",
+        entry_name=entry_name,
+        versions=tuple(versions),
+        has_latest=has_latest,
+    )
+
+
+# Delimiter joining ``<entry_name>`` and ``<version-or-latest>`` in a cache line.
+# A literal ``@`` is used (not a tab): the completion-cache sanitizer rejects every
+# character below 0x20, so a tab would be dropped on write. Catalog entry names
+# carry no ``@`` (the sanitized alias charset, audit S002), so the first ``@``
+# unambiguously splits the entry name from its version token.
+_CACHE_LINE_DELIMITER = "@"
+
+
+def _encode_entry_versions(enumeration: SourceEnumeration) -> list[str]:
+    """Encode one entry's enumeration into cache lines for ``versions.txt``.
+
+    Each line is ``<entry_name>@<version-or-latest>`` so a single per-source cache
+    entry can hold the enumeration of every matching entry, round-tripping through
+    the existing newline-delimited cache primitives (DRY). The ``@`` delimiter
+    survives the completion-cache sanitizer (which drops control characters such
+    as a tab).
+
+    Args:
+        enumeration: The entry enumeration to encode.
+
+    Returns:
+        Encoded cache lines (release tags newest-first, then the latest tip
+        marker when a branch tip was resolved).
+    """
+    lines = [f"{enumeration.entry_name}{_CACHE_LINE_DELIMITER}{version}" for version in enumeration.versions]
+    if enumeration.has_latest:
+        lines.append(f"{enumeration.entry_name}{_CACHE_LINE_DELIMITER}{_LATEST_TIP_MARKER}")
+    return lines
+
+
+def _decode_source_versions(source: str, lines: list[str]) -> dict[str, SourceEnumeration]:
+    """Decode cached ``versions.txt`` lines back into per-entry enumerations.
+
+    Inverse of :func:`_encode_entry_versions`. Lines that do not carry the
+    ``<entry>@<token>`` shape are ignored (defensive against a manually edited or
+    partially written cache file).
+
+    Args:
+        source: The resolved source string (``<url>@<ref>``) for the decoded
+            enumerations.
+        lines: Cached lines read from ``versions.txt``.
+
+    Returns:
+        Mapping of entry name -> :class:`SourceEnumeration`.
+    """
+    versions_by_entry: dict[str, list[str]] = {}
+    latest_by_entry: dict[str, bool] = {}
+    for line in lines:
+        if _CACHE_LINE_DELIMITER not in line:
+            continue
+        entry_name, token = line.split(_CACHE_LINE_DELIMITER, 1)
+        entry_name = entry_name.strip()
+        token = token.strip()
+        if not entry_name or not token:
+            continue
+        latest_by_entry.setdefault(entry_name, False)
+        versions_by_entry.setdefault(entry_name, [])
+        if token == _LATEST_TIP_MARKER:
+            latest_by_entry[entry_name] = True
+        else:
+            versions_by_entry[entry_name].append(token)
+    return {
+        entry_name: SourceEnumeration(
+            source=source,
+            entry_name=entry_name,
+            versions=tuple(versions),
+            has_latest=latest_by_entry[entry_name],
+        )
+        for entry_name, versions in versions_by_entry.items()
+    }
+
+
+def _enumerate_source(
+    source: str,
+    entry_names: list[str],
+    ttl_seconds: int,
+    now: int,
+) -> dict[str, SourceEnumeration]:
+    """Enumerate (TTL-cached) the versions of every matching entry in one source.
+
+    Reads the per-source@ref enumeration through the ``completions/cache.py`` TTL
+    cache (spec Section 4.1 / FR-25): a FRESH cached entry is reused directly; a
+    MISSING (or STALE) entry triggers a fresh enumeration that is written back to
+    the cache stamped with ``now``. The cache is keyed by source@ref, so repeated
+    ``search`` invocations within the TTL reuse the cached tag enumeration.
+
+    Args:
+        source: The resolved source string (``<url>@<ref>``).
+        entry_names: The matching catalog entry names to enumerate.
+        ttl_seconds: The cache TTL in seconds (env-driven, never hard-coded).
+        now: Current epoch seconds (injected for testability and cache stamping).
+
+    Returns:
+        Mapping of entry name -> :class:`SourceEnumeration`.
+
+    Raises:
+        SourceUnreachableError: When the source is unreachable during a fresh
+            enumeration (the caller decides skip+warn vs propagate).
+    """
+    url, ref = _parse_catalog_source(source)
+
+    cached, freshness = read_search_versions_with_freshness(url, ref, ttl_seconds=ttl_seconds, now=now)
+    if freshness is Freshness.FRESH:
+        decoded = _decode_source_versions(source, cached)
+        # Only return the requested matching entries (the cache may hold more).
+        return {name: decoded[name] for name in entry_names if name in decoded}
+
+    # MISSING or STALE: enumerate fresh and refresh the cache.
+    enumerations: dict[str, SourceEnumeration] = {}
+    cache_lines: list[str] = []
+    for entry_name in entry_names:
+        enumeration = _enumerate_entry_versions(url, ref, entry_name)
+        enumerations[entry_name] = enumeration
+        cache_lines.extend(_encode_entry_versions(enumeration))
+
+    write_search_versions(url, ref, cache_lines, now)
+    return enumerations
+
+
+def _enumerate_sources_concurrently(
+    source_entry_names: dict[str, list[str]],
+    ttl_seconds: int,
+    now: int,
+    max_workers: int,
+) -> tuple[dict[str, dict[str, SourceEnumeration]], list[tuple[str, str]]]:
+    """Enumerate versions across the configured sources concurrently.
+
+    Runs one :func:`_enumerate_source` task per source in a thread pool (the work
+    is I/O-bound ``git ls-remote`` calls). An unreachable source is skipped with a
+    warning recorded for the caller (spec Section 4.1 / FLAG-B skip+warn) and does
+    NOT hard-fail the whole search. No ``time.sleep`` is used; readiness is the
+    natural completion of each future (``as_completed``).
+
+    Args:
+        source_entry_names: Mapping of resolved source string -> matching entry
+            names to enumerate in that source.
+        ttl_seconds: Cache TTL in seconds.
+        now: Current epoch seconds.
+        max_workers: Upper bound on worker threads (clamped to the source count).
+
+    Returns:
+        A ``(results, warnings)`` tuple where ``results`` maps source ->
+        {entry_name -> SourceEnumeration} and ``warnings`` is a list of
+        ``(source, reason)`` pairs for the skipped unreachable sources.
+    """
+    results: dict[str, dict[str, SourceEnumeration]] = {}
+    warnings: list[tuple[str, str]] = []
+
+    sources = list(source_entry_names)
+    if not sources:
+        return results, warnings
+
+    workers = min(max_workers, len(sources))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_source = {
+            executor.submit(
+                _enumerate_source,
+                source,
+                source_entry_names[source],
+                ttl_seconds,
+                now,
+            ): source
+            for source in sources
+        }
+        for future in concurrent.futures.as_completed(future_to_source):
+            source = future_to_source[future]
+            try:
+                results[source] = future.result()
+            except SourceUnreachableError as exc:
+                warnings.append((source, exc.reason))
+
+    return results, warnings
+
+
+def _format_version_summary(enumeration: SourceEnumeration) -> str:
+    """Render the version summary for one entry in default (latest-only) mode.
+
+    Default mode shows only the latest: the branch tip is labelled
+    ``<name> (latest)`` and, when no branch tip resolved, the newest release tag
+    is shown. An entry with neither a tip nor any release tag renders the bare
+    name (spec Section 4.1: latest-only default).
+
+    Args:
+        enumeration: The entry enumeration to render.
+
+    Returns:
+        The single-line summary for stdout.
+    """
+    if enumeration.has_latest:
+        return f"{enumeration.entry_name} (latest)"
+    if enumeration.versions:
+        return f"{enumeration.entry_name}@{enumeration.versions[0]}"
+    return enumeration.entry_name
 
 
 def _sort_versions_newest_first(
@@ -1157,6 +1543,207 @@ def _emit_source_group_header(source: str) -> None:
     print(_format_source_group_header(source), file=sys.stderr)
 
 
+def _resolve_search_sources(flag_value: list[str] | str | None) -> list[str]:
+    """Resolve the ordered, deduplicated catalog discovery set for ``search``.
+
+    The ``--catalog-source`` flag(s) FULLY REPLACE ``KANON_CATALOG_SOURCES`` for
+    the invocation (spec Section 4.1: "not additive"). ``flag_value`` is the
+    parsed ``args.catalog_source``: a ``list[str]`` (repeated ``--catalog-source``
+    flags, via the search parser's ``action="append"``), a bare ``str`` (defence
+    against a single-valued namespace), or ``None`` when the flag was absent.
+    When no flag is supplied, the plural env discovery set is used via
+    :func:`resolve_env_catalog_sources`. Duplicate sources are collapsed while
+    preserving first-seen order.
+
+    Args:
+        flag_value: The parsed ``--catalog-source`` value (list, str, or None).
+
+    Returns:
+        Order-preserving, deduplicated list of ``<url>@<ref>`` source strings.
+        Empty when neither the flag nor the env var supplies a source.
+
+    Raises:
+        ValueError: When a configured env entry is malformed (propagated from
+            :func:`resolve_env_catalog_sources`); a bad entry is never silently
+            skipped (fail fast).
+    """
+    if flag_value is None:
+        raw_sources = resolve_env_catalog_sources()
+    elif isinstance(flag_value, str):
+        raw_sources = [flag_value]
+    else:
+        raw_sources = list(flag_value)
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for source in raw_sources:
+        if source in seen:
+            continue
+        seen.add(source)
+        deduped.append(source)
+    return deduped
+
+
+def _run_search_multi_source(
+    *,
+    sources: list[str],
+    detail: bool,
+    tree: bool,
+    max_depth: int | None,
+    no_filter_required: bool,
+    all_versions: bool,
+    limit: int,
+    no_limit: bool,
+    since_version: str | None,
+    substring: str | None,
+    regex: str | None,
+    match_fields: list[str] | None,
+    filter_present: bool,
+    list_format: str,
+) -> int:
+    """Render ``kanon search`` across more than one configured source.
+
+    Enumeration runs CONCURRENTLY across the sources and is backed by the TTL
+    cache (spec Section 4.1 / FR-25). Results are grouped per source: a
+    ``Source: <url>@<ref>`` header is written to stderr before that source's
+    entries. An unreachable source is skipped with a stderr warning (skip+warn,
+    FLAG-B) and does not hard-fail the whole search. When every source yields no
+    matching entry, the function exits 0 with a "no matches" stderr note.
+
+    Per source the matching entry names are discovered by cloning the manifest
+    repo and applying the same name/regex filter as the single-source path
+    (DRY: ``_build_sorted_metadata`` + ``_build_filter_predicate``). The version
+    enumeration of those entries (release tags under ``refs/tags/<name>/`` +
+    branch-tip latest) is then performed concurrently across sources through the
+    TTL cache. In default (latest-only) mode each matching entry renders its
+    latest; in ``-A``/``--all`` mode the full release history is rendered.
+
+    Args:
+        sources: The deduplicated discovery set (length >= 2 by construction).
+        detail / tree / max_depth / no_filter_required / all_versions / limit /
+        no_limit / since_version / substring / regex / match_fields /
+        filter_present / list_format: the already-validated ``run_search`` flags.
+
+    Returns:
+        Exit code: 0 on success (including a no-matches result), 1 on a flag
+        combination unsupported in multi-source mode.
+    """
+    # --tree and --format json are single-source rendering modes; they are not
+    # defined for the multi-source grouped output. Fail fast (no silent partial).
+    if tree:
+        print(
+            "ERROR: --tree is not supported across multiple catalog sources. "
+            "Re-run with a single --catalog-source to render a dependency tree.",
+            file=sys.stderr,
+        )
+        return 1
+    if list_format == "json":
+        print(
+            "ERROR: --format json is not supported across multiple catalog sources. "
+            "Re-run with a single --catalog-source for machine-readable output.",
+            file=sys.stderr,
+        )
+        return 1
+
+    predicate = (
+        _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields) if filter_present else None
+    )
+
+    # Discover matching entry names per source (clone + filter). An unreachable
+    # source surfaces as a SystemExit from _resolve_manifest_repo; convert that
+    # into a skip+warn rather than aborting the whole search.
+    source_entry_names: dict[str, list[str]] = {}
+    source_metadata: dict[str, list[CatalogMetadata]] = {}
+    warnings: list[tuple[str, str]] = []
+    for source in sources:
+        try:
+            manifest_root = _resolve_manifest_repo(source)
+        except SystemExit as exc:
+            warnings.append((source, f"manifest repo clone failed (exit {exc.code})"))
+            continue
+        except ValueError as exc:
+            warnings.append((source, str(exc)))
+            continue
+        try:
+            entries = _build_sorted_metadata(manifest_root)
+        except CatalogMetadataParseError as exc:
+            warnings.append((source, str(exc)))
+            continue
+        if predicate is not None:
+            entries = _apply_filter(entries, predicate)
+        source_metadata[source] = entries
+        source_entry_names[source] = [m.name for m in entries]
+
+    # Concurrent, TTL-cached version enumeration across the reachable sources.
+    ttl_seconds = _resolve_search_ttl()
+    now = int(time.time())
+    max_workers = KANON_SEARCH_MAX_WORKERS
+    enumerations, enum_warnings = _enumerate_sources_concurrently(
+        {s: names for s, names in source_entry_names.items() if names},
+        ttl_seconds=ttl_seconds,
+        now=now,
+        max_workers=max_workers,
+    )
+    warnings.extend(enum_warnings)
+
+    # Emit skip+warn diagnostics for every unreachable / skipped source.
+    for source, reason in warnings:
+        print(
+            SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE.format(source=source, reason=reason),
+            file=sys.stderr,
+        )
+
+    any_match = False
+    for source in sources:
+        # A source skipped above (unreachable) is not rendered as a group.
+        if source not in source_entry_names:
+            continue
+        _emit_source_group_header(source)
+        names = source_entry_names[source]
+        if not names:
+            continue
+        source_enum = enumerations.get(source, {})
+        for name in names:
+            any_match = True
+            enumeration = source_enum.get(name)
+            if all_versions:
+                _print_entry_all_versions(name, enumeration)
+            else:
+                if enumeration is not None:
+                    print(_format_version_summary(enumeration), flush=True)
+                else:
+                    print(name, flush=True)
+
+    if not any_match:
+        print(SEARCH_NO_MATCHES_NOTE, file=sys.stderr)
+
+    return 0
+
+
+def _print_entry_all_versions(entry_name: str, enumeration: SourceEnumeration | None) -> None:
+    """Print the full release history for one entry in ``-A``/``--all`` mode.
+
+    Renders one ``<name>@<version>`` row per release tag (newest-first) and a
+    trailing ``<name> (latest)`` row when a branch tip was resolved. An entry with
+    no release tags and no resolvable tip renders its bare name so the operator
+    still sees the entry under its source group.
+
+    Args:
+        entry_name: The catalog entry name.
+        enumeration: The entry's enumeration, or ``None`` when enumeration was
+            skipped (e.g. the source had no reachable enumeration result).
+    """
+    if enumeration is None:
+        print(entry_name, flush=True)
+        return
+    if enumeration.has_latest:
+        print(f"{entry_name} (latest)", flush=True)
+    for version in enumeration.versions:
+        print(f"{entry_name}@{version}", flush=True)
+    if not enumeration.has_latest and not enumeration.versions:
+        print(entry_name, flush=True)
+
+
 def run_search(args: argparse.Namespace) -> int:
     """Entry-point function for the ``kanon search`` subcommand.
 
@@ -1214,7 +1801,15 @@ def run_search(args: argparse.Namespace) -> int:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
         source is configured or a flag conflict is detected.
     """
-    catalog_source: str | None = getattr(args, "catalog_source", None) or resolve_env_catalog_source()
+    # Resolve the catalog discovery set (spec Section 4.1 / FR-9): the
+    # --catalog-source flag(s) FULLY REPLACE KANON_CATALOG_SOURCES for this
+    # invocation (not additive). When the flag is absent the plural env discovery
+    # set is used. ``search`` accepts many sources; the env read is deferred to
+    # here (out of the parser default) so a multi-source config never crashes
+    # parser construction.
+    sources: list[str] = _resolve_search_sources(getattr(args, "catalog_source", None))
+    # Back-compat single-source alias used by the single-source render path below.
+    catalog_source: str | None = sources[0] if sources else None
     detail: bool = getattr(args, "detail", False)
     tree: bool = getattr(args, "tree", False)
     max_depth: int | None = getattr(args, "max_depth", None)
@@ -1328,17 +1923,38 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if not catalog_source:
+    if not sources:
         print(
             MISSING_CATALOG_ERROR_TEMPLATE.format(command="search"),
             file=sys.stderr,
         )
         return 1
 
+    # Multi-source dispatch (spec Section 4.1 / FR-25): when more than one source
+    # is configured, enumerate the configured sources CONCURRENTLY through the
+    # TTL cache and render the results grouped per source, skipping+warning on any
+    # unreachable source. The single-source path below keeps the established
+    # tree/detail/json/filter rendering unchanged.
+    if len(sources) > 1:
+        return _run_search_multi_source(
+            sources=sources,
+            detail=detail,
+            tree=tree,
+            max_depth=max_depth,
+            no_filter_required=no_filter_required,
+            all_versions=all_versions,
+            limit=limit,
+            no_limit=no_limit,
+            since_version=since_version,
+            substring=substring,
+            regex=regex,
+            match_fields=match_fields,
+            filter_present=filter_present,
+            list_format=list_format,
+        )
+
     # Group results by catalog source (spec Section 4.1 / FR-10): emit the
-    # per-source header on stderr before any entries for this source. Single
-    # source today; the follow-on TTL-cached enumeration task extends this to
-    # multiple sources, each under its own header.
+    # per-source header on stderr before any entries for this single source.
     _emit_source_group_header(catalog_source)
 
     if all_versions:
@@ -1550,7 +2166,10 @@ def register(subparsers) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    add_catalog_source_arg(parser)
+    # search accepts MANY sources: repeated --catalog-source flags append into a
+    # list (spec Section 4.1 / FR-9). The flags fully replace KANON_CATALOG_SOURCES
+    # for the invocation.
+    add_catalog_source_arg(parser, allow_multiple=True)
 
     parser.add_argument(
         "substring",

@@ -27,6 +27,7 @@ Public API::
     cache_dir() -> Path
     catalog_entry_dir(catalog_url, ref) -> Path
     project_entry_dir(repo_url) -> Path
+    search_entry_dir(catalog_url, ref) -> Path
     read_entries(file_path) -> list[str]
     write_entries(file_path, entries) -> None
     read_epoch(file_path) -> int | None
@@ -35,7 +36,9 @@ Public API::
     log_completion_error(completer_name, exc) -> None
     Freshness -- enum: FRESH | STALE | MISSING
     classify(fetched_at_path, ttl_seconds, now) -> Freshness
-    read_entries_with_freshness(cache_entry_dir, ttl_seconds, now) -> tuple[list[str], Freshness]
+    read_entries_with_freshness(cache_entry_dir, ttl_seconds, now, entries_filename) -> tuple[list[str], Freshness]
+    read_search_versions_with_freshness(catalog_url, ref, ttl_seconds, now) -> tuple[list[str], Freshness]
+    write_search_versions(catalog_url, ref, versions, now) -> None
     fork_background_refresh(refresh_fn) -> None
 
 Security: spec Section 3.6 -- cache files are user-private.
@@ -69,6 +72,18 @@ from kanon_cli.utils.spawn import spawn_detached
 
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
+
+# Default entries filename for a cache entry directory. The catalog/project
+# completers store their name index in ``index.txt``; the ``search``
+# version-enumeration path stores its enumerated version list under the same
+# layout in ``versions.txt`` (see SEARCH_VERSIONS_FILENAME).
+_DEFAULT_ENTRIES_FILENAME = "index.txt"
+
+# Entries filename used by the ``search`` version-enumeration cache extension.
+# One enumerated version string (a PEP 440 tag suffix or a branch-tip "latest"
+# marker) per line, written under ``cache_dir()/search/<sha>/`` (spec
+# Section 4.1 / FR-25 -- reuse the completions/cache.py TTL pattern).
+SEARCH_VERSIONS_FILENAME = "versions.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +164,32 @@ def project_entry_dir(repo_url: str) -> Path:
     """
     sha = hashlib.sha256(repo_url.encode()).hexdigest()
     return cache_dir() / "projects" / sha
+
+
+def search_entry_dir(catalog_url: str, ref: str) -> Path:
+    """Return the per-source ``search`` version-enumeration cache directory.
+
+    The directory name is the SHA-256 hex digest of ``<url>@<ref>``; the path is
+    under ``cache_dir()/search/`` so the ``search`` enumeration cache is namespaced
+    separately from the ``catalogs/`` (entry-name completion) and ``projects/``
+    caches that share ``cache_dir()``. This is the search-path extension of the
+    existing TTL cache machinery (spec Section 4.1 / FR-25): a per-source@ref entry
+    holds the concurrently-enumerated version list (``versions.txt``) and its
+    ``fetched_at.txt`` freshness sidecar.
+
+    The caller is responsible for ensuring ``catalog_url`` and ``ref`` are
+    canonicalized before calling this function (mirrors :func:`catalog_entry_dir`).
+
+    Args:
+        catalog_url: The catalog manifest repo URL.
+        ref: The catalog source ref (branch, tag, or ``latest``).
+
+    Returns:
+        Path to the per-source search cache entry directory.
+    """
+    key = f"{catalog_url}@{ref}"
+    sha = hashlib.sha256(key.encode()).hexdigest()
+    return cache_dir() / "search" / sha
 
 
 def read_entries(file_path: Path) -> list[str]:
@@ -280,26 +321,30 @@ def read_entries_with_freshness(
     cache_entry_dir: Path,
     ttl_seconds: int,
     now: int,
+    entries_filename: str = _DEFAULT_ENTRIES_FILENAME,
 ) -> tuple[list[str], Freshness]:
     """Return (entries, freshness) for a cache entry directory.
 
     Uses ``classify`` to determine freshness of the ``fetched_at.txt``
-    sibling file.  The entries are read from ``index.txt`` in the same
-    directory.
+    sibling file.  The entries are read from ``entries_filename`` in the same
+    directory (``index.txt`` by default for the catalog/project name caches;
+    ``versions.txt`` for the ``search`` version-enumeration extension).
 
     Contract (AC-FUNC-008):
     - MISSING -> returns ([], Freshness.MISSING).
-    - FRESH or STALE -> returns (entries_from_index_txt, freshness).
+    - FRESH or STALE -> returns (entries_from_<entries_filename>, freshness).
 
     Args:
         cache_entry_dir: Path to the cache entry directory
-            (e.g. ``cache_dir()/catalogs/<sha>``).
+            (e.g. ``cache_dir()/catalogs/<sha>`` or ``cache_dir()/search/<sha>``).
         ttl_seconds: Cache TTL in seconds.
         now: Current epoch seconds.
+        entries_filename: Name of the entries file in ``cache_entry_dir`` to read
+            on a FRESH/STALE hit. Defaults to ``index.txt``.
 
     Returns:
         A tuple of (list[str], Freshness) where the list contains the
-        entries from ``index.txt`` (or is empty on MISSING).
+        entries from ``entries_filename`` (or is empty on MISSING).
     """
     fetched_at_path = cache_entry_dir / "fetched_at.txt"
     freshness = classify(fetched_at_path, ttl_seconds=ttl_seconds, now=now)
@@ -307,8 +352,66 @@ def read_entries_with_freshness(
     if freshness is Freshness.MISSING:
         return [], Freshness.MISSING
 
-    entries = read_entries(cache_entry_dir / "index.txt")
+    entries = read_entries(cache_entry_dir / entries_filename)
     return entries, freshness
+
+
+def read_search_versions_with_freshness(
+    catalog_url: str,
+    ref: str,
+    ttl_seconds: int,
+    now: int,
+) -> tuple[list[str], Freshness]:
+    """Return (versions, freshness) for a ``search`` per-source enumeration cache.
+
+    Search-path extension of the TTL cache (spec Section 4.1 / FR-25): resolves the
+    per-source@ref entry directory via :func:`search_entry_dir` and delegates to
+    :func:`read_entries_with_freshness` reading the ``versions.txt`` entries file.
+    The cache primitives are reused verbatim rather than re-implemented (DRY).
+
+    Args:
+        catalog_url: The catalog manifest repo URL.
+        ref: The catalog source ref.
+        ttl_seconds: Cache TTL in seconds (env-driven; never hard-coded here).
+        now: Current epoch seconds (injected for testability).
+
+    Returns:
+        A tuple of (list[str], Freshness): the enumerated version list on a
+        FRESH/STALE hit, or ([], MISSING) on a cache miss.
+    """
+    entry_dir = search_entry_dir(catalog_url, ref)
+    return read_entries_with_freshness(
+        entry_dir,
+        ttl_seconds=ttl_seconds,
+        now=now,
+        entries_filename=SEARCH_VERSIONS_FILENAME,
+    )
+
+
+def write_search_versions(
+    catalog_url: str,
+    ref: str,
+    versions: Iterable[str],
+    now: int,
+) -> None:
+    """Persist a ``search`` per-source enumeration to the TTL cache.
+
+    Search-path extension of the TTL cache (spec Section 4.1 / FR-25): writes the
+    enumerated ``versions`` to ``versions.txt`` and stamps ``fetched_at.txt`` with
+    ``now`` inside the per-source@ref entry directory, reusing the existing
+    :func:`write_entries` (sanitised, 0600) and :func:`write_epoch` primitives so a
+    later :func:`read_search_versions_with_freshness` within ``ttl_seconds`` reuses
+    the cached enumeration (DRY, no duplicated cache logic).
+
+    Args:
+        catalog_url: The catalog manifest repo URL.
+        ref: The catalog source ref.
+        versions: The enumerated version strings to persist (one per line).
+        now: Current epoch seconds to stamp as ``fetched_at``.
+    """
+    entry_dir = search_entry_dir(catalog_url, ref)
+    write_entries(entry_dir / SEARCH_VERSIONS_FILENAME, versions, completer_name="search")
+    write_epoch(entry_dir / "fetched_at.txt", now)
 
 
 def maybe_update_accessed_at(

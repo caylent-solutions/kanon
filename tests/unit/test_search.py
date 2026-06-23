@@ -373,13 +373,47 @@ class TestRegister:
         assert args.command == "search"
 
     def test_search_subparser_has_catalog_source(self) -> None:
-        """The search subparser includes the --catalog-source flag."""
+        """The search --catalog-source flag is repeatable (append) -> a list of one.
+
+        ``search`` accepts many sources (spec Section 4.1 / FR-9), so the flag is
+        registered with ``action="append"``; a single occurrence parses into a
+        one-element list (not a bare string).
+        """
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
         args = parser.parse_args(["search", "--catalog-source", "https://example.com/repo.git@main"])
-        assert args.catalog_source == "https://example.com/repo.git@main"
+        assert args.catalog_source == ["https://example.com/repo.git@main"]
+
+    def test_search_subparser_catalog_source_repeatable(self) -> None:
+        """Repeated --catalog-source flags append, preserving order (multi-source)."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+
+        args = parser.parse_args(
+            [
+                "search",
+                "--catalog-source",
+                "https://example.com/a.git@main",
+                "--catalog-source",
+                "https://example.com/b.git@main",
+            ]
+        )
+        assert args.catalog_source == [
+            "https://example.com/a.git@main",
+            "https://example.com/b.git@main",
+        ]
+
+    def test_search_subparser_catalog_source_default_none(self) -> None:
+        """Absent --catalog-source -> default None (env discovery resolved in handler)."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+
+        args = parser.parse_args(["search"])
+        assert args.catalog_source is None
 
     def test_search_subparser_no_color_via_root_parser(self) -> None:
         """The --no-color flag on the root parser propagates to the search subcommand namespace.
@@ -638,3 +672,385 @@ class TestAllVersionsFlagDispatch:
 
         assert result == 0
         walk.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Concurrent, TTL-cached multi-source enumeration
+# (E3-F1-S4-T1, spec Section 4.1 / Section 6 / FR-25 / AC-17)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolveSearchSources:
+    """_resolve_search_sources resolves the discovery set (flags replace env)."""
+
+    def test_flag_list_used_verbatim_deduped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://h/env.git@main")
+        # Flags fully replace the env discovery set (not additive); dups collapse.
+        result = _resolve_search_sources(["https://h/a.git@main", "https://h/b.git@main", "https://h/a.git@main"])
+        assert result == ["https://h/a.git@main", "https://h/b.git@main"]
+
+    def test_str_value_becomes_single_element_list(self) -> None:
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        assert _resolve_search_sources("https://h/a.git@main") == ["https://h/a.git@main"]
+
+    def test_env_used_when_flag_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://h/a.git@main\nhttps://h/b.git@main")
+        assert _resolve_search_sources(None) == ["https://h/a.git@main", "https://h/b.git@main"]
+
+    def test_empty_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+        assert _resolve_search_sources(None) == []
+
+
+@pytest.mark.unit
+class TestListNamespacedVersionTags:
+    """_list_namespaced_version_tags filters refs/tags/<name>/* to PEP 440, newest-first."""
+
+    def _ls_remote(self, *refs: str) -> str:
+        return "\n".join(f"deadbeef\t{ref}" for ref in refs)
+
+    def test_filters_prefix_and_sorts_newest_first(self) -> None:
+        from kanon_cli.commands.search import _list_namespaced_version_tags
+
+        output = self._ls_remote(
+            "refs/tags/alpha/1.0.0",
+            "refs/tags/alpha/1.2.0",
+            "refs/tags/alpha/1.1.0",
+            # peeled deref line -- ignored
+            "refs/tags/alpha/1.2.0^{}",
+            # different entry namespace -- excluded by the prefix filter
+            "refs/tags/beta/9.9.9",
+            # non-PEP 440 suffix -- skipped
+            "refs/tags/alpha/not-a-version",
+        )
+        result = type("R", (), {"returncode": 0, "stdout": output, "stderr": ""})()
+        with patch("kanon_cli.commands.search.subprocess.run", return_value=result):
+            versions = _list_namespaced_version_tags("https://h/a.git", "alpha")
+        assert versions == ["1.2.0", "1.1.0", "1.0.0"]
+
+    def test_empty_when_no_namespaced_tags(self) -> None:
+        from kanon_cli.commands.search import _list_namespaced_version_tags
+
+        result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        with patch("kanon_cli.commands.search.subprocess.run", return_value=result):
+            assert _list_namespaced_version_tags("https://h/a.git", "alpha") == []
+
+    def test_unreachable_raises_source_unreachable(self) -> None:
+        from kanon_cli.commands.search import SourceUnreachableError, _list_namespaced_version_tags
+
+        result = type("R", (), {"returncode": 128, "stdout": "", "stderr": "fatal: repo not found"})()
+        with patch("kanon_cli.commands.search.subprocess.run", return_value=result):
+            with pytest.raises(SourceUnreachableError):
+                _list_namespaced_version_tags("https://h/missing.git", "alpha")
+
+
+@pytest.mark.unit
+class TestEnumerateEntryVersions:
+    """_enumerate_entry_versions: main-only release enumeration vs non-main tip-only."""
+
+    def test_main_lists_all_namespaced_tags_plus_latest(self) -> None:
+        from kanon_cli.commands.search import _enumerate_entry_versions
+
+        with (
+            patch(
+                "kanon_cli.commands.search._list_namespaced_version_tags",
+                return_value=["1.2.0", "1.1.0", "1.0.0"],
+            ) as list_tags,
+            patch("kanon_cli.commands.search._list_branch_head", return_value="cafef00d"),
+        ):
+            enumeration = _enumerate_entry_versions("https://h/a.git", "main", "alpha")
+
+        list_tags.assert_called_once_with("https://h/a.git", "alpha")
+        assert enumeration.versions == ("1.2.0", "1.1.0", "1.0.0")
+        assert enumeration.has_latest is True
+        assert enumeration.source == "https://h/a.git@main"
+
+    def test_non_main_branch_is_tip_only_no_release_enumeration(self) -> None:
+        from kanon_cli.commands.search import _enumerate_entry_versions
+
+        with (
+            patch("kanon_cli.commands.search._list_namespaced_version_tags") as list_tags,
+            patch("kanon_cli.commands.search._list_branch_head", return_value="cafef00d"),
+        ):
+            enumeration = _enumerate_entry_versions("https://h/a.git", "dev", "alpha")
+
+        # Non-main branch: NO release enumeration (the tag helper is never called).
+        list_tags.assert_not_called()
+        assert enumeration.versions == ()
+        assert enumeration.has_latest is True
+
+    def test_missing_branch_tip_sets_has_latest_false(self) -> None:
+        from kanon_cli.commands.search import _enumerate_entry_versions
+
+        with (
+            patch("kanon_cli.commands.search._list_namespaced_version_tags", return_value=["1.0.0"]),
+            patch("kanon_cli.commands.search._list_branch_head", side_effect=ValueError("no such branch")),
+        ):
+            enumeration = _enumerate_entry_versions("https://h/a.git", "main", "alpha")
+
+        assert enumeration.versions == ("1.0.0",)
+        assert enumeration.has_latest is False
+
+    def test_branch_head_runtime_error_is_unreachable(self) -> None:
+        from kanon_cli.commands.search import SourceUnreachableError, _enumerate_entry_versions
+
+        with (
+            patch("kanon_cli.commands.search._list_namespaced_version_tags", return_value=[]),
+            patch("kanon_cli.commands.search._list_branch_head", side_effect=RuntimeError("git failed")),
+        ):
+            with pytest.raises(SourceUnreachableError):
+                _enumerate_entry_versions("https://h/a.git", "main", "alpha")
+
+
+@pytest.mark.unit
+class TestEnumerateSourcesConcurrently:
+    """_enumerate_sources_concurrently runs across sources and skip+warns failures."""
+
+    def test_enumerates_all_reachable_sources(self) -> None:
+        from kanon_cli.commands.search import SourceEnumeration, _enumerate_sources_concurrently
+
+        def fake_enumerate(source, names, ttl, now):
+            return {
+                name: SourceEnumeration(source=source, entry_name=name, versions=("1.0.0",), has_latest=True)
+                for name in names
+            }
+
+        with patch("kanon_cli.commands.search._enumerate_source", side_effect=fake_enumerate):
+            results, warnings = _enumerate_sources_concurrently(
+                {"https://h/a.git@main": ["alpha"], "https://h/b.git@main": ["beta"]},
+                ttl_seconds=300,
+                now=1_000_000,
+                max_workers=4,
+            )
+
+        assert warnings == []
+        assert set(results) == {"https://h/a.git@main", "https://h/b.git@main"}
+        assert results["https://h/a.git@main"]["alpha"].versions == ("1.0.0",)
+        assert results["https://h/b.git@main"]["beta"].versions == ("1.0.0",)
+
+    def test_unreachable_source_skipped_and_warned(self) -> None:
+        from kanon_cli.commands.search import (
+            SourceEnumeration,
+            SourceUnreachableError,
+            _enumerate_sources_concurrently,
+        )
+
+        def fake_enumerate(source, names, ttl, now):
+            if "bad" in source:
+                raise SourceUnreachableError(source, "repo not found")
+            return {
+                name: SourceEnumeration(source=source, entry_name=name, versions=(), has_latest=True) for name in names
+            }
+
+        with patch("kanon_cli.commands.search._enumerate_source", side_effect=fake_enumerate):
+            results, warnings = _enumerate_sources_concurrently(
+                {"https://h/good.git@main": ["alpha"], "https://h/bad.git@main": ["beta"]},
+                ttl_seconds=300,
+                now=1_000_000,
+                max_workers=4,
+            )
+
+        # The good source is still enumerated; the bad source is skipped + warned.
+        assert "https://h/good.git@main" in results
+        assert "https://h/bad.git@main" not in results
+        assert warnings == [("https://h/bad.git@main", "repo not found")]
+
+
+@pytest.mark.unit
+class TestEnumerateSourceTTLCache:
+    """_enumerate_source reuses a FRESH cache entry and refreshes on MISSING."""
+
+    def test_fresh_cache_hit_reused_without_enumeration(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from kanon_cli.commands.search import Freshness, _enumerate_source
+
+        cached_lines = ["alpha@1.2.0", "alpha@1.1.0", "alpha@latest"]
+        with (
+            patch(
+                "kanon_cli.commands.search.read_search_versions_with_freshness",
+                return_value=(cached_lines, Freshness.FRESH),
+            ),
+            patch("kanon_cli.commands.search._enumerate_entry_versions") as enum_entry,
+            patch("kanon_cli.commands.search.write_search_versions") as write_cache,
+        ):
+            result = _enumerate_source("https://h/a.git@main", ["alpha"], ttl_seconds=300, now=1_000_000)
+
+        # FRESH hit: no live enumeration and no cache write.
+        enum_entry.assert_not_called()
+        write_cache.assert_not_called()
+        assert result["alpha"].versions == ("1.2.0", "1.1.0")
+        assert result["alpha"].has_latest is True
+
+    def test_cache_miss_enumerates_and_writes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from kanon_cli.commands.search import Freshness, SourceEnumeration, _enumerate_source
+
+        enumeration = SourceEnumeration(
+            source="https://h/a.git@main", entry_name="alpha", versions=("2.0.0",), has_latest=True
+        )
+        with (
+            patch(
+                "kanon_cli.commands.search.read_search_versions_with_freshness",
+                return_value=([], Freshness.MISSING),
+            ),
+            patch("kanon_cli.commands.search._enumerate_entry_versions", return_value=enumeration) as enum_entry,
+            patch("kanon_cli.commands.search.write_search_versions") as write_cache,
+        ):
+            result = _enumerate_source("https://h/a.git@main", ["alpha"], ttl_seconds=300, now=1_000_000)
+
+        enum_entry.assert_called_once()
+        write_cache.assert_called_once()
+        assert result["alpha"].versions == ("2.0.0",)
+
+
+@pytest.mark.unit
+class TestRunSearchMultiSource:
+    """run_search across >1 source: concurrent enumeration, grouping, skip+warn."""
+
+    def _multi_args(self, sources: list[str], *, all_versions: bool = False, substring: str | None = None):
+        return argparse.Namespace(
+            catalog_source=sources,
+            all_versions=all_versions,
+            no_limit=False,
+            limit=50,
+            since_version=None,
+            list_format=None,
+            tree=False,
+            detail=False,
+            no_color=False,
+            substring=substring,
+            regex=None,
+            match_fields=None,
+            max_depth=None,
+            no_filter_required=False,
+        )
+
+    def test_multi_source_default_latest_only_grouped(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """Two sources render under separate headers; default mode shows latest."""
+        from kanon_cli.commands.search import SourceEnumeration
+
+        repo_a = tmp_path / "a"
+        repo_b = tmp_path / "b"
+        _write_marketplace_xml(repo_a / "repo-specs", "alpha")
+        _write_marketplace_xml(repo_b / "repo-specs", "beta")
+
+        def fake_resolve(source: str) -> Path:
+            return repo_a if "a.git" in source else repo_b
+
+        enum_a = {"alpha": SourceEnumeration("https://h/a.git@main", "alpha", ("1.0.0",), True)}
+        enum_b = {"beta": SourceEnumeration("https://h/b.git@main", "beta", ("2.0.0",), True)}
+
+        args = self._multi_args(["https://h/a.git@main", "https://h/b.git@main"])
+        with (
+            patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=fake_resolve),
+            patch(
+                "kanon_cli.commands.search._enumerate_sources_concurrently",
+                return_value=(
+                    {"https://h/a.git@main": enum_a, "https://h/b.git@main": enum_b},
+                    [],
+                ),
+            ),
+        ):
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        assert "Source: https://h/a.git@main" in captured.err
+        assert "Source: https://h/b.git@main" in captured.err
+        assert "alpha (latest)" in captured.out
+        assert "beta (latest)" in captured.out
+        # Latest-only default does not enumerate the full history.
+        assert "alpha@1.0.0" not in captured.out
+
+    def test_multi_source_all_versions_full_history(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        from kanon_cli.commands.search import SourceEnumeration
+
+        repo_a = tmp_path / "a"
+        _write_marketplace_xml(repo_a / "repo-specs", "alpha")
+        repo_b = tmp_path / "b"
+        _write_marketplace_xml(repo_b / "repo-specs", "beta")
+
+        enum_a = {"alpha": SourceEnumeration("https://h/a.git@main", "alpha", ("1.2.0", "1.0.0"), True)}
+
+        args = self._multi_args(["https://h/a.git@main", "https://h/b.git@main"], all_versions=True)
+        with (
+            patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=repo_a),
+            patch(
+                "kanon_cli.commands.search._enumerate_sources_concurrently",
+                return_value=({"https://h/a.git@main": enum_a, "https://h/b.git@main": {}}, []),
+            ),
+        ):
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        assert "alpha (latest)" in captured.out
+        assert "alpha@1.2.0" in captured.out
+        assert "alpha@1.0.0" in captured.out
+
+    def test_multi_source_skip_warn_unreachable(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """A source that fails to clone is skipped+warned, search still exits 0."""
+        from kanon_cli.commands.search import SourceEnumeration
+
+        repo_a = tmp_path / "a"
+        _write_marketplace_xml(repo_a / "repo-specs", "alpha")
+
+        def fake_resolve(source: str) -> Path:
+            if "bad.git" in source:
+                raise SystemExit(1)
+            return repo_a
+
+        enum_a = {"alpha": SourceEnumeration("https://h/a.git@main", "alpha", (), True)}
+
+        args = self._multi_args(["https://h/a.git@main", "https://h/bad.git@main"])
+        with (
+            patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=fake_resolve),
+            patch(
+                "kanon_cli.commands.search._enumerate_sources_concurrently",
+                return_value=({"https://h/a.git@main": enum_a}, []),
+            ),
+        ):
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        assert "WARNING" in captured.err
+        assert "https://h/bad.git@main" in captured.err
+        assert "Source: https://h/a.git@main" in captured.err
+        assert "alpha (latest)" in captured.out
+
+    def test_multi_source_no_matches_exits_zero_with_note(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """A filter matching nothing across all sources exits 0 with 'no matches'."""
+        repo_a = tmp_path / "a"
+        _write_marketplace_xml(repo_a / "repo-specs", "alpha")
+        repo_b = tmp_path / "b"
+        _write_marketplace_xml(repo_b / "repo-specs", "beta")
+
+        args = self._multi_args(["https://h/a.git@main", "https://h/b.git@main"], substring="zzz-nomatch")
+        with (
+            patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=[repo_a, repo_b]),
+            patch(
+                "kanon_cli.commands.search._enumerate_sources_concurrently",
+                return_value=({}, []),
+            ),
+        ):
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        assert "no matches" in captured.err
+
+    def test_multi_source_tree_rejected(self, capsys: pytest.CaptureFixture) -> None:
+        """--tree is rejected across multiple sources (single-source render mode)."""
+        args = self._multi_args(["https://h/a.git@main", "https://h/b.git@main"])
+        args.tree = True
+        result = run_search(args)
+        captured = capsys.readouterr()
+        assert result == 1
+        assert "--tree" in captured.err

@@ -374,14 +374,14 @@ class TestUnknownEntryError:
     def test_unknown_entry_suggests_kanon_list(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Error message references 'kanon list' for discovery."""
+        """Error message references 'kanon search' for discovery."""
         from kanon_cli.commands.add import _find_entry_by_name
 
         catalog: list[tuple[CatalogMetadata, pathlib.Path, str]] = []
         with pytest.raises(SystemExit):
             _find_entry_by_name("missing-pkg", catalog)
         captured = capsys.readouterr()
-        assert "kanon list" in captured.err
+        assert "kanon search" in captured.err
 
     def test_known_entry_returned(self, tmp_path: pathlib.Path) -> None:
         """_find_entry_by_name returns the matching entry when found."""

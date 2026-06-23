@@ -1,2 +1,2 @@
 ERROR: Catalog entry 'example-package' not found in the manifest repo.
-Run 'kanon list' to discover available entry names.
+Run 'kanon search' to discover available entry names.

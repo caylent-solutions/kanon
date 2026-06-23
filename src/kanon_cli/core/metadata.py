@@ -7,7 +7,7 @@ returns a :class:`CatalogMetadata` dataclass. A *catalog entry* is any
 Every entry -- whether a packaged Claude marketplace or a plain package --
 carries the same required metadata fields.
 
-Every command that consumes marketplace metadata (``kanon list``,
+Every command that consumes marketplace metadata (``kanon search``,
 ``kanon add``, ``kanon outdated``, ``kanon why``, ``kanon catalog audit``,
 ``kanon validate metadata``) uses this module to avoid schema-check drift.
 

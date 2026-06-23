@@ -1,4 +1,4 @@
-"""Unit tests for the --detail per-entry record formatter in kanon list.
+"""Unit tests for the --detail per-entry record formatter in kanon search.
 
 Covers:
 - Format of the per-entry record for a fully-populated CatalogMetadata.
@@ -6,7 +6,7 @@ Covers:
 - Column-alignment: all field labels are right-padded to a fixed width.
 - Output ordering mirrors lexicographic sort used by default mode.
 - The formatter is decoupled from the walker (accepts CatalogMetadata instances).
-- run_list() with detail=True emits the formatted records.
+- run_search() with detail=True emits the formatted records.
 - register() exposes --detail on the list subparser with appropriate help text.
 
 AC-TEST-001 (unit), AC-FUNC-001 through AC-FUNC-007.
@@ -20,10 +20,10 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _format_detail_record,
     register,
-    run_list,
+    run_search,
 )
 from kanon_cli.core.metadata import CatalogMetadata
 
@@ -248,13 +248,13 @@ class TestFormatDetailRecordMissingFields:
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list with --detail flag
+# Tests for run_search with --detail flag
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListDetail:
-    """run_list() with detail=True emits per-entry records in lexicographic order."""
+    """run_search() with detail=True emits per-entry records in lexicographic order."""
 
     def _write_full_xml(self, directory: Path, name: str) -> None:
         """Write a minimal marketplace XML with all recommended fields."""
@@ -293,76 +293,76 @@ class TestRunListDetail:
         (directory / f"{name}-marketplace.xml").write_text(xml)
 
     def test_detail_flag_emits_multi_line_records(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list with detail=True emits more than one line per entry."""
+        """run_search with detail=True emits more than one line per entry."""
         self._write_full_xml(tmp_path / "repo-specs", "alpha")
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
         captured = capsys.readouterr()
         lines = captured.out.splitlines()
         assert result == 0
         assert len(lines) > 1, "detail mode should emit multiple lines"
 
     def test_detail_flag_emits_entry_name_as_header(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail emits entry name as the first line of each record."""
+        """run_search --detail emits entry name as the first line of each record."""
         self._write_full_xml(tmp_path / "repo-specs", "alpha")
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         lines = captured.out.splitlines()
         assert lines[0] == "alpha"
 
     def test_detail_flag_lexicographic_order(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail output is sorted lexicographically by entry name."""
+        """run_search --detail output is sorted lexicographically by entry name."""
         repo_specs = tmp_path / "repo-specs"
         for name in ["zebra", "alpha", "mango"]:
             self._write_full_xml(repo_specs, name)
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         # Extract the header lines (non-indented) to check ordering.
         header_lines = [ln for ln in captured.out.splitlines() if ln and not ln.startswith(" ")]
         assert header_lines == ["alpha", "mango", "zebra"]
 
     def test_detail_flag_three_entries_three_records(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail emits one record per entry for a three-entry catalog."""
+        """run_search --detail emits one record per entry for a three-entry catalog."""
         repo_specs = tmp_path / "repo-specs"
         for name in ["alpha", "beta", "gamma"]:
             self._write_full_xml(repo_specs, name)
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         header_lines = [ln for ln in captured.out.splitlines() if ln and not ln.startswith(" ")]
         assert sorted(header_lines) == ["alpha", "beta", "gamma"]
 
     def test_detail_missing_type_shows_placeholder(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail renders <missing> for entries with type=None."""
+        """run_search --detail renders <missing> for entries with type=None."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         assert "<missing>" in captured.out
 
     def test_detail_missing_type_warning_on_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail preserves stderr warning emitted by _parse_catalog_metadata."""
+        """run_search --detail preserves stderr warning emitted by _parse_catalog_metadata."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         # _parse_catalog_metadata emits "WARNING: ..." to stderr for missing recommended.
         assert "WARNING:" in captured.err
 
     def test_detail_missing_type_warning_not_duplicated(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail does not duplicate the recommended-field warning."""
+        """run_search --detail does not duplicate the recommended-field warning."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         warning_count = captured.err.count("WARNING:")
         assert warning_count == 1, (
@@ -370,29 +370,29 @@ class TestRunListDetail:
         )
 
     def test_detail_without_flag_uses_default_mode(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list without detail=True uses the default one-name-per-line mode."""
+        """run_search without detail=True uses the default one-name-per-line mode."""
         self._write_full_xml(tmp_path / "repo-specs", "my-entry")
         args = argparse.Namespace(catalog_source="unused", detail=False, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         lines = captured.out.splitlines()
         # Default mode: just the name on one line.
         assert lines == ["my-entry"]
 
     def test_detail_empty_catalog_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --detail exits 0 for empty catalog (no records emitted)."""
+        """run_search --detail exits 0 for empty catalog (no records emitted)."""
         (tmp_path / "repo-specs").mkdir()
         args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
         assert result == 0
 
     def test_detail_missing_catalog_source_exits_nonzero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """run_list --detail exits non-zero when no catalog source is configured."""
+        """run_search --detail exits non-zero when no catalog source is configured."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         args = argparse.Namespace(catalog_source=None, detail=True, no_color=False)
-        result = run_list(args)
+        result = run_search(args)
         assert result != 0
 
 
@@ -410,14 +410,14 @@ class TestRegisterDetailFlag:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
-        return subparsers.choices["list"]
+        return subparsers.choices["search"]
 
     def test_detail_flag_registered(self) -> None:
         """'list --detail' parses without error and sets detail=True."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
-        args = parser.parse_args(["list", "--detail"])
+        args = parser.parse_args(["search", "--detail"])
         assert args.detail is True
 
     def test_detail_defaults_to_false(self) -> None:
@@ -425,7 +425,7 @@ class TestRegisterDetailFlag:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.detail is False
 
     def test_detail_help_mentions_human_readable(self) -> None:

@@ -27,11 +27,11 @@ from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
-from kanon_cli.commands.list import register as register_list
 from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
 from kanon_cli.commands.why import register as register_why
 from kanon_cli.commands.repo import register as register_repo
+from kanon_cli.commands.search import register as register_search
 from kanon_cli.commands.validate import register as register_validate
 from kanon_cli.completions.catalog_entries import register as register_complete_catalog_entries
 from kanon_cli.completions.catalog_versions import register as register_complete_catalog_versions
@@ -101,7 +101,7 @@ kanon -- declarative dependency manager for git-hosted assets
 Usage: kanon <command> [options]
 
 Discovery & management:
-  list             Discover catalog entries
+  search           Discover catalog entries (grouped by source)
   add              Add catalog entries to .kanon
   remove           Remove sources from .kanon
   outdated         Report installable upgrades
@@ -129,7 +129,7 @@ Global options (always available):
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
                                  one of --catalog-source or a single KANON_CATALOG_SOURCES
-                                 entry is required for list/add/outdated/why/catalog audit.
+                                 entry is required for search/add/outdated/why/catalog audit.
                                  install is hermetic and does not accept a catalog source.
 """
 
@@ -239,7 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_completion(subparsers)
     register_doctor(subparsers)
     register_install(subparsers)
-    register_list(subparsers)
+    register_search(subparsers)
     register_outdated(subparsers)
     register_remove(subparsers)
     register_validate(subparsers)

@@ -1,26 +1,37 @@
-"""kanon list subcommand: list catalog entry names from a manifest repo.
+"""kanon search subcommand: discover catalog entry names from a manifest repo.
 
 Reads ``*-marketplace.xml`` files under ``repo-specs/`` in the resolved
 manifest repo and prints one entry name per line to stdout, sorted
-lexicographically.
+lexicographically, with a per-source group header on stderr.
 
-Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-Section 4.1 (data source + default output) and Section 4 header
+``kanon search`` is the hard rename of the former ``list`` command (no
+deprecation alias): it inherits the full former list query surface unchanged
+(substring positional, ``--regex``, ``--match-fields``, ``--format json``,
+``--detail``, ``--tree``, ``--since-version``, ``--limit``) and adds:
+(a) grouping of results by catalog source; (b) ``-A/--all`` to show all tagged
+versions of each matching manifest vs. the latest-only default.
+
+Spec reference: ``specs/kanon-refinements.md`` Section 4.1 (``kanon search``
+query surface + grouping by source + ``-A/--all``) and Section 4 header
 (canonical missing-catalog error and env-var precedence).
 Section 4.1 flag-table row ``--detail`` for the per-entry detail formatter.
 Section 4.1 flag-table rows ``--tree``, ``--max-depth N``,
 ``--no-filter-required`` and the threshold guardrail.
-Section 4.1 flag-table rows ``--all-versions``, ``--limit N``,
+Section 4.1 flag-table rows ``-A/--all``, ``--limit N``,
 ``--no-limit``, ``--since-version <spec>`` for the historical-versions walker.
 Section 4.1 flag-table row ``--format {names,json}`` for JSON output.
 Section 4.1 flag-table rows ``<substring>`` (positional), ``--regex <pattern>``,
 ``--match-fields <csv>`` for the filter framework.
 
+The per-source group header is written to stderr (never stdout) so the stdout
+stream stays pipeable into ``kanon add`` and a JSON document on stdout stays
+machine-parseable.
+
 Environment variables:
 - ``KANON_CATALOG_SOURCES``: catalog discovery set (CLI flag wins); the single
   configured entry is used when ``--catalog-source`` is absent.
 - ``KANON_TREE_NO_FILTER_THRESHOLD``: overrides the default threshold (20)
-  above which ``kanon list --tree`` requires a filter.
+  above which ``kanon search --tree`` requires a filter.
 - ``KANON_LIST_LIMIT``: overrides the default version-walk cap (50).
 - ``KANON_LIST_FORMAT``: overrides the output format (CLI flag wins).
 """
@@ -62,7 +73,7 @@ _DETAIL_MISSING_PLACEHOLDER = "<missing>"
 _DETAIL_LABEL_WIDTH = 12
 
 # -- Format flag private constants --
-# Environment variable that sets the output format for 'kanon list'.
+# Environment variable that sets the output format for 'kanon search'.
 # Choices: 'names' (default), 'json'.
 # CLI flag --format takes precedence when both are set.
 _KANON_LIST_FORMAT_ENV_VAR = "KANON_LIST_FORMAT"
@@ -138,18 +149,18 @@ _TREE_COLUMN_BLANK = "    "
 
 # Guardrail error template (no em-dashes, no hardcoded values).
 _TREE_GUARDRAIL_ERROR = (
-    "ERROR: kanon list --tree requires a filter when the catalog has more than "
+    "ERROR: kanon search --tree requires a filter when the catalog has more than "
     "{threshold} entries.\n"
     "The catalog at the given source has {count} entries, which exceeds the threshold.\n"
     "\n"
     "Supply one of the following to proceed:\n"
-    "  <name>                  positional substring filter (e.g. kanon list --tree mylib)\n"
+    "  <name>                  positional substring filter (e.g. kanon search --tree mylib)\n"
     "  --regex <pattern>       regular-expression filter\n"
     "  --max-depth 0           show only root entry nodes (no XML or project layers)\n"
     "  --no-filter-required    bypass this guardrail entirely\n"
     "\n"
     "Or raise the threshold:\n"
-    "  KANON_TREE_NO_FILTER_THRESHOLD={threshold_plus} kanon list --tree ...\n"
+    "  KANON_TREE_NO_FILTER_THRESHOLD={threshold_plus} kanon search --tree ...\n"
 )
 
 
@@ -401,7 +412,7 @@ def _walk_all_versions(
     successful_count = 0
     for ref, ver, sha in sorted_triples:
         version_str = ref.rsplit("/", 1)[-1]
-        clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-list-av-"))
+        clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-search-av-"))
         repo_dir = clone_dir / "repo"
 
         clone_result = subprocess.run(
@@ -475,7 +486,7 @@ def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
 
     Clones the manifest repo at the given ``<git_url>@<ref>`` source into a
     temporary directory and returns the root of that clone (NOT the
-    ``catalog/`` subdirectory -- ``kanon list`` needs the full repo root to
+    ``catalog/`` subdirectory -- ``kanon search`` needs the full repo root to
     walk ``repo-specs/``).
 
     Args:
@@ -498,7 +509,7 @@ def _resolve_manifest_repo(catalog_source: str) -> pathlib.Path:
         resolved = resolve_version(url, ref)
         ref = resolved.removeprefix("refs/tags/")
 
-    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-list-"))
+    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-search-"))
     repo_dir = clone_dir / "repo"
 
     result = subprocess.run(
@@ -617,7 +628,7 @@ def _build_catalog_payload(entries: list[CatalogMetadata]) -> list[dict]:
     The ``type`` field is ``null`` in JSON when the metadata slot is ``None``.
 
     Used by :func:`_format_json_catalog` (for tests that inspect the JSON string)
-    and by the :func:`run_list` handler that calls :func:`_emit_json_payload`
+    and by the :func:`run_search` handler that calls :func:`_emit_json_payload`
     directly.
 
     Args:
@@ -1104,16 +1115,65 @@ def _check_tree_guardrail(
     return None
 
 
-def run_list(args: argparse.Namespace) -> int:
-    """Entry-point function for the ``kanon list`` subcommand.
+# ---------------------------------------------------------------------------
+# Source grouping
+# ---------------------------------------------------------------------------
+
+# Header line emitted to stderr before the entries discovered for a catalog
+# source. ``kanon search`` groups its results by catalog source (spec
+# Section 4.1 / FR-10). The header is written to stderr -- never stdout -- so
+# the stdout stream stays pipeable into ``kanon add`` and any JSON document on
+# stdout stays machine-parseable. Uses .format(source=<url>@<ref>).
+_SOURCE_GROUP_HEADER_FORMAT = "Source: {source}"
+
+
+def _format_source_group_header(source: str) -> str:
+    """Return the per-source group header line for ``kanon search`` output.
+
+    Args:
+        source: The resolved catalog source string (``<git_url>@<ref>``).
+
+    Returns:
+        The header line (no trailing newline), e.g. ``Source: https://...@main``.
+
+    Raises:
+        ValueError: When ``source`` is empty; a group header without a source
+            is meaningless and must fail fast rather than emit a blank label.
+    """
+    if not source:
+        raise ValueError("_format_source_group_header requires a non-empty catalog source")
+    return _SOURCE_GROUP_HEADER_FORMAT.format(source=source)
+
+
+def _emit_source_group_header(source: str) -> None:
+    """Write the per-source group header to stderr.
+
+    Grouping headers are diagnostics, not data: they go to stderr so the stdout
+    stream remains pipeable / JSON-parseable. See :func:`_format_source_group_header`.
+
+    Args:
+        source: The resolved catalog source string (``<git_url>@<ref>``).
+    """
+    print(_format_source_group_header(source), file=sys.stderr)
+
+
+def run_search(args: argparse.Namespace) -> int:
+    """Entry-point function for the ``kanon search`` subcommand.
 
     Resolves the catalog source, clones the manifest repo, builds the sorted
-    entry index, and writes output to stdout. Returns 0 in all successful
-    cases (including empty catalogs). Writes the canonical missing-catalog
-    error to stderr and returns 1 when no catalog source is configured.
+    entry index, and writes output to stdout grouped under a per-source header
+    on stderr. Returns 0 in all successful cases (including empty catalogs).
+    Writes the canonical missing-catalog error to stderr and returns 1 when no
+    catalog source is configured.
+
+    Source grouping: a ``Source: <url>@<ref>`` header is written to stderr via
+    :func:`_emit_source_group_header` before the entries discovered for the
+    resolved catalog source (spec Section 4.1 / FR-10). The header is on stderr,
+    never stdout, so the stdout stream stays pipeable into ``kanon add`` and any
+    JSON document on stdout stays machine-parseable.
 
     Default mode: prints one entry name per line with ``flush=True`` per spec
-    Section 4.1.
+    Section 4.1 (latest version only).
 
     Detail mode (``--detail``): prints a multi-line record per entry via
     :func:`_format_detail_record`. Human-readable; not pipeable into
@@ -1123,9 +1183,10 @@ def run_list(args: argparse.Namespace) -> int:
     entry via :func:`_render_tree`. Subject to the threshold guardrail unless
     a filter or ``--no-filter-required`` is supplied.
 
-    All-versions mode (``--all-versions``): walks historical catalog versions
+    All-versions mode (``-A``/``--all``): walks historical catalog versions
     via ``git ls-remote --tags`` and emits one ``<name>@<version>`` row per
-    catalog entry per version. Mutually exclusive with ``--tree``.
+    catalog entry per version (all tagged versions of each matching manifest
+    rather than the latest-only default). Mutually exclusive with ``--tree``.
 
     Filter mode: the positional ``<substring>`` or ``--regex <pattern>`` flag
     narrows the catalog entries before any renderer runs. ``--match-fields``
@@ -1138,7 +1199,7 @@ def run_list(args: argparse.Namespace) -> int:
             - ``tree`` (``bool``): from ``--tree`` (default ``False``).
             - ``max_depth`` (``int | None``): from ``--max-depth``.
             - ``no_filter_required`` (``bool``): from ``--no-filter-required``.
-            - ``all_versions`` (``bool``): from ``--all-versions``.
+            - ``all_versions`` (``bool``): from ``-A``/``--all``.
             - ``limit`` (``int``): from ``--limit`` (default ``KANON_LIST_LIMIT``).
             - ``no_limit`` (``bool``): from ``--no-limit`` (default ``False``).
             - ``since_version`` (``str | None``): from ``--since-version``.
@@ -1245,11 +1306,11 @@ def run_list(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Mutual exclusion: --tree and --all-versions cannot be combined.
+    # Mutual exclusion: --tree and -A/--all cannot be combined.
     if tree and all_versions:
         print(
-            "ERROR: --tree and --all-versions are mutually exclusive. "
-            "Use --tree for dependency tree rendering, or --all-versions to "
+            "ERROR: --tree and -A/--all are mutually exclusive. "
+            "Use --tree for dependency tree rendering, or -A/--all to "
             "list all available versions. These flags cannot be combined.",
             file=sys.stderr,
         )
@@ -1269,10 +1330,16 @@ def run_list(args: argparse.Namespace) -> int:
 
     if not catalog_source:
         print(
-            MISSING_CATALOG_ERROR_TEMPLATE.format(command="list"),
+            MISSING_CATALOG_ERROR_TEMPLATE.format(command="search"),
             file=sys.stderr,
         )
         return 1
+
+    # Group results by catalog source (spec Section 4.1 / FR-10): emit the
+    # per-source header on stderr before any entries for this source. Single
+    # source today; the follow-on TTL-cached enumeration task extends this to
+    # multiple sources, each under its own header.
+    _emit_source_group_header(catalog_source)
 
     if all_versions:
         # Determine the effective cap: no_limit -> 0 (unlimited), else use limit.
@@ -1375,9 +1442,13 @@ def run_list(args: argparse.Namespace) -> int:
 
 
 def register(subparsers) -> None:
-    """Register the ``list`` subcommand on the top-level argparse parser.
+    """Register the ``search`` subcommand on the top-level argparse parser.
 
-    Adds the ``list`` subparser with:
+    ``kanon search`` is the hard rename of the former ``list`` command (no
+    deprecation alias); ``list`` is no longer a registered subcommand and
+    ``kanon`` with that token yields the argparse unknown-command exit 2.
+
+    Adds the ``search`` subparser with:
     - ``<substring>`` optional positional filter (substring, case-sensitive).
     - ``--catalog-source`` from the shared factory.
     - ``--format {names,json}`` to select the output format (default: ``names``).
@@ -1385,12 +1456,16 @@ def register(subparsers) -> None:
     - ``--tree`` for the three-layer ASCII dependency tree renderer.
     - ``--max-depth N`` to cap the rendered tree depth (0 = root only).
     - ``--no-filter-required`` to bypass the threshold guardrail.
-    - ``--all-versions`` to walk all historical tagged versions.
+    - ``-A``/``--all`` to walk all historical tagged versions (vs. latest-only).
     - ``--limit N`` to cap the number of versions walked (default: ``KANON_LIST_LIMIT``).
     - ``--no-limit`` to walk all PEP 440-valid tags without a cap.
     - ``--since-version <spec>`` to filter walked versions by a PEP 440 constraint.
     - ``--regex <pattern>`` for regex-based entry filtering.
     - ``--match-fields <csv>`` to narrow the filter to specific fields.
+
+    Results are grouped by catalog source: a ``Source: <url>@<ref>`` header is
+    written to stderr before the entries for the resolved source (spec
+    Section 4.1 / FR-10).
 
     Threshold guardrail: when the catalog has more than
     ``KANON_TREE_NO_FILTER_THRESHOLD`` entries (default 20, overridable via
@@ -1411,13 +1486,14 @@ def register(subparsers) -> None:
         subparsers: The subparsers action from the parent parser.
     """
     parser = subparsers.add_parser(
-        "list",
+        "search",
         add_help=True,
-        help="List catalog entry names from a manifest repo.",
+        help="Discover catalog entries from a manifest repo, grouped by source.",
         description=(
             "Print one catalog entry name per line to stdout, sorted\n"
-            "lexicographically. Reads *-marketplace.xml files under\n"
-            "repo-specs/ in the manifest repo identified by the catalog source.\n\n"
+            "lexicographically and grouped under a per-source header on stderr.\n"
+            "Reads *-marketplace.xml files under repo-specs/ in the manifest repo\n"
+            "identified by the catalog source.\n\n"
             "Requires a catalog source via --catalog-source or the\n"
             "KANON_CATALOG_SOURCES environment variable (the single configured\n"
             "entry is used). The CLI flag takes precedence when both are set.\n\n"
@@ -1433,7 +1509,7 @@ def register(subparsers) -> None:
             "  names (default) -- one entry name per line, pipeable into kanon add.\n"
             "  json -- structured JSON array of entry objects. Default mode and\n"
             "    --detail mode emit {name, display-name, type, description, version};\n"
-            "    --all-versions mode emits {name, version, ref, sha}.\n"
+            "    -A/--all mode emits {name, version, ref, sha}.\n"
             "The KANON_LIST_FORMAT environment variable sets the format when the\n"
             "CLI flag is absent; the CLI flag takes precedence when both are set.\n"
             "--format json is incompatible with --tree (hard error).\n\n"
@@ -1443,32 +1519,33 @@ def register(subparsers) -> None:
             "entries, a filter is required unless --no-filter-required is passed.\n"
             "Resolution paths: positional <name> substring, --regex <pattern>,\n"
             "--max-depth 0, or --no-filter-required.\n\n"
-            "All-versions mode (--all-versions): walks historical catalog versions\n"
+            "All-versions mode (-A/--all): walks historical catalog versions\n"
             "via git ls-remote --tags. Emits one <name>@<version> row per catalog\n"
-            "entry per version, newest version first. Default version cap:\n"
-            f"KANON_LIST_LIMIT (default {KANON_LIST_LIMIT}, overridable via env var).\n"
+            "entry per version, newest version first (default: latest-only).\n"
+            f"Default version cap: KANON_LIST_LIMIT (default {KANON_LIST_LIMIT}, "
+            "overridable via env var).\n"
             "Use --limit N to cap at N versions, --no-limit to walk all versions.\n"
             "Use --since-version <spec> to filter by a PEP 440 constraint\n"
             "(e.g. '>=1.0,<2.0'). Mutually exclusive with --tree."
         ),
         epilog=(
             "Examples:\n"
-            "  kanon list --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list foo --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list --regex '^foo' --catalog-source ...\n"
-            "  kanon list foo --match-fields keywords --catalog-source ...\n"
-            "  kanon list --format json --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list --format json --all-versions --catalog-source ...\n"
-            "  kanon list --detail --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list --tree --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list --tree --max-depth 0 --catalog-source ...\n"
-            "  kanon list --tree --no-filter-required --catalog-source ...\n"
-            "  kanon list --all-versions --catalog-source https://example.com/org/repo.git@main\n"
-            "  kanon list --all-versions --limit 3 --catalog-source ...\n"
-            "  kanon list --all-versions --no-limit --catalog-source ...\n"
-            "  kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...\n"
-            "  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon list\n"
-            "  KANON_LIST_FORMAT=json kanon list --catalog-source ..."
+            "  kanon search --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search foo --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search --regex '^foo' --catalog-source ...\n"
+            "  kanon search foo --match-fields keywords --catalog-source ...\n"
+            "  kanon search --format json --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search --format json -A --catalog-source ...\n"
+            "  kanon search --detail --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search --tree --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search --tree --max-depth 0 --catalog-source ...\n"
+            "  kanon search --tree --no-filter-required --catalog-source ...\n"
+            "  kanon search -A --catalog-source https://example.com/org/repo.git@main\n"
+            "  kanon search -A --limit 3 --catalog-source ...\n"
+            "  kanon search -A --no-limit --catalog-source ...\n"
+            "  kanon search -A --since-version '>=1.0,<2.0' --catalog-source ...\n"
+            "  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon search\n"
+            "  KANON_LIST_FORMAT=json kanon search --catalog-source ..."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1498,7 +1575,7 @@ def register(subparsers) -> None:
             "Output format. 'names' (default): one entry name per line, pipeable "
             "into kanon add. 'json': structured JSON array. Default mode and "
             "--detail mode emit {name, display-name, type, description, version} "
-            "objects; --all-versions mode emits {name, version, ref, sha} objects. "
+            "objects; -A/--all mode emits {name, version, ref, sha} objects. "
             "The KANON_LIST_FORMAT environment variable sets the format when this "
             "flag is absent; the CLI flag takes precedence when both are set. "
             "--format json is incompatible with --tree (hard error at validation time)."
@@ -1525,7 +1602,7 @@ def register(subparsers) -> None:
             "entry (root), the XML manifests reachable via transitive <include> "
             "directives, and the <project> repos referenced by those manifests. "
             "Each node shows the version resolved at command-execution time. "
-            "Mutually exclusive with --all-versions. Subject to the threshold "
+            "Mutually exclusive with -A/--all. Subject to the threshold "
             f"guardrail (KANON_TREE_NO_FILTER_THRESHOLD, default {KANON_TREE_NO_FILTER_THRESHOLD}): "
             "when the catalog exceeds the threshold, supply a filter -- positional "
             "substring, --regex, --max-depth 0 -- or pass --no-filter-required."
@@ -1561,17 +1638,20 @@ def register(subparsers) -> None:
     )
 
     parser.add_argument(
-        "--all-versions",
+        "-A",
+        "--all",
         dest="all_versions",
         action="store_true",
         default=False,
         help=(
-            "Walk all historical tagged versions of the manifest repo and emit "
-            "one <name>@<version> row per catalog entry per version. Versions are "
-            "ordered newest-first by PEP 440 natural sort; entries within each "
-            "version are sorted lexicographically. Mutually exclusive with --tree. "
-            "Default cap: KANON_LIST_LIMIT (default 50, overridable via env var). "
-            "Use --limit N or --no-limit to control the number of versions walked."
+            "Show all tagged versions of each matching manifest instead of the "
+            "latest-only default. Walks all historical tagged versions of the "
+            "manifest repo and emits one <name>@<version> row per catalog entry "
+            "per version. Versions are ordered newest-first by PEP 440 natural "
+            "sort; entries within each version are sorted lexicographically. "
+            "Mutually exclusive with --tree. Default cap: KANON_LIST_LIMIT "
+            "(default 50, overridable via env var). Use --limit N or --no-limit "
+            "to control the number of versions walked."
         ),
     )
 
@@ -1582,7 +1662,7 @@ def register(subparsers) -> None:
         default=KANON_LIST_LIMIT,
         metavar="N",
         help=(
-            "Cap the number of versions walked by --all-versions. "
+            "Cap the number of versions walked by -A/--all. "
             f"Default: KANON_LIST_LIMIT (default {KANON_LIST_LIMIT}, "
             "overridable via the KANON_LIST_LIMIT environment variable). "
             "Mutually exclusive with --no-limit."
@@ -1595,7 +1675,7 @@ def register(subparsers) -> None:
         action="store_true",
         default=False,
         help=(
-            "Walk all PEP 440-valid tags when using --all-versions, with no cap. "
+            "Walk all PEP 440-valid tags when using -A/--all, with no cap. "
             "Equivalent to --limit <very-large-number>. "
             "Mutually exclusive with --limit."
         ),
@@ -1607,7 +1687,7 @@ def register(subparsers) -> None:
         default=None,
         metavar="<spec>",
         help=(
-            "Filter the versions walked by --all-versions to those matching "
+            "Filter the versions walked by -A/--all to those matching "
             "a PEP 440 specifier constraint (e.g. '>=1.0,<2.0'). "
             "The constraint is evaluated against the PEP 440 version parsed "
             "from each tag name. Tags that do not parse as PEP 440 are skipped. "
@@ -1646,4 +1726,4 @@ def register(subparsers) -> None:
         ),
     )
 
-    parser.set_defaults(func=run_list)
+    parser.set_defaults(func=run_search)

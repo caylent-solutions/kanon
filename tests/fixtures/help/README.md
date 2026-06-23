@@ -17,7 +17,7 @@ so you can regenerate quickly.
 Examples:
 
 - `kanon-toplevel.txt` -- top-level `kanon --help`
-- `kanon-list.txt` -- `kanon list --help`
+- `kanon-search.txt` -- `kanon search --help`
 - `kanon-catalog.txt` -- `kanon catalog --help` (subcommand-group head)
 - `kanon-catalog-audit.txt` -- `kanon catalog audit --help` (nested subparser child; hyphenated filename mirrors the `catalog audit` argv path)
 
@@ -26,7 +26,7 @@ Examples:
 | File | Command |
 |------|---------|
 | `kanon-toplevel.txt` | `kanon --help` |
-| `kanon-list.txt` | `kanon list --help` |
+| `kanon-search.txt` | `kanon search --help` |
 | `kanon-add.txt` | `kanon add --help` |
 | `kanon-remove.txt` | `kanon remove --help` |
 | `kanon-outdated.txt` | `kanon outdated --help` |

@@ -1,13 +1,14 @@
-usage: kanon list [-h] [--catalog-source <git-url>@<ref>]
-                  [--format {names,json}] [--detail] [--tree] [--max-depth N]
-                  [--no-filter-required] [--all-versions] [--limit N]
-                  [--no-limit] [--since-version <spec>] [--regex <pattern>]
-                  [--match-fields <csv>]
-                  [<substring>]
+usage: kanon search [-h] [--catalog-source <git-url>@<ref>]
+                    [--format {names,json}] [--detail] [--tree]
+                    [--max-depth N] [--no-filter-required] [-A] [--limit N]
+                    [--no-limit] [--since-version <spec>] [--regex <pattern>]
+                    [--match-fields <csv>]
+                    [<substring>]
 
 Print one catalog entry name per line to stdout, sorted
-lexicographically. Reads *-marketplace.xml files under
-repo-specs/ in the manifest repo identified by the catalog source.
+lexicographically and grouped under a per-source header on stderr.
+Reads *-marketplace.xml files under repo-specs/ in the manifest repo
+identified by the catalog source.
 
 Requires a catalog source via --catalog-source or the
 KANON_CATALOG_SOURCES environment variable (the single configured
@@ -26,7 +27,7 @@ Format mode (--format): selects the output format. Choices:
   names (default) -- one entry name per line, pipeable into kanon add.
   json -- structured JSON array of entry objects. Default mode and
     --detail mode emit {name, display-name, type, description, version};
-    --all-versions mode emits {name, version, ref, sha}.
+    -A/--all mode emits {name, version, ref, sha}.
 The KANON_LIST_FORMAT environment variable sets the format when the
 CLI flag is absent; the CLI flag takes precedence when both are set.
 --format json is incompatible with --tree (hard error).
@@ -38,10 +39,10 @@ entries, a filter is required unless --no-filter-required is passed.
 Resolution paths: positional <name> substring, --regex <pattern>,
 --max-depth 0, or --no-filter-required.
 
-All-versions mode (--all-versions): walks historical catalog versions
+All-versions mode (-A/--all): walks historical catalog versions
 via git ls-remote --tags. Emits one <name>@<version> row per catalog
-entry per version, newest version first. Default version cap:
-KANON_LIST_LIMIT (default 50, overridable via env var).
+entry per version, newest version first (default: latest-only).
+Default version cap: KANON_LIST_LIMIT (default 50, overridable via env var).
 Use --limit N to cap at N versions, --no-limit to walk all versions.
 Use --since-version <spec> to filter by a PEP 440 constraint
 (e.g. '>=1.0,<2.0'). Mutually exclusive with --tree.
@@ -65,10 +66,10 @@ options:
                         line, pipeable into kanon add. 'json': structured JSON
                         array. Default mode and --detail mode emit {name,
                         display-name, type, description, version} objects;
-                        --all-versions mode emits {name, version, ref, sha}
-                        objects. The KANON_LIST_FORMAT environment variable
-                        sets the format when this flag is absent; the CLI flag
-                        takes precedence when both are set. --format json is
+                        -A/--all mode emits {name, version, ref, sha} objects.
+                        The KANON_LIST_FORMAT environment variable sets the
+                        format when this flag is absent; the CLI flag takes
+                        precedence when both are set. --format json is
                         incompatible with --tree (hard error at validation
                         time).
   --detail              Print a human-readable multi-line record per entry
@@ -80,7 +81,7 @@ options:
                         via transitive <include> directives, and the <project>
                         repos referenced by those manifests. Each node shows
                         the version resolved at command-execution time.
-                        Mutually exclusive with --all-versions. Subject to the
+                        Mutually exclusive with -A/--all. Subject to the
                         threshold guardrail (KANON_TREE_NO_FILTER_THRESHOLD,
                         default 20): when the catalog exceeds the threshold,
                         supply a filter -- positional substring, --regex,
@@ -95,23 +96,25 @@ options:
                         substring, --regex, or --max-depth 0) to avoid
                         accidental full-catalog tree renders. Pass this flag
                         to bypass the check.
-  --all-versions        Walk all historical tagged versions of the manifest
-                        repo and emit one <name>@<version> row per catalog
-                        entry per version. Versions are ordered newest-first
-                        by PEP 440 natural sort; entries within each version
-                        are sorted lexicographically. Mutually exclusive with
-                        --tree. Default cap: KANON_LIST_LIMIT (default 50,
-                        overridable via env var). Use --limit N or --no-limit
-                        to control the number of versions walked.
-  --limit N             Cap the number of versions walked by --all-versions.
+  -A, --all             Show all tagged versions of each matching manifest
+                        instead of the latest-only default. Walks all
+                        historical tagged versions of the manifest repo and
+                        emits one <name>@<version> row per catalog entry per
+                        version. Versions are ordered newest-first by PEP 440
+                        natural sort; entries within each version are sorted
+                        lexicographically. Mutually exclusive with --tree.
+                        Default cap: KANON_LIST_LIMIT (default 50, overridable
+                        via env var). Use --limit N or --no-limit to control
+                        the number of versions walked.
+  --limit N             Cap the number of versions walked by -A/--all.
                         Default: KANON_LIST_LIMIT (default 50, overridable via
                         the KANON_LIST_LIMIT environment variable). Mutually
                         exclusive with --no-limit.
-  --no-limit            Walk all PEP 440-valid tags when using --all-versions,
-                        with no cap. Equivalent to --limit <very-large-
-                        number>. Mutually exclusive with --limit.
+  --no-limit            Walk all PEP 440-valid tags when using -A/--all, with
+                        no cap. Equivalent to --limit <very-large-number>.
+                        Mutually exclusive with --limit.
   --since-version <spec>
-                        Filter the versions walked by --all-versions to those
+                        Filter the versions walked by -A/--all to those
                         matching a PEP 440 specifier constraint (e.g.
                         '>=1.0,<2.0'). The constraint is evaluated against the
                         PEP 440 version parsed from each tag name. Tags that
@@ -133,19 +136,19 @@ options:
                         error. Example: --match-fields keywords
 
 Examples:
-  kanon list --catalog-source https://example.com/org/repo.git@main
-  kanon list foo --catalog-source https://example.com/org/repo.git@main
-  kanon list --regex '^foo' --catalog-source ...
-  kanon list foo --match-fields keywords --catalog-source ...
-  kanon list --format json --catalog-source https://example.com/org/repo.git@main
-  kanon list --format json --all-versions --catalog-source ...
-  kanon list --detail --catalog-source https://example.com/org/repo.git@main
-  kanon list --tree --catalog-source https://example.com/org/repo.git@main
-  kanon list --tree --max-depth 0 --catalog-source ...
-  kanon list --tree --no-filter-required --catalog-source ...
-  kanon list --all-versions --catalog-source https://example.com/org/repo.git@main
-  kanon list --all-versions --limit 3 --catalog-source ...
-  kanon list --all-versions --no-limit --catalog-source ...
-  kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source ...
-  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon list
-  KANON_LIST_FORMAT=json kanon list --catalog-source ...
+  kanon search --catalog-source https://example.com/org/repo.git@main
+  kanon search foo --catalog-source https://example.com/org/repo.git@main
+  kanon search --regex '^foo' --catalog-source ...
+  kanon search foo --match-fields keywords --catalog-source ...
+  kanon search --format json --catalog-source https://example.com/org/repo.git@main
+  kanon search --format json -A --catalog-source ...
+  kanon search --detail --catalog-source https://example.com/org/repo.git@main
+  kanon search --tree --catalog-source https://example.com/org/repo.git@main
+  kanon search --tree --max-depth 0 --catalog-source ...
+  kanon search --tree --no-filter-required --catalog-source ...
+  kanon search -A --catalog-source https://example.com/org/repo.git@main
+  kanon search -A --limit 3 --catalog-source ...
+  kanon search -A --no-limit --catalog-source ...
+  kanon search -A --since-version '>=1.0,<2.0' --catalog-source ...
+  KANON_CATALOG_SOURCES=https://example.com/org/repo.git@v1.0.0 kanon search
+  KANON_LIST_FORMAT=json kanon search --catalog-source ...

@@ -1,4 +1,4 @@
-"""Unit tests for the filter framework added to ``kanon list``.
+"""Unit tests for the filter framework added to ``kanon search``.
 
 Covers:
 - Substring matcher (case-sensitive, all four default fields, parameterised).
@@ -19,14 +19,14 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     LIST_FILTER_ZERO_MATCH_NOTE,
     MATCH_FIELDS_LEGAL,
     _apply_filter,
     _build_filter_predicate,
     _check_tree_guardrail,
     register,
-    run_list,
+    run_search,
 )
 from kanon_cli.core.metadata import CatalogMetadata
 
@@ -417,21 +417,21 @@ class TestInvalidRegexPattern:
     """Tests for the fail-fast error when an invalid --regex pattern is supplied."""
 
     def test_invalid_regex_returns_1(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list returns 1 when --regex receives a syntactically invalid pattern."""
+        """run_search returns 1 when --regex receives a syntactically invalid pattern."""
         args = _make_args(
             catalog_source=f"file://{tmp_path}@main",
             regex="[unclosed",
         )
-        result = run_list(args)
+        result = run_search(args)
         assert result == 1
 
     def test_invalid_regex_writes_error_to_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes ERROR: to stderr when --regex receives an invalid pattern."""
+        """run_search writes ERROR: to stderr when --regex receives an invalid pattern."""
         args = _make_args(
             catalog_source=f"file://{tmp_path}@main",
             regex="[unclosed",
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -443,7 +443,7 @@ class TestInvalidRegexPattern:
             catalog_source=None,
             regex="[unclosed",
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -488,7 +488,7 @@ def _write_xml(directory: Path, name: str) -> Path:
 
 
 def _make_args(**kwargs: Any) -> argparse.Namespace:
-    """Build an argparse Namespace with default values appropriate for run_list tests.
+    """Build an argparse Namespace with default values appropriate for run_search tests.
 
     Keyword arguments override the defaults.
 
@@ -496,7 +496,7 @@ def _make_args(**kwargs: Any) -> argparse.Namespace:
         **kwargs: Overrides for specific namespace fields.
 
     Returns:
-        :class:`argparse.Namespace` suitable for calling ``run_list``.
+        :class:`argparse.Namespace` suitable for calling ``run_search``.
     """
     defaults: dict[str, Any] = {
         "catalog_source": None,
@@ -522,7 +522,7 @@ class TestMutualExclusionSubstringRegex:
     """Tests for the hard error when both positional substring and --regex are supplied."""
 
     def test_substring_and_regex_together_returns_1(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list returns 1 when both substring and --regex are supplied."""
+        """run_search returns 1 when both substring and --regex are supplied."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "alpha")
 
@@ -532,23 +532,23 @@ class TestMutualExclusionSubstringRegex:
             regex="bar",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 1
 
     def test_substring_and_regex_together_writes_error_to_stderr(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        """run_list writes ERROR: to stderr when both substring and --regex are given."""
+        """run_search writes ERROR: to stderr when both substring and --regex are given."""
         args = _make_args(
             catalog_source=f"file://{tmp_path}@main",
             substring="foo",
             regex="bar",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 1
@@ -561,7 +561,7 @@ class TestMutualExclusionSubstringRegex:
             substring="foo",
             regex="bar",
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -577,21 +577,21 @@ class TestMutualExclusionMatchFieldsWithoutFilter:
     """Tests for the hard error when --match-fields is supplied without a filter."""
 
     def test_match_fields_alone_returns_1(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list returns 1 when --match-fields is given with no filter."""
+        """run_search returns 1 when --match-fields is given with no filter."""
         args = _make_args(
             catalog_source=f"file://{tmp_path}@main",
             match_fields=["name"],
         )
-        result = run_list(args)
+        result = run_search(args)
         assert result == 1
 
     def test_match_fields_alone_writes_error_to_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes ERROR: to stderr when --match-fields is given alone."""
+        """run_search writes ERROR: to stderr when --match-fields is given alone."""
         args = _make_args(
             catalog_source=f"file://{tmp_path}@main",
             match_fields=["name"],
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -602,7 +602,7 @@ class TestMutualExclusionMatchFieldsWithoutFilter:
             catalog_source=None,
             match_fields=["description"],
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -627,23 +627,23 @@ class TestUnknownMatchField:
         ],
     )
     def test_unknown_field_returns_1(self, bad_fields: list[str], capsys: pytest.CaptureFixture) -> None:
-        """run_list returns 1 when an unknown field name is present in --match-fields."""
+        """run_search returns 1 when an unknown field name is present in --match-fields."""
         args = _make_args(
             catalog_source="file:///irrelevant@main",
             substring="foo",
             match_fields=bad_fields,
         )
-        result = run_list(args)
+        result = run_search(args)
         assert result == 1
 
     def test_unknown_field_writes_error_naming_legal_set(self, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes ERROR: listing the legal set when an unknown field is given."""
+        """run_search writes ERROR: listing the legal set when an unknown field is given."""
         args = _make_args(
             catalog_source="file:///irrelevant@main",
             substring="foo",
             match_fields=["name", "owner"],
         )
-        result = run_list(args)
+        result = run_search(args)
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
@@ -662,7 +662,7 @@ class TestZeroMatchBehaviour:
     """Tests for exit 0 + empty stdout + stderr note when the filter matches nothing."""
 
     def test_zero_match_exit_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list exits 0 when filter matches nothing."""
+        """run_search exits 0 when filter matches nothing."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "alpha")
         _write_xml(repo_specs, "beta")
@@ -672,13 +672,13 @@ class TestZeroMatchBehaviour:
             substring="xyz-no-match",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0
 
     def test_zero_match_empty_stdout(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list prints nothing to stdout when filter matches nothing."""
+        """run_search prints nothing to stdout when filter matches nothing."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "alpha")
 
@@ -687,14 +687,14 @@ class TestZeroMatchBehaviour:
             substring="xyz-no-match",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert captured.out == ""
 
     def test_zero_match_stderr_note(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes the spec canonical note to stderr on zero-match."""
+        """run_search writes the spec canonical note to stderr on zero-match."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "alpha")
 
@@ -703,8 +703,8 @@ class TestZeroMatchBehaviour:
             substring="xyz-no-match",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert LIST_FILTER_ZERO_MATCH_NOTE in captured.err
@@ -719,8 +719,8 @@ class TestZeroMatchBehaviour:
             regex="^xyz",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -749,8 +749,8 @@ class TestFilterAppliedBeforeRenderers:
             detail=True,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -769,8 +769,8 @@ class TestFilterAppliedBeforeRenderers:
             list_format="json",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -788,8 +788,8 @@ class TestFilterAppliedBeforeRenderers:
             substring="foo",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -815,49 +815,49 @@ class TestArgparseRegistration:
         """Positional <substring> is optional (nargs='?')."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.substring is None
 
     def test_substring_is_captured_when_supplied(self) -> None:
         """Positional <substring> is captured when supplied."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list", "mysearch"])
+        args = parser.parse_args(["search", "mysearch"])
         assert args.substring == "mysearch"
 
     def test_regex_flag_registered(self) -> None:
         """--regex flag is registered and defaults to None."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.regex is None
 
     def test_regex_flag_captured_when_supplied(self) -> None:
         """--regex flag value is captured when supplied."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list", "--regex", "^foo"])
+        args = parser.parse_args(["search", "--regex", "^foo"])
         assert args.regex == "^foo"
 
     def test_match_fields_flag_registered(self) -> None:
         """--match-fields flag is registered and defaults to None."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.match_fields is None
 
     def test_match_fields_flag_parsed_as_list(self) -> None:
         """--match-fields CSV is parsed into a list of field names."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list", "--match-fields", "name,description"])
+        args = parser.parse_args(["search", "--match-fields", "name,description"])
         assert args.match_fields == ["name", "description"]
 
     def test_match_fields_single_value(self) -> None:
         """--match-fields with a single value parses to a one-element list."""
         parser, subparsers = self._make_subparsers()
         register(subparsers)
-        args = parser.parse_args(["list", "--match-fields", "keywords"])
+        args = parser.parse_args(["search", "--match-fields", "keywords"])
         assert args.match_fields == ["keywords"]
 
 
@@ -871,7 +871,7 @@ class TestTreeModeWithFilter:
     """Tests for tree mode filter paths to ensure full coverage."""
 
     def test_tree_filter_zero_match_exit_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --tree exits 0 and prints zero-match note when filter matches nothing."""
+        """run_search --tree exits 0 and prints zero-match note when filter matches nothing."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "alpha")
 
@@ -882,8 +882,8 @@ class TestTreeModeWithFilter:
             no_filter_required=True,  # bypass the entry-count guardrail
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -891,7 +891,7 @@ class TestTreeModeWithFilter:
         assert LIST_FILTER_ZERO_MATCH_NOTE in captured.err
 
     def test_tree_filter_returns_matching_entries(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --tree applies the filter and renders only matching entries."""
+        """run_search --tree applies the filter and renders only matching entries."""
         repo_specs = tmp_path / "repo-specs"
         _write_xml(repo_specs, "foo-entry")
         _write_xml(repo_specs, "bar-entry")
@@ -903,8 +903,8 @@ class TestTreeModeWithFilter:
             no_filter_required=True,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -929,8 +929,8 @@ class TestZeroMatchJsonFormat:
             list_format="json",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0
@@ -953,8 +953,8 @@ class TestEmptyCatalogWithJsonFormat:
             list_format="json",
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         assert result == 0

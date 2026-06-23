@@ -1,4 +1,4 @@
-"""Unit tests for kanon list --all-versions, --limit, --no-limit, --since-version.
+"""Unit tests for kanon search --all-versions, --limit, --no-limit, --since-version.
 
 Covers AC-TEST-001:
 - version walker logic
@@ -16,12 +16,12 @@ from unittest.mock import patch
 import pytest
 from packaging.version import Version
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _build_all_versions_rows,
     _filter_versions_by_constraint,
     _sort_versions_newest_first,
     register,
-    run_list,
+    run_search,
 )
 from kanon_cli.constants import KANON_LIST_LIMIT
 
@@ -268,7 +268,7 @@ class TestKanonListLimitConstant:
 
 
 # ---------------------------------------------------------------------------
-# run_list mutual exclusion checks
+# run_search mutual exclusion checks
 # ---------------------------------------------------------------------------
 
 
@@ -293,20 +293,20 @@ class TestAllVersionsTreeMutualExclusion:
 
     def test_all_versions_and_tree_returns_exit_1(self, capsys):
         args = self._make_args(all_versions=True, tree=True)
-        result = run_list(args)
+        result = run_search(args)
         assert result == 1
 
     def test_all_versions_and_tree_writes_error_to_stderr(self, capsys):
         args = self._make_args(all_versions=True, tree=True)
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert "mutually exclusive" in captured.err.lower() or "cannot" in captured.err.lower()
 
     def test_all_versions_and_tree_no_catalog_work_done(self, capsys):
         """Mutual exclusion is detected before any catalog work."""
         args = self._make_args(all_versions=True, tree=True)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo") as mock_resolve:
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo") as mock_resolve:
+            run_search(args)
             mock_resolve.assert_not_called()
 
 
@@ -331,24 +331,24 @@ class TestLimitNoLimitMutualExclusion:
 
     def test_limit_and_no_limit_returns_exit_1(self, capsys):
         args = self._make_args()
-        result = run_list(args)
+        result = run_search(args)
         assert result == 1
 
     def test_limit_and_no_limit_writes_error_to_stderr(self, capsys):
         args = self._make_args()
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert "mutually exclusive" in captured.err.lower() or "--limit" in captured.err
 
 
 # ---------------------------------------------------------------------------
-# run_list --all-versions flag dispatch tests
+# run_search --all-versions flag dispatch tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListAllVersionsDispatch:
-    """run_list dispatches to version walker when --all-versions is set."""
+    """run_search dispatches to version walker when --all-versions is set."""
 
     def _make_args(self, **kwargs) -> argparse.Namespace:
         defaults = {
@@ -366,30 +366,30 @@ class TestRunListAllVersionsDispatch:
         return argparse.Namespace(**defaults)
 
     def test_all_versions_calls_ls_remote(self, tmp_path):
-        """run_list with --all-versions attempts a git ls-remote call."""
+        """run_search with --all-versions attempts a git ls-remote call."""
         fake_root = tmp_path / "repo"
         fake_root.mkdir()
 
         mock_ls_remote_result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run") as mock_run,
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run") as mock_run,
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
+                "kanon_cli.commands.search._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
-            patch("kanon_cli.commands.list._build_sorted_index", return_value=[]),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search._build_sorted_index", return_value=[]),
         ):
             mock_run.return_value = mock_ls_remote_result
             args = self._make_args()
-            run_list(args)
+            run_search(args)
             # ls-remote should be called
             assert mock_run.called
 
     def test_all_versions_prints_rows_when_nonempty(self, capsys, tmp_path):
-        """When rows are returned, run_list prints them and exits 0."""
-        from kanon_cli.commands.list import VersionRow
+        """When rows are returned, run_search prints them and exits 0."""
+        from kanon_cli.commands.search import VersionRow
 
         fake_rows = [
             VersionRow(name="alpha", version="2.0.0", ref="refs/tags/2.0.0", sha="abc"),
@@ -397,8 +397,8 @@ class TestRunListAllVersionsDispatch:
         ]
 
         args = self._make_args()
-        with patch("kanon_cli.commands.list._walk_all_versions", return_value=fake_rows):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._walk_all_versions", return_value=fake_rows):
+            result = run_search(args)
 
         assert result == 0
         captured = capsys.readouterr()
@@ -406,23 +406,23 @@ class TestRunListAllVersionsDispatch:
         assert lines == ["alpha@2.0.0", "alpha@1.0.0"]
 
     def test_all_versions_exits_0_on_empty_catalog(self, capsys, tmp_path):
-        """When the version list is empty, run_list exits 0 with note."""
+        """When the version list is empty, run_search exits 0 with note."""
         fake_root = tmp_path / "repo"
         fake_root.mkdir()
 
         mock_result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=mock_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=mock_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
+                "kanon_cli.commands.search._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
-            patch("kanon_cli.commands.list._build_sorted_index", return_value=[]),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search._build_sorted_index", return_value=[]),
         ):
             args = self._make_args()
-            result = run_list(args)
+            result = run_search(args)
             assert result == 0
 
 
@@ -442,51 +442,52 @@ class TestRegisterAllVersionsFlags:
         # Parse to list subparser via _subparsers hack
         return root
 
-    def test_all_versions_flag_exists(self):
+    @pytest.mark.parametrize("flag", ["-A", "--all"])
+    def test_all_versions_flag_exists(self, flag):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--all-versions", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", flag, "--catalog-source", "x@y"])
         assert args.all_versions is True
 
     def test_limit_flag_exists(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--limit", "5", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--limit", "5", "--catalog-source", "x@y"])
         assert args.limit == 5
 
     def test_no_limit_flag_exists(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--no-limit", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--no-limit", "--catalog-source", "x@y"])
         assert args.no_limit is True
 
     def test_since_version_flag_exists(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--since-version", ">=1.0", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--since-version", ">=1.0", "--catalog-source", "x@y"])
         assert args.since_version == ">=1.0"
 
     def test_all_versions_default_is_false(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--catalog-source", "x@y"])
         assert args.all_versions is False
 
     def test_limit_default_is_kanon_list_limit(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--catalog-source", "x@y"])
         assert args.limit == KANON_LIST_LIMIT
 
     def test_no_limit_default_is_false(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--catalog-source", "x@y"])
         assert args.no_limit is False
 
     def test_since_version_default_is_none(self):
         root = self._get_list_parser()
-        args = root.parse_args(["list", "--catalog-source", "x@y"])
+        args = root.parse_args(["search", "--catalog-source", "x@y"])
         assert args.since_version is None
 
     def test_help_mentions_kanon_list_limit(self, capsys):
         """AC-DOC-001: --help mentions KANON_LIST_LIMIT default cap."""
         root = self._get_list_parser()
         try:
-            root.parse_args(["list", "--help"])
+            root.parse_args(["search", "--help"])
         except SystemExit:
             pass
         captured = capsys.readouterr()
@@ -496,7 +497,7 @@ class TestRegisterAllVersionsFlags:
         """AC-DOC-001: --help mentions PEP 440 grammar for --since-version."""
         root = self._get_list_parser()
         try:
-            root.parse_args(["list", "--help"])
+            root.parse_args(["search", "--help"])
         except SystemExit:
             pass
         captured = capsys.readouterr()

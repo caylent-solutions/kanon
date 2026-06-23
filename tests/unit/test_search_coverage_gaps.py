@@ -19,7 +19,7 @@ from packaging.version import Version
 
 import pathlib
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _list_tags_from_url,
     _sort_version_pairs_newest_first,
     _walk_all_versions,
@@ -289,7 +289,7 @@ class TestWalkAllVersions:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """When all tags fail PEP 440 parsing, _walk_all_versions prints error and exits 1."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -309,7 +309,7 @@ class TestWalkAllVersions:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When git ls-remote returns no tags, _walk_all_versions returns []."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(list_mod, "_list_tags_from_url", lambda url: [])
 
@@ -323,7 +323,7 @@ class TestWalkAllVersions:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """An invalid since_version constraint prints error and exits 1."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -348,7 +348,7 @@ class TestWalkAllVersions:
         tmp_path,
     ) -> None:
         """limit > 0 truncates the sorted triples before cloning."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -376,10 +376,10 @@ class TestWalkAllVersions:
         )
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list.find_catalog_entry_files", return_value=[fake_xml]),
-            patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=clone_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.find_catalog_entry_files", return_value=[fake_xml]),
+            patch("kanon_cli.commands.search._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",
@@ -397,7 +397,7 @@ class TestWalkAllVersions:
         tmp_path,
     ) -> None:
         """since_version filters out versions not matching the specifier."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -420,10 +420,10 @@ class TestWalkAllVersions:
         )
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list.find_catalog_entry_files", return_value=[fake_xml]),
-            patch("kanon_cli.commands.list._parse_catalog_metadata", return_value=fake_metadata),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=clone_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.find_catalog_entry_files", return_value=[fake_xml]),
+            patch("kanon_cli.commands.search._parse_catalog_metadata", return_value=fake_metadata),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",
@@ -444,7 +444,7 @@ class TestWalkAllVersions:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """When git clone fails, _walk_all_versions prints error and exits 1."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -460,8 +460,8 @@ class TestWalkAllVersions:
         )
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=clone_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 _walk_all_versions(
@@ -481,7 +481,7 @@ class TestWalkAllVersions:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Clone-failure error message includes the URL."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -497,8 +497,8 @@ class TestWalkAllVersions:
         )
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=clone_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
         ):
             with pytest.raises(SystemExit):
                 _walk_all_versions(
@@ -515,7 +515,7 @@ class TestWalkAllVersions:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When since_version filters out all versions, _walk_all_versions returns []."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -537,7 +537,7 @@ class TestWalkAllVersions:
         tmp_path,
     ) -> None:
         """A successful walk returns VersionRow objects with correct data."""
-        import kanon_cli.commands.list as list_mod
+        import kanon_cli.commands.search as list_mod
 
         monkeypatch.setattr(
             list_mod,
@@ -561,13 +561,13 @@ class TestWalkAllVersions:
             )
 
         with (
-            patch("kanon_cli.commands.list.subprocess.run", return_value=clone_result),
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=clone_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
             patch(
-                "kanon_cli.commands.list.find_catalog_entry_files",
+                "kanon_cli.commands.search.find_catalog_entry_files",
                 return_value=[fake_xml_alpha, fake_xml_beta],
             ),
-            patch("kanon_cli.commands.list._parse_catalog_metadata", side_effect=fake_parse),
+            patch("kanon_cli.commands.search._parse_catalog_metadata", side_effect=fake_parse),
         ):
             result = _walk_all_versions(
                 "https://example.com/repo.git@main",

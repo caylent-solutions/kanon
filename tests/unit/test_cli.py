@@ -380,7 +380,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
             "validate": ["xml"],
-            "list": [],
+            "search": [],
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
@@ -613,73 +613,80 @@ class TestSubprocessGlobalFlags:
 
 
 # ---------------------------------------------------------------------------
-# Tests for the new 'list' subcommand registration in build_parser() (AC-FUNC-002)
+# Tests for the 'search' subcommand registration in build_parser()
+# (hard rename of 'list'; AC-16 / FR-10)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestListSubcommandRegistration:
-    """build_parser() registers the 'list' subcommand per AC-FUNC-002."""
+class TestSearchSubcommandRegistration:
+    """build_parser() registers the 'search' subcommand (the renamed 'list')."""
 
-    def test_list_subcommand_exists_in_parser(self) -> None:
-        """build_parser() includes 'list' as a registered subcommand."""
+    def test_search_subcommand_exists_in_parser(self) -> None:
+        """build_parser() includes 'search' as a registered subcommand."""
         parser = build_parser()
-        args = parser.parse_args(["list"])
-        assert args.command == "list"
+        args = parser.parse_args(["search"])
+        assert args.command == "search"
 
-    def test_list_subcommand_has_catalog_source_flag(self) -> None:
-        """The 'list' subcommand accepts --catalog-source (from shared factory)."""
+    def test_list_subcommand_removed_exits_2(self) -> None:
+        """AC-16: the removed list subcommand -> argparse unknown-command exit 2."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["list"])
+        assert exc_info.value.code == 2
+
+    def test_search_subcommand_has_catalog_source_flag(self) -> None:
+        """The 'search' subcommand accepts --catalog-source (from shared factory)."""
         parser = build_parser()
-        args = parser.parse_args(["list", "--catalog-source", "https://example.com/repo.git@main"])
+        args = parser.parse_args(["search", "--catalog-source", "https://example.com/repo.git@main"])
         assert args.catalog_source == "https://example.com/repo.git@main"
 
-    def test_list_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_search_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--catalog-source defaults to None when unset and env var is absent."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         parser = build_parser()
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.catalog_source is None
 
-    def test_list_subcommand_has_no_color_flag(self) -> None:
-        """The 'list' subcommand propagates --no-color from the root parser.
+    def test_search_subcommand_has_no_color_flag(self) -> None:
+        """The 'search' subcommand propagates --no-color from the root parser.
 
         --no-color is a global flag defined on the root parser (before any
-        subcommand token). Verify that 'kanon --no-color list' sets
+        subcommand token). Verify that 'kanon --no-color search' sets
         no_color=True in the parsed namespace.
         """
         parser = build_parser()
-        args = parser.parse_args(["--no-color", "list"])
+        args = parser.parse_args(["--no-color", "search"])
         assert args.no_color is True
 
-    def test_list_subcommand_sets_func(self) -> None:
-        """The 'list' subcommand sets args.func to run_list."""
-        from kanon_cli.commands.list import run_list
+    def test_search_subcommand_sets_func(self) -> None:
+        """The 'search' subcommand sets args.func to run_search."""
+        from kanon_cli.commands.search import run_search
 
         parser = build_parser()
-        args = parser.parse_args(["list"])
-        assert args.func is run_list
+        args = parser.parse_args(["search"])
+        assert args.func is run_search
 
-    def test_list_help_exits_0(self) -> None:
-        """kanon list --help exits 0 without error."""
+    def test_search_help_exits_0(self) -> None:
+        """kanon search --help exits 0 without error."""
         with pytest.raises(SystemExit) as exc_info:
-            main(["list", "--help"])
+            main(["search", "--help"])
         assert exc_info.value.code == 0
 
-    def test_list_help_mentions_catalog_source(self) -> None:
-        """kanon list --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
+    def test_search_help_mentions_catalog_source(self) -> None:
+        """kanon search --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
         import io
 
         parser = build_parser()
         for action in parser._actions:
             if isinstance(action, argparse._SubParsersAction):
-                list_parser = action.choices.get("list")
+                search_parser = action.choices.get("search")
                 break
         else:
-            list_parser = None
+            search_parser = None
 
-        assert list_parser is not None, "list subparser must be registered"
+        assert search_parser is not None, "search subparser must be registered"
         buf = io.StringIO()
-        list_parser.print_help(file=buf)
+        search_parser.print_help(file=buf)
         help_text = buf.getvalue()
         assert "--catalog-source" in help_text
         assert "KANON_CATALOG_SOURCE" in help_text

@@ -1,7 +1,9 @@
-"""Unit tests for src/kanon_cli/commands/list.py.
+"""Unit tests for src/kanon_cli/commands/search.py.
 
-Covers the walker, sorted-index builder, empty-catalog stderr note, and the
-missing-catalog-source canonical error per AC-TEST-001.
+Covers the walker, sorted-index builder, empty-catalog stderr note, the
+missing-catalog-source canonical error, the per-source group header, the
+-A/--all version-history flag, and AC-16 (the removed list subcommand yields
+the argparse unknown-command exit 2) per AC-TEST-001 / FR-10.
 """
 
 import argparse
@@ -11,11 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _build_sorted_index,
     _resolve_manifest_repo,
     register,
-    run_list,
+    run_search,
 )
 from kanon_cli.constants import MISSING_CATALOG_ERROR_TEMPLATE
 
@@ -74,12 +76,12 @@ class TestResolveManifestRepo:
         mock_result = type("R", (), {"returncode": 0, "stderr": ""})()
 
         with (
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list.subprocess.run", return_value=mock_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=mock_result),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
+                "kanon_cli.commands.search._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
         ):
             result = _resolve_manifest_repo("https://example.com/repo.git@main")
 
@@ -90,12 +92,12 @@ class TestResolveManifestRepo:
         mock_result = type("R", (), {"returncode": 1, "stderr": "fatal: repo not found"})()
 
         with (
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value="/tmp/kanon-test"),
-            patch("kanon_cli.commands.list.subprocess.run", return_value=mock_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value="/tmp/kanon-test"),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=mock_result),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
+                "kanon_cli.commands.search._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 _resolve_manifest_repo("https://example.com/repo.git@main")
@@ -106,12 +108,12 @@ class TestResolveManifestRepo:
         mock_result = type("R", (), {"returncode": 1, "stderr": "fatal: repo not found"})()
 
         with (
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value="/tmp/kanon-test"),
-            patch("kanon_cli.commands.list.subprocess.run", return_value=mock_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value="/tmp/kanon-test"),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=mock_result),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
+                "kanon_cli.commands.search._parse_catalog_source", return_value=("https://example.com/repo.git", "main")
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
         ):
             with pytest.raises(SystemExit):
                 _resolve_manifest_repo("https://example.com/repo.git@main")
@@ -132,12 +134,13 @@ class TestResolveManifestRepo:
             return mock_result
 
         with (
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list.subprocess.run", side_effect=capture_run),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", side_effect=capture_run),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source", return_value=("https://example.com/repo.git", "latest")
+                "kanon_cli.commands.search._parse_catalog_source",
+                return_value=("https://example.com/repo.git", "latest"),
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=False),
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=False),
         ):
             _resolve_manifest_repo("https://example.com/repo.git@latest")
 
@@ -153,14 +156,14 @@ class TestResolveManifestRepo:
         mock_result = type("R", (), {"returncode": 0, "stderr": ""})()
 
         with (
-            patch("kanon_cli.commands.list.tempfile.mkdtemp", return_value=str(tmp_path)),
-            patch("kanon_cli.commands.list.subprocess.run", return_value=mock_result),
+            patch("kanon_cli.commands.search.tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("kanon_cli.commands.search.subprocess.run", return_value=mock_result),
             patch(
-                "kanon_cli.commands.list._parse_catalog_source",
+                "kanon_cli.commands.search._parse_catalog_source",
                 return_value=("https://example.com/repo.git", ">=1.0.0"),
             ),
-            patch("kanon_cli.commands.list.is_version_constraint", return_value=True),
-            patch("kanon_cli.commands.list.resolve_version", return_value="refs/tags/1.2.0") as mock_rv,
+            patch("kanon_cli.commands.search.is_version_constraint", return_value=True),
+            patch("kanon_cli.commands.search.resolve_version", return_value="refs/tags/1.2.0") as mock_rv,
         ):
             _resolve_manifest_repo("https://example.com/repo.git@>=1.0.0")
 
@@ -207,13 +210,13 @@ class TestBuildSortedIndex:
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list: missing catalog source
+# Tests for run_search: missing catalog source
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListMissingCatalogSource:
-    """run_list() returns non-zero with the canonical error when no source is set."""
+    """run_search() returns non-zero with the canonical error when no source is set."""
 
     @pytest.fixture(autouse=True)
     def _clear_catalog_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,99 +230,99 @@ class TestRunListMissingCatalogSource:
         )
 
     def test_missing_source_exits_nonzero(self) -> None:
-        """run_list returns 1 when catalog_source is None and env var is unset."""
+        """run_search returns 1 when catalog_source is None and env var is unset."""
         args = self._make_args(catalog_source=None)
-        result = run_list(args)
+        result = run_search(args)
         assert result != 0
 
     def test_missing_source_writes_canonical_error_to_stderr(self, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes the canonical missing-catalog error to stderr."""
+        """run_search writes the canonical missing-catalog error to stderr."""
         args = self._make_args(catalog_source=None)
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
         assert "catalog source" in captured.err.lower()
 
     def test_missing_source_empty_stdout(self, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes nothing to stdout on missing catalog source."""
+        """run_search writes nothing to stdout on missing catalog source."""
         args = self._make_args(catalog_source=None)
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_canonical_error_mentions_list_command(self, capsys: pytest.CaptureFixture) -> None:
-        """The canonical error names the 'list' command in the error text."""
+    def test_canonical_error_mentions_search_command(self, capsys: pytest.CaptureFixture) -> None:
+        """The canonical error names the 'search' command in the error text."""
         args = self._make_args(catalog_source=None)
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
-        assert "list" in captured.err
+        assert "search" in captured.err
 
     def test_canonical_error_mentions_catalog_source_flag(self, capsys: pytest.CaptureFixture) -> None:
         """The canonical error mentions --catalog-source and KANON_CATALOG_SOURCE."""
         args = self._make_args(catalog_source=None)
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert "--catalog-source" in captured.err
         assert "KANON_CATALOG_SOURCE" in captured.err
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list: empty catalog
+# Tests for run_search: empty catalog
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListEmptyCatalog:
-    """run_list() exits 0 with empty stdout and a stderr note for empty repos."""
+    """run_search() exits 0 with empty stdout and a stderr note for empty repos."""
 
     def test_empty_catalog_exits_0(self, tmp_path: Path) -> None:
-        """run_list exits 0 when the manifest repo has zero marketplace XMLs."""
+        """run_search exits 0 when the manifest repo has zero marketplace XMLs."""
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
         assert result == 0
 
     def test_empty_catalog_empty_stdout(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes nothing to stdout when the manifest repo is empty."""
+        """run_search writes nothing to stdout when the manifest repo is empty."""
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         assert captured.out == ""
 
     def test_empty_catalog_writes_stderr_note(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes 'manifest repo contains 0 entries' to stderr."""
+        """run_search writes 'manifest repo contains 0 entries' to stderr."""
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         assert "manifest repo contains 0 entries" in captured.err
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list: happy path
+# Tests for run_search: happy path
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListHappyPath:
-    """run_list() prints sorted entry names to stdout for non-empty catalogs."""
+    """run_search() prints sorted entry names to stdout for non-empty catalogs."""
 
     def test_prints_sorted_names(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list prints entry names sorted lexicographically, one per line."""
+        """run_search prints entry names sorted lexicographically, one per line."""
         repo_specs = tmp_path / "repo-specs"
         for name in ["zebra", "alpha", "mango"]:
             _write_marketplace_xml(repo_specs, name)
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         captured = capsys.readouterr()
         lines = captured.out.splitlines()
@@ -327,23 +330,23 @@ class TestRunListHappyPath:
         assert result == 0
 
     def test_exits_0_on_happy_path(self, tmp_path: Path) -> None:
-        """run_list exits 0 when catalog has entries."""
+        """run_search exits 0 when catalog has entries."""
         repo_specs = tmp_path / "repo-specs"
         _write_marketplace_xml(repo_specs, "my-entry")
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
         assert result == 0
 
     def test_empty_stderr_on_happy_path(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes nothing to stderr when the catalog is non-empty (no warnings in fixture)."""
+        """run_search writes nothing to stderr when the catalog is non-empty (no warnings in fixture)."""
         repo_specs = tmp_path / "repo-specs"
         _write_marketplace_xml(repo_specs, "my-entry")
 
         args = argparse.Namespace(catalog_source="unused", no_color=False)
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
         captured = capsys.readouterr()
         # stderr may contain recommended-field warnings from metadata parsing;
         # what must NOT appear is the 0-entries note or any ERROR line
@@ -358,80 +361,143 @@ class TestRunListHappyPath:
 
 @pytest.mark.unit
 class TestRegister:
-    """register() correctly registers the 'list' subparser."""
+    """register() correctly registers the 'search' subparser (hard rename of 'list')."""
 
-    def test_register_adds_list_subcommand(self) -> None:
-        """register() adds a 'list' entry to the subparsers action."""
+    def test_register_adds_search_subcommand(self) -> None:
+        """register() adds a 'search' entry to the subparsers action."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
-        args = parser.parse_args(["list"])
-        assert args.command == "list"
+        args = parser.parse_args(["search"])
+        assert args.command == "search"
 
-    def test_list_subparser_has_catalog_source(self) -> None:
-        """The list subparser includes the --catalog-source flag."""
+    def test_search_subparser_has_catalog_source(self) -> None:
+        """The search subparser includes the --catalog-source flag."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
-        args = parser.parse_args(["list", "--catalog-source", "https://example.com/repo.git@main"])
+        args = parser.parse_args(["search", "--catalog-source", "https://example.com/repo.git@main"])
         assert args.catalog_source == "https://example.com/repo.git@main"
 
-    def test_list_subparser_no_color_via_root_parser(self) -> None:
-        """The --no-color flag on the root parser propagates to the list subcommand namespace.
+    def test_search_subparser_no_color_via_root_parser(self) -> None:
+        """The --no-color flag on the root parser propagates to the search subcommand namespace.
 
-        The list subparser does NOT independently define --no-color; it relies on
+        The search subparser does NOT independently define --no-color; it relies on
         the root parser's global --no-color flag (added by add_global_flags) per
         the pattern used by all other subcommands. Verify via build_parser() that
-        'kanon --no-color list' propagates no_color=True to the namespace.
+        'kanon --no-color search' propagates no_color=True to the namespace.
         """
         from kanon_cli.cli import build_parser
 
         parser = build_parser()
-        args = parser.parse_args(["--no-color", "list"])
+        args = parser.parse_args(["--no-color", "search"])
         assert args.no_color is True
 
-    def test_list_subparser_sets_func(self) -> None:
-        """register() sets args.func to run_list."""
+    def test_search_subparser_sets_func(self) -> None:
+        """register() sets args.func to run_search."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
-        args = parser.parse_args(["list"])
-        assert args.func is run_list
+        args = parser.parse_args(["search"])
+        assert args.func is run_search
 
-    def test_list_help_mentions_catalog_source(self) -> None:
-        """list --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
+    def test_search_help_mentions_catalog_source(self) -> None:
+        """search --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
 
         import io
 
-        # Capture help output for the list subcommand
-        list_parser = subparsers.choices["list"]
+        # Capture help output for the search subcommand
+        search_parser = subparsers.choices["search"]
         buf = io.StringIO()
-        list_parser.print_help(file=buf)
+        search_parser.print_help(file=buf)
         help_text = buf.getvalue()
         assert "--catalog-source" in help_text
         assert "KANON_CATALOG_SOURCE" in help_text
 
-    def test_list_short_dash_h_exits_0(self) -> None:
-        """kanon list -h exits 0 (add_help=True on the list subparser)."""
-        from kanon_cli.cli import main
-
-        with pytest.raises(SystemExit) as exc_info:
-            main(["list", "-h"])
-        assert exc_info.value.code == 0
-
-    def test_list_subparser_has_add_help_true(self) -> None:
-        """The 'list' subparser has add_help=True set explicitly."""
+    def test_search_help_mentions_all_flag(self) -> None:
+        """search --help text documents the -A/--all version-history flag."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
-        list_parser = subparsers.choices["list"]
-        assert list_parser.add_help is True, "list subparser must have add_help=True so '-h' is accepted"
+
+        import io
+
+        search_parser = subparsers.choices["search"]
+        buf = io.StringIO()
+        search_parser.print_help(file=buf)
+        help_text = buf.getvalue()
+        assert "-A" in help_text
+        assert "--all" in help_text
+
+    def test_search_short_dash_h_exits_0(self) -> None:
+        """kanon search -h exits 0 (add_help=True on the search subparser)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["search", "-h"])
+        assert exc_info.value.code == 0
+
+    def test_search_subparser_has_add_help_true(self) -> None:
+        """The 'search' subparser has add_help=True set explicitly."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        search_parser = subparsers.choices["search"]
+        assert search_parser.add_help is True, "search subparser must have add_help=True so '-h' is accepted"
+
+    def test_list_command_is_gone(self) -> None:
+        """AC-16: 'list' is no longer a registered subcommand (hard rename, no alias).
+
+        register() registers only 'search'; the old 'list' key must be absent so
+        the removed list subcommand resolves to the argparse unknown-command path.
+        """
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        register(subparsers)
+        assert "search" in subparsers.choices
+        assert "list" not in subparsers.choices
+
+
+# ---------------------------------------------------------------------------
+# AC-16: the removed list subcommand -> argparse unknown-command exit 2
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestListUnknownCommand:
+    """AC-16: invoking the removed list subcommand yields the argparse exit code 2."""
+
+    def test_kanon_list_exits_2(self) -> None:
+        """`kanon` with the removed list token exits with code 2 (argparse invalid-choice)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["list"])
+        assert exc_info.value.code == 2
+
+    def test_kanon_search_help_exits_0(self) -> None:
+        """`kanon search --help` exits 0 (the rename target is wired and accepts --help)."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["search", "--help"])
+        assert exc_info.value.code == 0
+
+    def test_kanon_list_error_names_invalid_choice(self, capsys: pytest.CaptureFixture) -> None:
+        """The unknown-command error names 'list' as the invalid choice and lists 'search'."""
+        from kanon_cli.cli import main
+
+        with pytest.raises(SystemExit):
+            main(["list"])
+        captured = capsys.readouterr()
+        assert "list" in captured.err
+        assert "search" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -447,17 +513,128 @@ class TestMissingCatalogErrorTemplate:
         assert isinstance(MISSING_CATALOG_ERROR_TEMPLATE, str)
 
     def test_template_contains_error_prefix(self) -> None:
-        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="list")
+        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="search")
         assert rendered.startswith("ERROR:")
 
     def test_template_mentions_catalog_source_flag(self) -> None:
-        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="list")
+        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="search")
         assert "--catalog-source" in rendered
 
     def test_template_mentions_env_var(self) -> None:
-        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="list")
+        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="search")
         assert "KANON_CATALOG_SOURCE" in rendered
 
     def test_template_substitutes_command_name(self) -> None:
-        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="list")
-        assert "list" in rendered
+        rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="search")
+        assert "search" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Source grouping (spec Section 4.1 / FR-10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSourceGroupHeader:
+    """run_search() groups results under a per-source header on stderr."""
+
+    def test_header_helper_formats_source(self) -> None:
+        """_format_source_group_header renders 'Source: <url>@<ref>'."""
+        from kanon_cli.commands.search import _format_source_group_header
+
+        header = _format_source_group_header("https://example.com/repo.git@main")
+        assert header == "Source: https://example.com/repo.git@main"
+
+    def test_header_helper_rejects_empty_source(self) -> None:
+        """_format_source_group_header fails fast on an empty source (no silent blank label)."""
+        from kanon_cli.commands.search import _format_source_group_header
+
+        with pytest.raises(ValueError):
+            _format_source_group_header("")
+
+    def test_run_search_emits_source_header_to_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        """run_search writes the resolved source group header to stderr, not stdout."""
+        repo_specs = tmp_path / "repo-specs"
+        for name in ["alpha", "beta"]:
+            _write_marketplace_xml(repo_specs, name)
+
+        source = "https://example.com/repo.git@main"
+        args = argparse.Namespace(catalog_source=source, no_color=False)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        # Header is on stderr (grouping label), not stdout (pipeable entry names).
+        assert f"Source: {source}" in captured.err
+        assert "Source:" not in captured.out
+        assert captured.out.splitlines() == ["alpha", "beta"]
+
+    def test_missing_source_emits_no_header(
+        self, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No source resolved -> no group header (the canonical error is emitted instead)."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+        args = argparse.Namespace(catalog_source=None, no_color=False)
+        run_search(args)
+        captured = capsys.readouterr()
+        assert "Source:" not in captured.err
+        assert "Source:" not in captured.out
+
+
+# ---------------------------------------------------------------------------
+# -A/--all version-history flag dispatch (spec Section 4.1 / FR-10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAllVersionsFlagDispatch:
+    """run_search() with -A/--all walks all tagged versions instead of latest-only."""
+
+    def _make_all_args(self, source: str) -> argparse.Namespace:
+        return argparse.Namespace(
+            catalog_source=source,
+            all_versions=True,
+            no_limit=False,
+            limit=50,
+            since_version=None,
+            list_format=None,
+            tree=False,
+            detail=False,
+            no_color=False,
+        )
+
+    def test_all_flag_dispatches_to_version_walker(self, capsys: pytest.CaptureFixture) -> None:
+        """-A/--all routes through the historical-version walker, emitting <name>@<version> rows."""
+        from kanon_cli.commands.search import VersionRow
+
+        source = "https://example.com/repo.git@main"
+        rows = [
+            VersionRow(name="alpha", version="2.0.0", ref="refs/tags/2.0.0", sha="sha2"),
+            VersionRow(name="alpha", version="1.0.0", ref="refs/tags/1.0.0", sha="sha1"),
+        ]
+        args = self._make_all_args(source)
+        with patch("kanon_cli.commands.search._walk_all_versions", return_value=rows) as walk:
+            result = run_search(args)
+
+        captured = capsys.readouterr()
+        assert result == 0
+        walk.assert_called_once()
+        assert captured.out.splitlines() == ["alpha@2.0.0", "alpha@1.0.0"]
+        # Even in all-versions mode the per-source group header is emitted to stderr.
+        assert f"Source: {source}" in captured.err
+
+    def test_default_is_latest_only(self, tmp_path: Path) -> None:
+        """Without -A/--all, run_search does NOT invoke the version walker (latest-only default)."""
+        repo_specs = tmp_path / "repo-specs"
+        _write_marketplace_xml(repo_specs, "alpha")
+
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
+        with (
+            patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path),
+            patch("kanon_cli.commands.search._walk_all_versions") as walk,
+        ):
+            result = run_search(args)
+
+        assert result == 0
+        walk.assert_not_called()

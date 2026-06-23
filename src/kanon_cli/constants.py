@@ -355,15 +355,15 @@ RECOMMENDED_CHAR_RE = re.compile(r"^[a-zA-Z0-9_-]*$")
 # Defined here (not inline in catalog.py) so the rule is testable data.
 KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE = RECOMMENDED_CHAR_RE
 
-# -- kanon list --tree threshold guardrail --
+# -- kanon search --tree threshold guardrail --
 # Maximum number of catalog entries allowed before the threshold guardrail
 # requires the operator to supply a filter (positional substring, --regex,
 # --max-depth 0) or override with --no-filter-required.
 # Overridable via the KANON_TREE_NO_FILTER_THRESHOLD environment variable.
 KANON_TREE_NO_FILTER_THRESHOLD: int = _env_int("KANON_TREE_NO_FILTER_THRESHOLD", 20)
 
-# -- kanon list --all-versions cap --
-# Maximum number of catalog versions walked when --all-versions is given and
+# -- kanon search -A/--all version-walk cap --
+# Maximum number of catalog versions walked when -A/--all is given and
 # neither --limit N nor --no-limit is explicitly passed.
 # Overridable via the KANON_LIST_LIMIT environment variable.
 KANON_LIST_LIMIT: int = _env_int("KANON_LIST_LIMIT", 50)

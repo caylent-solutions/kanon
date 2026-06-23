@@ -1,4 +1,4 @@
-"""Unit tests for ``kanon list --format json``.
+"""Unit tests for ``kanon search --format json``.
 
 Covers AC-TEST-001:
 - JSON shape for default mode: array of {name, display-name, type, description, version}
@@ -18,15 +18,15 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _build_all_versions_payload,
     _build_catalog_payload,
     _format_json_all_versions,
     _format_json_catalog,
     register,
-    run_list,
+    run_search,
 )
-from kanon_cli.commands.list import VersionRow
+from kanon_cli.commands.search import VersionRow
 from kanon_cli.core.metadata import CatalogMetadata
 
 
@@ -64,9 +64,9 @@ def _missing_type_metadata(name: str = "package-b") -> CatalogMetadata:
 
 
 def _make_args(**kwargs) -> argparse.Namespace:
-    """Build a minimal argparse.Namespace for run_list().
+    """Build a minimal argparse.Namespace for run_search().
 
-    list_format defaults to None (same as argparse default) so that run_list
+    list_format defaults to None (same as argparse default) so that run_search
     resolves the effective format via its env-var precedence logic. Pass
     list_format="names" or list_format="json" to simulate an explicit CLI flag.
     """
@@ -296,8 +296,8 @@ class TestRegisterFormatFlag:
         top = argparse.ArgumentParser()
         subs = top.add_subparsers()
         register(subs)
-        args = top.parse_args(["list", "--catalog-source", "x@main"])
-        # Default is None so run_list can distinguish "not set" from explicit "names"
+        args = top.parse_args(["search", "--catalog-source", "x@main"])
+        # Default is None so run_search can distinguish "not set" from explicit "names"
         assert args.list_format is None
 
     def test_format_flag_accepts_names(self):
@@ -305,7 +305,7 @@ class TestRegisterFormatFlag:
         top = argparse.ArgumentParser()
         subs = top.add_subparsers()
         register(subs)
-        args = top.parse_args(["list", "--format", "names", "--catalog-source", "x@main"])
+        args = top.parse_args(["search", "--format", "names", "--catalog-source", "x@main"])
         assert args.list_format == "names"
 
     def test_format_flag_accepts_json(self):
@@ -313,7 +313,7 @@ class TestRegisterFormatFlag:
         top = argparse.ArgumentParser()
         subs = top.add_subparsers()
         register(subs)
-        args = top.parse_args(["list", "--format", "json", "--catalog-source", "x@main"])
+        args = top.parse_args(["search", "--format", "json", "--catalog-source", "x@main"])
         assert args.list_format == "json"
 
     def test_format_flag_rejects_unknown_choice(self):
@@ -322,7 +322,7 @@ class TestRegisterFormatFlag:
         subs = top.add_subparsers()
         register(subs)
         with pytest.raises(SystemExit) as exc_info:
-            top.parse_args(["list", "--format", "csv", "--catalog-source", "x@main"])
+            top.parse_args(["search", "--format", "csv", "--catalog-source", "x@main"])
         assert exc_info.value.code != 0
 
     def test_help_mentions_format_flag(self, capsys):
@@ -331,7 +331,7 @@ class TestRegisterFormatFlag:
         subs = top.add_subparsers()
         register(subs)
         with pytest.raises(SystemExit):
-            top.parse_args(["list", "--help"])
+            top.parse_args(["search", "--help"])
         captured = capsys.readouterr()
         assert "--format" in captured.out
 
@@ -341,7 +341,7 @@ class TestRegisterFormatFlag:
         subs = top.add_subparsers()
         register(subs)
         with pytest.raises(SystemExit):
-            top.parse_args(["list", "--help"])
+            top.parse_args(["search", "--help"])
         captured = capsys.readouterr()
         assert "KANON_LIST_FORMAT" in captured.out
 
@@ -351,7 +351,7 @@ class TestRegisterFormatFlag:
         subs = top.add_subparsers()
         register(subs)
         with pytest.raises(SystemExit):
-            top.parse_args(["list", "--help"])
+            top.parse_args(["search", "--help"])
         captured = capsys.readouterr()
         # The help must mention the incompatibility with --tree
         assert "--tree" in captured.out
@@ -386,10 +386,10 @@ class TestEnvVarListFormat:
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
 
         with (
-            patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path),
+            patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path),
             patch.dict("os.environ", {"KANON_LIST_FORMAT": "json"}),
         ):
-            exit_code = run_list(args)
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -417,10 +417,10 @@ class TestEnvVarListFormat:
         args = _make_args(catalog_source="file:///unused@main", list_format="names")
 
         with (
-            patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path),
+            patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path),
             patch.dict("os.environ", {"KANON_LIST_FORMAT": "json"}),
         ):
-            exit_code = run_list(args)
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -445,13 +445,13 @@ class TestFormatJsonTreeMutualExclusion:
     """AC-FUNC-006: --format json --tree is a hard error."""
 
     def test_format_json_with_tree_exits_nonzero(self, capsys):
-        """run_list exits with code 1 when --format json and --tree are combined."""
+        """run_search exits with code 1 when --format json and --tree are combined."""
         args = _make_args(
             catalog_source="file:///unused@main",
             list_format="json",
             tree=True,
         )
-        exit_code = run_list(args)
+        exit_code = run_search(args)
         assert exit_code == 1
 
     def test_format_json_with_tree_prints_error_to_stderr(self, capsys):
@@ -461,7 +461,7 @@ class TestFormatJsonTreeMutualExclusion:
             list_format="json",
             tree=True,
         )
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert "ERROR" in captured.err
         assert "json" in captured.err.lower() or "format" in captured.err.lower()
@@ -474,7 +474,7 @@ class TestFormatJsonTreeMutualExclusion:
             list_format="json",
             tree=True,
         )
-        run_list(args)
+        run_search(args)
         captured = capsys.readouterr()
         assert captured.out == ""
 
@@ -496,8 +496,8 @@ class TestEmptyCatalogJsonFormat:
 
         args = _make_args(catalog_source="file:///unused@main", list_format="json")
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            exit_code = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -511,8 +511,8 @@ class TestEmptyCatalogJsonFormat:
 
         args = _make_args(catalog_source="file:///unused@main", list_format="json")
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "0 entries" in captured.err
@@ -525,8 +525,8 @@ class TestEmptyCatalogJsonFormat:
             all_versions=True,
         )
 
-        with patch("kanon_cli.commands.list._walk_all_versions", return_value=[]):
-            exit_code = run_list(args)
+        with patch("kanon_cli.commands.search._walk_all_versions", return_value=[]):
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -535,16 +535,16 @@ class TestEmptyCatalogJsonFormat:
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list() with --format json default mode
+# Tests for run_search() with --format json default mode
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunListJsonDefaultMode:
-    """AC-FUNC-003: run_list with json format in default mode."""
+    """AC-FUNC-003: run_search with json format in default mode."""
 
     def test_json_output_parseable(self, tmp_path: Path, capsys):
-        """run_list --format json produces parseable JSON on stdout."""
+        """run_search --format json produces parseable JSON on stdout."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
         xml_content = (
@@ -560,8 +560,8 @@ class TestRunListJsonDefaultMode:
 
         args = _make_args(catalog_source="file:///unused@main", list_format="json")
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            exit_code = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -586,8 +586,8 @@ class TestRunListJsonDefaultMode:
 
         args = _make_args(catalog_source="file:///unused@main", list_format="json")
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
@@ -600,7 +600,7 @@ class TestRunListJsonDefaultMode:
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list() with --format json --detail (AC-FUNC-004)
+# Tests for run_search() with --format json --detail (AC-FUNC-004)
 # ---------------------------------------------------------------------------
 
 
@@ -626,12 +626,12 @@ class TestRunListJsonDetailMode:
         args_default = _make_args(catalog_source="file:///unused@main", list_format="json", detail=False)
         args_detail = _make_args(catalog_source="file:///unused@main", list_format="json", detail=True)
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args_default)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args_default)
             captured_default = capsys.readouterr()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args_detail)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args_detail)
             captured_detail = capsys.readouterr()
 
         parsed_default = json.loads(captured_default.out)
@@ -640,7 +640,7 @@ class TestRunListJsonDetailMode:
 
 
 # ---------------------------------------------------------------------------
-# Tests for run_list() with --format json --all-versions (AC-FUNC-005)
+# Tests for run_search() with --format json --all-versions (AC-FUNC-005)
 # ---------------------------------------------------------------------------
 
 
@@ -660,8 +660,8 @@ class TestRunListJsonAllVersionsMode:
             all_versions=True,
         )
 
-        with patch("kanon_cli.commands.list._walk_all_versions", return_value=rows):
-            exit_code = run_list(args)
+        with patch("kanon_cli.commands.search._walk_all_versions", return_value=rows):
+            exit_code = run_search(args)
 
         assert exit_code == 0
         captured = capsys.readouterr()
@@ -680,8 +680,8 @@ class TestRunListJsonAllVersionsMode:
             all_versions=True,
         )
 
-        with patch("kanon_cli.commands.list._walk_all_versions", return_value=rows):
-            run_list(args)
+        with patch("kanon_cli.commands.search._walk_all_versions", return_value=rows):
+            run_search(args)
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
@@ -701,26 +701,26 @@ class TestInvalidEnvVarListFormat:
     """AC-FAIL-FAST-001: invalid KANON_LIST_FORMAT value must error, not fall through."""
 
     def test_invalid_env_var_returns_exit_code_1(self, capsys):
-        """run_list returns 1 when KANON_LIST_FORMAT is set to an unrecognized value."""
+        """run_search returns 1 when KANON_LIST_FORMAT is set to an unrecognized value."""
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
         with patch.dict("os.environ", {"KANON_LIST_FORMAT": "csv"}):
-            exit_code = run_list(args)
+            exit_code = run_search(args)
         assert exit_code == 1
 
     def test_invalid_env_var_prints_error_to_stderr(self, capsys):
-        """run_list prints an ERROR message to stderr for an invalid KANON_LIST_FORMAT value."""
+        """run_search prints an ERROR message to stderr for an invalid KANON_LIST_FORMAT value."""
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
         with patch.dict("os.environ", {"KANON_LIST_FORMAT": "csv"}):
-            run_list(args)
+            run_search(args)
         captured = capsys.readouterr()
         assert "ERROR" in captured.err
         assert "KANON_LIST_FORMAT" in captured.err
 
     def test_invalid_env_var_no_stdout(self, capsys):
-        """run_list produces no stdout output when KANON_LIST_FORMAT is invalid."""
+        """run_search produces no stdout output when KANON_LIST_FORMAT is invalid."""
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
         with patch.dict("os.environ", {"KANON_LIST_FORMAT": "xml"}):
-            run_list(args)
+            run_search(args)
         captured = capsys.readouterr()
         assert captured.out == ""
 
@@ -729,14 +729,14 @@ class TestInvalidEnvVarListFormat:
         """Any value that is not 'names' or 'json' (case-sensitive) triggers exit 1."""
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
         with patch.dict("os.environ", {"KANON_LIST_FORMAT": bad_value}):
-            exit_code = run_list(args)
+            exit_code = run_search(args)
         assert exit_code == 1
 
     def test_invalid_env_var_error_mentions_valid_choices(self, capsys):
         """The error message names the valid choices ('names', 'json')."""
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
         with patch.dict("os.environ", {"KANON_LIST_FORMAT": "table"}):
-            run_list(args)
+            run_search(args)
         captured = capsys.readouterr()
         assert "names" in captured.err
         assert "json" in captured.err
@@ -753,19 +753,19 @@ class TestListFormatEnvVarConstant:
 
     def test_list_format_env_var_exists_inline_in_list_module(self):
         """_KANON_LIST_FORMAT_ENV_VAR is defined as a private module-level constant in list.py."""
-        import kanon_cli.commands.list as list_module
+        import kanon_cli.commands.search as list_module
 
         assert hasattr(list_module, "_KANON_LIST_FORMAT_ENV_VAR")
 
     def test_list_format_env_var_value_is_correct(self):
         """_KANON_LIST_FORMAT_ENV_VAR equals 'KANON_LIST_FORMAT'."""
-        import kanon_cli.commands.list as list_module
+        import kanon_cli.commands.search as list_module
 
         assert list_module._KANON_LIST_FORMAT_ENV_VAR == "KANON_LIST_FORMAT"
 
     def test_list_format_env_var_is_string(self):
         """_KANON_LIST_FORMAT_ENV_VAR is a str."""
-        import kanon_cli.commands.list as list_module
+        import kanon_cli.commands.search as list_module
 
         assert isinstance(list_module._KANON_LIST_FORMAT_ENV_VAR, str)
 

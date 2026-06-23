@@ -1,4 +1,4 @@
-"""Unit tests for the --tree renderer in kanon list.
+"""Unit tests for the --tree renderer in kanon search.
 
 Covers:
 - Tree row format: ``<kind> <name>@<resolved-spec> (<sha-12>)``.
@@ -20,12 +20,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.commands.list import (
+from kanon_cli.commands.search import (
     _parse_xml_includes_and_projects,
     _render_tree,
     _resolve_include_path,
     register,
-    run_list,
+    run_search,
 )
 from kanon_cli.constants import KANON_TREE_NO_FILTER_THRESHOLD
 
@@ -333,7 +333,7 @@ class TestRenderTreeFormat:
 
 @pytest.mark.unit
 class TestThresholdGuardrail:
-    """run_list() with --tree fires the threshold guardrail when catalog is too large."""
+    """run_search() with --tree fires the threshold guardrail when catalog is too large."""
 
     def _make_large_catalog(self, tmp_path: Path, count: int) -> None:
         """Create ``count`` marketplace XML files in tmp_path/repo-specs/."""
@@ -361,13 +361,13 @@ class TestThresholdGuardrail:
         )
 
     def test_guardrail_fires_when_over_threshold(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """With --tree and no filter, run_list exits non-zero when entries > threshold."""
+        """With --tree and no filter, run_search exits non-zero when entries > threshold."""
         count = KANON_TREE_NO_FILTER_THRESHOLD + 1
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result != 0, "Expected non-zero exit when guardrail fires"
 
@@ -377,8 +377,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert str(KANON_TREE_NO_FILTER_THRESHOLD) in captured.err, (
@@ -391,8 +391,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert str(count) in captured.err, (
@@ -405,8 +405,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         # The error should mention some form of positional/substring filtering
@@ -420,8 +420,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "--regex" in captured.err, f"Guardrail message must suggest --regex; got: {captured.err!r}"
@@ -432,8 +432,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "--max-depth 0" in captured.err or "--max-depth" in captured.err, (
@@ -446,8 +446,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "--no-filter-required" in captured.err, (
@@ -460,8 +460,8 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err, (
@@ -475,9 +475,9 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            with patch("kanon_cli.commands.list._render_tree", return_value=["entry fake@1.0.0 (aabbccddeeff)"]):
-                result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            with patch("kanon_cli.commands.search._render_tree", return_value=["entry fake@1.0.0 (aabbccddeeff)"]):
+                result = run_search(args)
 
         assert result == 0, "Guardrail must NOT fire at exactly threshold entries"
 
@@ -496,8 +496,8 @@ class TestThresholdGuardrail:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0, "Guardrail must not fire in non-tree mode even for large catalogs"
 
@@ -507,12 +507,12 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args(no_filter_required=True)
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             with patch(
-                "kanon_cli.commands.list._render_tree",
+                "kanon_cli.commands.search._render_tree",
                 return_value=["entry fake@1.0.0 (aabbccddeeff)"],
             ):
-                result = run_list(args)
+                result = run_search(args)
 
         assert result == 0, "--no-filter-required should bypass the guardrail"
 
@@ -522,12 +522,12 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
         args = self._make_args(max_depth=0)
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             with patch(
-                "kanon_cli.commands.list._render_tree",
+                "kanon_cli.commands.search._render_tree",
                 return_value=["entry fake@1.0.0 (aabbccddeeff)"],
             ):
-                result = run_list(args)
+                result = run_search(args)
 
         assert result == 0, "--max-depth 0 should bypass the guardrail as a valid filter"
 
@@ -542,7 +542,7 @@ class TestTreeAllVersionsMutualExclusion:
     """--tree --all-versions is a hard error detected before catalog is resolved."""
 
     def test_tree_and_all_versions_is_hard_error(self, capsys: pytest.CaptureFixture) -> None:
-        """run_list exits non-zero when both --tree and --all-versions are set."""
+        """run_search exits non-zero when both --tree and --all-versions are set."""
         args = argparse.Namespace(
             catalog_source="https://example.com/repo.git@main",
             tree=True,
@@ -560,14 +560,14 @@ class TestTreeAllVersionsMutualExclusion:
             resolve_called.append(src)
             raise AssertionError("_resolve_manifest_repo should NOT be called when flags conflict")
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", side_effect=_record_resolve):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=_record_resolve):
+            result = run_search(args)
 
         assert result != 0, "--tree --all-versions must produce a non-zero exit code"
         assert not resolve_called, "Conflict must be detected before _resolve_manifest_repo is called"
 
     def test_tree_and_all_versions_writes_error_to_stderr(self, capsys: pytest.CaptureFixture) -> None:
-        """run_list writes an ERROR: message to stderr for --tree --all-versions conflict."""
+        """run_search writes an ERROR: message to stderr for --tree --all-versions conflict."""
         args = argparse.Namespace(
             catalog_source="https://example.com/repo.git@main",
             tree=True,
@@ -578,8 +578,8 @@ class TestTreeAllVersionsMutualExclusion:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", side_effect=AssertionError("not reached")):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=AssertionError("not reached")):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err, (
@@ -587,7 +587,7 @@ class TestTreeAllVersionsMutualExclusion:
         )
 
     def test_tree_and_all_versions_mentions_both_flags(self, capsys: pytest.CaptureFixture) -> None:
-        """The conflict error message mentions both --tree and --all-versions."""
+        """The conflict error message mentions both --tree and the -A/--all flag."""
         args = argparse.Namespace(
             catalog_source="https://example.com/repo.git@main",
             tree=True,
@@ -598,12 +598,12 @@ class TestTreeAllVersionsMutualExclusion:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", side_effect=AssertionError("not reached")):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", side_effect=AssertionError("not reached")):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "--tree" in captured.err, f"Conflict error must mention '--tree'; got: {captured.err!r}"
-        assert "--all-versions" in captured.err, f"Conflict error must mention '--all-versions'; got: {captured.err!r}"
+        assert "--all" in captured.err, f"Conflict error must mention the -A/--all flag; got: {captured.err!r}"
 
     def test_tree_without_all_versions_is_not_an_error(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """--tree alone (without --all-versions) is not a conflict error."""
@@ -620,8 +620,8 @@ class TestTreeAllVersionsMutualExclusion:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0, "--tree alone must not be an error"
 
@@ -640,7 +640,7 @@ class TestListFlagsRegistered:
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
-        return subparsers.choices["list"]
+        return subparsers.choices["search"]
 
     def test_tree_flag_registered(self) -> None:
         """list subparser accepts --tree flag."""
@@ -723,7 +723,7 @@ class TestTreeRendersWithoutFilterBelowThreshold:
     """--tree succeeds without a filter when catalog size <= threshold."""
 
     def test_below_threshold_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list with --tree exits 0 when catalog has fewer entries than threshold."""
+        """run_search with --tree exits 0 when catalog has fewer entries than threshold."""
         repo_specs = tmp_path / "repo-specs"
         for i in range(3):  # well below threshold of 20
             _write_marketplace_xml(repo_specs, f"entry-{i}", "1.0.0")
@@ -738,13 +738,13 @@ class TestTreeRendersWithoutFilterBelowThreshold:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0, f"Expected exit 0 for catalog with 3 entries (below threshold); got {result}"
 
     def test_at_threshold_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list with --tree exits 0 when catalog has exactly threshold entries."""
+        """run_search with --tree exits 0 when catalog has exactly threshold entries."""
         repo_specs = tmp_path / "repo-specs"
         for i in range(KANON_TREE_NO_FILTER_THRESHOLD):
             _write_marketplace_xml(repo_specs, f"entry-{i:02d}", "1.0.0")
@@ -759,8 +759,8 @@ class TestTreeRendersWithoutFilterBelowThreshold:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0, (
             f"Expected exit 0 for catalog with exactly {KANON_TREE_NO_FILTER_THRESHOLD} entries; got {result}"
@@ -769,7 +769,7 @@ class TestTreeRendersWithoutFilterBelowThreshold:
 
 # ---------------------------------------------------------------------------
 # Coverage gap tests: edge paths in _parse_xml_includes_and_projects,
-# _resolve_include_path, _render_tree, and run_list tree mode.
+# _resolve_include_path, _render_tree, and run_search tree mode.
 # ---------------------------------------------------------------------------
 
 
@@ -793,7 +793,7 @@ class TestParseXmlIncludesAndProjectsEdgePaths:
 
         # Mock the parsed tree to return None for getroot() -- defensive guard coverage.
         mock_tree = type("MockTree", (), {"getroot": lambda self: None})()
-        with patch("kanon_cli.commands.list.ET.parse", return_value=mock_tree):
+        with patch("kanon_cli.commands.search.ET.parse", return_value=mock_tree):
             includes, projects = _parse_xml_includes_and_projects(valid_xml)
 
         assert includes == []
@@ -1078,10 +1078,10 @@ class TestRenderTreeEdgePaths:
 
 @pytest.mark.unit
 class TestRunListTreeEmptyCatalog:
-    """run_list --tree with an empty catalog (AC-FINAL-014 coverage)."""
+    """run_search --tree with an empty catalog (AC-FINAL-014 coverage)."""
 
     def test_tree_empty_catalog_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --tree exits 0 for an empty catalog (0 entries)."""
+        """run_search --tree exits 0 for an empty catalog (0 entries)."""
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(
@@ -1094,13 +1094,13 @@ class TestRunListTreeEmptyCatalog:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            result = run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            result = run_search(args)
 
         assert result == 0
 
     def test_tree_empty_catalog_writes_note_to_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """run_list --tree writes the 0-entries note to stderr for an empty catalog."""
+        """run_search --tree writes the 0-entries note to stderr for an empty catalog."""
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(
@@ -1113,8 +1113,8 @@ class TestRunListTreeEmptyCatalog:
             no_color=False,
         )
 
-        with patch("kanon_cli.commands.list._resolve_manifest_repo", return_value=tmp_path):
-            run_list(args)
+        with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
+            run_search(args)
 
         captured = capsys.readouterr()
         assert "manifest repo contains 0 entries" in captured.err

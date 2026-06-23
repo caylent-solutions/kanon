@@ -777,7 +777,7 @@ def _check_effective_catalog_source(
 
     Schema v4 (spec Section 5.2 / FR-7) removed the lockfile ``[catalog]`` block,
     so the lockfile no longer participates in catalog-source provenance.  The
-    catalog source for ``kanon add`` / ``kanon list`` / ``kanon outdated`` /
+    catalog source for ``kanon add`` / ``kanon search`` / ``kanon outdated`` /
     ``kanon why`` is supplied only by the CLI flag or the env var; ``kanon
     install`` is hermetic and does not consult a catalog source at all.
 

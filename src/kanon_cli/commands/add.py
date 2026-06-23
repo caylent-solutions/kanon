@@ -441,7 +441,7 @@ def _find_entry_by_name(
 
     print(
         f"ERROR: Catalog entry '{name}' not found in the manifest repo.\n"
-        "Run 'kanon list' to discover available entry names.",
+        "Run 'kanon search' to discover available entry names.",
         file=sys.stderr,
     )
     sys.exit(1)

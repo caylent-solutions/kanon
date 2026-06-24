@@ -18,6 +18,7 @@ _shtab_kanon_commands() {
     "completion:Emit the shell completion script for kanon to stdout."
     "doctor:Run workspace health checks against the current project directory."
     "install:Execute the full Kanon install lifecycle."
+    "marketplace:Manage the per-dependency Claude marketplace install flag in .kanon."
     "outdated:Compare each KANON_SOURCE_\<name\>_\* block in the .kanon file against"
     "remove:Remove the KANON_SOURCE_\<alias\>_\{URL,REF,PATH,NAME,GITBASE\} block for"
     "repo:Run kanon\'s repo subcommands."
@@ -33,6 +34,15 @@ _shtab_kanon_catalog_commands() {
     "audit:Audit a manifest repo for catalog soft-spot violations."
   )
   _describe 'kanon catalog commands' _commands
+}
+
+_shtab_kanon_marketplace_commands() {
+  local _commands=(
+    "disable:Remove the KANON_SOURCE_\<alias\>_MARKETPLACE line from .kanon for the"
+    "enable:Write KANON_SOURCE_\<alias\>_MARKETPLACE\=true into .kanon for the"
+    "status:Print a table of every dependency in .kanon, its catalog \<type\>, and"
+  )
+  _describe 'kanon marketplace commands' _commands
 }
 
 _shtab_kanon_validate_commands() {
@@ -51,6 +61,7 @@ _shtab_kanon_options=(
   "--quiet[Suppress all output except errors. Mutually exclusive with --verbose.]"
   "--verbose[Enable debug-level output. Mutually exclusive with --quiet.]"
   "--no-color[Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection.]"
+  "--no-update-check[Skip the best-effort \'update available\' PyPI lookup for this invocation. Equivalent to setting KANON_SKIP_UPDATE_CHECK\=1.]"
 )
 
 # guard to ensure default positional specs are added only once per session
@@ -136,6 +147,15 @@ never an error, with or without --force.]"
 change. Exits 0. Alias resolution still runs first, so a
 within-request duplicate or a re-add of an existing alias
 (without --force) is reported before any diff is shown.]"
+  "--marketplace-install[Force the added dependency to register as a Claude marketplace
+(write KANON_SOURCE_\<alias\>_MARKETPLACE\=true), overriding the
+auto-detected \<catalog-metadata\>\<type\>. Errors if the entry is not
+a \'claude-marketplace\' type. Mutually exclusive with
+--no-marketplace-install.]"
+  "--no-marketplace-install[Force the added dependency to NOT register as a marketplace (omit
+the KANON_SOURCE_\<alias\>_MARKETPLACE line), overriding the
+auto-detected \<catalog-metadata\>\<type\>. Mutually exclusive with
+--marketplace-install.]"
   "(*):One or more catalog entry names, optionally suffixed with \'\@\<spec\>\':"
 )
 
@@ -171,8 +191,8 @@ _shtab_kanon_clean_defaults_added=0
 
 _shtab_kanon_completion_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  ":Target shell. Choices\: \{bash, zsh\}.:(bash zsh)"
-  ":Target shell. Choices\: \{bash, zsh\}.:(bash zsh)"
+  ":Target shell. Choices\: \{bash, zsh, powershell\}.:(bash zsh powershell)"
+  ":Target shell. Choices\: \{bash, zsh, powershell\}.:(bash zsh powershell)"
 )
 
 # guard to ensure default positional specs are added only once per session
@@ -183,8 +203,8 @@ _shtab_kanon_doctor_options=(
   "--kanon-file[Path to the .kanon file that identifies the workspace root. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
   "--lock-file[Path to the .kanon.lock lockfile. Defaults to \'\<kanon-file\>.lock\' (e.g. .\/.kanon.lock). Overridden by the KANON_LOCK_FILE environment variable.]:lock_file:"
   "--strict-drift[Promote branch-drift findings from info-level to error-level. With this flag, kanon doctor returns exit code 1 when any branch-pinned source\'s tip SHA differs from the locked SHA.]"
-  "--refresh-completion-cache[Subcheck 8\: invalidate the shell completion cache under \$\{KANON_CACHE_DIR\}\/completion-cache\/. Removes all files there and recreates the directory with mode 0700. Reports an info finding with the count of files removed.]"
-  "--prune-cache[Subcheck 10\: remove cache files under \$\{KANON_CACHE_DIR\} whose last-access time is older than KANON_CACHE_PRUNE_AGE_DAYS days (default 30). Reports an info finding with the count and total byte size pruned. Also reports stale .kanon-data\/.kanon-install.lock files as advisory (does not delete them).]"
+  "--refresh-completion-cache[Subcheck 8\: invalidate the shell completion cache under \<KANON_HOME\>\/cache\/completion-cache\/. Removes all files there and recreates the directory with mode 0700. Reports an info finding with the count of files removed.]"
+  "--prune-cache[Subcheck 10\: remove cache files under the KANON_HOME cache whose last-access time is older than KANON_CACHE_PRUNE_AGE_DAYS days (default 30). Reports an info finding with the count and total byte size pruned. Also reports stale .kanon-data\/.kanon-install.lock files as advisory (does not delete them).]"
   "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
 )
 
@@ -203,6 +223,41 @@ _shtab_kanon_install_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_install_defaults_added=0
+
+_shtab_kanon_marketplace_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_marketplace_defaults_added=0
+
+_shtab_kanon_marketplace_disable_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--kanon-file[Path to the .kanon file to read\/modify. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
+  ":The source alias to disable (canonical alias or original entry name).:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_marketplace_disable_defaults_added=0
+
+_shtab_kanon_marketplace_enable_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--kanon-file[Path to the .kanon file to read\/modify. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
+  ":The source alias to enable (canonical alias or original entry name).:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_marketplace_enable_defaults_added=0
+
+_shtab_kanon_marketplace_status_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--all[Show every dependency, including those that are not a marketplace
+type. Without --all, only marketplace-typed dependencies are listed.]"
+  "--kanon-file[Path to the .kanon file to read\/modify. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_marketplace_status_defaults_added=0
 
 _shtab_kanon_outdated_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -242,7 +297,7 @@ _shtab_kanon_repo_defaults_added=0
 
 _shtab_kanon_search_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
-  "--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source.]:catalog_source:"
+  "*--catalog-source[Remote catalog source as \'\<git_url\>\@\<ref\>\' where ref is a branch, tag, or \'latest\'. Overrides the KANON_CATALOG_SOURCES env var. Required when KANON_CATALOG_SOURCES configures no single source. May be repeated to search several sources\; the supplied flags fully replace KANON_CATALOG_SOURCES for this invocation.]:catalog_source:"
   "--format[Output format. \'names\' (default)\: one entry name per line, pipeable into kanon add. \'json\'\: structured JSON array. Default mode and --detail mode emit \{name, display-name, type, description, version\} objects\; -A\/--all mode emits \{name, version, ref, sha\} objects. The KANON_LIST_FORMAT environment variable sets the format when this flag is absent\; the CLI flag takes precedence when both are set. --format json is incompatible with --tree (hard error at validation time).]:list_format:(names json)"
   "--detail[Print a human-readable multi-line record per entry (display-name, description, version, type). Human-readable only -- not pipeable into kanon add. For machine consumers, combine with --format json.]"
   "--tree[Render a three-layer ASCII dependency tree per entry\: the catalog entry (root), the XML manifests reachable via transitive \<include\> directives, and the \<project\> repos referenced by those manifests. Each node shows the version resolved at command-execution time. Mutually exclusive with -A\/--all. Subject to the threshold guardrail (KANON_TREE_NO_FILTER_THRESHOLD, default 20)\: when the catalog exceeds the threshold, supply a filter -- positional substring, --regex, --max-depth 0 -- or pass --no-filter-required.]"
@@ -345,6 +400,7 @@ _shtab_kanon() {
         completion) _arguments -C -s $_shtab_kanon_completion_options ;;
         doctor) _arguments -C -s $_shtab_kanon_doctor_options ;;
         install) _arguments -C -s $_shtab_kanon_install_options ;;
+        marketplace) _shtab_kanon_marketplace ;;
         outdated) _arguments -C -s $_shtab_kanon_outdated_options ;;
         remove) _arguments -C -s $_shtab_kanon_remove_options ;;
         repo) _arguments -C -s $_shtab_kanon_repo_options ;;
@@ -374,6 +430,31 @@ _shtab_kanon_catalog() {
       curcontext="${curcontext%:*:*}:_shtab_kanon_catalog-$line[1]:"
       case $line[1] in
         audit) _arguments -C -s $_shtab_kanon_catalog_audit_options ;;
+      esac
+  esac
+}
+
+_shtab_kanon_marketplace() {
+  local context state line curcontext="$curcontext" one_or_more='(*)' remainder='(-)*' default='*::: :->marketplace'
+
+  # Add default positional/remainder specs only if none exist, and only once per session
+  if (( ! _shtab_kanon_marketplace_defaults_added )); then
+    if (( ${_shtab_kanon_marketplace_options[(I)${(q)one_or_more}*]} +          ${_shtab_kanon_marketplace_options[(I)${(q)remainder}*]} +          ${_shtab_kanon_marketplace_options[(I)${(q)default}]} == 0 )); then
+      _shtab_kanon_marketplace_options+=(': :_shtab_kanon_marketplace_commands' '*::: :->marketplace')
+    fi
+    _shtab_kanon_marketplace_defaults_added=1
+  fi
+  _arguments -C -s $_shtab_kanon_marketplace_options
+
+  case $state in
+    marketplace)
+      words=($line[1] "${words[@]}")
+      (( CURRENT += 1 ))
+      curcontext="${curcontext%:*:*}:_shtab_kanon_marketplace-$line[1]:"
+      case $line[1] in
+        disable) _arguments -C -s $_shtab_kanon_marketplace_disable_options ;;
+        enable) _arguments -C -s $_shtab_kanon_marketplace_enable_options ;;
+        status) _arguments -C -s $_shtab_kanon_marketplace_status_options ;;
       esac
   esac
 }

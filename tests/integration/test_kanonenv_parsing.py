@@ -79,6 +79,9 @@ class TestKanonenvParsingSingleSource:
         assert result["sources"]["s"]["path"] == "repo-specs/manifest.xml"
 
     def test_marketplace_install_defaults_false(self, tmp_path: pathlib.Path) -> None:
+        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
+        # the removed global KANON_MARKETPLACE_INSTALL header. A source with no
+        # _MARKETPLACE line defaults to False on its parsed entry.
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
@@ -88,20 +91,20 @@ class TestKanonenvParsingSingleSource:
             "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
-        assert result["KANON_MARKETPLACE_INSTALL"] is False
+        assert result["sources"]["s"]["marketplace"] is False
 
     def test_marketplace_install_true(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
             "KANON_SOURCE_s_REF=main\n"
             "KANON_SOURCE_s_PATH=m.xml\n"
             "KANON_SOURCE_s_NAME=s\n"
-            "KANON_SOURCE_s_GITBASE=https://example.com\n",
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
+            "KANON_SOURCE_s_MARKETPLACE=true\n",
         )
         result = parse_kanonenv(kanonenv)
-        assert result["KANON_MARKETPLACE_INSTALL"] is True
+        assert result["sources"]["s"]["marketplace"] is True
 
 
 @pytest.mark.integration

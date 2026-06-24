@@ -73,17 +73,18 @@ sites inject `KANON_CATALOG_SOURCE` via a per-test environment fixture.
 
 ### `kanon bootstrap` is removed
 
-`kanon bootstrap` was removed in a major release (a breaking change) and is
-retained only as a uniform deprecation shim. **Every** `kanon bootstrap`
-invocation -- any args, any flags, including `--help`/`-h`, unknown flags,
-`kanon bootstrap list`, and bare `kanon bootstrap` -- exits with code 3
-(`EXIT_CODE_DEPRECATED`) and prints the deprecation message on stderr. Every
-flag is swallowed (no exit-0 `--help`, no argparse "unrecognized arguments"
-error) and no work is performed. The message includes a per-invocation "CLOSEST
-REPLACEMENT" line: `kanon bootstrap list` maps to `kanon search`, any other entry
-maps to `kanon add <entry>`. The examples in Category 2 (Bootstrap) reflect this
-behavior. Operators should use `kanon search`, `kanon add`, and `kanon install`
-with a catalog source to replace any bootstrap-based workflows.
+`kanon bootstrap` was removed entirely in a major release (a breaking change).
+It is no longer a registered subcommand, so argparse rejects **every** `kanon
+bootstrap` invocation -- any args, any flags, including `--help`/`-h`, unknown
+flags, `kanon bootstrap list`, and bare `kanon bootstrap` -- as an unknown
+command: exit code 2 with a usage error on stderr naming `invalid choice:
+'bootstrap'`. Any sub-flags such as `--help`/`-h`, `--output-dir`, or
+`--catalog-source` are simply part of an unrecognized command line that argparse
+rejects before parsing them, so no work is performed. The examples in Category 2
+(Bootstrap) reflect this behavior. Operators should use `kanon search` instead
+of the former `kanon bootstrap list`, `kanon add <entry>` instead of `kanon
+bootstrap <entry>`, and `kanon install` with a catalog source to replace any
+bootstrap-based workflows.
 
 ---
 
@@ -132,7 +133,7 @@ mkdir -p "${KANON_TEST_ROOT}"
 kanon --help
 ```
 
-**Pass criteria:** Exit code 0. stdout contains all of: `install`, `clean`, `validate`, `bootstrap`.
+**Pass criteria:** Exit code 0. stdout contains all of: `install`, `clean`, `validate`, `search`.
 
 ### HV-02: Version flag
 
@@ -188,22 +189,24 @@ kanon validate marketplace --help
 kanon bootstrap --help
 ```
 
-**Pass criteria:** Exit code 3. `--help` is swallowed like any other flag: no
-help text is printed and the command does not exit 0. stderr contains the
-deprecation message (``DEPRECATED: `kanon bootstrap` was removed``). No work is
-performed.
+**Pass criteria:** Exit code 2. `bootstrap` is no longer a registered
+subcommand, so argparse rejects the whole command line before it ever sees
+`--help`: no help text is printed and the command does not exit 0. stderr
+contains the argparse usage error naming `invalid choice: 'bootstrap'`. No work
+is performed.
 
 ---
 
 ## 3. Category 2: Bootstrap -- Removed (7 tests)
 
-> **Note:** `kanon bootstrap` was removed in a major release (a breaking change)
-> and is retained only as a uniform deprecation shim. All bootstrap invocations
-> exit with code **3** (`EXIT_CODE_DEPRECATED`) and print the deprecation message
-> on stderr. Every flag (including `--output-dir`, `--catalog-source`, and
-> `--help`) is swallowed; no work, clone, or filesystem access occurs and no files
-> are created. The tests in this category verify the deprecation contract, not
-> success behavior.
+> **Note:** `kanon bootstrap` was removed entirely in a major release (a breaking
+> change). It is no longer a registered subcommand, so argparse rejects every
+> bootstrap invocation as an unknown command: exit code **2** with a usage error
+> on stderr naming `invalid choice: 'bootstrap'`. Any sub-flags (including
+> `--output-dir`, `--catalog-source`, and `--help`) are part of an unrecognized
+> command line that argparse rejects before parsing them; no work, clone, or
+> filesystem access occurs and no files are created. The tests in this category
+> verify the removed-command contract, not success behavior.
 
 ### BS-01: List bundled packages (removed)
 
@@ -211,10 +214,9 @@ performed.
 kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), and its "CLOSEST REPLACEMENT"
-line reads`kanon search --catalog-source <git-url>@<ref>`. No package listing is
-produced.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. No package listing is produced. Operators should
+use `kanon search` instead of the former `kanon bootstrap list`.
 
 ### BS-02: Bootstrap kanon package (default output dir -- removed)
 
@@ -224,10 +226,10 @@ mkdir bs02 && cd bs02
 kanon bootstrap kanon
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), and its "CLOSEST REPLACEMENT"
-line reads`kanon add kanon --catalog-source <git-url>@<ref>`. No`.kanon` file
-is created in the current directory.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. No `.kanon` file is created in the current
+directory. Operators should use `kanon add kanon --catalog-source
+<git-url>@<ref>` instead of the former `kanon bootstrap kanon`.
 
 **Cleanup:**
 
@@ -235,17 +237,18 @@ is created in the current directory.
 rm -rf "${KANON_TEST_ROOT}/bs02"
 ```
 
-### BS-03: Bootstrap kanon package with a swallowed flag (removed)
+### BS-03: Bootstrap kanon package with a former flag (removed)
 
 ```bash
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs03-output"
 ```
 
-**Pass criteria:** Exit code 3. The `--output-dir` flag is swallowed -- there are
-no bootstrap flags any more. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), and its "CLOSEST REPLACEMENT"
-line reads`kanon add kanon --catalog-source <git-url>@<ref>`. No files are
-created in`${KANON_TEST_ROOT}/bs03-output`.
+**Pass criteria:** Exit code 2. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it -- there are
+no bootstrap flags any more. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. No files are created in
+`${KANON_TEST_ROOT}/bs03-output`. Operators should use `kanon add kanon
+--catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap kanon`.
 
 **Cleanup:**
 
@@ -261,10 +264,10 @@ echo "existing" > "${KANON_TEST_ROOT}/bs04/.kanon"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs04"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``). The`--output-dir` flag is
-swallowed and the shim performs no work, so the pre-existing `.kanon` file is
-never examined.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it, and no work
+is performed, so the pre-existing `.kanon` file is never examined.
 
 **Cleanup:**
 
@@ -278,10 +281,11 @@ rm -rf "${KANON_TEST_ROOT}/bs04"
 kanon bootstrap nonexistent
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), and its "CLOSEST REPLACEMENT"
-line reads`kanon add nonexistent --catalog-source <git-url>@<ref>`. The shim
-does not resolve the catalog, so the package name is not validated.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. Argparse rejects the command before any catalog
+is resolved, so the package name is not validated. Operators should use `kanon
+add nonexistent --catalog-source <git-url>@<ref>` instead of the former `kanon
+bootstrap nonexistent`.
 
 ### BS-06: Blocker file at the former output path (removed)
 
@@ -298,9 +302,10 @@ touch "${KANON_TEST_ROOT}/bs06-blocker"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/bs06-blocker"
 ```
 
-**Expect:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``). The`--output-dir` flag is
-swallowed and the shim performs no work, so there is no filesystem check.
+**Expect:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it, and no work
+is performed, so there is no filesystem check.
 
 **Cleanup:**
 
@@ -318,9 +323,10 @@ rm -f "${KANON_TEST_ROOT}/bs06-blocker"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/nonexistent-parent/child"
 ```
 
-**Expect:** Exit code 3. stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``). The`--output-dir` flag is
-swallowed and the shim performs no work, so there is no filesystem check.
+**Expect:** Exit code 2. stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it, and no work
+is performed, so there is no filesystem check.
 
 **Cleanup:** No cleanup required (no files were created).
 
@@ -1236,10 +1242,11 @@ rm -rf "${EV02_DIR}"
 
 ### EV-03: KANON_CATALOG_SOURCE env var -- bootstrap is removed
 
-This test demonstrates that `kanon bootstrap` was removed and exits with code 3
-regardless of whether a catalog source is provided. `KANON_CATALOG_SOURCE` is
-swallowed along with every other input: the shim performs no work and never
-resolves the catalog.
+This test demonstrates that `kanon bootstrap` was removed entirely and is
+rejected by argparse as an unknown command (exit code 2) regardless of whether a
+catalog source is provided. Because the command is rejected at the argparse
+level, `KANON_CATALOG_SOURCE` is never parsed: no work is performed and the
+catalog is never resolved.
 
 ```bash
 export CUSTOM_CATALOG_DIR="${KANON_TEST_ROOT}/fixtures/custom-catalog"
@@ -1264,11 +1271,10 @@ KANON_CATALOG_SOURCE="file://${CUSTOM_CATALOG_DIR}@v1.0.0" kanon bootstrap list
 
 **Pass criteria:**
 
-- Exit code 3
-- stderr contains the deprecation message
-  (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT"
-  line of`kanon search --catalog-source <git-url>@<ref>`
-- No catalog is resolved; no package listing is produced
+- Exit code 2
+- stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`
+- No catalog is resolved; no package listing is produced (operators should use
+  `kanon search` instead of the former `kanon bootstrap list`)
 
 **Cleanup:**
 
@@ -1420,15 +1426,15 @@ python -m kanon_cli --version
 python -m kanon_cli --help
 ```
 
-**Pass criteria:** Exit code 0. stdout contains `install`, `clean`, `validate`, `bootstrap`.
+**Pass criteria:** Exit code 0. stdout contains `install`, `clean`, `validate`, `search`.
 
 ---
 
 ## 14. Category 13: Catalog Source PEP 440 Constraints (26 tests)
 
-> **Note:** `kanon bootstrap list` was removed in a major release (a breaking change) and is now a uniform deprecation shim. All 26 tests in this category exercise that shim: every invocation exits with code 3 (`EXIT_CODE_DEPRECATED`) and prints the deprecation message on stderr. The `--catalog-source` flag and `KANON_CATALOG_SOURCE` env var are swallowed, so the PEP 440 constraint resolution path is never reached.
+> **Note:** `kanon bootstrap list` was removed entirely in a major release (a breaking change). `bootstrap` is no longer a registered subcommand, so argparse rejects all 26 invocations in this category as an unknown command: every invocation exits with code 2 and prints a usage error on stderr naming `invalid choice: 'bootstrap'`. Because the command is rejected at the argparse level, the `--catalog-source` flag and `KANON_CATALOG_SOURCE` env var are never parsed, so the PEP 440 constraint resolution path is never reached.
 
-These tests originally verified that `--catalog-source` and `KANON_CATALOG_SOURCES` resolve PEP 440 version constraints against git tags before cloning. Because `kanon bootstrap list` no longer does any work, the constraint resolution is not reached; each invocation now asserts exit code 3 and the deprecation message, whose "CLOSEST REPLACEMENT" line reads `kanon search --catalog-source <git-url>@<ref>`.
+These tests originally verified that `--catalog-source` and `KANON_CATALOG_SOURCES` resolve PEP 440 version constraints against git tags before cloning. Because `bootstrap` is rejected at the argparse level (exit 2), the constraint resolution is not reached; each invocation now asserts exit code 2 and the `invalid choice: 'bootstrap'` usage error. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 Run this category twice:
 
@@ -1472,7 +1478,7 @@ git tag 3.0.0
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@*"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-02: Wildcard `*` via env var
 
@@ -1480,7 +1486,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@*"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@*" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-03: `latest` via flag
 
@@ -1488,7 +1494,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@*" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-04: `latest` via env var
 
@@ -1496,7 +1502,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-05: Compatible release `~=1.0.0` via flag
 
@@ -1504,7 +1510,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=1.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-06: Compatible release `~=1.0.0` via env var
 
@@ -1512,7 +1518,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-07: Compatible release `~=2.0.0` via flag
 
@@ -1520,7 +1526,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-08: Compatible release `~=2.0.0` via env var
 
@@ -1528,7 +1534,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@~=2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-09: Range `>=1.0.0,<2.0.0` via flag
 
@@ -1536,7 +1542,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@~=2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-10: Range `>=1.0.0,<2.0.0` via env var
 
@@ -1544,7 +1550,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-11: Range `>=2.0.0,<3.0.0` via flag
 
@@ -1552,7 +1558,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0,<2.0.0" kanon bootstrap l
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-12: Range `>=2.0.0,<3.0.0` via env var
 
@@ -1560,7 +1566,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-13: Minimum `>=1.0.0` via flag
 
@@ -1568,7 +1574,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0" kanon bootstrap l
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-14: Minimum `>=1.0.0` via env var
 
@@ -1576,7 +1582,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-15: Less than `<2.0.0` via flag
 
@@ -1584,7 +1590,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-16: Less than `<2.0.0` via env var
 
@@ -1592,7 +1598,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-17: Less than or equal `<=2.0.0` via flag
 
@@ -1600,7 +1606,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<=2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-18: Less than or equal `<=2.0.0` via env var
 
@@ -1608,7 +1614,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@<=2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<=2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-19: Exact `==1.1.0` via flag
 
@@ -1616,7 +1622,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@<=2.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@==1.1.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-20: Exact `==1.1.0` via env var
 
@@ -1624,7 +1630,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@==1.1.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@==1.1.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-21: Exclusion `!=1.0.0` via flag
 
@@ -1632,7 +1638,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@==1.1.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@!=1.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-22: Exclusion `!=1.0.0` via env var
 
@@ -1640,7 +1646,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@!=1.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@!=1.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-23: Open range `>1.0.0,<2.0.0` via flag
 
@@ -1648,7 +1654,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@!=1.0.0" kanon bootstrap list
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-24: Open range `>1.0.0,<2.0.0` via env var
 
@@ -1656,7 +1662,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0"
 KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-25: Plain branch passthrough via flag
 
@@ -1664,7 +1670,7 @@ KANON_CATALOG_SOURCE="file://${CS_CATALOG_DIR}@>1.0.0,<2.0.0" kanon bootstrap li
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@main"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 ### CS-26: Plain tag passthrough via flag
 
@@ -1672,7 +1678,7 @@ kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@main"
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@2.0.0"
 ```
 
-**Pass criteria:** Exit code 3. stderr contains the deprecation message (``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is swallowed; no catalog resolution or git I/O occurs.
+**Pass criteria:** Exit code 2. stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse level, the `--catalog-source` flag / `KANON_CATALOG_SOURCES` env var is never parsed; no catalog resolution or git I/O occurs. Operators should use `kanon search --catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
 **Cleanup:**
 
@@ -5153,57 +5159,62 @@ rm -rf /tmp/custom-repo /tmp/env-repo /tmp/env-A /tmp/flag-B
 
 Existing categories cover most of the top-level surface. These scenarios fill remaining gaps.
 
-> **Note on TC-bootstrap-* tests:** `kanon bootstrap` was removed in a major
-> release (a breaking change) and is now a uniform deprecation shim. All
-> TC-bootstrap-* tests verify the deprecation behavior (exit code 3, the
-> deprecation message on stderr, every flag swallowed) rather than success
-> behavior.
+> **Note on TC-bootstrap-* tests:** `kanon bootstrap` was removed entirely in a
+> major release (a breaking change). `bootstrap` is no longer a registered
+> subcommand, so argparse rejects every invocation as an unknown command. All
+> TC-bootstrap-* tests verify the removed-command behavior (exit code 2, a usage
+> error on stderr naming `invalid choice: 'bootstrap'`, any sub-flags rejected
+> before parsing) rather than success behavior.
 
-### TC-bootstrap-01: former `--output-dir=<path>` flag is swallowed (removed)
+### TC-bootstrap-01: former `--output-dir=<path>` flag is rejected (removed)
 
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/tc-bs-01"
 kanon bootstrap kanon --output-dir "${KANON_TEST_ROOT}/tc-bs-01"
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line
-of`kanon add kanon --catalog-source <git-url>@<ref>`. The`--output-dir` flag is
-swallowed; no `.kanon` is created at the named path.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it; no `.kanon`
+is created at the named path. Operators should use `kanon add kanon
+--catalog-source <git-url>@<ref>` instead of the former `kanon bootstrap kanon`.
 
-### TC-bootstrap-02: former `--catalog-source` flag form is swallowed (removed)
+### TC-bootstrap-02: former `--catalog-source` flag form is rejected (removed)
 
 ```bash
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line
-of`kanon search --catalog-source <git-url>@<ref>`. The`--catalog-source` flag is
-swallowed; no package listing is produced.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--catalog-source` flag is part of an
+unrecognized command line that argparse rejects before parsing it; no package
+listing is produced. Operators should use `kanon search --catalog-source
+<git-url>@<ref>` instead of the former `kanon bootstrap list`.
 
-### TC-bootstrap-03: `KANON_CATALOG_SOURCES` env form is swallowed (removed)
+### TC-bootstrap-03: `KANON_CATALOG_SOURCES` env form is rejected (removed)
 
 ```bash
 KANON_CATALOG_SOURCES="file://${CS_CATALOG_DIR}@latest" kanon bootstrap list
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``), with a "CLOSEST REPLACEMENT" line
-of`kanon search --catalog-source <git-url>@<ref>`. The env var is swallowed; no
-package listing is produced.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. Because `bootstrap` is rejected at the argparse
+level, the env var is never parsed; no package listing is produced. Operators
+should use `kanon search --catalog-source <git-url>@<ref>` instead of the former
+`kanon bootstrap list`.
 
-### TC-bootstrap-04: flag and env are both swallowed (removed)
+### TC-bootstrap-04: flag and env are both rejected (removed)
 
 ```bash
 KANON_CATALOG_SOURCE="file://nonexistent.git@1.0.0" kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@latest"
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``). The shim performs no work, so
-neither the flag nor the env var is consulted for catalog resolution.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. Argparse rejects the command before parsing any
+sub-flags, so neither the flag nor the env var is consulted for catalog
+resolution.
 
-### TC-bootstrap-05: former `--output-dir` into nonexistent parent is swallowed (removed)
+### TC-bootstrap-05: former `--output-dir` into nonexistent parent is rejected (removed)
 
 ```bash
 set +e
@@ -5212,9 +5223,10 @@ exit_code=$?
 set -e
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the deprecation message
-(``DEPRECATED: `kanon bootstrap` was removed``). The`--output-dir` flag is
-swallowed and the shim performs no work, so there is no filesystem check.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming
+`invalid choice: 'bootstrap'`. The `--output-dir` flag is part of an
+unrecognized command line that argparse rejects before parsing it, and no work
+is performed, so there is no filesystem check.
 
 ### TC-install-01: auto-discover walks parent tree
 
@@ -5436,11 +5448,12 @@ done
 
 Each journey reproduces a sequence verbatim from `kanon/docs/`. Source citations are included so doc drift is caught: if the doc updates the journey, the test row updates too.
 
-### UJ-01: `pip install -e .` → `kanon bootstrap kanon` is deprecated (`docs/setup-guide.md`)
+### UJ-01: `pip install -e .` → `kanon bootstrap kanon` is removed (`docs/setup-guide.md`)
 
-`kanon bootstrap kanon` is deprecated on the `feat/kanon-deps-work-2026-05` branch
-per spec section 4.0. Operators should use `kanon install` with an explicit catalog source
-instead.
+`kanon bootstrap kanon` was removed on the `feat/kanon-deps-work-2026-05` branch
+per spec section 4.0; `bootstrap` is no longer a registered subcommand, so
+argparse rejects it as an unknown command. Operators should use `kanon install`
+with an explicit catalog source instead.
 
 ```bash
 cd /workspaces/rpm-migration/kanon && pip install -e . > /dev/null
@@ -5449,14 +5462,15 @@ cd "${KANON_TEST_ROOT}/uj-01"
 kanon bootstrap kanon
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the WARN deprecation message per spec R357.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`.
 No `.kanon` or readme files are created.
 
-### UJ-02: bootstrap with `--catalog-source` PEP 440 is deprecated (`docs/creating-manifest-repos.md`)
+### UJ-02: bootstrap with `--catalog-source` PEP 440 is removed (`docs/creating-manifest-repos.md`)
 
-`kanon bootstrap list` is deprecated on the `feat/kanon-deps-work-2026-05` branch
-per spec section 4.0. This invocation exits 3 with the WARN message; the catalog source is
-not resolved.
+`kanon bootstrap list` was removed on the `feat/kanon-deps-work-2026-05` branch
+per spec section 4.0; `bootstrap` is no longer a registered subcommand. This
+invocation exits 2 with an `invalid choice: 'bootstrap'` usage error; the catalog
+source is never parsed or resolved. Operators should use `kanon search` instead.
 
 ```bash
 mkdir -p "${KANON_TEST_ROOT}/uj-02"
@@ -5464,7 +5478,7 @@ cd "${KANON_TEST_ROOT}/uj-02"
 kanon bootstrap list --catalog-source "file://${CS_CATALOG_DIR}@>=2.0.0,<3.0.0"
 ```
 
-**Pass criteria:** Exit code 3; stderr contains the WARN deprecation message per spec R355.
+**Pass criteria:** Exit code 2; stderr contains the argparse usage error naming `invalid choice: 'bootstrap'`.
 No package listing produced.
 
 ### UJ-03: multi-source install (`docs/multi-source-guide.md`)
@@ -5609,7 +5623,7 @@ grep -q "UNDEFINED_KANON_VAR" /tmp/uj-09.log && echo "PASS: undefined var named 
 
 ```bash
 python -m kanon_cli --version | grep -qE "kanon \d+\.\d+\.\d+"
-python -m kanon_cli --help | grep -E "install|clean|validate|bootstrap" | wc -l | grep -q "^[1-9]"
+python -m kanon_cli --help | grep -E "install|clean|validate|search" | wc -l | grep -q "^[1-9]"
 ```
 
 **Pass criteria:** Both invocations exit 0; output matches kanon's package version and command list.

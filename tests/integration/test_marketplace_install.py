@@ -52,22 +52,28 @@ def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
     return kanonenv.resolve()
 
 
-def _minimal_source_block(name: str = "primary") -> str:
+def _minimal_source_block(name: str = "primary", *, marketplace: bool = False) -> str:
     """Return a minimal valid KANON_SOURCE_* block for a .kanon file.
 
     Args:
         name: Source name to use in variable keys.
+        marketplace: When True, append the per-dependency
+            ``KANON_SOURCE_<name>_MARKETPLACE=true`` opt-in line (the 3.0.0
+            replacement for the removed global ``KANON_MARKETPLACE_INSTALL``).
 
     Returns:
-        A string with the five required KANON_SOURCE_* variable lines.
+        A string with the required KANON_SOURCE_* variable lines.
     """
-    return (
+    block = (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
         f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=repo-specs/manifest.xml\n"
         f"KANON_SOURCE_{name}_NAME={name}\n"
         f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
+    if marketplace:
+        block += f"KANON_SOURCE_{name}_MARKETPLACE=true\n"
+    return block
 
 
 def _create_marketplace_fixture(marketplace_dir: pathlib.Path, name: str = "test-market") -> pathlib.Path:
@@ -116,7 +122,7 @@ class TestMarketplaceInstallTrue:
         marketplace_dir.mkdir()
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with (
@@ -144,7 +150,7 @@ class TestMarketplaceInstallTrue:
         marketplace_dir.mkdir()
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with (
@@ -191,7 +197,7 @@ class TestMarketplaceInstallMissingDir:
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
 
         with pytest.raises(ValueError) as exc_info:
@@ -216,7 +222,7 @@ class TestMarketplaceInstallMissingDir:
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
         args = make_install_args(kanonenv)
 
@@ -243,7 +249,7 @@ class TestMarketplaceInstallMissingDir:
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
         args = make_install_args(kanonenv)
 
@@ -304,18 +310,23 @@ class TestMarketplaceInstallFalse:
             f"is {scenario}; was called with {mock_mp.call_args_list}"
         )
 
-    def test_marketplace_install_skipped_when_env_overrides_to_false(
+    def test_marketplace_install_skipped_when_no_dependency_opts_in(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() skips marketplace when env var KANON_MARKETPLACE_INSTALL=false overrides file."""
-        monkeypatch.setenv("KANON_MARKETPLACE_INSTALL", "false")
+        """install() skips the marketplace path when no dependency opts in.
+
+        3.0.0 replaced the global KANON_MARKETPLACE_INSTALL header (and its env
+        override) with per-dependency KANON_SOURCE_<alias>_MARKETPLACE flags. A
+        source with no opt-in must not trigger install_marketplace_plugins, even
+        when CLAUDE_MARKETPLACES_DIR is configured.
+        """
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=False),
         )
 
         with (
@@ -327,8 +338,7 @@ class TestMarketplaceInstallFalse:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not mock_mp.called, (
-            "install_marketplace_plugins must NOT be called when env KANON_MARKETPLACE_INSTALL=false "
-            "overrides file value of true"
+            "install_marketplace_plugins must NOT be called when no dependency opts into the marketplace"
         )
 
 
@@ -356,7 +366,7 @@ class TestMarketplaceCleanup:
         marketplace_dir.mkdir()
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
@@ -375,7 +385,7 @@ class TestMarketplaceCleanup:
         _create_marketplace_fixture(marketplace_dir)
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
@@ -419,7 +429,7 @@ class TestMarketplaceCleanup:
         marketplace_dir = tmp_path / "roundtrip-marketplaces"
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         # -- install phase: real prepare_marketplace_dir creates the directory

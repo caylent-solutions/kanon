@@ -27,6 +27,7 @@ Examples:
 |------|---------|
 | `kanon-toplevel.txt` | `kanon --help` |
 | `kanon-search.txt` | `kanon search --help` |
+| `kanon-marketplace.txt` | `kanon marketplace --help` (per-dependency Claude marketplace flag manager; lists `enable`, `disable`, `status`) |
 | `kanon-add.txt` | `kanon add --help` |
 | `kanon-remove.txt` | `kanon remove --help` |
 | `kanon-outdated.txt` | `kanon outdated --help` |

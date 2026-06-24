@@ -1,7 +1,7 @@
-"""Integration tests for 'kanon list --tree'.
+"""Integration tests for 'kanon search --tree'.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
-with *-marketplace.xml files) and invokes 'kanon list --tree --catalog-source
+with *-marketplace.xml files) and invokes 'kanon search --tree --catalog-source
 <file>@<ref>' via subprocess.run.
 
 Covers three threshold scenarios per AC-TEST-002:
@@ -10,7 +10,7 @@ Covers three threshold scenarios per AC-TEST-002:
 3. Larger-than-threshold (25 entries): filter required -- exits non-zero.
 
 Also covers AC-CYCLE-001:
-- 25-entry repo + 'kanon list --tree' -> non-zero with guardrail message.
+- 25-entry repo + 'kanon search --tree' -> non-zero with guardrail message.
 - 25-entry repo + KANON_TREE_NO_FILTER_THRESHOLD=30 -> exits 0.
 - 25-entry repo + --no-filter-required -> exits 0.
 - 25-entry repo + --max-depth 0 -> exits 0, one root-only line per entry.
@@ -117,7 +117,7 @@ def _run_kanon(
     """Run the kanon entry point via the same Python interpreter.
 
     Args:
-        args: Arguments to pass after 'kanon' (e.g. ["list", "--tree", ...]).
+        args: Arguments to pass after 'kanon' (e.g. ["search", "--tree", ...]).
         extra_env: Extra environment variables to set (merged onto os.environ).
 
     Returns:
@@ -151,15 +151,15 @@ def _entry_names(count: int) -> list[str]:
 
 @pytest.mark.integration
 class TestListTreeBelowThreshold:
-    """kanon list --tree with a 3-entry catalog (below threshold): exits 0."""
+    """kanon search --tree with a 3-entry catalog (below threshold): exits 0."""
 
     def test_exits_0_with_max_depth_0(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree --max-depth 0 exits 0 for a 3-entry catalog."""
+        """kanon search --tree --max-depth 0 exits 0 for a 3-entry catalog."""
         bare = _create_manifest_repo(tmp_path, _entry_names(3), dir_suffix="small")
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, (
@@ -168,13 +168,13 @@ class TestListTreeBelowThreshold:
         )
 
     def test_stdout_has_three_entry_lines_with_max_depth_0(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree --max-depth 0 produces three root-only lines for 3 entries."""
+        """kanon search --tree --max-depth 0 produces three root-only lines for 3 entries."""
         names = _entry_names(3)
         bare = _create_manifest_repo(tmp_path, names, dir_suffix="small-out")
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
@@ -191,7 +191,7 @@ class TestListTreeBelowThreshold:
 
         # No filter flags passed; catalog size is below threshold so guardrail must not fire
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, f"Guardrail fired unexpectedly for 3-entry catalog.\n  stderr: {result.stderr!r}"
@@ -205,16 +205,16 @@ class TestListTreeBelowThreshold:
 
 @pytest.mark.integration
 class TestListTreeAtThreshold:
-    """kanon list --tree with exactly KANON_TREE_NO_FILTER_THRESHOLD entries: exits 0."""
+    """kanon search --tree with exactly KANON_TREE_NO_FILTER_THRESHOLD entries: exits 0."""
 
     def test_exits_0_at_threshold(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree exits 0 when catalog has exactly threshold entries."""
+        """kanon search --tree exits 0 when catalog has exactly threshold entries."""
         count = KANON_TREE_NO_FILTER_THRESHOLD
         bare = _create_manifest_repo(tmp_path, _entry_names(count), dir_suffix="at-threshold")
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, (
@@ -222,13 +222,13 @@ class TestListTreeAtThreshold:
         )
 
     def test_no_error_at_threshold(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree writes no ERROR: to stderr at exactly threshold entries."""
+        """kanon search --tree writes no ERROR: to stderr at exactly threshold entries."""
         count = KANON_TREE_NO_FILTER_THRESHOLD
         bare = _create_manifest_repo(tmp_path, _entry_names(count), dir_suffix="at-threshold-err")
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "ERROR:" not in result.stderr, f"No ERROR: expected at exactly {count} entries; got: {result.stderr!r}"
@@ -243,10 +243,10 @@ _OVER_THRESHOLD = KANON_TREE_NO_FILTER_THRESHOLD + 5  # 25 when threshold is 20
 
 @pytest.mark.integration
 class TestListTreeOverThreshold:
-    """kanon list --tree with > threshold entries and no filter: exits non-zero."""
+    """kanon search --tree with > threshold entries and no filter: exits non-zero."""
 
     def test_exits_nonzero_over_threshold(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree exits non-zero when catalog > threshold and no filter given.
+        """kanon search --tree exits non-zero when catalog > threshold and no filter given.
 
         AC-CYCLE-001 evidence: 25-entry repo, no filter, expect non-zero exit.
         """
@@ -254,7 +254,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode != 0, (
@@ -263,12 +263,12 @@ class TestListTreeOverThreshold:
         )
 
     def test_stderr_contains_error_over_threshold(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --tree writes ERROR: to stderr when guardrail fires."""
+        """kanon search --tree writes ERROR: to stderr when guardrail fires."""
         bare = _create_manifest_repo(tmp_path, _entry_names(_OVER_THRESHOLD), dir_suffix="over-err")
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "ERROR:" in result.stderr, f"Expected ERROR: in stderr for guardrail; got: {result.stderr!r}"
@@ -282,7 +282,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
                 "KANON_TREE_NO_FILTER_THRESHOLD": "30",
@@ -303,7 +303,7 @@ class TestListTreeOverThreshold:
 
         result = _run_kanon(
             [
-                "list",
+                "search",
                 "--tree",
                 "--no-filter-required",
                 "--max-depth",
@@ -328,7 +328,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
+            ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, (
@@ -346,7 +346,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert str(KANON_TREE_NO_FILTER_THRESHOLD) in result.stderr, (
@@ -359,7 +359,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert str(_OVER_THRESHOLD) in result.stderr, (
@@ -372,7 +372,7 @@ class TestListTreeOverThreshold:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "--no-filter-required" in result.stderr, (

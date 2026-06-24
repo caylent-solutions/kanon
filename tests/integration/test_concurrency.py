@@ -12,6 +12,8 @@ AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 
 import contextlib
 import fcntl
+import multiprocessing
+import multiprocessing.synchronize
 import os
 import pathlib
 import subprocess
@@ -52,6 +54,88 @@ _LOCK_FILENAME = ".kanon-install.lock"
 # Minimal well-formed manifest XML written by fake sync helpers so that
 # install()'s include-walker can parse the manifest path after sync.
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
+
+# Cross-process readiness/join timeouts for the multiprocessing parallel-install
+# tests. Overridable via environment variables so slow CI can extend them
+# without editing the test; never used as a synchronization delay -- only as a
+# fail-fast upper bound on event waits and process joins.
+_PROC_READY_TIMEOUT = float(os.environ.get("KANON_TEST_INSTALL_READY_TIMEOUT", "30.0"))
+_PROC_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_INSTALL_JOIN_TIMEOUT", "60.0"))
+
+
+def _install_worker(
+    kanonenv_path_str: str,
+    ready_event: multiprocessing.synchronize.Event,
+    go_event: multiprocessing.synchronize.Event,
+    error_queue: "multiprocessing.Queue[str]",
+) -> None:
+    """Child-process worker: run a genuine ``install()`` under cross-process locking.
+
+    This worker is the cross-PROCESS analogue of ``_patched_install``. The
+    threaded autouse fixtures in this module only patch ``install()``'s repo
+    boundary in the parent process, so a forked child must re-install those
+    same hermetic mocks itself before calling ``install()``:
+
+      * ``kanon_cli.repo.repo_init`` / ``repo_envsubst`` -> no-ops.
+      * ``kanon_cli.repo.repo_sync`` -> writes the minimal manifest XML the
+        include-walker parses (mirrors ``_default_repo_sync``).
+      * ``_resolve_ref_to_sha`` / ``_check_sha_reachable`` -> deterministic,
+        network-free (mirrors the integration conftest autouse fixtures, which
+        the child does not inherit because it is a fresh fork target).
+
+    Because each forked child is its own process with its own MAIN thread, the
+    POSIX workspace lock's ``signal.setitimer`` / ``SIGALRM`` fail-fast timer
+    works correctly (it raises ``ValueError`` only when armed off the main
+    thread). The two workers therefore exercise the real cross-process
+    ``fcntl.flock`` exclusion rather than an in-process thread race.
+
+    Readiness handshake (no time-based synchronization): the worker sets
+    ``ready_event`` once its mocks are in place, then blocks on ``go_event``
+    so the parent can release both workers simultaneously. Any exception is
+    serialised onto ``error_queue`` so the parent can assert on it.
+
+    Args:
+        kanonenv_path_str: String path to the ``.kanon`` file (multiprocessing
+            arguments must be picklable; a plain ``str`` always is).
+        ready_event: Set by the worker once it is ready to install.
+        go_event: Waited on by the worker; set by the parent to start both
+            installs at the same moment.
+        error_queue: Receives a string describing any exception raised by
+            ``install()`` so the parent can surface it in the assertion message.
+    """
+    from kanon_cli.core.install import _RefResolution
+
+    kanonenv_path = pathlib.Path(kanonenv_path_str)
+
+    def _worker_repo_sync(repo_dir: str, **_kwargs: object) -> None:
+        _write_empty_manifest(repo_dir)
+
+    try:
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync", side_effect=_worker_repo_sync),
+            patch(
+                "kanon_cli.core.install._resolve_ref_to_sha",
+                return_value=_RefResolution(sha="a" * 40, resolved_ref="refs/heads/main"),
+            ),
+            patch("kanon_cli.core.install._check_sha_reachable"),
+        ):
+            ready_event.set()
+            # Block until the parent releases both workers together. The event
+            # wait is bounded by _PROC_READY_TIMEOUT so a wedged parent fails
+            # the child fast rather than hanging it forever.
+            if not go_event.wait(timeout=_PROC_READY_TIMEOUT):
+                error_queue.put("go_event was not set within the readiness timeout")
+                return
+            install(
+                kanonenv_path,
+                lock_file_path=kanonenv_path.parent / ".kanon.lock",
+            )
+    except Exception as exc:
+        # Serialise any install failure to the parent so it surfaces in the
+        # cross-process assertion rather than dying silently in the child.
+        error_queue.put(f"{type(exc).__name__}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -287,38 +371,86 @@ class TestParallelInstallsDeterministic:
     the same as a single sequential install.
     """
 
+    @staticmethod
+    def _run_two_parallel_installs(
+        kanonenv: pathlib.Path,
+    ) -> list[str]:
+        """Spawn two real install() subprocesses and run them concurrently.
+
+        Uses ``multiprocessing`` with the ``fork`` start method so that each
+        install runs in its own process with its own MAIN thread -- the only
+        context in which the POSIX workspace lock's ``signal.setitimer`` /
+        ``SIGALRM`` fail-fast timer is valid. This exercises genuine
+        cross-process ``fcntl.flock`` exclusion (the real production model:
+        two separate ``kanon install`` processes), not an in-process thread
+        race that cannot arm the alarm timer off the main thread.
+
+        A two-phase readiness handshake (``ready_event`` then ``go_event``,
+        no ``sleep``) releases both workers at the same moment so their
+        lock-acquisition windows overlap. The child ``KANON_HOME`` is inherited
+        from this process's environment, so both installs target the same
+        shared store and contend for the same workspace lock.
+
+        Args:
+            kanonenv: Path to the ``.kanon`` file both installs operate on.
+
+        Returns:
+            A list of error strings reported by the workers (empty when both
+            installs completed cleanly). Each entry is a ``"TypeName: msg"``
+            description serialised from a child exception.
+        """
+        ctx = multiprocessing.get_context("fork")
+        go_event = ctx.Event()
+        ready_events = [ctx.Event() for _ in range(2)]
+        error_queue: "multiprocessing.Queue[str]" = ctx.Queue()
+
+        procs = [
+            ctx.Process(
+                target=_install_worker,
+                args=(str(kanonenv), ready_events[i], go_event, error_queue),
+                daemon=True,
+            )
+            for i in range(2)
+        ]
+        for proc in procs:
+            proc.start()
+
+        # Readiness gate: wait until both children have installed their mocks
+        # and are parked on go_event, then release them together.
+        for i, ready in enumerate(ready_events):
+            assert ready.wait(timeout=_PROC_READY_TIMEOUT), (
+                f"Install worker {i} did not become ready within {_PROC_READY_TIMEOUT}s"
+            )
+        go_event.set()
+
+        for i, proc in enumerate(procs):
+            proc.join(timeout=_PROC_JOIN_TIMEOUT)
+            assert not proc.is_alive(), f"Install worker {i} did not finish within {_PROC_JOIN_TIMEOUT}s"
+
+        errors: list[str] = []
+        while not error_queue.empty():
+            errors.append(error_queue.get_nowait())
+        return errors
+
     def test_parallel_installs_both_complete_without_corrupting_state(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Two concurrent install() calls both finish and leave a consistent state.
+        """Two concurrent install() processes both finish and leave a consistent state.
 
-        Executes two install() calls in parallel threads against the same
-        .kanon file. After both threads join, .packages/ and .kanon-data/
+        Executes two install() calls in parallel subprocesses against the same
+        .kanon file. After both processes exit, .packages/ and .kanon-data/
         must exist and be complete in the shared KANON_HOME store, with no
-        partially-written or missing entries from the concurrency.
+        partially-written or missing entries from the concurrency, and neither
+        worker may have raised.
         """
         kanonenv = _write_kanonenv(tmp_path, "source1")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # Barrier ensures both threads start the install at the same moment.
-        barrier = threading.Barrier(2, timeout=30)
-        errors: list[Exception] = []
+        errors = self._run_two_parallel_installs(kanonenv)
+        assert not errors, f"Parallel installs raised errors instead of serialising cleanly: {errors}"
 
-        def _thread_install() -> None:
-            barrier.wait()
-            try:
-                _patched_install(kanonenv)
-            except Exception as exc:
-                errors.append(exc)
-
-        threads = [threading.Thread(target=_thread_install) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        # At least one thread must have succeeded; state must be deterministic.
+        # State must be deterministic regardless of which process won the lock first.
         assert (store_base / ".packages").is_dir(), (
             f".packages/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
@@ -334,36 +466,33 @@ class TestParallelInstallsDeterministic:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Two concurrent installs result in a .gitignore with no duplicate entries.
+        """Two concurrent install processes result in a .gitignore with no duplicate entries.
 
         Both required entries (.packages/ and .kanon-data/) must be present
         exactly once in the store .gitignore, regardless of concurrent writes.
+        Because the two installs serialise on the cross-process workspace lock,
+        the second writer observes the first writer's entries and must not
+        duplicate them.
         """
         kanonenv = _write_kanonenv(tmp_path, "src1")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        barrier = threading.Barrier(2, timeout=30)
-        errors: list[Exception] = []
 
-        def _thread_install() -> None:
-            barrier.wait()
-            try:
-                _patched_install(kanonenv)
-            except Exception as exc:
-                errors.append(exc)
-
-        threads = [threading.Thread(target=_thread_install) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        errors = self._run_two_parallel_installs(kanonenv)
+        assert not errors, f"Parallel installs raised errors instead of serialising cleanly: {errors}"
 
         gitignore = store_base / ".gitignore"
         assert gitignore.exists(), ".gitignore must be written by install under the store"
         lines = gitignore.read_text(encoding="utf-8").splitlines()
         packages_count = lines.count(".packages/")
         kanon_data_count = lines.count(".kanon-data/")
-        assert packages_count >= 1, ".packages/ must appear at least once in .gitignore"
-        assert kanon_data_count >= 1, ".kanon-data/ must appear at least once in .gitignore"
+        # Serialised writers must each leave the required entry exactly once --
+        # no duplication from the concurrent runs.
+        assert packages_count == 1, (
+            f".packages/ must appear exactly once in .gitignore after serialised parallel installs; found {packages_count}"
+        )
+        assert kanon_data_count == 1, (
+            f".kanon-data/ must appear exactly once in .gitignore after serialised parallel installs; found {kanon_data_count}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -35,8 +35,11 @@ Trigger procedure per slug:
   without a network call.
 - ``entry-not-found``: ``kanon add <name>`` against a local bare catalog repo
   that has no entry with that exact name.
-- ``source-collision``: two consecutive ``kanon add`` invocations for the same
-  source name (second call collides with the first).
+- ``source-collision``: a re-add of an existing package -- a ``.kanon`` already
+  carries the ``example_pkg`` block at ``refs/tags/v1.0.0`` and a second
+  ``kanon add example_pkg@==1.0.0`` for the same source@ref hits the same-NAME
+  guard (spec Section 4.2). Without ``--force`` this is a hard error; a
+  cross-source same-name add would instead auto-suffix.
 - ``conflict-detected``: ``kanon install`` with two ``.kanon`` sources that
   both resolve to the same canonical URL but carry different SHAs (written
   directly into the lockfile to avoid a real network call).
@@ -398,9 +401,9 @@ def _build_source_collision(tmp_path: pathlib.Path) -> pathlib.Path:
 
     Creates a local bare catalog repo with one entry (``example_pkg``),
     then writes a .kanon file that already contains the ``example_pkg``
-    triple block (simulating a prior successful ``kanon add``).  The CLI
-    invocation requests the same entry a second time, triggering the
-    collision error.
+    block at the resolved ``refs/tags/v1.0.0`` (simulating a prior successful
+    ``kanon add example_pkg@==1.0.0``).  The CLI invocation re-adds the same
+    source@ref a second time, triggering the same-NAME re-add guard.
     """
     bare = _create_bare_catalog_repo(tmp_path, xml_body=_full_catalog_xml("example_pkg"))
     (tmp_path / "_bare_path").write_text(str(bare), encoding="utf-8")
@@ -420,16 +423,20 @@ def _build_source_collision(tmp_path: pathlib.Path) -> pathlib.Path:
     ws = tmp_path / "ws"
     ws.mkdir()
 
-    # Pre-populate .kanon with the example_pkg triple so the second add collides.
-    # Both the existing entry and the second add use the canonical HTTPS URL,
-    # matching the fixture's expected error text.
+    # Pre-populate .kanon with the EXACT block a prior `kanon add
+    # example_pkg@==1.0.0` would write (resolved _REF=refs/tags/v1.0.0,
+    # _GITBASE derived from the URL). The second add re-requests the same
+    # source@ref, so the alias collides as a SAME-source re-add (the same-NAME
+    # guard, spec Section 4.2) rather than a cross-source auto-suffix. Both the
+    # existing entry and the second add use the canonical HTTPS URL, matching
+    # the fixture's expected error text.
     kanon_file = ws / ".kanon"
     kanon_file.write_text(
         f"KANON_SOURCE_example_pkg_URL={_CANONICAL_CATALOG_URL}\n"
-        "KANON_SOURCE_example_pkg_REF===1.0.0\n"
+        "KANON_SOURCE_example_pkg_REF=refs/tags/v1.0.0\n"
         "KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml\n"
         "KANON_SOURCE_example_pkg_NAME=example_pkg\n"
-        f"KANON_SOURCE_example_pkg_GITBASE={_CANONICAL_CATALOG_URL}\n",
+        "KANON_SOURCE_example_pkg_GITBASE=https://example.com/org\n",
         encoding="utf-8",
     )
     return ws
@@ -653,9 +660,9 @@ def _make_cli_args(slug: str, tmp_path: pathlib.Path) -> tuple[list[str], "dict[
         git_cfg = (tmp_path / "_git_cfg_path").read_text(encoding="utf-8").strip()
         return [
             "add",
-            "example_pkg@==2.0.0",
+            "example_pkg@==1.0.0",
             "--catalog-source",
-            f"{_CANONICAL_CATALOG_URL}@==2.0.0",
+            f"{_CANONICAL_CATALOG_URL}@==1.0.0",
             "--kanon-file",
             str(ws / ".kanon"),
         ], {"GIT_CONFIG_GLOBAL": git_cfg}

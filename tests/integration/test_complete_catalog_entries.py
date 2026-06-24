@@ -37,12 +37,23 @@ def _make_xml(name: str) -> str:
 
 @pytest.fixture()
 def fixture_manifest_repo(tmp_path: Path) -> Path:
-    """Create a local git repo with three catalog entries: foo, bar, baz."""
+    """Create a local git repo with three catalog entries: foo, bar, baz.
+
+    The repo is initialised with an explicit ``main`` initial branch
+    (``git init -b main``) so the fixture is deterministic regardless of the
+    ambient ``init.defaultBranch`` git config. Under the full suite a
+    session-scoped fixture in ``tests/unit/repo/conftest.py`` repoints ``HOME``
+    at a config-less temp dir for the rest of the session; without an explicit
+    initial branch ``git init`` would then fall back to git's compiled-in
+    default (``master``) and the ``git clone --branch main`` performed by the
+    completion path would fail with "Remote branch main not found".
+    """
     repo = tmp_path / "manifest-repo"
     repo.mkdir()
 
-    # Initialize git repo so git clone via file:// works
-    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    # Initialize git repo so git clone via file:// works. The explicit
+    # `-b main` pins the initial branch so the @main clone always resolves.
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
         check=True,

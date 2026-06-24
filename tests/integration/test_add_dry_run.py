@@ -266,10 +266,14 @@ class TestAddDryRun:
         )
         sha_before = _sha256(kanon_file)
 
+        # 3.0.0: --force overwrites a re-add of the SAME package (same source@ref).
+        # The existing block is at refs/tags/1.0.0, so the re-add resolves the
+        # same ref (==1.0.0). The dry-run diff shows the existing partial block
+        # removed ('-') and the normalised block (with _NAME/_GITBASE) added ('+').
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -281,9 +285,12 @@ class TestAddDryRun:
         )
 
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
-        # Must show minus lines for removed and plus lines for added
+        # Must show minus lines for the removed existing block and plus lines for
+        # the rewritten block; the alias stays keyed by the bare alias (overwrite,
+        # not auto-suffix), and the normalised block adds the _NAME line.
         assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
-        assert "+KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in result.stdout
+        assert "+KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
+        assert "+KANON_SOURCE_entry_a_NAME=entry-a" in result.stdout
         # File must not be modified
         assert _sha256(kanon_file) == sha_before, "File content changed during --dry-run --force"
 
@@ -331,8 +338,14 @@ class TestAddForce:
         )
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
 
-    def test_force_overwrites_existing_revision(self, tmp_path: pathlib.Path) -> None:
-        """--force replaces existing REVISION line with the new one."""
+    def test_force_overwrites_existing_block(self, tmp_path: pathlib.Path) -> None:
+        """--force re-add of the same source@ref overwrites and normalises the block.
+
+        3.0.0: --force overwrites a re-add of the SAME package (same source@ref),
+        keeping the alias keyed by the bare alias and re-pinning the block with
+        the full normalised keys (_NAME/_GITBASE added). A different-ref re-add
+        would auto-suffix instead, so the re-add uses the existing ref (==1.0.0).
+        """
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -351,10 +364,10 @@ class TestAddForce:
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
-        _run_kanon(
+        result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -363,10 +376,15 @@ class TestAddForce:
             ],
             cwd=workspace,
         )
+        assert result.returncode == 0, f"--force re-add must exit 0.\nstderr: {result.stderr!r}"
 
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" not in content
+        # The block stays keyed by the bare alias (overwrite, not auto-suffix) at
+        # the same ref, normalised with the full key set.
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
+        # No auto-suffixed alias was created.
+        assert "KANON_SOURCE_entry_a_manifest_bare_URL" not in content
 
     def test_force_preserves_surrounding_content(self, tmp_path: pathlib.Path) -> None:
         """--force preserves header and other blocks byte-for-byte."""
@@ -395,7 +413,7 @@ class TestAddForce:
         _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -408,11 +426,11 @@ class TestAddForce:
         content = kanon_file.read_text()
         # Pre-existing header line preserved
         assert "GITBASE=" in content
-        # entry-b block preserved
+        # entry-b block preserved (the force overwrite touches only entry-a)
         assert "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0" in content
-        # entry-a updated
-        assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" not in content
+        # entry-a re-pinned at the same ref, normalised with the _NAME key
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +465,7 @@ class TestAddCollisionError:
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -480,7 +498,7 @@ class TestAddCollisionError:
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -491,11 +509,11 @@ class TestAddCollisionError:
         # Must name the source name and relevant details.
         # The existing mapping was stored with the canonical git ref form
         # ("refs/tags/1.0.0"); the requested mapping is reported with the raw
-        # PEP 440 specifier the user supplied on the command line ("==2.0.0")
+        # PEP 440 specifier the user supplied on the command line ("==1.0.0")
         # because that is what surfaces the collision before any ref resolution.
         assert "entry_a" in result.stderr
         assert "refs/tags/1.0.0" in result.stderr
-        assert "==2.0.0" in result.stderr
+        assert "==1.0.0" in result.stderr
 
     def test_collision_error_references_force_or_remove(self, tmp_path: pathlib.Path) -> None:
         """Error message references --force or 'kanon remove'."""
@@ -520,7 +538,7 @@ class TestAddCollisionError:
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -555,7 +573,7 @@ class TestAddCollisionError:
         _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",

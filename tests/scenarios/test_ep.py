@@ -35,5 +35,7 @@ class TestEP:
             check=False,
         )
         assert result.returncode == 0, f"stderr={result.stderr!r}"
-        for token in ("install", "clean", "validate", "bootstrap"):
+        # The 3.0.0 top-level help lists the shipped commands (search replaced
+        # list; bootstrap was removed).
+        for token in ("install", "clean", "validate", "search"):
             assert token in result.stdout, f"missing {token!r} in stdout"

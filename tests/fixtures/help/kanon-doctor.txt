@@ -15,7 +15,7 @@ Subchecks:
  11. Remote reachability sanity check (warning only; exit 0)
 
 With --refresh-completion-cache, invalidates the completion-cache subdir
-under KANON_CACHE_DIR. With --prune-cache, removes cache files whose
+under the KANON_HOME cache. With --prune-cache, removes cache files whose
 atime exceeds KANON_CACHE_PRUNE_AGE_DAYS days and reports stale
 install-lock files as an advisory (does not delete them).
 Both flags are independent and may be combined.
@@ -35,15 +35,15 @@ options:
                         from the locked SHA.
   --refresh-completion-cache
                         Subcheck 8: invalidate the shell completion cache
-                        under ${KANON_CACHE_DIR}/completion-cache/. Removes
+                        under <KANON_HOME>/cache/completion-cache/. Removes
                         all files there and recreates the directory with mode
                         0700. Reports an info finding with the count of files
                         removed.
-  --prune-cache         Subcheck 10: remove cache files under
-                        ${KANON_CACHE_DIR} whose last-access time is older
-                        than KANON_CACHE_PRUNE_AGE_DAYS days (default 30).
-                        Reports an info finding with the count and total byte
-                        size pruned. Also reports stale .kanon-data/.kanon-
+  --prune-cache         Subcheck 10: remove cache files under the KANON_HOME
+                        cache whose last-access time is older than
+                        KANON_CACHE_PRUNE_AGE_DAYS days (default 30). Reports
+                        an info finding with the count and total byte size
+                        pruned. Also reports stale .kanon-data/.kanon-
                         install.lock files as advisory (does not delete them).
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref

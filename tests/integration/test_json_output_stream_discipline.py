@@ -1,6 +1,6 @@
 """Integration tests for JSON output stream discipline under uv.
 
-Verifies that ``kanon list --format json`` emits byte-clean stdout even when
+Verifies that ``kanon search --format json`` emits byte-clean stdout even when
 the subprocess is launched via ``uv run --project <kanon-path>`` with a
 parent-shell ``VIRTUAL_ENV`` set to a divergent venv path (DEFECT-002).
 
@@ -89,7 +89,7 @@ def _build_synthetic_catalog(base: pathlib.Path) -> pathlib.Path:
     """Build a bare catalog repo with two entries tagged at 1.0.0.
 
     Uses the ``_create_manifest_repo_with_tags`` helper from test_add_core so
-    that the catalog structure matches what kanon list expects.
+    that the catalog structure matches what kanon search expects.
 
     Args:
         base: Parent directory under which the work and bare dirs are created.
@@ -130,7 +130,7 @@ def _make_uv_env(extra: dict[str, str]) -> dict[str, str]:
 
 @pytest.mark.integration
 class TestJsonOutputStreamDiscipline:
-    """JSON stream-discipline contracts for kanon list --format json under uv.
+    """JSON stream-discipline contracts for kanon search --format json under uv.
 
     DEFECT-002: verifies that a divergent VIRTUAL_ENV does not corrupt stdout
     when stderr is merged into the same stream.
@@ -164,7 +164,7 @@ class TestJsonOutputStreamDiscipline:
                 "--project",
                 str(kanon_path),
                 "kanon",
-                "list",
+                "search",
                 "--catalog-source",
                 catalog_url,
                 "--format",
@@ -176,7 +176,7 @@ class TestJsonOutputStreamDiscipline:
         )
 
         assert result.returncode == 0, (
-            f"kanon list exited {result.returncode}.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
+            f"kanon search exited {result.returncode}.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
 
         parsed = json.loads(result.stdout)
@@ -223,7 +223,7 @@ class TestJsonOutputStreamDiscipline:
                 "--project",
                 str(kanon_path),
                 "kanon",
-                "list",
+                "search",
                 "--catalog-source",
                 catalog_url,
                 "--format",

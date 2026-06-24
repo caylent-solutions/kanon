@@ -152,17 +152,29 @@ class TestReadonlyParentDirectory:
             f"Got stderr={result.stderr!r}"
         )
 
-    def test_readonly_parent_install_error_mentions_path(self, tmp_path: pathlib.Path) -> None:
-        """The error message must mention the affected path so the user can act on it."""
+    def test_readonly_parent_install_error_mentions_path(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The error message must mention the affected path so the user can act on it.
+
+        3.0.0 store model: install materialises artifacts under the KANON_HOME
+        store (``<KANON_HOME>/store``). When the KANON_HOME parent is read-only,
+        store creation fails fast and the diagnostic must name that path so the
+        user knows which directory to fix.
+        """
         kanonenv = _write_kanonenv(tmp_path)
-        tmp_path.chmod(0o555)
+        readonly_home = tmp_path / "ro-home"
+        readonly_home.mkdir()
+        readonly_home.chmod(0o555)
+        monkeypatch.setenv("KANON_HOME", str(readonly_home))
         try:
             result = _run_kanon_subprocess("install", str(kanonenv))
         finally:
-            tmp_path.chmod(0o755)
+            readonly_home.chmod(0o755)
 
-        assert str(tmp_path) in result.stderr, (
-            f"Expected the affected path {tmp_path!r} to appear in stderr. Got stderr={result.stderr!r}"
+        assert str(readonly_home) in result.stderr, (
+            f"Expected the affected KANON_HOME store path {readonly_home!r} to appear in stderr. "
+            f"Got stderr={result.stderr!r}"
         )
 
     def test_readonly_parent_install_no_cross_channel_leakage(self, tmp_path: pathlib.Path) -> None:

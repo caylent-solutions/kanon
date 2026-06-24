@@ -49,13 +49,16 @@ _TOP_LEVEL_SUBCOMMANDS = [
     "repo",
 ]
 
-# All 13 kanon subcommands plus 'catalog audit' as a nested case (AC-2.2).
-# Each entry is a tuple of positional args that precede '-h'.
+# Every top-level kanon subcommand plus 'catalog audit' as a nested case
+# (AC-2.2). Each entry is a tuple of positional args that precede '-h'.
 # Parametrize IDs derive from " ".join(args) for readable test names.
+# The 3.0.0 surface renamed 'list' to 'search' and added the standalone
+# 'marketplace' command; both are exercised here.
 _ALL_SUBCOMMAND_DASH_H_CASES = [
     ("add",),
     ("remove",),
-    ("list",),
+    ("search",),
+    ("marketplace",),
     ("outdated",),
     ("why",),
     ("doctor",),

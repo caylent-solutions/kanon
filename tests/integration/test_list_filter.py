@@ -1,16 +1,16 @@
-"""Integration tests for the ``kanon list`` filter framework.
+"""Integration tests for the ``kanon search`` filter framework.
 
 Builds a temporary local file:// manifest-repo fixture (committed git repo
 with five ``*-marketplace.xml`` files with varied display-names, descriptions,
-and keywords) and invokes ``kanon list`` end-to-end via subprocess.
+and keywords) and invokes ``kanon search`` end-to-end via subprocess.
 
 Covers:
-- ``kanon list <substring>`` -- only matching entries appear.
-- ``kanon list --regex <pattern>`` -- only regex-matching entries appear.
-- ``kanon list <substring> --match-fields description`` -- narrowed field set.
-- ``kanon list --match-fields name`` -- hard error (no filter supplied).
-- ``kanon list foo --regex bar`` -- hard error (both substring and regex).
-- ``kanon list xyz-no-match`` -- exit 0, empty stdout, stderr note.
+- ``kanon search <substring>`` -- only matching entries appear.
+- ``kanon search --regex <pattern>`` -- only regex-matching entries appear.
+- ``kanon search <substring> --match-fields description`` -- narrowed field set.
+- ``kanon search --match-fields name`` -- hard error (no filter supplied).
+- ``kanon search foo --regex bar`` -- hard error (both substring and regex).
+- ``kanon search xyz-no-match`` -- exit 0, empty stdout, stderr note.
 - Filter + ``--tree`` interaction: a large-enough catalog unblocked by filter.
 
 AC-TEST-002, AC-TEST-003, AC-CYCLE-001, AC-FUNC-009
@@ -218,11 +218,11 @@ class TestSubstringFilter:
     """Integration tests for the positional substring filter."""
 
     def test_substring_foo_matches_name_fields(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list foo' returns only entries whose default fields contain 'foo'."""
+        """'kanon search foo' returns only entries whose default fields contain 'foo'."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="sub-foo")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "foo", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "foo", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
@@ -237,29 +237,29 @@ class TestSubstringFilter:
         assert "epsilon-svc" not in output_names
 
     def test_substring_no_match_exit_0(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list xyz-no-match' exits 0 when no entries match."""
+        """'kanon search xyz-no-match' exits 0 when no entries match."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="sub-nomatch")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "xyz-no-match", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "xyz-no-match", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
 
     def test_substring_no_match_empty_stdout(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list xyz-no-match' produces empty stdout when no entries match."""
+        """'kanon search xyz-no-match' produces empty stdout when no entries match."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="sub-nomatch-stdout")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "xyz-no-match", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "xyz-no-match", "--catalog-source", catalog_source])
 
         assert result.stdout == ""
 
     def test_substring_no_match_stderr_note(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list xyz-no-match' writes the spec zero-match note to stderr."""
+        """'kanon search xyz-no-match' writes the spec zero-match note to stderr."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="sub-nomatch-note")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "xyz-no-match", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "xyz-no-match", "--catalog-source", catalog_source])
 
         assert "0 entries match filter" in result.stderr
 
@@ -274,11 +274,11 @@ class TestRegexFilter:
     """Integration tests for the --regex filter."""
 
     def test_regex_anchored_start_matches_name(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list --regex ^foo' matches only entries whose name starts with 'foo'."""
+        """'kanon search --regex ^foo' matches only entries whose name starts with 'foo'."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="regex-anchor")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "--regex", "^foo", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--regex", "^foo", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
@@ -294,11 +294,11 @@ class TestRegexFilter:
         assert "epsilon-svc" not in output_names
 
     def test_regex_no_match_exit_0(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list --regex ^xyz-no-match$' exits 0 when no entries match."""
+        """'kanon search --regex ^xyz-no-match$' exits 0 when no entries match."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="regex-nomatch")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "--regex", "^xyz-no-match$", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--regex", "^xyz-no-match$", "--catalog-source", catalog_source])
 
         assert result.returncode == 0
         assert result.stdout == ""
@@ -315,11 +315,11 @@ class TestMatchFieldsFilter:
     """Integration tests for the --match-fields flag."""
 
     def test_match_fields_keywords_with_substring(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list foo --match-fields keywords' only checks keywords field."""
+        """'kanon search foo --match-fields keywords' only checks keywords field."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="mf-keywords")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "foo", "--match-fields", "keywords", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "foo", "--match-fields", "keywords", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
@@ -331,11 +331,11 @@ class TestMatchFieldsFilter:
         assert "foo-beta" not in output_names
 
     def test_match_fields_description_with_substring(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list foo --match-fields description' only checks description field."""
+        """'kanon search foo --match-fields description' only checks description field."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES, dir_suffix="mf-desc")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "foo", "--match-fields", "description", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "foo", "--match-fields", "description", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
@@ -355,21 +355,21 @@ class TestMutualExclusionErrors:
     """Integration tests for the mutual-exclusion hard errors."""
 
     def test_match_fields_without_filter_is_hard_error(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list --match-fields name' is a hard error (non-zero exit, ERROR: stderr)."""
+        """'kanon search --match-fields name' is a hard error (non-zero exit, ERROR: stderr)."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES[:1], dir_suffix="me-nofilter")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "--match-fields", "name", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--match-fields", "name", "--catalog-source", catalog_source])
 
         assert result.returncode != 0
         assert "ERROR:" in result.stderr
 
     def test_substring_and_regex_together_is_hard_error(self, tmp_path: pathlib.Path) -> None:
-        """'kanon list foo --regex bar' is a hard error (non-zero exit, ERROR: stderr)."""
+        """'kanon search foo --regex bar' is a hard error (non-zero exit, ERROR: stderr)."""
         bare = _create_manifest_repo(tmp_path, _FIVE_ENTRIES[:1], dir_suffix="me-both")
         catalog_source = f"file://{bare}@main"
 
-        result = _run_kanon(["list", "foo", "--regex", "bar", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "foo", "--regex", "bar", "--catalog-source", catalog_source])
 
         assert result.returncode != 0
         assert "ERROR:" in result.stderr
@@ -406,14 +406,14 @@ class TestFilterTreeInteraction:
 
         # Without filter, guardrail fires.
         result_no_filter = _run_kanon(
-            ["list", "--tree", "--catalog-source", catalog_source],
+            ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_TREE_NO_FILTER_THRESHOLD": str(threshold)},
         )
         assert result_no_filter.returncode != 0, "Expected guardrail to fire without filter"
 
         # With substring filter, guardrail does not fire.
         result_with_filter = _run_kanon(
-            ["list", "--tree", "entry-00", "--catalog-source", catalog_source],
+            ["search", "--tree", "entry-00", "--catalog-source", catalog_source],
             extra_env={"KANON_TREE_NO_FILTER_THRESHOLD": str(threshold)},
         )
         assert result_with_filter.returncode == 0, (
@@ -438,7 +438,7 @@ class TestFilterTreeInteraction:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["list", "--tree", "--regex", "^target-00$", "--catalog-source", catalog_source],
+            ["search", "--tree", "--regex", "^target-00$", "--catalog-source", catalog_source],
             extra_env={"KANON_TREE_NO_FILTER_THRESHOLD": str(threshold)},
         )
         assert result.returncode == 0, f"stderr: {result.stderr!r}"

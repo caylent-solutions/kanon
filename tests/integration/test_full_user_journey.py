@@ -394,13 +394,13 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             f"KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
             f"KANON_SOURCE_mp_REF=main\n"
             f"KANON_SOURCE_mp_PATH=default.xml\n"
             f"KANON_SOURCE_mp_NAME=mp\n"
-            f"KANON_SOURCE_mp_GITBASE=https://example.com\n",
+            f"KANON_SOURCE_mp_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_mp_MARKETPLACE=true\n",
             encoding="utf-8",
         )
 
@@ -773,13 +773,13 @@ class TestFullJourneyMultiSourceWithMarketplace:
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             "KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
             "KANON_SOURCE_mp_REF=main\n"
             "KANON_SOURCE_mp_PATH=default.xml\n"
             "KANON_SOURCE_mp_NAME=mp\n"
             "KANON_SOURCE_mp_GITBASE=https://example.com\n"
+            "KANON_SOURCE_mp_MARKETPLACE=true\n"
             "KANON_SOURCE_pkgs_URL=https://example.com/pkgs.git\n"
             "KANON_SOURCE_pkgs_REF=main\n"
             "KANON_SOURCE_pkgs_PATH=meta.xml\n"

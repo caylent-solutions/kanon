@@ -78,27 +78,31 @@ def _write_kanonenv_two_sources(
         marketplace_dir: Absolute path to CLAUDE_MARKETPLACES_DIR.
         source_alpha_url: Git URL for the first source (source-alpha).
         source_bravo_url: Git URL for the second source (source-bravo).
-        marketplace_install: Value to write for KANON_MARKETPLACE_INSTALL (true/false).
+        marketplace_install: When True, both sources opt into the marketplace via
+            their per-dependency KANON_SOURCE_<alias>_MARKETPLACE flags (the 3.0.0
+            replacement for the removed global KANON_MARKETPLACE_INSTALL header).
 
     Returns:
         Absolute path to the written .kanon file.
     """
     directory.mkdir(parents=True, exist_ok=True)
     kanonenv = directory / ".kanon"
-    flag_value = "true" if marketplace_install else "false"
+    alpha_marketplace = "KANON_SOURCE_source_alpha_MARKETPLACE=true\n" if marketplace_install else ""
+    bravo_marketplace = "KANON_SOURCE_source_bravo_MARKETPLACE=true\n" if marketplace_install else ""
     kanonenv.write_text(
-        f"KANON_MARKETPLACE_INSTALL={flag_value}\n"
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
         f"KANON_SOURCE_source_alpha_URL={source_alpha_url}\n"
         f"KANON_SOURCE_source_alpha_REF=main\n"
         f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
         f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
         f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
+        f"{alpha_marketplace}"
         f"KANON_SOURCE_source_bravo_URL={source_bravo_url}\n"
         f"KANON_SOURCE_source_bravo_REF=main\n"
         f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
         f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
         f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n"
+        f"{bravo_marketplace}"
     )
     return kanonenv.resolve()
 

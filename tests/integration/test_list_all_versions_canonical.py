@@ -1,8 +1,8 @@
-"""Integration tests: `kanon list --all-versions` is new-scheme-only.
+"""Integration tests: `kanon search -A/--all` is new-scheme-only.
 
-New-scheme-only contract for ``kanon list --all-versions``:
+New-scheme-only contract for ``kanon search -A/--all``:
 - Only canonical ``<catalog-metadata><name>`` values are emitted; the distinct
-  entry-name set is a subset of the names from ``kanon list`` (AC-1).
+  entry-name set is a subset of the names from ``kanon search`` (AC-1).
 - Old-scheme (flat-attribute / no ``<name>``) tags are SKIPPED, so the output contains
   none of the directory-path component names ``code-review``, ``idp``, ``cli``,
   ``microservice`` (AC-2); canonical entries ``security-code-review`` and
@@ -10,7 +10,7 @@ New-scheme-only contract for ``kanon list --all-versions``:
 - When EVERY version tag is old-scheme (zero new-scheme tags -- the real catalog's
   current state), the walk exits 0 with an empty result and a clear
   "no new-scheme version tags" note (TestAllVersionsAllOldScheme), NOT an error.
-- ``kanon list --help`` is unchanged (AC-14).
+- ``kanon search --help`` is unchanged (AC-14).
 
 The tests use local synthetic bare-git fixtures (not a remote network catalog):
 - ``_build_all_old_scheme_fixture``: every tag uses the real old flat-attribute scheme.
@@ -180,7 +180,7 @@ def _build_canonical_names_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
       (``security-code-review``, ``spec-driven-dev-idp``, ``platform-bootstrap``).
     - ``2.14.0``: modern nested ``<catalog-metadata><name>`` -- same canonical names.
 
-    The test drives ``kanon list`` (plain) and ``kanon list --all-versions`` against this
+    The test drives ``kanon search`` (plain) and ``kanon search -A/--all`` against this
     fixture and asserts the canonical-name-subset and excluded-name properties.
 
     Args:
@@ -230,11 +230,11 @@ def _run_kanon(
     extra_args: list[str],
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``kanon list`` with given args against bare_repo and return the process.
+    """Run ``kanon search`` with given args against bare_repo and return the process.
 
     Args:
         bare_repo: Path to the bare git repository.
-        extra_args: Arguments appended after ``kanon list``.
+        extra_args: Arguments appended after ``kanon search``.
         env_overrides: Optional environment variable overrides.
 
     Returns:
@@ -245,7 +245,7 @@ def _run_kanon(
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
+        "search",
         "--catalog-source",
         catalog_source,
     ] + extra_args
@@ -265,15 +265,15 @@ def _run_kanon(
 
 
 def _parse_entry_names_from_stdout(stdout: str) -> frozenset[str]:
-    """Parse the set of distinct entry names from ``kanon list`` output lines.
+    """Parse the set of distinct entry names from ``kanon search`` output lines.
 
-    ``kanon list`` prints ``<name>`` per line; ``kanon list --all-versions``
+    ``kanon search`` prints ``<name>`` per line; ``kanon search -A/--all``
     prints ``<name>@<version>`` per line.  Both formats yield the entry name
     as the part before the first ``@`` (or the entire line when there is no
     ``@``).
 
     Args:
-        stdout: Captured stdout string from a kanon list invocation.
+        stdout: Captured stdout string from a kanon search invocation.
 
     Returns:
         Frozenset of distinct entry names found in the output.
@@ -344,11 +344,11 @@ def _build_all_old_scheme_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
 @pytest.mark.integration
 class TestAllVersionsAllOldScheme:
     """New-scheme-only: when EVERY version tag is old flat-attribute (zero new-scheme tags),
-    ``kanon list --all-versions`` exits 0 with an empty result + a clear note (NOT exit 1)."""
+    ``kanon search -A/--all`` exits 0 with an empty result + a clear note (NOT exit 1)."""
 
     def test_all_old_scheme_exits_0_empty_with_note(self, tmp_path: pathlib.Path) -> None:
         bare_repo = _build_all_old_scheme_fixture(tmp_path)
-        result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        result = _run_kanon(bare_repo, ["--all", "--no-limit"])
         assert result.returncode == 0, (
             f"expected exit 0 for all-old-scheme history, got {result.returncode}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
@@ -364,13 +364,13 @@ class TestAllVersionsAllOldScheme:
         import json
 
         bare_repo = _build_all_old_scheme_fixture(tmp_path)
-        result = _run_kanon(bare_repo, ["--all-versions", "--no-limit", "--format", "json"])
+        result = _run_kanon(bare_repo, ["--all", "--no-limit", "--format", "json"])
         assert result.returncode == 0, f"expected exit 0, got {result.returncode}.\nstderr: {result.stderr!r}"
         parsed = json.loads(result.stdout)
         assert parsed == [], f"expected empty JSON array, got {parsed!r}"
 
     def test_plain_list_against_old_scheme_is_clean_error_no_traceback(self, tmp_path: pathlib.Path) -> None:
-        """Plain ``kanon list`` against an old flat-attribute catalog exits non-zero with a
+        """Plain ``kanon search`` against an old flat-attribute catalog exits non-zero with a
         clean explicit error (the migration message), NOT a raw Python traceback."""
         bare_repo = _build_all_old_scheme_fixture(tmp_path)
         result = _run_kanon(bare_repo, [])
@@ -392,27 +392,27 @@ class TestAllVersionsAllOldScheme:
 
 @pytest.mark.integration
 class TestAllVersionsCanonicalNames:
-    """FR-1: ``kanon list --all-versions`` must emit only canonical catalog-metadata names.
+    """FR-1: ``kanon search -A/--all`` must emit only canonical catalog-metadata names.
 
-    AC-1: the set of distinct entry names in ``--all-versions`` output is a subset of the
-          names from ``kanon list``.
-    AC-2: the ``--all-versions`` output contains none of the known-bad path-component names:
+    AC-1: the set of distinct entry names in ``-A/--all`` output is a subset of the
+          names from ``kanon search``.
+    AC-2: the ``-A/--all`` output contains none of the known-bad path-component names:
           ``code-review``, ``idp``, ``cli``, ``microservice``.
     AC-3: canonical entries ``security-code-review`` and ``spec-driven-dev-idp`` appear in
-          the ``--all-versions`` output.
+          the ``-A/--all`` output.
     AC-13: genuine RED->GREEN is recorded; this test file is the operator-path subprocess test.
-    AC-14: ``kanon list --help`` snapshot is unchanged after the fix.
+    AC-14: ``kanon search --help`` snapshot is unchanged after the fix.
     """
 
     def test_all_versions_name_set_is_subset_of_plain_list_names(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """AC-1: ``--all-versions`` entry names subset of ``kanon list`` names.
+        """AC-1: ``-A/--all`` entry names subset of ``kanon search`` names.
 
         The fixture has one legacy tag (1.0.0) and two modern tags (2.13.0, 2.14.0).
-        Pre-fix: ``--all-versions`` emits ``code-review`` / ``idp`` (from legacy tag),
-        which are NOT in ``kanon list`` output (plain list uses only canonical names).
+        Pre-fix: ``-A/--all`` emits ``code-review`` / ``idp`` (from legacy tag),
+        which are NOT in ``kanon search`` output (plain list uses only canonical names).
         Post-fix: legacy versions are excluded; all emitted names are canonical and form
         a subset of the plain-list name set.
         """
@@ -420,21 +420,21 @@ class TestAllVersionsCanonicalNames:
 
         plain_result = _run_kanon(bare_repo, [])
         assert plain_result.returncode == 0, (
-            f"kanon list failed with exit {plain_result.returncode}.\n"
+            f"kanon search failed with exit {plain_result.returncode}.\n"
             f"stdout: {plain_result.stdout!r}\nstderr: {plain_result.stderr!r}"
         )
         plain_names = _parse_entry_names_from_stdout(plain_result.stdout)
 
-        av_result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        av_result = _run_kanon(bare_repo, ["--all", "--no-limit"])
         assert av_result.returncode == 0, (
-            f"kanon list --all-versions failed with exit {av_result.returncode}.\n"
+            f"kanon search -A/--all failed with exit {av_result.returncode}.\n"
             f"stdout: {av_result.stdout!r}\nstderr: {av_result.stderr!r}"
         )
         av_names = _parse_entry_names_from_stdout(av_result.stdout)
 
         assert av_names <= plain_names, (
-            f"--all-versions name set is NOT a subset of plain-list names.\n"
-            f"Names in --all-versions but not in kanon list: {av_names - plain_names!r}\n"
+            f"-A/--all name set is NOT a subset of plain-list names.\n"
+            f"Names in -A/--all but not in kanon search: {av_names - plain_names!r}\n"
             f"plain_names={plain_names!r}\nav_names={av_names!r}"
         )
 
@@ -442,7 +442,7 @@ class TestAllVersionsCanonicalNames:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """AC-2: ``--all-versions`` output contains none of the known-bad names.
+        """AC-2: ``-A/--all`` output contains none of the known-bad names.
 
         Pre-fix: the legacy tag (1.0.0) causes ``code-review`` and ``idp`` to appear.
         Post-fix: legacy versions are excluded; these directory-path-derived names never
@@ -450,17 +450,17 @@ class TestAllVersionsCanonicalNames:
         """
         bare_repo = _build_canonical_names_fixture(tmp_path)
 
-        av_result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        av_result = _run_kanon(bare_repo, ["--all", "--no-limit"])
         assert av_result.returncode == 0, (
-            f"kanon list --all-versions failed with exit {av_result.returncode}.\n"
+            f"kanon search -A/--all failed with exit {av_result.returncode}.\n"
             f"stdout: {av_result.stdout!r}\nstderr: {av_result.stderr!r}"
         )
         av_names = _parse_entry_names_from_stdout(av_result.stdout)
 
         bad_names_present = av_names & _KNOWN_BAD_NAMES
         assert not bad_names_present, (
-            f"--all-versions output contains known-bad path-component names: {bad_names_present!r}.\n"
-            f"Full --all-versions stdout:\n{av_result.stdout}"
+            f"-A/--all output contains known-bad path-component names: {bad_names_present!r}.\n"
+            f"Full -A/--all stdout:\n{av_result.stdout}"
         )
 
     def test_all_versions_contains_canonical_entries(
@@ -471,21 +471,21 @@ class TestAllVersionsCanonicalNames:
 
         The fixture places these at modern tags (2.13.0, 2.14.0) with nested
         ``<catalog-metadata><name>`` values.  After the fix they must appear in the
-        ``--all-versions`` output (not their legacy directory-path counterparts).
+        ``-A/--all`` output (not their legacy directory-path counterparts).
         """
         bare_repo = _build_canonical_names_fixture(tmp_path)
 
-        av_result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        av_result = _run_kanon(bare_repo, ["--all", "--no-limit"])
         assert av_result.returncode == 0, (
-            f"kanon list --all-versions failed with exit {av_result.returncode}.\n"
+            f"kanon search -A/--all failed with exit {av_result.returncode}.\n"
             f"stdout: {av_result.stdout!r}\nstderr: {av_result.stderr!r}"
         )
 
         assert "security-code-review@" in av_result.stdout, (
-            f"Expected 'security-code-review' in --all-versions output.\nstdout: {av_result.stdout!r}"
+            f"Expected 'security-code-review' in -A/--all output.\nstdout: {av_result.stdout!r}"
         )
         assert "spec-driven-dev-idp@" in av_result.stdout, (
-            f"Expected 'spec-driven-dev-idp' in --all-versions output.\nstdout: {av_result.stdout!r}"
+            f"Expected 'spec-driven-dev-idp' in -A/--all output.\nstdout: {av_result.stdout!r}"
         )
 
     def test_legacy_versions_excluded_with_skipped_count_note(
@@ -501,9 +501,9 @@ class TestAllVersionsCanonicalNames:
         """
         bare_repo = _build_canonical_names_fixture(tmp_path)
 
-        av_result = _run_kanon(bare_repo, ["--all-versions", "--no-limit"])
+        av_result = _run_kanon(bare_repo, ["--all", "--no-limit"])
         assert av_result.returncode == 0, (
-            f"kanon list --all-versions failed with exit {av_result.returncode}.\n"
+            f"kanon search -A/--all failed with exit {av_result.returncode}.\n"
             f"stdout: {av_result.stdout!r}\nstderr: {av_result.stderr!r}"
         )
 
@@ -513,7 +513,7 @@ class TestAllVersionsCanonicalNames:
         av_names = _parse_entry_names_from_stdout(av_result.stdout)
         for bad_name in _KNOWN_BAD_NAMES:
             assert bad_name not in av_names, (
-                f"Known-bad name '{bad_name}' found as an entry name in --all-versions stdout.\n"
+                f"Known-bad name '{bad_name}' found as an entry name in -A/--all stdout.\n"
                 f"av_names={av_names!r}\nstdout: {av_result.stdout!r}"
             )
 
@@ -524,26 +524,26 @@ class TestAllVersionsCanonicalNames:
         )
 
     def test_help_text_unchanged(self) -> None:
-        """AC-14: ``kanon list --help`` snapshot is unchanged after the fix.
+        """AC-14: ``kanon search --help`` snapshot is unchanged after the fix.
 
         The help text documents the surface contract; any accidental drift in flags,
         defaults, or description text is a regression.
         """
         result = subprocess.run(
-            [sys.executable, "-m", "kanon_cli", "list", "--help"],
+            [sys.executable, "-m", "kanon_cli", "search", "--help"],
             capture_output=True,
             text=True,
             env=os.environ.copy(),
         )
         assert result.returncode == 0, (
-            f"kanon list --help failed with exit {result.returncode}.\nstderr: {result.stderr!r}"
+            f"kanon search --help failed with exit {result.returncode}.\nstderr: {result.stderr!r}"
         )
 
         help_text = result.stdout
 
         # Verify key surface contracts are present (flag names, positional argument).
         expected_fragments = [
-            "--all-versions",
+            "--all",
             "--catalog-source",
             "--limit N",
             "--no-limit",
@@ -551,9 +551,9 @@ class TestAllVersionsCanonicalNames:
             "--format",
             "--detail",
             "--tree",
-            "kanon list",
+            "kanon search",
         ]
         for fragment in expected_fragments:
             assert fragment in help_text, (
-                f"Expected '{fragment}' in 'kanon list --help' output.\nhelp_text:\n{help_text}"
+                f"Expected '{fragment}' in 'kanon search --help' output.\nhelp_text:\n{help_text}"
             )

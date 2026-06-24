@@ -122,17 +122,22 @@ def _write_kanonenv_single_source(
     source_name: str,
     source_url: str,
 ) -> pathlib.Path:
-    """Write a .kanon declaring exactly one marketplace-bearing source."""
+    """Write a .kanon declaring exactly one marketplace-bearing source.
+
+    3.0.0: the source opts into the marketplace via its per-dependency
+    KANON_SOURCE_<alias>_MARKETPLACE flag (the removed global
+    KANON_MARKETPLACE_INSTALL header no longer exists).
+    """
     directory.mkdir(parents=True, exist_ok=True)
     kanonenv = directory / ".kanon"
     kanonenv.write_text(
-        "KANON_MARKETPLACE_INSTALL=true\n"
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
         f"KANON_SOURCE_{source_name}_URL={source_url}\n"
         f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/{source_name}-marketplace.xml\n"
         f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
         f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
+        f"KANON_SOURCE_{source_name}_MARKETPLACE=true\n"
     )
     return kanonenv.resolve()
 
@@ -142,10 +147,14 @@ def _write_kanonenv_sources(
     marketplace_dir: pathlib.Path,
     sources: list[tuple[str, str]],
 ) -> pathlib.Path:
-    """Write a .kanon declaring each (source_name, source_url) marketplace-bearing source."""
+    """Write a .kanon declaring each (source_name, source_url) marketplace-bearing source.
+
+    3.0.0: each source opts into the marketplace via its per-dependency
+    KANON_SOURCE_<alias>_MARKETPLACE flag (the removed global
+    KANON_MARKETPLACE_INSTALL header no longer exists).
+    """
     directory.mkdir(parents=True, exist_ok=True)
     lines = [
-        "KANON_MARKETPLACE_INSTALL=true",
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}",
     ]
     for source_name, source_url in sources:
@@ -154,6 +163,7 @@ def _write_kanonenv_sources(
         lines.append(f"KANON_SOURCE_{source_name}_PATH=repo-specs/{source_name}-marketplace.xml")
         lines.append(f"KANON_SOURCE_{source_name}_NAME={source_name}")
         lines.append(f"KANON_SOURCE_{source_name}_GITBASE=https://example.com")
+        lines.append(f"KANON_SOURCE_{source_name}_MARKETPLACE=true")
     kanonenv = directory / ".kanon"
     kanonenv.write_text("\n".join(lines) + "\n")
     return kanonenv.resolve()

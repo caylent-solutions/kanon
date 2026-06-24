@@ -1,14 +1,18 @@
-"""Integration tests for ``kanon list --format json``.
+"""Integration tests for ``kanon search --format json``.
+
+The catalog discovery command was renamed from ``list`` to ``search`` in the
+3.0.0 release; the ``--format json`` behaviour and the ``KANON_LIST_FORMAT``
+env var are unchanged.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
-with *-marketplace.xml files) and invokes 'kanon list --format json
+with *-marketplace.xml files) and invokes 'kanon search --format json
 --catalog-source <file>@<ref>' via subprocess.run.
 
 Covers AC-TEST-002, AC-CYCLE-001:
 - Default mode JSON output: three entries, JSON array of {name, display-name,
   type, description, version}.
-- --all-versions --format json output: {name, version, ref, sha} array.
-- --format json --limit 2 combination with --all-versions.
+- -A/--all --format json output: {name, version, ref, sha} array.
+- --format json --limit 2 combination with -A/--all.
 - KANON_LIST_FORMAT=json env var end-to-end.
 - --format json --tree mutual-exclusion error.
 - Empty catalog with --format json emits [] exit 0.
@@ -139,7 +143,7 @@ def _build_single_version_manifest_repo(
 ) -> pathlib.Path:
     """Build a bare git repo with one commit and no version tags.
 
-    Used for default-mode JSON tests where --all-versions is not needed.
+    Used for default-mode JSON tests where -A/--all is not needed.
 
     Args:
         tmp_path: Temporary directory root.
@@ -210,7 +214,11 @@ def _kanon_list(
     extra_args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run 'kanon list' against a bare repo and return the process.
+    """Run 'kanon search' against a bare repo and return the process.
+
+    The catalog discovery command was renamed from 'list' to 'search' in the
+    3.0.0 release; the JSON-format behaviour (the --format flag and the
+    KANON_LIST_FORMAT env var) is unchanged.
 
     Args:
         bare_repo: Path to the bare git repository.
@@ -225,7 +233,7 @@ def _kanon_list(
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
+        "search",
         "--catalog-source",
         catalog_source,
     ]
@@ -354,7 +362,7 @@ class TestDetailModeJsonFormat:
 
 
 # ---------------------------------------------------------------------------
-# Tests: --all-versions --format json (AC-FUNC-005, AC-CYCLE-001)
+# Tests: -A/--all --format json (AC-FUNC-005, AC-CYCLE-001)
 # ---------------------------------------------------------------------------
 
 
@@ -363,11 +371,11 @@ class TestAllVersionsModeJsonFormat:
     """AC-FUNC-005, AC-CYCLE-001: JSON array of {name, version, ref, sha}."""
 
     def test_all_versions_json_parseable(self, tmp_path):
-        """--all-versions --format json produces parseable JSON."""
+        """-A/--all --format json produces parseable JSON."""
         bare_repo = _build_multi_version_manifest_repo(
             tmp_path, ["alpha", "beta", "gamma"], ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
         )
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         parsed = json.loads(proc.stdout)
@@ -376,7 +384,7 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_has_required_keys(self, tmp_path):
         """Each object has {name, version, ref, sha}."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0", "2.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -390,7 +398,7 @@ class TestAllVersionsModeJsonFormat:
             ["alpha", "beta", "gamma"],
             ["1.0.0", "2.0.0", "3.0.0", "4.0.0"],
         )
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -399,7 +407,7 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_ref_starts_with_refs_tags(self, tmp_path):
         """The 'ref' field starts with 'refs/tags/'."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -408,14 +416,14 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_sha_is_non_empty_string(self, tmp_path):
         """The 'sha' field is a non-empty string."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
         assert all(isinstance(obj["sha"], str) and len(obj["sha"]) > 0 for obj in parsed)
 
     def test_all_versions_limit_with_json_format(self, tmp_path):
-        """AC-CYCLE-001: --all-versions --format json --limit 2 returns 2 versions x N entries."""
+        """AC-CYCLE-001: -A/--all --format json --limit 2 returns 2 versions x N entries."""
         bare_repo = _build_multi_version_manifest_repo(
             tmp_path,
             ["alpha", "beta", "gamma"],
@@ -423,7 +431,7 @@ class TestAllVersionsModeJsonFormat:
         )
         proc = _kanon_list(
             bare_repo,
-            extra_args=["--all-versions", "--format", "json", "--limit", "2"],
+            extra_args=["--all", "--format", "json", "--limit", "2"],
         )
 
         assert proc.returncode == 0
@@ -434,7 +442,7 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_output_ends_with_newline(self, tmp_path):
         """AC-FUNC-008: stdout ends with exactly one newline."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         assert proc.stdout.endswith("\n")
@@ -481,11 +489,11 @@ class TestEnvVarJsonFormatIntegration:
             pass
 
     def test_env_var_json_with_all_versions(self, tmp_path):
-        """AC-CYCLE-001: KANON_LIST_FORMAT=json + --all-versions produces {name, version, ref, sha} array."""
+        """AC-CYCLE-001: KANON_LIST_FORMAT=json + -A/--all produces {name, version, ref, sha} array."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0", "2.0.0"])
         proc = _kanon_list(
             bare_repo,
-            extra_args=["--all-versions"],
+            extra_args=["--all"],
             env_overrides={"KANON_LIST_FORMAT": "json"},
         )
 

@@ -169,8 +169,10 @@ class TestInstallAfterAdd:
             f"got exit {install_result.returncode}.\n"
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
-        assert "'kanon install' does not accept a catalog source" in install_result.stderr, (
-            f"kanon install --catalog-source did not emit the hermetic-install diagnostic on stderr.\n"
+        # The install subparser does not register --catalog-source (install is
+        # hermetic), so argparse rejects it fail-fast as an unrecognized argument.
+        assert "--catalog-source" in install_result.stderr and "unrecognized arguments" in install_result.stderr, (
+            f"kanon install --catalog-source must be rejected as an unrecognized argument.\n"
             f"  exit code: {install_result.returncode}\n"
             f"  stderr   : {install_result.stderr!r}"
         )

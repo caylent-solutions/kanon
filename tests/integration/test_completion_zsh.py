@@ -232,7 +232,7 @@ def _zsh_option_spec_runner(
     then inspects the named option spec array for a spec element whose label
     matches ``label``.  Parses the parenthesised choice list and returns it.
 
-    For example, ``_shtab_kanon_list_options`` contains a spec like::
+    For example, ``_shtab_kanon_search_options`` contains a spec like::
 
         "--format[...]:list_format:(names json)"
 
@@ -241,7 +241,7 @@ def _zsh_option_spec_runner(
     Args:
         tmp_path: Temporary directory for the completion script.
         option_array_name: Name of the zsh array to inspect, e.g.
-            ``"_shtab_kanon_list_options"``.
+            ``"_shtab_kanon_search_options"``.
         label: The positional-argument label to match, e.g. ``"list_format"``.
 
     Returns:
@@ -461,10 +461,10 @@ def test_completion_script_syntax_valid() -> None:
 # ---------------------------------------------------------------------------
 
 _ENUM_FLAG_ROWS: list[tuple[str, str, str, list[str], bool]] = [
-    # -- kanon list --format (static enum) --
+    # -- kanon search --format (static enum) --
     (
-        "list_format_enum",
-        "_shtab_kanon_list_options",
+        "search_format_enum",
+        "_shtab_kanon_search_options",
         "list_format",
         ["names", "json"],
         True,
@@ -550,15 +550,15 @@ def test_static_enum_flag_row(
 
 @pytest.mark.integration
 def test_static_completion_shell_enum(tmp_path: Path) -> None:
-    """AC-FUNC-002: 'kanon completion <TAB>' offers (bash, zsh) as positional choices."""
+    """AC-FUNC-002: 'kanon completion <TAB>' offers (bash, zsh, powershell) as positional choices."""
     _assert_zsh_available()
     choices = _zsh_positional_spec_runner(
         tmp_path=tmp_path,
         option_array_name="_shtab_kanon_completion_options",
-        pattern="bash zsh",
+        pattern="bash zsh powershell",
     )
-    assert sorted(choices) == ["bash", "zsh"], (
-        f"Expected completion shell choices ['bash', 'zsh'], got {sorted(choices)!r}"
+    assert sorted(choices) == ["bash", "powershell", "zsh"], (
+        f"Expected completion shell choices ['bash', 'powershell', 'zsh'], got {sorted(choices)!r}"
     )
 
 
@@ -570,28 +570,28 @@ def test_static_completion_shell_enum(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 _FLAG_PRESENCE_ROWS: list[tuple[str, str, list[str]]] = [
-    # -- kanon list flags --
+    # -- kanon search flags --
     (
-        "list_flags",
-        "_shtab_kanon_list_options",
-        ["--help", "--format", "--detail", "--tree", "--all-versions", "--no-limit"],
+        "search_flags",
+        "_shtab_kanon_search_options",
+        ["--help", "--format", "--detail", "--tree", "--all", "--no-limit"],
     ),
-    # -- kanon list --match-fields flag --
+    # -- kanon search --match-fields flag --
     (
-        "list_match_fields_flag",
-        "_shtab_kanon_list_options",
+        "search_match_fields_flag",
+        "_shtab_kanon_search_options",
         ["--match-fields"],
     ),
-    # -- kanon list --since-version flag --
+    # -- kanon search --since-version flag --
     (
-        "list_since_version_flag",
-        "_shtab_kanon_list_options",
+        "search_since_version_flag",
+        "_shtab_kanon_search_options",
         ["--since-version"],
     ),
-    # -- kanon list --regex flag --
+    # -- kanon search --regex flag --
     (
-        "list_regex_flag",
-        "_shtab_kanon_list_options",
+        "search_regex_flag",
+        "_shtab_kanon_search_options",
         ["--regex"],
     ),
     # -- kanon outdated flags --
@@ -812,15 +812,16 @@ def test_static_top_level_subcommands(tmp_path: Path) -> None:
         tmp_path=tmp_path,
         commands_fn="_shtab_kanon_commands",
     )
+    # 3.0.0 surface: search replaced list; marketplace added; bootstrap removed.
     expected = [
         "add",
-        "bootstrap",
         "catalog",
         "clean",
         "completion",
         "doctor",
         "install",
-        "list",
+        "marketplace",
+        "search",
         "outdated",
         "remove",
         "validate",
@@ -830,6 +831,10 @@ def test_static_top_level_subcommands(tmp_path: Path) -> None:
     missing = [cmd for cmd in expected if cmd not in subcommands]
     assert not missing, (
         f"Expected top-level subcommands to include {expected!r}, but missing {missing!r}. Got: {sorted(subcommands)!r}"
+    )
+    # bootstrap was removed and must NOT be offered.
+    assert "bootstrap" not in subcommands, (
+        f"removed 'bootstrap' must not be a completion subcommand: {sorted(subcommands)!r}"
     )
 
 
@@ -846,13 +851,13 @@ def test_static_catalog_subcommands(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_static_validate_subcommands(tmp_path: Path) -> None:
-    """AC-FUNC-002: 'kanon validate <TAB>' offers exactly ['xml', 'marketplace', 'metadata']."""
+    """AC-FUNC-002: 'kanon validate <TAB>' offers ['xml', 'marketplace', 'metadata', 'lockfile']."""
     _assert_zsh_available()
     subcommands = _zsh_subcommand_runner(
         tmp_path=tmp_path,
         commands_fn="_shtab_kanon_validate_commands",
     )
-    expected = ["xml", "marketplace", "metadata"]
+    expected = ["xml", "marketplace", "metadata", "lockfile"]
     missing = [cmd for cmd in expected if cmd not in subcommands]
     assert not missing, (
         f"Expected validate subcommands to include {expected!r}, but missing {missing!r}. Got: {sorted(subcommands)!r}"
@@ -990,7 +995,7 @@ def test_dynamic_row_global_catalog_source(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_dynamic_row_list_since_version(tmp_path: Path) -> None:
-    """AC-FUNC-003: 'kanon list --since-version <TAB>' routes to catalog_versions."""
+    """AC-FUNC-003: 'kanon search --since-version <TAB>' routes to catalog_versions."""
     _assert_zsh_available()
     fixture_entries = "1.0.0\n2.0.0\n3.0.0\n"
     stub_bin_dir, call_log_path = _write_stub_kanon(tmp_path, {"__complete_catalog_versions": fixture_entries})
@@ -1177,12 +1182,12 @@ def test_kanon_completion_enabled_0_returns_empty(
 
 
 @pytest.mark.integration
-def test_ac_cycle_001_list_format(tmp_path: Path) -> None:
-    """AC-CYCLE-001: kanon list --format <TAB> => (names, json) per option spec."""
+def test_ac_cycle_001_search_format(tmp_path: Path) -> None:
+    """AC-CYCLE-001: kanon search --format <TAB> => (names, json) per option spec."""
     _assert_zsh_available()
     choices = _zsh_option_spec_runner(
         tmp_path=tmp_path,
-        option_array_name="_shtab_kanon_list_options",
+        option_array_name="_shtab_kanon_search_options",
         label="list_format",
     )
     assert sorted(choices) == ["json", "names"], f"AC-CYCLE-001: expected (names json), got {choices!r}"
@@ -1190,14 +1195,16 @@ def test_ac_cycle_001_list_format(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_ac_cycle_001_completion_shell(tmp_path: Path) -> None:
-    """AC-CYCLE-001: kanon completion <TAB> => (bash, zsh) per option spec."""
+    """AC-CYCLE-001: kanon completion <TAB> => (bash, zsh, powershell) per option spec."""
     _assert_zsh_available()
     choices = _zsh_positional_spec_runner(
         tmp_path=tmp_path,
         option_array_name="_shtab_kanon_completion_options",
-        pattern="bash zsh",
+        pattern="bash zsh powershell",
     )
-    assert sorted(choices) == ["bash", "zsh"], f"AC-CYCLE-001: expected (bash zsh), got {choices!r}"
+    assert sorted(choices) == ["bash", "powershell", "zsh"], (
+        f"AC-CYCLE-001: expected (bash powershell zsh), got {choices!r}"
+    )
 
 
 @pytest.mark.integration
@@ -1214,14 +1221,14 @@ def test_ac_cycle_001_outdated_format(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_ac_cycle_001_validate_subcommands(tmp_path: Path) -> None:
-    """AC-CYCLE-001: kanon validate <TAB> => (xml, marketplace, metadata)."""
+    """AC-CYCLE-001: kanon validate <TAB> => (xml, marketplace, metadata, lockfile)."""
     _assert_zsh_available()
     subcommands = _zsh_subcommand_runner(
         tmp_path=tmp_path,
         commands_fn="_shtab_kanon_validate_commands",
     )
-    assert sorted(subcommands) == ["marketplace", "metadata", "xml"], (
-        f"AC-CYCLE-001: expected (xml marketplace metadata), got {sorted(subcommands)!r}"
+    assert sorted(subcommands) == ["lockfile", "marketplace", "metadata", "xml"], (
+        f"AC-CYCLE-001: expected (xml marketplace metadata lockfile), got {sorted(subcommands)!r}"
     )
 
 

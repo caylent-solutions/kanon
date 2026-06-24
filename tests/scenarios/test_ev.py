@@ -6,7 +6,7 @@ on `run_kanon`, without network access.
 Scenarios automated:
 - EV-01: GITBASE override via environment
 - EV-02: KANON_MARKETPLACE_INSTALL override via environment
-- EV-03: KANON_CATALOG_SOURCE env var for bootstrap
+- EV-03: KANON_CATALOG_SOURCES env var supplies the catalog source to search
 """
 
 from __future__ import annotations
@@ -73,23 +73,42 @@ def _build_manifest_fixtures(base: pathlib.Path) -> pathlib.Path:
     )
 
 
-def _build_custom_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
-    """Build a bare catalog repo with a ``catalog/my-template/`` directory and tag ``1.0.0``.
+# The single catalog entry published by the EV-03 custom-catalog fixture.
+_EV03_ENTRY = "my_template"
 
-    The repo mirrors the custom-catalog fixture described in the EV-03 doc scenario:
-    a git repo with a ``catalog/my-template/.kanon`` file, committed and tagged.
+
+def _build_custom_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
+    """Build a bare 3.0.0 catalog repo publishing one entry, tagged ``1.0.0``.
+
+    The repo carries ``repo-specs/<entry>-marketplace.xml`` with a
+    ``<catalog-metadata>`` block (the 3.0.0 catalog layout that ``kanon search``
+    reads) and a ``1.0.0`` tag so the EV-03 ``@1.0.0`` catalog source resolves.
     """
     parent.mkdir(parents=True, exist_ok=True)
     work = parent / "custom-catalog.work"
     bare = parent / "custom-catalog.git"
     init_git_work_dir(work)
 
-    template_dir = work / "catalog" / "my-template"
-    template_dir.mkdir(parents=True)
-    (template_dir / ".kanon").write_text("# Custom catalog template\nKANON_MARKETPLACE_INSTALL=false\n")
-    (template_dir / "custom-readme.md").write_text("# Custom Template\n")
+    repo_specs = work / "repo-specs"
+    repo_specs.mkdir()
+    (repo_specs / f"{_EV03_ENTRY}-marketplace.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<manifest>\n"
+        "  <catalog-metadata>\n"
+        f"    <name>{_EV03_ENTRY}</name>\n"
+        f"    <display-name>{_EV03_ENTRY} Display</display-name>\n"
+        "    <description>EV-03 custom catalog entry.</description>\n"
+        "    <version>==1.0.0</version>\n"
+        "    <type>library</type>\n"
+        "    <owner-name>EV Owner</owner-name>\n"
+        "    <owner-email>ev@example.com</owner-email>\n"
+        "    <keywords>ev custom</keywords>\n"
+        "  </catalog-metadata>\n"
+        "</manifest>\n",
+        encoding="utf-8",
+    )
 
-    run_git(["add", "catalog"], work)
+    run_git(["add", "repo-specs"], work)
     run_git(["commit", "-m", "Initial custom catalog"], work)
     run_git(["tag", "1.0.0"], work)
 
@@ -181,24 +200,28 @@ class TestEV:
 
         kanon_clean(work_dir, extra_env={"KANON_MARKETPLACE_INSTALL": "false"})
 
-    def test_ev_03_kanon_catalog_source_for_bootstrap(self, tmp_path: pathlib.Path) -> None:
-        """EV-03: bootstrap was removed (exit 3 + deprecation message) regardless of KANON_CATALOG_SOURCE."""
+    def test_ev_03_kanon_catalog_sources_env_drives_search(self, tmp_path: pathlib.Path) -> None:
+        """EV-03: the KANON_CATALOG_SOURCES env var supplies the catalog source to search.
+
+        Catalog discovery moved from the removed ``bootstrap list`` to
+        ``kanon search``; the ``KANON_CATALOG_SOURCES`` env var (no
+        ``--catalog-source`` flag) supplies the source so the configured
+        catalog's entries are listed on stdout.
+        """
         catalog_bare = _build_custom_catalog_repo(tmp_path / "fixtures")
 
-        # KANON_CATALOG_SOURCE format: <git_url>@<ref>
+        # KANON_CATALOG_SOURCES format: <git_url>@<ref>
         catalog_source = f"{catalog_bare.as_uri()}@1.0.0"
 
         result = run_kanon(
-            "bootstrap",
-            "list",
-            extra_env={"KANON_CATALOG_SOURCE": catalog_source},
+            "search",
+            extra_env={"KANON_CATALOG_SOURCES": catalog_source},
         )
 
-        # bootstrap was removed in a major release: every invocation exits 3.
-        assert result.returncode == 3, (
-            f"kanon bootstrap list expected exit 3 (shim), got {result.returncode}\n"
+        assert result.returncode == 0, (
+            f"kanon search (KANON_CATALOG_SOURCES env) expected exit 0, got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "DEPRECATED" in result.stderr, (
-            f"Expected deprecation message on stderr from bootstrap list: {result.stderr!r}"
+        assert _EV03_ENTRY in result.stdout.split(), (
+            f"search must list the configured catalog's entry {_EV03_ENTRY!r}; stdout={result.stdout!r}"
         )

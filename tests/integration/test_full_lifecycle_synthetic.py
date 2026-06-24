@@ -286,13 +286,14 @@ class TestFullLifecycleSynthetic:
             entry_marketplace_dir.mkdir()
             kanon_path = workspace_dir / ".kanon"
 
-            # Set CLAUDE_MARKETPLACES_DIR + KANON_MARKETPLACE_INSTALL in
-            # os.environ so the in-process install() and clean() calls see the
-            # entry-specific marketplace dir. parse_kanonenv applies env
-            # overrides BEFORE ${HOME} shell-variable expansion, so the
-            # template value in .kanon is replaced by our test path.
+            # Set CLAUDE_MARKETPLACES_DIR in os.environ so the in-process
+            # install() and clean() calls see the entry-specific marketplace dir.
+            # parse_kanonenv applies env overrides BEFORE ${HOME} shell-variable
+            # expansion, so the template value in .kanon is replaced by our test
+            # path. The marketplace opt-in itself is the per-dependency flag
+            # written into .kanon below (the global KANON_MARKETPLACE_INSTALL
+            # header was removed in 3.0.0).
             monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", str(entry_marketplace_dir))
-            monkeypatch.setenv("KANON_MARKETPLACE_INSTALL", "true")
 
             # ------------------------------------------------------------------
             # Step 2b: kanon add
@@ -325,16 +326,16 @@ class TestFullLifecycleSynthetic:
             )
 
             # ``kanon add`` no longer writes a global standard header (spec
-            # Section 5.1: per-dependency blocks replace the global header, and
-            # the per-dep KANON_SOURCE_<alias>_MARKETPLACE field arrives in the
-            # add source-explicit task E4-F1-S3). This E35 lifecycle still drives
-            # the global marketplace-install path, so the marketplace flag and
-            # the marketplace directory are written directly into the committed
-            # .kanon for the install step to read (parse_kanonenv only honours an
-            # env override for a key that is already present in the file).
+            # Section 5.1: per-dependency blocks replace the global header). The
+            # 3.0.0 marketplace opt-in is per-dependency
+            # (KANON_SOURCE_<alias>_MARKETPLACE), not the removed global
+            # KANON_MARKETPLACE_INSTALL header. This E35 lifecycle opts the added
+            # dependency in by writing its per-dep flag and the marketplace
+            # directory directly into the committed .kanon for the install step.
+            entry_alias = entry_name.replace("-", "_")
             with kanon_path.open("a", encoding="utf-8") as _fh:
                 _fh.write(f"CLAUDE_MARKETPLACES_DIR={entry_marketplace_dir}\n")
-                _fh.write("KANON_MARKETPLACE_INSTALL=true\n")
+                _fh.write(f"KANON_SOURCE_{entry_alias}_MARKETPLACE=true\n")
 
             # ------------------------------------------------------------------
             # Step 2c: assert no <...> placeholder survives in .kanon (E28)

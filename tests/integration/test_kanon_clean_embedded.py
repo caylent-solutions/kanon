@@ -209,16 +209,18 @@ class TestCleanMarketplaceBehavior:
         marketplace_dir.mkdir()
         (marketplace_dir / "some-marketplace-file.txt").write_text("marketplace data")
 
+        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
+        # the removed global KANON_MARKETPLACE_INSTALL header.
         kanonenv = _write_kanonenv(
             tmp_path,
             (
-                "KANON_MARKETPLACE_INSTALL=true\n"
                 f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
                 "KANON_SOURCE_primary_REF=main\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
                 "KANON_SOURCE_primary_NAME=primary\n"
                 "KANON_SOURCE_primary_GITBASE=https://example.com\n"
+                "KANON_SOURCE_primary_MARKETPLACE=true\n"
             ),
         )
         store_base = _store_base()

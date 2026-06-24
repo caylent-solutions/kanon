@@ -37,7 +37,10 @@ def _write_kanonenv(
 
     Args:
         directory: Directory in which to create the .kanon file.
-        marketplace_install: Value for KANON_MARKETPLACE_INSTALL.
+        marketplace_install: When True, the primary dependency opts into the
+            marketplace via the per-dependency KANON_SOURCE_primary_MARKETPLACE
+            flag (the 3.0.0 replacement for the removed global
+            KANON_MARKETPLACE_INSTALL header).
         marketplace_dir: Path for CLAUDE_MARKETPLACES_DIR, or None to omit.
 
     Returns:
@@ -49,8 +52,9 @@ def _write_kanonenv(
         "KANON_SOURCE_primary_PATH=meta.xml",
         "KANON_SOURCE_primary_NAME=primary",
         "KANON_SOURCE_primary_GITBASE=https://example.com",
-        f"KANON_MARKETPLACE_INSTALL={'true' if marketplace_install else 'false'}",
     ]
+    if marketplace_install:
+        lines.append("KANON_SOURCE_primary_MARKETPLACE=true")
     if marketplace_dir is not None:
         lines.append(f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}")
     kanonenv = directory / ".kanon"

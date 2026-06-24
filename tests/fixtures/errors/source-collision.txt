@@ -1,2 +1,8 @@
-ERROR: source alias 'example_pkg' already mapped to https://example.com/org/manifest-repo.git/repo-specs/example-pkg-marketplace.xml (ref ==1.0.0); requested mapping is https://example.com/org/manifest-repo.git/repo-specs/example-pkg-marketplace.xml (ref ==2.0.0).
-Use --force to overwrite, or 'kanon remove example_pkg' first.
+ERROR: source alias 'example_pkg' is already mapped to https://example.com/org/manifest-repo.git/repo-specs/example-pkg-marketplace.xml (ref refs/tags/v1.0.0); this is a re-add of an existing package.
+-KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git
+-KANON_SOURCE_example_pkg_REF=refs/tags/v1.0.0
+-KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml
++KANON_SOURCE_example_pkg_URL=https://example.com/org/manifest-repo.git
++KANON_SOURCE_example_pkg_REF===1.0.0
++KANON_SOURCE_example_pkg_PATH=repo-specs/example-pkg-marketplace.xml
+Use --force to overwrite and re-pin its lock entry, or 'kanon remove example_pkg' first.

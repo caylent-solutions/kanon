@@ -1,15 +1,15 @@
-"""Integration tests for 'kanon list --all-versions'.
+"""Integration tests for 'kanon search -A/--all'.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
 with *-marketplace.xml files tagged at multiple versions) and invokes
-'kanon list --all-versions --catalog-source <file>@<ref>' via subprocess.run.
+'kanon search -A/--all --catalog-source <file>@<ref>' via subprocess.run.
 
 Covers AC-TEST-002, AC-TEST-003, AC-CYCLE-001:
 - Happy path: 4 tagged versions x 3 entries = 12 rows, spec format verified.
 - --limit 3 cap: 3 newest versions x 3 entries = 9 rows.
 - --no-limit: all versions walked.
 - --since-version filter: only matching versions.
-- --all-versions --tree mutual exclusion error.
+- -A/--all --tree mutual exclusion error.
 """
 
 import os
@@ -138,14 +138,14 @@ def _kanon_list_all_versions(
     extra_args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run 'kanon list --all-versions' against a bare repo and return the process."""
+    """Run 'kanon search -A/--all' against a bare repo and return the process."""
     catalog_source = f"file://{bare_repo}@main"
     cmd = [
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
-        "--all-versions",
+        "search",
+        "--all",
         "--catalog-source",
         catalog_source,
     ]
@@ -166,7 +166,7 @@ def _kanon_list_all_versions(
 
 
 # ---------------------------------------------------------------------------
-# Test: basic --all-versions output (AC-TEST-002, AC-CYCLE-001)
+# Test: basic -A/--all output (AC-TEST-002, AC-CYCLE-001)
 # ---------------------------------------------------------------------------
 
 
@@ -349,16 +349,16 @@ class TestAllVersionsSinceVersion:
 
 
 # ---------------------------------------------------------------------------
-# Test: --all-versions --tree mutual exclusion (AC-FUNC-008, AC-CYCLE-001)
+# Test: -A/--all --tree mutual exclusion (AC-FUNC-008, AC-CYCLE-001)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
 class TestAllVersionsTreeMutualExclusion:
-    """AC-FUNC-008, AC-CYCLE-001: combining --all-versions and --tree is a hard error."""
+    """AC-FUNC-008, AC-CYCLE-001: combining -A/--all and --tree is a hard error."""
 
     def test_all_versions_tree_exits_nonzero(self, tmp_path):
-        """--all-versions --tree exits non-zero."""
+        """-A/--all --tree exits non-zero."""
         entry_names = ["entry"]
         versions = ["1.0.0"]
         bare_repo = _build_multi_version_manifest_repo(tmp_path, entry_names, versions)
@@ -368,8 +368,8 @@ class TestAllVersionsTreeMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
@@ -378,7 +378,7 @@ class TestAllVersionsTreeMutualExclusion:
         assert proc.returncode != 0
 
     def test_all_versions_tree_writes_error_to_stderr(self, tmp_path):
-        """--all-versions --tree emits an error message to stderr."""
+        """-A/--all --tree emits an error message to stderr."""
         entry_names = ["entry"]
         versions = ["1.0.0"]
         bare_repo = _build_multi_version_manifest_repo(tmp_path, entry_names, versions)
@@ -388,14 +388,14 @@ class TestAllVersionsTreeMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
-        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all-versions" in proc.stderr
+        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all" in proc.stderr
 
     def test_all_versions_tree_detected_before_catalog_work(self, tmp_path):
         """Mutual exclusion is caught before any git clone or catalog walk."""
@@ -406,8 +406,8 @@ class TestAllVersionsTreeMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
@@ -415,7 +415,7 @@ class TestAllVersionsTreeMutualExclusion:
         proc = subprocess.run(cmd, capture_output=True, text=True)
         # Must fail with mutual-exclusion error, NOT with a git/clone error.
         assert proc.returncode != 0
-        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all-versions" in proc.stderr
+        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all" in proc.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -434,8 +434,8 @@ class TestLimitNoLimitMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--limit",
             "5",
             "--no-limit",
@@ -452,8 +452,8 @@ class TestLimitNoLimitMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--limit",
             "5",
             "--no-limit",

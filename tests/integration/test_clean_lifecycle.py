@@ -142,9 +142,21 @@ class TestCleanWithMarketplace:
         marketplace_dir.mkdir()
         (marketplace_dir / "some-marketplace-plugin.txt").write_text("plugin data")
 
+        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
+        # the removed global KANON_MARKETPLACE_INSTALL header. A dependency that
+        # opts in makes the clean marketplace-relevant (the per-dep fallback used
+        # when no lockfile is present).
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"),
+            (
+                f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
+                "KANON_SOURCE_toola_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_toola_REF=main\n"
+                "KANON_SOURCE_toola_PATH=repo-specs/manifest.xml\n"
+                "KANON_SOURCE_toola_NAME=toola\n"
+                "KANON_SOURCE_toola_GITBASE=https://example.com\n"
+                "KANON_SOURCE_toola_MARKETPLACE=true\n"
+            ),
         )
         store_base = _store_base()
         _create_install_artifacts(store_base, ["tool-a"])
@@ -416,18 +428,19 @@ class TestCleanMarketplaceTrue:
         workspace_dir.mkdir()
         kanonenv = workspace_dir / ".kanon"
         kanonenv.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
             f"KANON_SOURCE_source_alpha_URL=file://{bare_alpha}\n"
             f"KANON_SOURCE_source_alpha_REF=main\n"
             f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
             f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
             f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_source_alpha_MARKETPLACE=true\n"
             f"KANON_SOURCE_source_bravo_URL=file://{bare_bravo}\n"
             f"KANON_SOURCE_source_bravo_REF=main\n"
             f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
             f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
             f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_source_bravo_MARKETPLACE=true\n"
         )
         kanonenv = kanonenv.resolve()
 

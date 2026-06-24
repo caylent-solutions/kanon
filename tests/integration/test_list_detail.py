@@ -1,7 +1,7 @@
-"""Integration tests for 'kanon list --detail'.
+"""Integration tests for 'kanon search --detail'.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
-with *-marketplace.xml files) and invokes 'kanon list --detail --catalog-source
+with *-marketplace.xml files) and invokes 'kanon search --detail --catalog-source
 <file>@<ref>' via subprocess.run.
 
 Covers:
@@ -170,7 +170,7 @@ def _run_kanon(
     """Run kanon via the same Python interpreter used by pytest.
 
     Args:
-        args: Arguments to pass after the interpreter (e.g. ["list", "--detail", ...]).
+        args: Arguments to pass after the interpreter (e.g. ["search", "--detail", ...]).
         extra_env: Environment variables to overlay onto os.environ.
 
     Returns:
@@ -194,7 +194,7 @@ def _run_kanon(
 
 @pytest.mark.integration
 class TestListDetailThreeEntries:
-    """kanon list --detail with three marketplace XMLs: per-entry records."""
+    """kanon search --detail with three marketplace XMLs: per-entry records."""
 
     def _build_three_entry_repo(self, tmp_path: pathlib.Path) -> str:
         """Create a three-entry bare repo and return the catalog-source string."""
@@ -225,10 +225,10 @@ class TestListDetailThreeEntries:
         return f"file://{bare}@main"
 
     def test_exits_0(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --detail exits 0 for a three-entry catalog."""
+        """kanon search --detail exits 0 for a three-entry catalog."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, (
@@ -236,10 +236,10 @@ class TestListDetailThreeEntries:
         )
 
     def test_stdout_has_three_name_headers(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --detail stdout contains one name header per entry."""
+        """kanon search --detail stdout contains one name header per entry."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         # Header lines are non-indented, non-empty lines.
@@ -249,10 +249,10 @@ class TestListDetailThreeEntries:
         )
 
     def test_headers_sorted_lexicographically(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --detail emits records in lexicographic order by name."""
+        """kanon search --detail emits records in lexicographic order by name."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
@@ -262,7 +262,7 @@ class TestListDetailThreeEntries:
         """Each record block contains indented field lines."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
@@ -276,7 +276,7 @@ class TestListDetailThreeEntries:
         """All indented field lines contain the ' : ' separator."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
@@ -287,7 +287,7 @@ class TestListDetailThreeEntries:
         """The 'alpha' entry record contains its correct display-name and version."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         stdout = result.stdout
@@ -311,7 +311,7 @@ class TestListDetailThreeEntries:
         """No ERROR: lines appear in stderr for a well-formed three-entry catalog."""
         catalog_source = self._build_three_entry_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "ERROR:" not in result.stderr, f"Unexpected ERROR: in stderr: {result.stderr!r}"
@@ -354,10 +354,10 @@ class TestListDetailAcCycle001:
         return f"file://{bare}@main"
 
     def test_exits_0_mixed_repo(self, tmp_path: pathlib.Path) -> None:
-        """kanon list --detail exits 0 for a repo with both full and partial entries."""
+        """kanon search --detail exits 0 for a repo with both full and partial entries."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, (
@@ -368,7 +368,7 @@ class TestListDetailAcCycle001:
         """Both 'full-entry' and 'partial-entry' headers appear in output."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
@@ -379,7 +379,7 @@ class TestListDetailAcCycle001:
         """full-entry record contains 'library' for the type field."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "library" in result.stdout, f"Expected 'library' in full-entry record; stdout: {result.stdout!r}"
@@ -388,7 +388,7 @@ class TestListDetailAcCycle001:
         """partial-entry record shows '<missing>' for the type field."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "<missing>" in result.stdout, f"Expected '<missing>' placeholder in output; stdout: {result.stdout!r}"
@@ -397,7 +397,7 @@ class TestListDetailAcCycle001:
         """Exactly one WARNING: line appears on stderr -- for the partial entry."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         warning_count = result.stderr.count("WARNING:")
@@ -409,7 +409,7 @@ class TestListDetailAcCycle001:
         """No ERROR: lines appear in stderr for a mixed repo (full + partial entries)."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "ERROR:" not in result.stderr, f"Unexpected ERROR: in stderr: {result.stderr!r}"
@@ -418,7 +418,7 @@ class TestListDetailAcCycle001:
         """Records appear sorted: 'full-entry' before 'partial-entry' alphabetically."""
         catalog_source = self._build_mixed_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
@@ -454,7 +454,7 @@ class TestListDetailRecordShape:
         """First line of the record is the entry name with no indent."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         lines = result.stdout.splitlines()
@@ -464,7 +464,7 @@ class TestListDetailRecordShape:
         """Record contains 'display-name' label with 'Package A' value."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "display-name" in result.stdout
@@ -474,7 +474,7 @@ class TestListDetailRecordShape:
         """Record contains 'description' label with 'Example dependency' value."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "description" in result.stdout
@@ -484,7 +484,7 @@ class TestListDetailRecordShape:
         """Record contains 'version' label with '1.4.2' value."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "version" in result.stdout
@@ -494,7 +494,7 @@ class TestListDetailRecordShape:
         """Record contains 'type' label with 'library' value."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "type" in result.stdout
@@ -504,7 +504,7 @@ class TestListDetailRecordShape:
         """All field lines start with two spaces per spec format."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         lines = result.stdout.splitlines()
@@ -516,7 +516,7 @@ class TestListDetailRecordShape:
         """Single-entry output has exactly 5 lines: name + 4 fields."""
         catalog_source = self._build_spec_example_repo(tmp_path)
         result = _run_kanon(
-            ["list", "--detail", "--catalog-source", catalog_source],
+            ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         non_blank_lines = [ln for ln in result.stdout.splitlines() if ln]

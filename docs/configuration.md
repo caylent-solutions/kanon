@@ -150,7 +150,7 @@ Given a `.kanon` file with the following content at lines 3 and 7:
 
 ```properties
 # .kanon
-KANON_CATALOG_SOURCE=https://github.com/your-org/catalog.git@main
+KANON_CATALOG_SOURCES=https://github.com/your-org/catalog.git@main
 GITBASE=<YOUR_GIT_ORG_BASE_URL>
 KANON_SOURCE_build_URL=${GITBASE}/build.git
 KANON_SOURCE_build_REVISION=main
@@ -196,24 +196,26 @@ Cross-references:
 
 **No default catalog source.** Post-bootstrap-deprecation, the
 bundled fallback catalog has been removed. One of `--catalog-source`
-or `KANON_CATALOG_SOURCE` is required for catalog-requiring commands.
+or `KANON_CATALOG_SOURCES` is required for catalog-requiring commands.
 There is no rc-file mechanism; configuration is explicit via CLI flag
 or environment variable only.
 
-**`KANON_CATALOG_SOURCE`** (default: unset) -- Catalog repository in
-`<url>@<ref>` form. Specifies the catalog repository used by
-catalog-requiring commands. Overridden by `--catalog-source` CLI flag.
+**`KANON_CATALOG_SOURCES`** (default: unset) -- One or more catalog
+repositories, each in `url[@ref]` form, given as a newline-delimited
+list (one entry per line). Specifies the catalog repositories used by
+catalog-requiring commands. A command that resolves a catalog uses the
+single configured entry; `--catalog-source` overrides it.
 
 ```bash
-export KANON_CATALOG_SOURCE=\
+export KANON_CATALOG_SOURCES=\
   https://github.com/example-org/kanon-catalog.git@main
-kanon list
+kanon search
 ```
 
 **Precedence (highest to lowest):**
 
 1. `--catalog-source` CLI flag
-2. `KANON_CATALOG_SOURCE` environment variable
+2. `KANON_CATALOG_SOURCES` environment variable
 3. `lockfile.[catalog].source` -- fallback for `kanon install` and
    `kanon doctor` when in the `LOCKFILE_CONSISTENT` state and both
    the CLI flag and env var are unset
@@ -234,12 +236,12 @@ recorded `[catalog].source`, `kanon install` raises
 See [docs/architecture.md](architecture.md) for the full precedence
 and mismatch-detection logic.
 
-**Shell-profile leakage warning.** If `KANON_CATALOG_SOURCE` is set
+**Shell-profile leakage warning.** If `KANON_CATALOG_SOURCES` is set
 in a shell profile (e.g., `~/.bashrc`, `~/.zshrc`, `~/.profile`),
 it leaks into every shell session including unrelated workspaces.
 A catalog source set for project A silently applies to project B
 if both are opened in the same shell. To avoid cross-workspace
-contamination, set `KANON_CATALOG_SOURCE` in workspace-specific
+contamination, set `KANON_CATALOG_SOURCES` in workspace-specific
 tooling (e.g., a `.envrc` loaded by direnv) rather than in shell
 profiles. Alternatively, always pass `--catalog-source` explicitly
 on the command line.
@@ -262,16 +264,16 @@ clock. Defined in `src/kanon_cli/constants.py`.
 `--kanon-file` CLI flag.
 
 **`KANON_LIST_FORMAT`** (default: `names`) -- Default output format
-for `kanon list`. Supported values: `names`, `json`. Overridden by
+for `kanon search`. Supported values: `names`, `json`. Overridden by
 `--format` CLI flag.
 
 **`KANON_LIST_LIMIT`** (default: `50`) -- Default cap on the number
-of entries returned by `kanon list --all-versions`. Overridden by
+of entries returned by `kanon search -A`. Overridden by
 `--limit N` / `--no-limit` CLI flags.
 
 **`KANON_TREE_NO_FILTER_THRESHOLD`** (default: `20`) -- Entry count
-above which `kanon list --tree` requires a filter argument. Without a
-filter, `kanon list --tree` exits with an error suggesting `--regex`,
+above which `kanon search --tree` requires a filter argument. Without a
+filter, `kanon search --tree` exits with an error suggesting `--regex`,
 `<substring>`, or `--max-depth 0`. Override with
 `--no-filter-required`.
 
@@ -361,26 +363,23 @@ chain.
 3. Default derived from `--kanon-file`: `./.kanon` becomes
    `./.kanon.lock`; `./alt.kanon` becomes `./alt.kanon.lock`.
 
-**`KANON_CACHE_DIR`** (default: `~/.cache/kanon`) -- Root directory
-for the shell-completion cache. When set, overrides both
-`XDG_CACHE_HOME/kanon` and the `~/.cache/kanon` fallback. The
-directory and all files inside it are created with mode `0700` /
-`0600` (owner-private). See
+**`KANON_HOME`** (default: `~/.kanon`) -- Single root directory that
+subsumes the former per-user cache-dir override and the former
+per-workspace artifact-dir override. The cache subtree lives at
+`${KANON_HOME}/cache/` and the store subtree at `${KANON_HOME}/store/`.
+An unwritable resolved home fails fast with an actionable message
+(no silent relocation). Owner-private modes `0700` / `0600` still apply
+to cache files. See
 [Shell Completion -- Cache layout](shell-completion.md#cache-layout).
 
-**`KANON_CACHE_DIR` resolution order (highest wins):**
+**`KANON_HOME` resolution order (highest wins):**
 
-1. `KANON_CACHE_DIR` environment variable.
-2. `${XDG_CACHE_HOME}/kanon` -- XDG Base Directory fallback.
-3. `~/.cache/kanon` -- default when neither env var is set.
+1. `KANON_HOME` environment variable (when non-empty).
+2. `~/.kanon` -- default when the env var is unset or empty.
 
 ```bash
-# Store cache in a non-default location
-export KANON_CACHE_DIR=/tmp/my-kanon-cache
-
-# Use the XDG default
-unset KANON_CACHE_DIR
-export XDG_CACHE_HOME=~/.cache
+# Store cache and artifacts under a non-default home
+export KANON_HOME=/tmp/my-kanon-home
 ```
 
 ---
@@ -416,7 +415,7 @@ The following variables control how `kanon doctor --prune-cache`
 handles stale lock files and cache entries.
 
 **`KANON_CACHE_PRUNE_AGE_DAYS`** (default: `30`) -- Files under
-`${KANON_CACHE_DIR}` whose last-access time is older than this many
+`${KANON_HOME}/cache` whose last-access time is older than this many
 days are removed by `kanon doctor --prune-cache`. Reports what was
 pruned. Must be a positive integer. Values of 0 or below are rejected
 with a clear error at startup.
@@ -521,11 +520,11 @@ losing access-time tracking for cache pruning.
 export KANON_ACCESSED_AT_COALESCE_SEC=300
 ```
 
-**`KANON_COMPLETION_LOG`** (default: `${KANON_CACHE_DIR}/completion-errors.log`)
+**`KANON_COMPLETION_LOG`** (default: `${KANON_HOME}/cache/completion-errors.log`)
 -- Path to the append-only completion-errors log. When unset, errors
-are written to `completion-errors.log` directly under `KANON_CACHE_DIR`.
-The file is created with mode `0600` and its parent directory with
-mode `0700`.
+are written to `completion-errors.log` directly under
+`${KANON_HOME}/cache`. The file is created with mode `0600` and its
+parent directory with mode `0700`.
 
 ```bash
 # Redirect completion errors to a custom path

@@ -97,7 +97,7 @@ line); the shell function hands them to the shell completion machinery.
 
 All completers are failure-quiet on stdout (return an empty list on
 error) and failure-loud on stderr (append a structured error line to
-`${KANON_CACHE_DIR}/completion-errors.log`). This keeps the shell UX
+`${KANON_HOME}/cache/completion-errors.log`). This keeps the shell UX
 non-blocking while ensuring errors are captured for `kanon doctor` to
 surface.
 
@@ -106,7 +106,7 @@ surface.
 **Shell helper:** `_kanon_complete_catalog_entries`
 
 Retrieves available catalog entry names from the local cache.
-Reads `${KANON_CACHE_DIR}/catalogs/<sha256>/index.txt`, where the
+Reads `${KANON_HOME}/cache/catalogs/<sha256>/index.txt`, where the
 sha256 is derived from `"<catalog-url>@<ref>"`. On cache miss, the
 command performs an inline network fetch bounded by
 `KANON_COMPLETION_TIMEOUT` before returning results.
@@ -158,7 +158,7 @@ Retrieves available versions for a catalog entry. Calls
 `git ls-remote --tags --heads` against the manifest repo, filters
 results to PEP 440-valid tags and branches, and returns them one per
 line (deduped). Results are cached in
-`${KANON_CACHE_DIR}/catalogs/<sha256>/tags.txt`.
+`${KANON_HOME}/cache/catalogs/<sha256>/tags.txt`.
 
 Used when completing `@<version>` suffixes on `kanon add` arguments.
 
@@ -172,7 +172,7 @@ current completion prefix (second). Calls
 `git ls-remote --tags --heads <repo-url>`, filters to PEP 440-valid
 tags and branches, and returns them one per line (deduped, sorted).
 Results are cached in
-`${KANON_CACHE_DIR}/projects/<sha256>/tags.txt`.
+`${KANON_HOME}/cache/projects/<sha256>/tags.txt`.
 
 **URL canonicalization:** Before computing the cache key, the raw
 repo URL is canonicalized via the internal `canonicalize_repo_url`
@@ -193,7 +193,7 @@ Used when completing the `<spec>` portion of `kanon add foo@<TAB>`.
 **Shell helper:** `_kanon_complete_cached_catalogs`
 
 Retrieves locally cached catalog identifiers. Enumerates
-`${KANON_CACHE_DIR}/catalogs/*/` directories and reads the
+`${KANON_HOME}/cache/catalogs/*/` directories and reads the
 `origin.txt` sidecar from each sha-named entry. Emits one
 `<url>@<ref>` string per line, sorted lexicographically, filtered
 by the current completion prefix.
@@ -209,7 +209,7 @@ only.
   offending sha directory is appended to `completion-errors.log`.
 
 Used when completing the `--catalog-source <url>@<ref>` flag for
-`kanon list`, `kanon add`, `kanon outdated`, and related commands.
+`kanon search`, `kanon add`, `kanon outdated`, and related commands.
 
 ### Mid-token splitting
 
@@ -259,10 +259,10 @@ per-process settings).
 See [Configuration](configuration.md) for the full environment
 variable reference table.
 
-**`KANON_CACHE_DIR`** -- Root directory for all kanon cache files.
-Controls where completion index files, version lists, and error logs
-are written. Defaults to `${XDG_CACHE_HOME:-~/.cache}/kanon`.
-Override to place the cache on a faster or larger volume.
+**`KANON_HOME`** -- Root kanon home directory; cache lives under
+`${KANON_HOME}/cache`. Controls where completion index files, version
+lists, and error logs are written. Defaults to `~/.kanon`.
+Override to place the home directory on a faster or larger volume.
 
 **`KANON_COMPLETION_CACHE_TTL`** (default `300`) -- Cache
 time-to-live in seconds. Entries whose `fetched_at.txt` is within
@@ -288,14 +288,14 @@ window in seconds for `accessed_at.txt` updates. Limits I/O under
 rapid tab-pressing by suppressing redundant writes within this window.
 
 **`KANON_COMPLETION_LOG`** (default
-`${KANON_CACHE_DIR}/completion-errors.log`) -- Path to the
+`${KANON_HOME}/cache/completion-errors.log`) -- Path to the
 append-only error log written by `__complete_*` subcommands. Override
 to redirect completion-time errors to a custom path.
 
 ### Cache layout
 
 ```text
-${KANON_CACHE_DIR}/
+${KANON_HOME}/cache/
   catalogs/
     <sha256-of-catalog-url@ref>/
       index.txt      -- one catalog entry name per line
@@ -340,7 +340,7 @@ catalog, the cache has not yet refreshed.
 ### Refreshing the completion cache without a workspace
 
 `kanon doctor --refresh-completion-cache` and
-`kanon doctor --prune-cache` operate on `KANON_CACHE_DIR` globally
+`kanon doctor --prune-cache` operate on `KANON_HOME` globally
 and do NOT require a `.kanon` workspace to be present in the current
 directory. Both flags inspect and modify only the cache directory;
 they never read or write `.kanon` or `.kanon.lock`. This means they
@@ -354,7 +354,7 @@ present):
 cd ~
 kanon doctor --refresh-completion-cache
 # exit 0; output similar to:
-# [ok] Completion cache refreshed (KANON_CACHE_DIR=~/.cache/kanon)
+# [ok] Completion cache refreshed (KANON_HOME=~/.kanon)
 ```
 
 Example: prune the entire cache from any directory:
@@ -362,14 +362,14 @@ Example: prune the entire cache from any directory:
 ```bash
 kanon doctor --prune-cache
 # exit 0; output similar to:
-# [ok] Cache pruned (KANON_CACHE_DIR=~/.cache/kanon)
+# [ok] Cache pruned (KANON_HOME=~/.kanon)
 ```
 
-Override the cache directory via `KANON_CACHE_DIR` to target a
+Override the home directory via `KANON_HOME` to target a
 non-default location:
 
 ```bash
-KANON_CACHE_DIR=/tmp/my-kanon-cache kanon doctor --refresh-completion-cache
+KANON_HOME=/tmp/my-kanon-home kanon doctor --refresh-completion-cache
 ```
 
 See [docs/installation.md](installation.md) for the broader
@@ -380,7 +380,7 @@ completion-installation context and initial setup instructions.
 Errors that occur inside `__complete_*` subcommands are written to
 the completion error log. The default path is:
 
-`${KANON_CACHE_DIR}/completion-errors.log`
+`${KANON_HOME}/cache/completion-errors.log`
 
 Override the path via `KANON_COMPLETION_LOG`. The log is append-only
 and is never rotated automatically. Truncate or remove it manually,

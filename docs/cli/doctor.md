@@ -16,7 +16,7 @@ is read-only when invoked without `--refresh-completion-cache` or
 `--prune-cache`: it reads files and queries remote repositories but does
 not modify any local state.
 With `--refresh-completion-cache`, it invalidates all files under
-`${KANON_CACHE_DIR}/completion-cache/`.
+`${KANON_HOME}/cache/completion-cache/`.
 With `--prune-cache`, it removes cache files whose atime is older than
 `KANON_CACHE_PRUNE_AGE_DAYS` days and reports stale install-lock advisories.
 Both flags are independent and may be combined.
@@ -51,18 +51,18 @@ emitted). Exit code is 1 when any error-level finding is detected.
   `[catalog].source` value.
 
 `--refresh-completion-cache`
-: Subcheck 8: Invalidate all files under `${KANON_CACHE_DIR}/completion-cache/`,
+: Subcheck 8: Invalidate all files under `${KANON_HOME}/cache/completion-cache/`,
   recreating the directory empty with mode `0700`. Reports an info finding
   with the count of files removed. This flag is independent of the health
-  checks. Has no effect when `KANON_CACHE_DIR` is unset.
+  checks. Has no effect when `KANON_HOME` is unset.
 
 `--prune-cache`
-: Subcheck 10: Remove files under `${KANON_CACHE_DIR}` whose last-access time
+: Subcheck 10: Remove files under `${KANON_HOME}/cache` whose last-access time
   is older than `KANON_CACHE_PRUNE_AGE_DAYS` days (default 30). Reports an
   info finding with the count and total byte size pruned. Also reports any
   stale `.kanon-data/.kanon-install.lock` files (mtime older than
   `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` hours) as advisory findings -- doctor
-  does NOT delete them. Has no effect on cache files when `KANON_CACHE_DIR`
+  does NOT delete them. Has no effect on cache files when `KANON_HOME`
   is unset; stale-lock scan always runs from the current working directory.
 
 ## Subchecks
@@ -224,8 +224,8 @@ whether it was intentional for this project or a stale variable from another ses
 
 ### Subcheck 8: Completion-cache invalidation (--refresh-completion-cache)
 
-When `--refresh-completion-cache` is set and `KANON_CACHE_DIR` is configured,
-all files under `${KANON_CACHE_DIR}/completion-cache/` are deleted and the
+When `--refresh-completion-cache` is set and `KANON_HOME` is configured,
+all files under `${KANON_HOME}/cache/completion-cache/` are deleted and the
 directory is recreated empty with mode `0700`. This invalidates any cached
 completion data so the next completion invocation rebuilds the cache from
 scratch.
@@ -238,16 +238,16 @@ This subcheck runs BEFORE subchecks 1-5, 7, 9, 10, and 11.
 INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.cache/kanon/completion-cache
 ```
 
-When `KANON_CACHE_DIR` is not set, this subcheck is skipped silently.
+When `KANON_HOME` is not set, this subcheck is skipped silently.
 
 ### Subcheck 7: Completion errors report
 
 Reads the most recent `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines (default 5)
-from `${KANON_CACHE_DIR}/completion-errors.log`. This log is written by shell
+from `${KANON_HOME}/cache/completion-errors.log`. This log is written by shell
 completion callback failures (see E7 / `docs/shell-completions.md`).
 
 `kanon doctor` only reads this log -- it does NOT modify, truncate, or rotate it.
-If `KANON_CACHE_DIR` is not set, this subcheck is silently skipped.
+If `KANON_HOME` is not set, this subcheck is silently skipped.
 
 **Info notice when the log is absent or empty:**
 
@@ -264,7 +264,7 @@ WARN: Recent completion errors (5):
 2026-01-01T12:00:02Z __complete_catalog_entries TimeoutError: git ls-remote timed out after 30s
 2026-01-01T12:00:03Z __complete_source_names ValueError: malformed .kanon line 7
 2026-01-01T12:00:04Z __complete_catalog_entries ConnectionError: name resolution failed
-  Remediation: Inspect ${KANON_CACHE_DIR}/completion-errors.log for details.
+  Remediation: Inspect ${KANON_HOME}/cache/completion-errors.log for details.
 ```
 
 When the log contains more than `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines,
@@ -365,7 +365,7 @@ WARN: remote unreachable: https://github.com/org/repo (exit code 128); stderr: P
 
 When `--prune-cache` is set, two actions occur:
 
-**10a -- Cache prune:** All files under `${KANON_CACHE_DIR}` (recursively)
+**10a -- Cache prune:** All files under `${KANON_HOME}/cache` (recursively)
 whose last-access time (`atime`) is older than `KANON_CACHE_PRUNE_AGE_DAYS`
 days are deleted. The number of deleted files and their combined byte size are
 reported as an info finding.
@@ -393,7 +393,7 @@ INFO: Cache pruned: 2 file(s) removed (4096 bytes) with atime older than 30 days
 INFO: Advisory: stale install lock found at /path/to/.kanon-data/.kanon-install.lock (mtime older than 1h). fcntl.flock self-cleans on process exit; this file is harmless.
 ```
 
-When `KANON_CACHE_DIR` is not set, only the stale-lock scan runs; no cache
+When `KANON_HOME` is not set, only the stale-lock scan runs; no cache
 files are pruned.
 
 **Combining both flags:**
@@ -415,7 +415,7 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Inter-attempt delay in seconds (read by doctor; not applied to the `git ls-remote` retry path, which delegates to `git_runner.run_git_ls_remote` and uses immediate retries with no time-based delay) |
-| `KANON_CACHE_DIR` | (none) | Directory where cache files are stored; when unset, subchecks 7, 8, and 10's cache prune are skipped |
+| `KANON_HOME` | (none) | Root kanon home directory; cache lives under `${KANON_HOME}/cache`. When unset, subchecks 7, 8, and 10's cache prune are skipped |
 | `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
 | `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |
 | `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth for the stale install-lock scan in `--prune-cache` (subcheck 10) |
@@ -469,7 +469,7 @@ kanon doctor
 # Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCE env var)
 ```
 
-Invalidate the completion cache (removes all files under `${KANON_CACHE_DIR}/completion-cache/`):
+Invalidate the completion cache (removes all files under `${KANON_HOME}/cache/completion-cache/`):
 
 ```bash
 kanon doctor --refresh-completion-cache

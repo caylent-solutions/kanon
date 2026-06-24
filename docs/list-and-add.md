@@ -1,7 +1,7 @@
-# kanon list, add, and remove
+# kanon search, add, and remove
 
 Operator-facing reference for three core dependency-management
-commands: `kanon list`, `kanon add`, and `kanon remove`.
+commands: `kanon search`, `kanon add`, and `kanon remove`.
 
 For first-time setup see
 [docs/catalogs-explained.md](catalogs-explained.md)
@@ -11,17 +11,17 @@ For the canonical environment-variable table see
 
 ---
 
-## kanon list
+## kanon search
 
 Discover catalog entries available in a manifest repo.
 
 ### list -- Synopsis
 
 ```text
-kanon list [--catalog-source <git-url>@<ref>]
+kanon search [--catalog-source <git-url>@<ref>]
            [<substring>]
            [--detail] [--tree] [--max-depth N]
-           [--all-versions] [--limit N | --no-limit]
+           [-A | --all] [--limit N | --no-limit]
            [--since-version <spec>]
            [--regex <pattern>] [--match-fields <csv>]
            [--format {names,json}]
@@ -31,20 +31,20 @@ kanon list [--catalog-source <git-url>@<ref>]
 
 ### list -- How it works
 
-`kanon list` clones the manifest repo identified by
-`--catalog-source` (or `KANON_CATALOG_SOURCE`) and walks every
+`kanon search` clones the manifest repo identified by
+`--catalog-source` (or `KANON_CATALOG_SOURCES`) and walks every
 `repo-specs/**/*.xml` file. One entry is emitted per XML file whose
 `<catalog-metadata>` block contains the required fields (the filename is
 unrestricted -- the `-marketplace.xml` suffix is a convention, not a
 requirement). Entry name = `<catalog-metadata><name>`.
 
 The legacy `catalog/<name>/` directory inside a manifest repo is
-ignored; `kanon list` reads only the XML manifests.
+ignored; `kanon search` reads only the XML manifests.
 
 ### list -- Default output
 
 ```text
-$ kanon list \
+$ kanon search \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 package-a
@@ -61,18 +61,18 @@ is pipeable directly into `kanon add`.
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
 | `--detail` | off | Per-entry name, type, description, version. |
-| `--tree` | off | Dependency tree per entry. Excl. --all-versions. |
+| `--tree` | off | Dependency tree per entry. Excl. -A/--all. |
 | `--max-depth N` | unlimited | Cap tree depth. 0 = entry only. |
-| `--all-versions` | off | Walk historical versions. Excl. --tree. |
-| `--limit N` | `50` | Cap for --all-versions. |
-| `--no-limit` | off | Remove --all-versions cap. |
-| `--since-version spec` | none | Restrict --all-versions to PEP 440 spec. |
+| `-A`, `--all` | off | Walk historical versions. Excl. --tree. |
+| `--limit N` | `50` | Cap for -A/--all. |
+| `--no-limit` | off | Remove -A/--all cap. |
+| `--since-version spec` | none | Restrict -A/--all to PEP 440 spec. |
 | `--format {names,json}` | `names` | Output format. Env: KANON_LIST_FORMAT. |
 | `substr` (positional) | none | Filter entries by substring. |
 | `--regex pattern` | none | Filter by regex on same four fields. |
 | `--match-fields csv` | all | Narrow filter fields. Requires a filter. |
 | `--no-filter-required` | off | Skip filter for --tree on large catalogs. |
-| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCE |
+| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCES |
 | `--no-color` | auto | Disable color output. |
 
 ### list -- Mutually exclusive combinations
@@ -81,13 +81,13 @@ The following combinations are hard errors:
 
 | Combination | Error |
 | ----------------------------------------- | ------ |
-| `--tree` + `--all-versions` | Hard error |
+| `--tree` + `-A`/`--all` | Hard error |
 | `--match-fields` without filter | Hard error |
 
-`--tree` + `--all-versions`:
+`--tree` + `-A`/`--all`:
 
 ```text
-ERROR: --tree and --all-versions are mutually exclusive.
+ERROR: --tree and --all are mutually exclusive.
 ```
 
 `--match-fields` without `<substring>` or `--regex`:
@@ -102,7 +102,7 @@ ERROR: --match-fields requires a filter
 **`--format names` (default)**
 
 ```text
-$ kanon list \
+$ kanon search \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 package-a
@@ -166,10 +166,10 @@ command exits 0 with empty stdout and a note to stderr:
 manifest repo contains 0 entries
 ```
 
-### list -- `--all-versions` worked example
+### list -- `-A`/`--all` worked example
 
 ```text
-$ kanon list --all-versions --limit 3 \
+$ kanon search -A --limit 3 \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 package-a@2.10.0
@@ -201,16 +201,16 @@ package-b@1.3.0
 Reproducer:
 
 ```bash
-kanon list
+kanon search
 ```
 
 Expected message:
 
 ```text
-ERROR: list requires a catalog source.
+ERROR: search requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>
-  KANON_CATALOG_SOURCE=<git-url>@<ref>
+  KANON_CATALOG_SOURCES=<git-url>@<ref>
 
 The CLI flag takes precedence when both are set.
 A catalog source identifies a manifest repo (a git repository
@@ -225,7 +225,7 @@ See docs/configuration.md for the full configuration reference.
 Reproducer:
 
 ```bash
-kanon list --match-fields name \
+kanon search --match-fields name \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 ```
@@ -237,12 +237,12 @@ ERROR: --match-fields requires a filter
 (substring or --regex).
 ```
 
-#### list error 3 -- `--tree` with `--all-versions`
+#### list error 3 -- `--tree` with `-A`/`--all`
 
 Reproducer:
 
 ```bash
-kanon list --tree --all-versions \
+kanon search --tree -A \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 ```
@@ -250,7 +250,7 @@ kanon list --tree --all-versions \
 Expected message:
 
 ```text
-ERROR: --tree and --all-versions are mutually exclusive.
+ERROR: --tree and --all are mutually exclusive.
 ```
 
 ---
@@ -274,7 +274,7 @@ kanon add [--catalog-source <git-url>@<ref>]
 
 `kanon add` locates the named catalog entries in the resolved
 manifest repo, derives a source name for each, and appends a
-`KANON_SOURCE_<source-name>_{URL,REVISION,PATH}` triple to the
+`KANON_SOURCE_<source-name>_{URL,REF,PATH}` triple to the
 target `.kanon` file. If the file does not yet exist, it is
 created with the standard header.
 
@@ -408,14 +408,14 @@ For each added entry, `kanon add` appends:
 
 ```bash
 KANON_SOURCE_<source_name>_URL=<manifest_repo_url>
-KANON_SOURCE_<source_name>_REVISION=<resolved_spec>
+KANON_SOURCE_<source_name>_REF=<resolved_spec>
 KANON_SOURCE_<source_name>_PATH=<path_to_marketplace_xml>
 ```
 
 Output confirms every triple written:
 
 ```text
-Wrote KANON_SOURCE_package_a_URL, _REVISION, _PATH to ./.kanon
+Wrote KANON_SOURCE_package_a_URL, _REF, _PATH to ./.kanon
 ```
 
 ### add -- Lockfile interaction
@@ -435,7 +435,7 @@ between two installs. See
 | `--kanon-file path` | `./.kanon` | Target file. Env: KANON_KANON_FILE. |
 | `--force` | off | Overwrite existing block; collision is error without. |
 | `--dry-run` | off | Print diff without modifying any file. Exit 0. |
-| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCE |
+| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCES |
 | `--no-color` | auto | Disable color output. |
 
 ### add -- `--dry-run` semantics
@@ -450,7 +450,7 @@ file:
 @@ ...
 +KANON_SOURCE_package_a_URL=\
 +  https://example.com/org/manifest-repo.git
-+KANON_SOURCE_package_a_REVISION===1.4.2
++KANON_SOURCE_package_a_REF===1.4.2
 +KANON_SOURCE_package_a_PATH=\
 +  repo-specs/package-a/package-a-marketplace.xml
 ```
@@ -516,7 +516,7 @@ Expected message:
 ERROR: add requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>
-  KANON_CATALOG_SOURCE=<git-url>@<ref>
+  KANON_CATALOG_SOURCES=<git-url>@<ref>
 
 The CLI flag takes precedence when both are set.
 A catalog source identifies a manifest repo (a git repository
@@ -639,7 +639,7 @@ kanon remove package_a   # source name (normalized form)
 1. Read the `.kanon` file. Fail-fast if the file is missing.
 2. For each `<name>`, normalize to the source name and locate
    every line matching
-   `KANON_SOURCE_<normalized>_{URL,REVISION,PATH}=...`.
+   `KANON_SOURCE_<normalized>_{URL,REF,PATH}=...`.
    These three lines may be non-contiguous in hand-written
    `.kanon` files. All three are removed wherever they appear,
    preserving the order of remaining content.
@@ -670,7 +670,7 @@ WARNING: mixed line endings detected; normalizing to LF
 
 ### remove -- Non-contiguous triple handling
 
-The three `KANON_SOURCE_<name>_{URL,REVISION,PATH}` lines are
+The three `KANON_SOURCE_<name>_{URL,REF,PATH}` lines are
 removed wherever they appear in the file, even if they are not
 adjacent. All other content (including interleaved comments and
 other keys) is preserved in its original order.
@@ -695,7 +695,7 @@ and exits 0 without modifying any file:
 @@ ...
 -KANON_SOURCE_package_a_URL=\
 -  https://example.com/org/manifest-repo.git
--KANON_SOURCE_package_a_REVISION===1.4.2
+-KANON_SOURCE_package_a_REF===1.4.2
 -KANON_SOURCE_package_a_PATH=\
 -  repo-specs/package-a/package-a-marketplace.xml
 ```
@@ -758,26 +758,26 @@ to create a kanon workspace.
 
 ## Environment variables
 
-The following environment variables affect `kanon list`,
+The following environment variables affect `kanon search`,
 `kanon add`, and `kanon remove`. For the full configuration
 reference see [docs/configuration.md](configuration.md).
 
-**`KANON_CATALOG_SOURCE`** -- `list`, `add`
+**`KANON_CATALOG_SOURCES`** -- `search`, `add`
 
 Catalog source as `<git-url>@<ref>`. CLI flag
 `--catalog-source` takes precedence when both are set.
 
-**`KANON_LIST_FORMAT`** -- `list`
+**`KANON_LIST_FORMAT`** -- `search`
 
 Default output format (`names` or `json`). Overridden by
 `--format`.
 
-**`KANON_LIST_LIMIT`** -- `list`
+**`KANON_LIST_LIMIT`** -- `search`
 
-Default `--all-versions` cap. Default value: `50`. Overridden
+Default `-A`/`--all` cap. Default value: `50`. Overridden
 by `--limit` or `--no-limit`.
 
-**`KANON_TREE_NO_FILTER_THRESHOLD`** -- `list`
+**`KANON_TREE_NO_FILTER_THRESHOLD`** -- `search`
 
 Entry count above which `--tree` requires a filter. Default:
 `20`.
@@ -791,11 +791,11 @@ Default target file path. Default: `./.kanon`. Overridden by
 
 When set to any non-empty value, disables color output.
 
-**`KANON_GIT_RETRY_COUNT`** -- `list`, `add`
+**`KANON_GIT_RETRY_COUNT`** -- `search`, `add`
 
 Number of `git ls-remote` retries on transient errors.
 Default: `3`.
 
-**`KANON_GIT_RETRY_DELAY`** -- `list`, `add`
+**`KANON_GIT_RETRY_DELAY`** -- `search`, `add`
 
 Seconds between `git ls-remote` retries. Default: `1`.

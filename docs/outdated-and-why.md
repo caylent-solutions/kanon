@@ -566,7 +566,7 @@ and a new lock is committed.
   `KANON_WHY_JSON_INDENT`, `KANON_WHY_SUGGEST_MAX_DISTANCE`,
   `KANON_WHY_SUGGEST_TOP_N`).
 - [docs/list-and-add.md](list-and-add.md) -- the related read/write
-  commands (`kanon list`, `kanon add`, `kanon remove`).
+  commands (`kanon search`, `kanon add`, `kanon remove`).
 - [docs/exit-codes.md](exit-codes.md) -- the full exit-code table for
   all kanon commands.
 - [docs/lockfile.md](lockfile.md) -- lockfile format and how both

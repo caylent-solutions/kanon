@@ -8,7 +8,7 @@ and organizations.
 
 > **Recommended: use `kanon add` to create `KANON_SOURCE_*` triples.**
 > Running `kanon add <name>@<spec> --catalog-source <url>@<ref>`
-> is the preferred way to add a new `KANON_SOURCE_<name>_{URL,REVISION,PATH}`
+> is the preferred way to add a new `KANON_SOURCE_<name>_{URL,REF,PATH}`
 > triple to `.kanon`. The command handles source-name normalization
 > (lowercase, replace `-` with `_`) automatically, resolves the default
 > spec to the manifest repo's latest PEP 440 tag when no `@<spec>` is
@@ -26,7 +26,7 @@ and organizations.
 >   path declared in `<catalog-metadata>` (for example, pointing at a
 >   secondary manifest file inside the same repo).
 > - You are pinning a bare branch name to a project that is not tracked
->   by any `<catalog-metadata>`-aware manifest repo, so `kanon list`
+>   by any `<catalog-metadata>`-aware manifest repo, so `kanon search`
 >   cannot discover it.
 >
 > Outside these cases, prefer `kanon add` to keep `.kanon` consistent
@@ -43,7 +43,7 @@ following the `KANON_SOURCE_<name>_<property>` naming convention:
 |Suffix|Purpose|
 |---|---|
 |`_URL`|Git repository URL for the manifest source|
-|`_REVISION`|Branch name, exact tag ref, or PEP 440 version constraint|
+|`_REF`|Branch name, exact tag ref, or PEP 440 version constraint|
 |`_PATH`|Path to the entry-point manifest XML within the repository|
 
 Sources are processed in alphabetical order by name.
@@ -106,7 +106,7 @@ KANON_SOURCE_<name>_URL
 
 Field 1: KANON_SOURCE_   (fixed prefix)
 Field 2: <name>          (free-form identifier -- use hyphens for multi-word names)
-Field 3: _URL            (fixed suffix: _URL, _REVISION, or _PATH)
+Field 3: _URL            (fixed suffix: _URL, _REF, or _PATH)
 ```
 
 **Single source per concern:**
@@ -146,12 +146,12 @@ them in alphabetical order.
 
 # Build tools source -- pinned to exact tag
 KANON_SOURCE_build_URL=https://example.com/org/kanon-build-tools.git
-KANON_SOURCE_build_REVISION=refs/tags/2.0.0
+KANON_SOURCE_build_REF=refs/tags/2.0.0
 KANON_SOURCE_build_PATH=repo-specs/build-meta.xml
 
 # Marketplace source -- compatible release constraint (>=1.1.0, <1.2.0)
 KANON_SOURCE_marketplaces_URL=https://example.com/org/kanon-marketplace.git
-KANON_SOURCE_marketplaces_REVISION=refs/tags/~=1.1.0
+KANON_SOURCE_marketplaces_REF=refs/tags/~=1.1.0
 KANON_SOURCE_marketplaces_PATH=repo-specs/common/plugins/plugins-marketplace.xml
 
 # Global variables available to all sources
@@ -168,24 +168,24 @@ and all packages are aggregated into a unified `.packages/` directory.
 ```properties
 # Build sources -- each points to a different manifest repository
 KANON_SOURCE_build-core_URL=https://example.com/org/kanon-build-core.git
-KANON_SOURCE_build-core_REVISION=refs/tags/~=2.0.0
+KANON_SOURCE_build-core_REF=refs/tags/~=2.0.0
 KANON_SOURCE_build-core_PATH=repo-specs/build-meta.xml
 
 KANON_SOURCE_build-infra_URL=https://example.com/org/kanon-build-infra.git
-KANON_SOURCE_build-infra_REVISION=refs/tags/>=1.0.0,<2.0.0
+KANON_SOURCE_build-infra_REF=refs/tags/>=1.0.0,<2.0.0
 KANON_SOURCE_build-infra_PATH=repo-specs/build-meta.xml
 
 KANON_SOURCE_build-security_URL=https://example.com/org/kanon-build-security.git
-KANON_SOURCE_build-security_REVISION=refs/tags/~=1.4.0
+KANON_SOURCE_build-security_REF=refs/tags/~=1.4.0
 KANON_SOURCE_build-security_PATH=repo-specs/build-meta.xml
 
 # Marketplace sources -- each provides Claude Code plugins
 KANON_SOURCE_marketplaces-core_URL=https://example.com/org/kanon-marketplace-core.git
-KANON_SOURCE_marketplaces-core_REVISION=main
+KANON_SOURCE_marketplaces-core_REF=main
 KANON_SOURCE_marketplaces-core_PATH=repo-specs/common/core/core-marketplace.xml
 
 KANON_SOURCE_marketplaces-team_URL=https://example.com/org/kanon-marketplace-team.git
-KANON_SOURCE_marketplaces-team_REVISION=main
+KANON_SOURCE_marketplaces-team_REF=main
 KANON_SOURCE_marketplaces-team_PATH=repo-specs/common/team/team-marketplace.xml
 
 # Global variables available to all sources
@@ -197,7 +197,7 @@ KANON_MARKETPLACE_INSTALL=true
 Processing order (alphabetical): `build-core` → `build-infra` →
 `build-security` → `marketplaces-core` → `marketplaces-team`.
 
-`KANON_SOURCE_<name>_REVISION` accepts a branch name, an exact tag ref,
+`KANON_SOURCE_<name>_REF` accepts a branch name, an exact tag ref,
 or a PEP 440 constraint. When a constraint is used, the CLI resolves it
 against available tags before passing the result to `repo init -b`. Using
 the `refs/tags/` prefix is recommended -- it scopes resolution to tags

@@ -199,6 +199,6 @@ Installation then completes with the remaining declared sources.
 ## See also
 
 - [docs/lockfile.md](lockfile.md) -- lockfile format and lifecycle.
-- [docs/list-and-add.md](list-and-add.md) -- `kanon list`, `kanon add`, and `kanon remove`.
+- [docs/list-and-add.md](list-and-add.md) -- `kanon search`, `kanon add`, and `kanon remove`.
 - [docs/configuration.md](configuration.md) -- full environment-variable reference.
 - [docs/catalogs-explained.md](catalogs-explained.md) -- what a manifest repo is and how to find one.

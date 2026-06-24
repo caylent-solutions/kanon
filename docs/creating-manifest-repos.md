@@ -9,7 +9,7 @@ A **manifest repo** is a git repository whose `repo-specs/` directory
 holds XML manifest files. Each file that contains a `<catalog-metadata>`
 block is a catalog entry, regardless of its filename. The git
 URL (with an optional `@<ref>`) of this repository is exactly what a
-consumer passes to `--catalog-source` or sets in `KANON_CATALOG_SOURCE`.
+consumer passes to `--catalog-source` or sets in `KANON_CATALOG_SOURCES`.
 
 The manifest repo IS the catalog. There is no separate catalog directory;
 every catalog entry lives in a single `*.xml` file under `repo-specs/`,
@@ -98,10 +98,10 @@ Example `<catalog-metadata>` block:
 > **Only the nested scheme is supported.** Catalog metadata MUST be carried as
 > nested child elements of `<catalog-metadata>` (as shown above). The legacy
 > **flat-attribute** scheme -- metadata carried as XML *attributes* on the
-> `<catalog-metadata>` element -- is **no longer supported**. `kanon list`,
+> `<catalog-metadata>` element -- is **no longer supported**. `kanon search`,
 > `kanon add`, and `kanon validate metadata` reject it with an explicit
 > "migrate to the nested scheme" error (audit code `M007`), and
-> `kanon list --all-versions` skips old-scheme release tags. Migrate any such file
+> `kanon search -A` skips old-scheme release tags. Migrate any such file
 > to the nested form above.
 >
 > Rejected (old flat-attribute scheme -- metadata as attributes, no `<name>` child):
@@ -175,7 +175,7 @@ git push origin 1.0.0
 Older manifest repos contained a `catalog/` directory tree where each
 subdirectory held a pre-baked `.kanon` template and an optional
 `kanon-readme.md` (or `README.md`) for `kanon bootstrap`. This layout
-is no longer used. `kanon list`, `kanon add`, and `kanon catalog audit`
+is no longer used. `kanon search`, `kanon add`, and `kanon catalog audit`
 read ONLY the `*-marketplace.xml` files in `repo-specs/`; the `catalog/`
 directory is ignored.
 
@@ -204,10 +204,10 @@ To migrate a manifest repo that still has a `catalog/` directory:
    git commit -m "Remove legacy catalog/ directory (use repo-specs/**/*-marketplace.xml)"
    ```
 
-4. **Verify `kanon list` returns every expected entry.**
+4. **Verify `kanon search` returns every expected entry.**
 
    ```bash
-   kanon list --catalog-source https://example.com/org/manifest-repo.git@main
+   kanon search --catalog-source https://example.com/org/manifest-repo.git@main
    ```
 
    The output should list every entry name you expect. If an entry is
@@ -252,7 +252,7 @@ of your manifest repo:
 6. List all entries using the scratch clone:
 
    ```bash
-   kanon list --catalog-source ./scratch@main
+   kanon search --catalog-source ./scratch@main
    ```
 
 7. Add one entry end-to-end using the scratch clone:
@@ -275,7 +275,7 @@ All eight steps must exit zero before the release tag is pushed.
   guide for authors writing `*-marketplace.xml` catalog entries.
 - [docs/catalogs-explained.md](catalogs-explained.md) -- what a manifest
   repo is and how to find one as a consumer.
-- [docs/list-and-add.md](list-and-add.md) -- reference for `kanon list`
+- [docs/list-and-add.md](list-and-add.md) -- reference for `kanon search`
   and `kanon add` from the consumer perspective.
 - [docs/lockfile.md](lockfile.md) -- the `.kanon.lock` file format and
   how resolved catalog sources are recorded.

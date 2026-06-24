@@ -7,7 +7,7 @@ and `lock` features introduced in this release.
 ## Audience
 
 You are an operator who already has a `.kanon` file in your workspace. Your file
-was created before the `kanon list`, `kanon add`, `kanon remove`, and lockfile
+was created before the `kanon search`, `kanon add`, `kanon remove`, and lockfile
 features existed. You want to know what changes with a fresh `kanon install`, and
 how to bring the file fully into compliance with the current standard.
 
@@ -280,7 +280,7 @@ Verify with `cat -A .kanon | tail -1` -- the last line should end with `$`, not
 
 ## See also
 
-- [list-and-add.md](list-and-add.md) -- full reference for `kanon list`,
+- [list-and-add.md](list-and-add.md) -- full reference for `kanon search`,
   `kanon add`, and `kanon remove`; every flag, env var, and error scenario.
 - [lockfile.md](lockfile.md) -- `.kanon.lock` format, refresh flow, conflict
   resolution, and schema migration policy.

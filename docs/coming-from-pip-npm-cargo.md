@@ -21,7 +21,7 @@ This guide is for engineers who are comfortable with one or more of:
 | Declare file | req.txt | pkg.json | Cargo.toml | .kanon |
 | Lockfile | Pipfile.lock | pkg-lock.json | Cargo.lock | .kanon.lock |
 | Registry | PyPI | npm registry | crates.io | manifest repo |
-| Search | pip search | npm search | cargo search | kanon list |
+| Search | pip search | npm search | cargo search | kanon search |
 | Add | pip install x==1.0 | npm i x@1.0 | cargo add x@1.0 | kanon add x@1.0 |
 | Outdated | pip list -o | npm outdated | cargo outdated | kanon outdated |
 
@@ -47,7 +47,7 @@ This means:
 - Two teams can use different catalogs without conflicting.
 - A catalog can be hosted on any git provider (or a self-hosted server).
 - Catalog contents are versioned, auditable, and entirely under your control.
-- `kanon list` and `kanon add` operate against YOUR configured catalog, not a
+- `kanon search` and `kanon add` operate against YOUR configured catalog, not a
   shared global one.
 
 For details on how to configure and point to a catalog, see
@@ -95,7 +95,7 @@ result.
 
 ## See also
 
-- [list-and-add.md](list-and-add.md) -- Full reference for `kanon list` and
+- [list-and-add.md](list-and-add.md) -- Full reference for `kanon search` and
   `kanon add`.
 - [lockfile.md](lockfile.md) -- How `.kanon.lock` is structured and when it is
   regenerated.

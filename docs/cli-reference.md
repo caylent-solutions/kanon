@@ -24,7 +24,7 @@ Adds the `--catalog-source` flag to `parser`.
 
 - **dest**: `catalog_source`
 - **metavar**: `<git-url>@<ref>`
-- **env var**: `KANON_CATALOG_SOURCE` (constant `CATALOG_ENV_VAR` in
+- **env var**: `KANON_CATALOG_SOURCES` (constant `CATALOG_ENV_VAR` in
   `kanon_cli.constants`)
 - **precedence**: CLI flag wins over env var; env var wins over built-in default
   (`None`), per spec Section 4 header.
@@ -48,7 +48,7 @@ automatically to every sub-command.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KANON_CATALOG_SOURCE` | Remote catalog as `<git_url>@<ref>`. Sets the default for every command that accepts `--catalog-source`. | (none) |
+| `KANON_CATALOG_SOURCES` | Remote catalog as `<git_url>@<ref>`. Sets the default for every command that accepts `--catalog-source`. | (none) |
 | `KANON_OUTDATED_JSON_INDENT` | Controls JSON indentation (number of spaces) used by `kanon outdated --format json`. | `2` |
 
 ## Commands
@@ -110,7 +110,7 @@ name | current | latest-matching-spec | latest-available | upgrade-type
 
 **Behaviour (spec Section 4.4):**
 
-1. **Catalog required** -- `--catalog-source` or `KANON_CATALOG_SOURCE` must be
+1. **Catalog required** -- `--catalog-source` or `KANON_CATALOG_SOURCES` must be
    set. When neither is present the command exits non-zero with
    `ERROR: no catalog source configured` and a remediation pointer.
 2. **`.kanon` required** -- the file at `--kanon-file` (default `./.kanon`) must
@@ -190,7 +190,7 @@ kanon outdated [--catalog-source <git-url>@<ref>]
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--catalog-source` | `KANON_CATALOG_SOURCE` | (none) | Manifest repo as `<git_url>@<ref>`. Required. |
+| `--catalog-source` | `KANON_CATALOG_SOURCES` | (none) | Manifest repo as `<git_url>@<ref>`. Required. |
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the lockfile. Optional; derived from `--kanon-file` when absent. |
 | `--format` | `KANON_OUTDATED_FORMAT` | `table` | Output format: `table` (default) or `json`. The CLI flag takes precedence over the env var. |
@@ -354,7 +354,7 @@ every node already has its resolved SHA).
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
 | `<project-url-or-name>` (positional) | -- | required | Project URL, XML manifest path, or source name to look up. |
-| `--catalog-source` | `KANON_CATALOG_SOURCE` | -- | Catalog source as `<git-url>@<ref>`. Required only when `.kanon.lock` is absent. |
+| `--catalog-source` | `KANON_CATALOG_SOURCES` | -- | Catalog source as `<git-url>@<ref>`. Required only when `.kanon.lock` is absent. |
 | `--kanon-file` | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` file. |
 | `--lock-file` | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` file. |
 | `--format` | `KANON_WHY_FORMAT` | `text` | Output format: `text` (default) or `json`. See JSON shape below. |
@@ -422,7 +422,7 @@ kanon why https://github.com/org/myproject \
 kanon why https://github.com/org/myproject --format json | jq '.[0] | length'
 ```
 
-### `kanon list`
+### `kanon search`
 
 Discover catalog entries and versions from the manifest repo.
 
@@ -432,10 +432,10 @@ The `--catalog-source` flag on this command is registered by
 #### `--since-version <spec>`
 
 Filter the historical-versions walker to only include versions that satisfy
-the given PEP 440 constraint. Used with `--all-versions`.
+the given PEP 440 constraint. Used with `-A`/`--all`.
 
 ```bash
-kanon list --all-versions --since-version '>=1.0,<2.0' --catalog-source <url>@<ref>
+kanon search -A --since-version '>=1.0,<2.0' --catalog-source <url>@<ref>
 ```
 
 **Dynamic tab-completion source:** The `<spec>` argument of
@@ -445,7 +445,7 @@ The completer calls `git ls-remote --tags --heads` against the manifest repo,
 filters tags to PEP 440-valid names (using `packaging.version.Version`),
 passes branches through unfiltered, deduplicates, and returns one ref name
 per line sorted (tags by Version ordering, then branches alphabetically).
-Results are cached in `${KANON_CACHE_DIR}/catalogs/<sha>/tags.txt`.
+Results are cached in `${KANON_HOME}/cache/catalogs/<sha>/tags.txt`.
 
 ### `kanon bootstrap` (removed)
 
@@ -459,7 +459,7 @@ deprecation message to stderr and exits with code `3`
 Use the replacement commands instead:
 
 ```bash
-kanon list --catalog-source <git-url>@<ref>      # search the catalog
+kanon search --catalog-source <git-url>@<ref>      # search the catalog
 kanon add <entry> --catalog-source <git-url>@<ref>   # add an entry to .kanon
 kanon install                                    # fetch added entries
 ```

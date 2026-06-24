@@ -1,9 +1,8 @@
-# Migration: `kanon bootstrap` to `kanon add` / `kanon list`
+# Migration: `kanon bootstrap` to `kanon add` / `kanon search`
 
 This guide is the central reference for operators moving away from the
-removed `kanon bootstrap` command to `kanon add`, `kanon list`, and
-`kanon install`. The deprecation message that every `kanon bootstrap`
-invocation prints links here.
+removed `kanon bootstrap` command to `kanon add`, `kanon search`, and
+`kanon install`.
 
 ---
 
@@ -47,13 +46,13 @@ See [docs/exit-codes.md](exit-codes.md) for the full exit-code table.
 | Removed command | Replacement command |
 | --------------- | ------------------- |
 | `kanon bootstrap <entry>` | `kanon add <entry> --catalog-source <git-url>@<ref>` |
-| `kanon bootstrap list` | `kanon list --catalog-source <git-url>@<ref>` |
+| `kanon bootstrap list` | `kanon search --catalog-source <git-url>@<ref>` |
 
 After adding entries, run `kanon install` to fetch them.
 
 See [docs/list-and-add.md](list-and-add.md) for the full reference for
-`kanon add` and `kanon list`, and
-[docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCE`.
+`kanon add` and `kanon search`, and
+[docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCES`.
 
 ---
 
@@ -69,20 +68,21 @@ routed to the same deprecation message. This includes:
 - the `list` positional and any other positional
 
 The catalog source for the replacement commands is supplied with
-`--catalog-source <git-url>@<ref>` or the `KANON_CATALOG_SOURCE`
+`--catalog-source <git-url>@<ref>` or the `KANON_CATALOG_SOURCES`
 environment variable. The canonical `--catalog-source` flag definition
-lives in `core/cli_args.py`; `kanon list`, `kanon add`, and the other
+lives in `core/cli_args.py`; `kanon search`, `kanon add`, and the other
 catalog-aware commands import it from there.
 
 The replacement install artifacts (`.packages/` and `.kanon-data/`)
-land beside `.kanon` by default; setting `KANON_WORKSPACE_DIR` relocates
-them to that directory instead (the directory is created if absent; an
-unwritable value causes a non-zero exit with an actionable message and
-no silent fallback to cwd). `kanon clean` resolves the same directory so
-it removes exactly what `kanon install` wrote.
+land beside `.kanon` by default; setting `KANON_HOME` relocates the
+shared store and cache to that directory instead (the directory is
+created if absent; an unwritable value causes a non-zero exit with an
+actionable message and no silent fallback to cwd). `kanon clean`
+resolves the same directory so it removes exactly what `kanon install`
+wrote.
 
-See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCE`
-and `KANON_WORKSPACE_DIR`.
+See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCES`
+and `KANON_HOME`.
 
 ---
 
@@ -104,7 +104,7 @@ error. The shim:
 The message has a per-invocation "CLOSEST REPLACEMENT FOR WHAT YOU RAN"
 line derived from what was typed:
 
-- `kanon bootstrap list` -> `kanon list --catalog-source <git-url>@<ref>`
+- `kanon bootstrap list` -> `kanon search --catalog-source <git-url>@<ref>`
 - any other entry `<x>` (and the no-argument case) ->
   `kanon add <entry> --catalog-source <git-url>@<ref>`
 
@@ -125,7 +125,7 @@ identified by its <catalog-metadata><name>. (A marketplace is one kind of
 entry; other manifest types live under repo-specs/ too.)
 
 MANAGE KANON DEPENDENCIES INSTEAD
-  search    kanon list --catalog-source <git-url>@<ref>
+  search    kanon search --catalog-source <git-url>@<ref>
             (narrow with a <substring>, --regex, or --match-fields)
   add       kanon add <entry> --catalog-source <git-url>@<ref>
             (writes the entry into .kanon, creating .kanon for you if absent)
@@ -135,7 +135,7 @@ CLOSEST REPLACEMENT FOR WHAT YOU RAN
   kanon add kanon --catalog-source <git-url>@<ref>
 
 RELATED COMMANDS
-  list  add  remove  install  clean  outdated  why  doctor  validate
+  search  add  remove  install  clean  outdated  why  doctor  validate
   catalog  completion        (run `kanon <command> --help` for details)
 
 See docs/migration-to-add.md.
@@ -146,7 +146,7 @@ Example (`kanon bootstrap list`): identical to the above except the
 
 ```text
 CLOSEST REPLACEMENT FOR WHAT YOU RAN
-  kanon list --catalog-source <git-url>@<ref>
+  kanon search --catalog-source <git-url>@<ref>
 ```
 
 `kanon bootstrap --help`, `kanon bootstrap --marketplace-install`, and
@@ -179,9 +179,9 @@ reference.
   too.)
 - There is no `catalog/<name>/` directory. Catalog authors removed the
   legacy directory as part of this change.
-- Consumers see the same entries via `kanon list`. No migration step is
+- Consumers see the same entries via `kanon search`. No migration step is
   required for consumers beyond replacing their `kanon bootstrap`
-  invocations with `kanon list` / `kanon add` / `kanon install`.
+  invocations with `kanon search` / `kanon add` / `kanon install`.
 
 `kanon catalog audit` detects the presence of a legacy
 `catalog/<name>/` directory and emits a WARN-level finding.
@@ -201,17 +201,16 @@ wheel.
 - There is no implicit default catalog source. The third-tier "bundled
   fallback" in catalog resolution no longer exists.
 - Operators MUST supply a catalog source via `--catalog-source` or the
-  `KANON_CATALOG_SOURCE` environment variable for every `kanon list`,
+  `KANON_CATALOG_SOURCES` environment variable for every `kanon search`,
   `kanon add`, `kanon outdated`, `kanon why`, and `kanon catalog audit`
   invocation.
-- Missing both `--catalog-source` and `KANON_CATALOG_SOURCE` is a hard
+- Missing both `--catalog-source` and `KANON_CATALOG_SOURCES` is a hard
   error with a clear, actionable message. There is no fallback.
-- For `kanon install` and `kanon doctor`, the lockfile's
-  `[catalog].source` field is used as a fallback when present and
-  consistent (re-resolution paths still require CLI/env).
+- `kanon install` is hermetic: it reads only `.kanon` and `.kanon.lock`,
+  does not accept `--catalog-source`, and has no catalog-source fallback.
 
 See [docs/configuration.md](configuration.md) for the full
-`KANON_CATALOG_SOURCE` reference.
+`KANON_CATALOG_SOURCES` reference.
 
 ---
 
@@ -234,10 +233,10 @@ future decision. Until then, every `kanon bootstrap` invocation exits
 ## See also
 
 - [docs/list-and-add.md](list-and-add.md) -- replacement commands
-  `kanon add` and `kanon list`
+  `kanon add` and `kanon search`
 - [docs/catalogs-explained.md](catalogs-explained.md) -- what a
   manifest repo is and how catalog entries are structured
 - [docs/exit-codes.md](exit-codes.md) -- canonical exit-code table,
   including exit 3 (`EXIT_CODE_DEPRECATED`)
-- [docs/configuration.md](configuration.md) -- `KANON_CATALOG_SOURCE`
+- [docs/configuration.md](configuration.md) -- `KANON_CATALOG_SOURCES`
   and other environment variables

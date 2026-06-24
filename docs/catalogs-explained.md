@@ -98,7 +98,7 @@ one to your `.kanon` file.
 
 ```bash
 # List every catalog entry in the manifest repo
-kanon list --catalog-source https://example.com/org/manifest-repo.git@main
+kanon search --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
 Sample output:
@@ -114,7 +114,7 @@ kanon add my-library --catalog-source https://example.com/org/manifest-repo.git@
 
 # Or export the catalog source so every command uses it automatically
 export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
-kanon list
+kanon search
 kanon add my-library
 ```
 
@@ -127,5 +127,5 @@ derived source name (e.g., `KANON_SOURCE_my_library_URL`).
   publish your own manifest repo
 - [configuration.md](configuration.md) -- full reference for `--catalog-source`
   and `KANON_CATALOG_SOURCE`, including the complete precedence chain
-- [list-and-add.md](list-and-add.md) -- full reference for `kanon list`,
+- [list-and-add.md](list-and-add.md) -- full reference for `kanon search`,
   `kanon add`, and `kanon remove`, including all flags and error scenarios

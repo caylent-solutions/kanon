@@ -56,7 +56,7 @@ The trust model is:
   a shell profile into an unrelated workspace. See
   [`docs/doctor.md`](cli/doctor.md) for the full `kanon doctor` reference.
 
-- **Cache files are user-private.** `${KANON_CACHE_DIR}` and every file
+- **Cache files are user-private.** `${KANON_HOME}/cache` and every file
   under it are created with mode `0700` (directories) and `0600` (files)
   to prevent another local user from poisoning completion candidates.
 
@@ -67,7 +67,7 @@ The trust model is:
 
 See [`docs/configuration.md`](configuration.md) for the full set of
 environment variables that control kanon's behaviour, including
-`KANON_ALLOW_INSECURE_REMOTES`, `KANON_CACHE_DIR`, and
+`KANON_ALLOW_INSECURE_REMOTES`, `KANON_HOME`, and
 `KANON_CATALOG_SOURCE`.
 
 ## What manifest repos can do to you
@@ -171,7 +171,7 @@ specification and tracked as future work (spec Section 3.6):
 - [`docs/configuration.md`](configuration.md) -- full reference for
   environment variables including `KANON_CATALOG_SOURCE`,
   `KANON_ALLOW_INSECURE_REMOTES`, `KANON_GIT_RETRY_COUNT`,
-  `KANON_GIT_RETRY_DELAY`, and `KANON_CACHE_DIR`.
+  `KANON_GIT_RETRY_DELAY`, and `KANON_HOME`.
 - [`docs/doctor.md`](cli/doctor.md) -- `kanon doctor` command reference,
   including how the effective catalog source is surfaced and what the
   remote-reachability sanity check does.

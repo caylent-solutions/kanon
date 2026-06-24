@@ -20,7 +20,7 @@ bash: main: No such file or directory
 Or the argument is received by kanon as an empty string, causing:
 
 ```text
-ERROR: list requires a catalog source.
+ERROR: search requires a catalog source.
 ```
 
 ### Reproducer
@@ -51,7 +51,7 @@ Double-quotes also work, but single-quotes are preferred for clarity.
 
 ### Symptom
 
-Any kanon command that requires a manifest repo (`kanon list`,
+Any kanon command that requires a manifest repo (`kanon search`,
 `kanon add`, `kanon outdated`, `kanon why`, `kanon catalog audit`)
 exits non-zero with:
 
@@ -59,7 +59,7 @@ exits non-zero with:
 ERROR: <command> requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>      # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
-  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run
+  KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var, then re-run
 
 The CLI flag takes precedence when both are set.
 A catalog source identifies a manifest repo (a git repository whose
@@ -72,7 +72,7 @@ See docs/configuration.md for the full configuration reference.
 
 ```bash
 # Wrong -- no catalog source provided
-kanon list
+kanon search
 ```
 
 ### Fix
@@ -80,20 +80,20 @@ kanon list
 Pass the catalog source via the CLI flag:
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
 Or export the environment variable and re-run:
 
 ```bash
-export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
-kanon list
+export KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
+kanon search
 ```
 
-For `kanon install` and `kanon doctor`, a lockfile that contains
-a `[catalog].source` field is used as a fallback when neither the
-flag nor the env var is set.
+`kanon install` is hermetic: it never reads a catalog source and rejects
+`--catalog-source`. The catalog source is required only by `kanon search`,
+`kanon add`, `kanon outdated`, `kanon why`, and `kanon catalog audit`.
 
 ### See also
 
@@ -221,7 +221,7 @@ silently return nothing.
 ```bash
 # Interrupt a completion cache refresh mid-write:
 kill -9 $(pgrep -f 'kanon doctor --refresh-completion-cache')
-kanon list <TAB>
+kanon search <TAB>
 ```
 
 ### Fix
@@ -246,7 +246,7 @@ configured catalog source.
 
 ### Symptom
 
-`kanon list`, `kanon add`, or `kanon catalog audit` reports that a
+`kanon search`, `kanon add`, or `kanon catalog audit` reports that a
 `*-marketplace.xml` file is missing its `<catalog-metadata>` block:
 
 ```text
@@ -259,7 +259,7 @@ has integrity issues (1); the catalog author must fix these via
 ### Reproducer
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
@@ -287,7 +287,7 @@ the consumer side. Ask the catalog author to:
 ### Symptom
 
 Two `*-marketplace.xml` files in the same manifest repo declare the
-same `<catalog-metadata><name>` value. `kanon list`, `kanon add`, or
+same `<catalog-metadata><name>` value. `kanon search`, `kanon add`, or
 `kanon catalog audit` reports:
 
 ```text
@@ -302,7 +302,7 @@ has integrity issues (1); the catalog author must fix these via
 ### Reproducer
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
@@ -352,7 +352,7 @@ git@example.com: Permission denied (publickey).
 
 ```bash
 # Run against a repo you have no credentials for:
-kanon list \
+kanon search \
   --catalog-source https://private.example.com/org/repo.git@main
 ```
 
@@ -530,7 +530,7 @@ kanon install \
 Or export the env var:
 
 ```bash
-export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
+export KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
 kanon install
 ```
 
@@ -753,7 +753,7 @@ Three remediation options are available; pick the one that matches your intent:
   ```
 
 - **Option 2: Restore the missing triples (undo the removal).**
-  Re-add the `KANON_SOURCE_<name>_URL`, `KANON_SOURCE_<name>_REVISION`, and
+  Re-add the `KANON_SOURCE_<name>_URL`, `KANON_SOURCE_<name>_REF`, and
   `KANON_SOURCE_<name>_PATH` triples to `.kanon` for each listed orphan name.
   Then re-run install. Use this option when the source removal was accidental.
 

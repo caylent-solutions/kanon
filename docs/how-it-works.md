@@ -42,7 +42,7 @@ It no longer performs any work and accepts no flags. Every invocation
 -- any args, any flags, including `--help` -- prints a deprecation
 message to stderr and exits with code `3` (`EXIT_CODE_DEPRECATED`).
 
-Use `kanon list` to search a catalog, `kanon add <entry>
+Use `kanon search` to search a catalog, `kanon add <entry>
 --catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
 `kanon install` to fetch it. See
 [docs/migration-to-add.md](migration-to-add.md) for

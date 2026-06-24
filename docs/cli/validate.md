@@ -221,4 +221,4 @@ against remote or cached manifest repos.
 
 - `kanon catalog audit` -- full soft-spot audit including remote checks
 - `kanon doctor` -- workspace health checks
-- `kanon list` -- browse catalog entries
+- `kanon search` -- browse catalog entries

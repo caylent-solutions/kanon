@@ -47,7 +47,7 @@ The table shows which codes each subcommand can emit.
 
 | Subcommand | `0` | `1` | `2` | `3` |
 | ---------- | --- | --- | --- | --- |
-| `kanon list` | y | y | y | -- |
+| `kanon search` | y | y | y | -- |
 | `kanon add` | y | y | y | -- |
 | `kanon remove` | y | y | y | -- |
 | `kanon outdated` | y | y | y | -- |
@@ -88,7 +88,7 @@ manifest-repo content, and does not touch the filesystem.
 
 The message includes a per-invocation "CLOSEST REPLACEMENT" line:
 `kanon bootstrap list` maps to
-`kanon list --catalog-source <git-url>@<ref>`, and any other entry maps
+`kanon search --catalog-source <git-url>@<ref>`, and any other entry maps
 to `kanon add <entry> --catalog-source <git-url>@<ref>`.
 
 See [docs/migration-to-add.md](migration-to-add.md)
@@ -104,7 +104,7 @@ command will fail immediately, which prevents stale tooling from
 running silently.
 
 If your CI pipeline surfaces exit `3`, update the script to use the
-replacement command (`kanon add` or `kanon list`). Follow the migration
+replacement command (`kanon add` or `kanon search`). Follow the migration
 guide at
 [docs/migration-to-add.md](migration-to-add.md).
 
@@ -141,7 +141,7 @@ catalog was unavailable":
 #!/usr/bin/env bash
 set -euo pipefail
 
-kanon list
+kanon search
 rc=$?
 
 case $rc in
@@ -174,7 +174,7 @@ and unreachable catalog sources before a build proceeds:
 ```yaml
 - name: Workspace health check
   env:
-    KANON_CATALOG_SOURCE: >-
+    KANON_CATALOG_SOURCES: >-
       https://example.com/org/manifest-repo.git@main
   run: kanon doctor
 ```
@@ -184,7 +184,7 @@ to stderr.
 
 ## See also
 
-- [docs/list-and-add.md](list-and-add.md) -- `kanon list`, `kanon add`,
+- [docs/list-and-add.md](list-and-add.md) -- `kanon search`, `kanon add`,
   `kanon remove`
 - [docs/outdated-and-why.md](outdated-and-why.md) -- `kanon outdated`,
   `kanon why`

@@ -102,7 +102,7 @@ chain. A catalog source is resolvable when any of the following is
 provided:
 
 - `--catalog-source <git-url>@<ref>` CLI flag
-- `KANON_CATALOG_SOURCE=<git-url>@<ref>` environment variable
+- `KANON_CATALOG_SOURCES=<git-url>@<ref>` environment variable
 
 The CLI flag takes precedence when both are set.
 
@@ -126,7 +126,7 @@ catalog source is configured -- `kanon why` exits immediately with:
 ERROR: kanon why requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>
-  KANON_CATALOG_SOURCE=<git-url>@<ref>
+  KANON_CATALOG_SOURCES=<git-url>@<ref>
 ```
 
 This diagnostic is unchanged from before the live-resolve path was
@@ -271,7 +271,7 @@ consumers.
 ### Cache-flag workspace independence
 
 The `--refresh-completion-cache` and `--prune-cache` flags operate on
-the global `KANON_CACHE_DIR` and do NOT require a `.kanon` workspace to
+the cache under `${KANON_HOME}/cache` and do NOT require a `.kanon` workspace to
 be present in the current directory. When either flag is the only active
 flag, `kanon doctor` completes the cache operation and exits without
 running workspace-dependent subchecks (hash consistency, orphan

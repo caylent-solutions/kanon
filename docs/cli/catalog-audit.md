@@ -153,7 +153,7 @@ kanon catalog audit --check source-name-derivation --strict /path/to/manifest-re
 ## Cache layout
 
 When `<dir-or-source>` is a remote `<git_url>@<ref>` source, the repository is
-cloned into `${KANON_CACHE_DIR}/catalog-audit/<sha256(canonicalized_url@ref)>/`.
+cloned into `${KANON_HOME}/cache/catalog-audit/<sha256(canonicalized_url@ref)>/`.
 
 The SHA-256 key is computed over the canonicalized URL and ref, ensuring SSH and
 HTTPS variants of the same repository map to the same cache entry.
@@ -169,7 +169,7 @@ export KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS=7200
 The cache root directory is created with mode `0700` (owner-only access) per
 spec Section 3.6 (trust model / credential isolation).
 
-`KANON_CACHE_DIR` must be set to use a remote audit target. If unset, `kanon
+`KANON_HOME` must be set to use a remote audit target. If unset, `kanon
 catalog audit` exits with an error when a remote source is supplied.
 
 ## Source-name-derivation check (`--check source-name-derivation`)
@@ -435,7 +435,7 @@ operators encounter resolver failures:
 kanon catalog audit --check tag-format /path/to/manifest-repo
 
 # Inventory a remote manifest repo
-export KANON_CACHE_DIR=~/.kanon-cache
+export KANON_HOME=~/.kanon
 kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
 ```
 
@@ -480,7 +480,7 @@ A missing or whitespace-only value produces one **ERROR** finding per field:
 | Field | Description |
 |-------|-------------|
 | `name` | Machine-readable package identifier. |
-| `display-name` | Human-readable label shown in `kanon list` output. |
+| `display-name` | Human-readable label shown in `kanon search` output. |
 | `description` | Short prose description of the package. |
 | `version` | Author-claimed version string (informational; not validated against semver/PEP-440). |
 
@@ -575,9 +575,9 @@ ERROR: <one-line summary>
   Cause: the supplied directory is not a manifest repo.
   Fix: point `kanon catalog audit` at the root of a manifest repo.
 
-- `ERROR: KANON_CACHE_DIR must be set to use a remote audit target. Set the environment variable to a writable directory path.`
-  Cause: a remote source was supplied but `KANON_CACHE_DIR` is not set.
-  Fix: `export KANON_CACHE_DIR=/path/to/cache` and re-run.
+- `ERROR: KANON_HOME must be set to use a remote audit target. Set the environment variable to a writable directory path.`
+  Cause: a remote source was supplied but `KANON_HOME` is not set.
+  Fix: `export KANON_HOME=/path/to/home` and re-run.
 
 - `ERROR: Failed to clone audit target <url>@<ref>:`
   Cause: git clone returned a non-zero exit code when attempting to clone the remote audit target.
@@ -604,8 +604,8 @@ kanon catalog audit
 # Audit an explicit local path
 kanon catalog audit /path/to/manifest-repo
 
-# Audit a remote repo (requires KANON_CACHE_DIR)
-export KANON_CACHE_DIR=~/.kanon-cache
+# Audit a remote repo (requires KANON_HOME)
+export KANON_HOME=~/.kanon
 kanon catalog audit https://github.com/org/manifest-repo.git@main
 
 # Run only metadata and tag-format checks
@@ -628,11 +628,11 @@ kanon catalog audit https://github.com/org/repo.git@v1.0.0 \
 |----------|---------|-------------|
 | `KANON_CATALOG_AUDIT_FORMAT` | `text` | Default output format. CLI `--format` takes precedence. |
 | `KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS` | `3600` | Cache TTL in seconds for remote clones. Must be a positive integer. |
-| `KANON_CACHE_DIR` | (unset) | Root cache directory. Required for remote audit targets. |
+| `KANON_HOME` | (unset) | Root kanon home directory; cache lives under `${KANON_HOME}/cache`. Required for remote audit targets. |
 | `KANON_ALLOW_INSECURE_REMOTES` | (unset) | When set to `1`, suppresses R002 findings for non-HTTPS/SSH remote URLs. Any value other than `1` is treated as unset. Intended for local test fixtures only; do not set in production CI pipelines. R001 and R003 findings are never suppressed by this variable. |
 
 ## Related commands
 
 - `kanon doctor` -- workspace health checks
-- `kanon list` -- browse catalog entries
+- `kanon search` -- browse catalog entries
 - `kanon add` -- add catalog entries to a `.kanon` file

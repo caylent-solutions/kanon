@@ -297,7 +297,7 @@ class TestTCClean:
                 ("orphan", manifest_bare.as_uri(), "main", "repo-specs/orphan-only.xml"),
                 ("keep", manifest_bare.as_uri(), "main", "repo-specs/keep-only.xml"),
             ],
-            marketplace_install="true",
+            marketplace_aliases=["orphan", "keep"],
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 

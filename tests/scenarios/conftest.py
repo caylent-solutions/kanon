@@ -290,6 +290,7 @@ def write_kanonenv(
     sources: Iterable[tuple[str, str, str, str]],
     *,
     marketplace_install: str | None = None,
+    marketplace_aliases: Iterable[str] = (),
     extra_lines: Iterable[str] = (),
 ) -> pathlib.Path:
     """Write a `.kanon` file declaring `sources` as KANON_SOURCE_<alias>_* blocks.
@@ -297,16 +298,40 @@ def write_kanonenv(
     Each `sources` entry: `(alias, url, ref, path)`. The required `_NAME`
     (the alias) and `_GITBASE` (the source url) block keys are filled in
     automatically so the alias-keyed block parses (spec Section 5.1).
-    `marketplace_install` appends `KANON_MARKETPLACE_INSTALL=<value>`.
+
+    Marketplace install is a per-dependency opt-in in 3.0.0 (FR-17): a source
+    registers its claude marketplace only when its
+    `KANON_SOURCE_<alias>_MARKETPLACE=true` flag is set. Pass each alias that
+    should opt in via `marketplace_aliases`; the helper emits that per-alias
+    flag for each one. Aliases not listed (and the absence of any flag) leave
+    the marketplace path disabled for that dependency, which is the default.
+
+    `marketplace_install` appends the legacy global
+    `KANON_MARKETPLACE_INSTALL=<value>` header. That global key was removed in
+    3.0.0 and is ignored by the parser; it is retained here only so existing
+    no-marketplace scenarios that pass `marketplace_install="false"` keep their
+    verbatim `.kanon` shape. New marketplace-bearing scenarios must use
+    `marketplace_aliases` instead, never `marketplace_install="true"`.
+
     `extra_lines` are appended verbatim.
     """
+    source_list = list(sources)
     lines: list[str] = []
-    for name, url, revision, path in sources:
+    marketplace_alias_set = set(marketplace_aliases)
+    for name, url, revision, path in source_list:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
         lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH={path}")
         lines.append(f"KANON_SOURCE_{name}_NAME={name}")
         lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
+        if name in marketplace_alias_set:
+            lines.append(f"KANON_SOURCE_{name}_MARKETPLACE=true")
+            marketplace_alias_set.discard(name)
+    if marketplace_alias_set:
+        raise ValueError(
+            f"marketplace_aliases references unknown source aliases: {sorted(marketplace_alias_set)!r}; "
+            f"declared sources: {[s[0] for s in source_list]!r}"
+        )
     if marketplace_install is not None:
         lines.append(f"KANON_MARKETPLACE_INSTALL={marketplace_install}")
     lines.extend(extra_lines)

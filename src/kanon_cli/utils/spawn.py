@@ -1,4 +1,4 @@
-"""Cross-platform detached-process spawn helper.
+"""POSIX detached-process spawn helper.
 
 Provides a single ``spawn_detached`` function that starts a child process
 running an arbitrary callable, fully detached from the parent's controlling
@@ -13,26 +13,20 @@ POSIX (Linux, macOS):
     the caller-supplied *log_path* (append mode), calls *refresh_fn()*, and
     exits via ``os._exit`` (0 on success, 1 on exception).
 
-Windows:
-    Uses ``subprocess.Popen`` with the ``DETACHED_PROCESS`` creation flag and
-    stdin/stdout/stderr redirected to ``DEVNULL`` so the child has no
-    controlling console.  The callable is serialised via ``pickle`` and passed
-    to the child process via a Python ``-c`` command that deserialises and
-    calls it.  The callable must therefore be picklable (module-level function
-    or ``functools.partial`` of one; nested closures are not picklable).
+Windows is unsupported: kanon targets POSIX hosts (WSL/WSL2 is the recommended
+path on Windows in the meantime), so this helper has no Windows backend.
 
 Fail-fast contract
 ------------------
 Any spawn failure raises ``RuntimeError`` with a message that names the
-platform, the exception class, and the underlying OS error.  The caller is
-responsible for deciding whether to propagate the error; library code never
-calls ``sys.exit()``.
+exception class and the underlying OS error.  The caller is responsible for
+deciding whether to propagate the error; library code never calls
+``sys.exit()``.
 """
 
 from __future__ import annotations
 
 import os
-import sys
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -71,34 +65,22 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
     stdin and stdout are redirected to ``/dev/null``; stderr is redirected to
     *log_path* (opened in append mode, created if absent).
 
-    On POSIX the child is created via ``os.fork()``; the parent returns as
-    soon as the fork succeeds.  On Windows ``subprocess.Popen`` is used with
-    the ``DETACHED_PROCESS`` flag.
-
-    *refresh_fn* must be picklable when the Windows path is used, because the
-    Windows implementation serialises it via ``pickle`` to pass it to the child
-    interpreter.  Use a module-level function or ``functools.partial`` of one;
-    nested closures are not picklable.
+    The child is created via ``os.fork()``; the parent returns as soon as the
+    fork succeeds.  kanon is POSIX-only, so there is no Windows backend.
 
     Args:
         refresh_fn: Zero-argument callable executed only in the child process.
-            Must be picklable (required for the Windows spawn path).
         log_path: Path to the file where the child's stderr is appended.
-            On POSIX the log directory is created with mode 0700 (explicit
-            chmod so the umask cannot weaken permissions).  The parent does
-            not create this file; the child opens it in append mode so that
-            any error output is captured without touching the operator's
-            terminal.
+            The log directory is created with mode 0700 (explicit chmod so the
+            umask cannot weaken permissions).  The parent does not create this
+            file; the child opens it in append mode so that any error output is
+            captured without touching the operator's terminal.
 
     Raises:
         RuntimeError: If the underlying spawn mechanism fails (``os.fork``
-            raises ``OSError`` on POSIX, or ``subprocess.Popen`` raises on
-            Windows).
+            raises ``OSError``).
     """
-    if sys.platform == "win32":
-        _spawn_detached_windows(refresh_fn, log_path=log_path)
-    else:
-        _spawn_detached_posix(refresh_fn, log_path=log_path)
+    _spawn_detached_posix(refresh_fn, log_path=log_path)
 
 
 # ---------------------------------------------------------------------------
@@ -159,65 +141,3 @@ def _spawn_detached_posix(
     except Exception:
         _record_posix_child_error(log_path)
         os._exit(1)
-
-
-# ---------------------------------------------------------------------------
-# Windows implementation
-# ---------------------------------------------------------------------------
-
-# Windows process-creation flag: no controlling console for the child.
-_DETACHED_PROCESS = 0x00000008
-
-
-def _spawn_detached_windows(
-    refresh_fn: Callable[[], None],
-    *,
-    log_path: Path,
-) -> None:
-    """Windows detached spawn via subprocess.Popen with DETACHED_PROCESS.
-
-    Serialises *refresh_fn* via ``pickle`` and passes it to a child Python
-    process that deserialises and calls it.  ``subprocess.Popen`` is used with
-    ``DETACHED_PROCESS`` so the child has no controlling console window and
-    std streams are redirected to DEVNULL / the log file.
-
-    Args:
-        refresh_fn: Zero-argument callable to run in the child.
-        log_path: Path to the file where the child's stderr is appended.
-
-    Raises:
-        RuntimeError: If ``subprocess.Popen`` raises ``OSError``.
-    """
-    import base64
-    import pickle
-    import subprocess
-
-    try:
-        payload = base64.b64encode(pickle.dumps(refresh_fn)).decode("ascii")
-    except Exception as exc:
-        raise RuntimeError(
-            f"spawn_detached: failed to serialise refresh_fn for Windows spawn"
-            f" ({type(exc).__name__}: {exc})."
-            f" Ensure refresh_fn is picklable."
-        ) from exc
-
-    child_script = f"import base64, pickle, sys; pickle.loads(base64.b64decode({payload!r}))()"
-
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        with log_path.open("a") as log_fh:
-            subprocess.Popen(
-                [sys.executable, "-c", child_script],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=log_fh,
-                creationflags=_DETACHED_PROCESS,
-                close_fds=True,
-            )
-    except OSError as exc:
-        raise RuntimeError(
-            f"spawn_detached: failed to spawn background refresh child"
-            f" ({type(exc).__name__}: {exc})."
-            f" Check that the Python interpreter is accessible and try again."
-        ) from exc

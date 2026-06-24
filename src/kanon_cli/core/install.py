@@ -84,6 +84,7 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
+    SOURCE_MARKETPLACE_KEY,
     resolve_kanon_home,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
@@ -2113,15 +2114,26 @@ def _run_install(
     base_dir = resolve_workspace_base_dir()
     source_names = config["KANON_SOURCES"]
     sources = config["sources"]
-    marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
     globals_dict = config["globals"]
+
+    # Per-dependency marketplace install (spec Section 4.3 / 5.1 / FR-17): the
+    # side-effect is performed per source iff that source's
+    # KANON_SOURCE_<alias>_MARKETPLACE flag is present and true.  source_marketplace
+    # maps each alias to its flag; any_marketplace gates the shared resources (the
+    # marketplace directory, plugin install, and lockfile aggregate) that exist
+    # whenever at least one dependency opted in.
+    source_marketplace: dict[str, bool] = {name: bool(sources[name][SOURCE_MARKETPLACE_KEY]) for name in source_names}
+    any_marketplace = any(source_marketplace.values())
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
-    if marketplace_install and not marketplace_dir_str:
-        raise ValueError("KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon")
+    if any_marketplace and not marketplace_dir_str:
+        raise ValueError(
+            "a KANON_SOURCE_<alias>_MARKETPLACE=true dependency is declared but "
+            "CLAUDE_MARKETPLACES_DIR is not defined in .kanon"
+        )
 
-    if marketplace_install:
+    if any_marketplace:
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         print("kanon install: preparing marketplace directory...")
         prepare_marketplace_dir(marketplace_dir)
@@ -2229,7 +2241,7 @@ def _run_install(
         # directory before the loop, so per-source diffs cleanly isolate each
         # source's contribution.
         before_marketplace_names: set[str] = set()
-        if marketplace_install:
+        if source_marketplace[name]:
             before_marketplace_names = set(discover_registered_marketplace_names(pathlib.Path(marketplace_dir_str)))
 
         # On the RECONCILE path, decide replay-vs-resolve for this source by
@@ -2453,7 +2465,7 @@ def _run_install(
         # marketplace entries are present for install_marketplace_plugins even
         # when the repo tool's linkfile step did not run (spec Section 4 E35).
         #
-        if marketplace_install:
+        if source_marketplace[name]:
             marketplace_dir = pathlib.Path(marketplace_dir_str)
             _process_manifest_linkfiles(manifest_xml_path, source_dir)
             # Also register direct-checkout entries that carry a
@@ -2534,7 +2546,7 @@ def _run_install(
 
     _print_package_summary(package_owners, source_names)
 
-    if marketplace_install:
+    if any_marketplace:
         print("\nkanon install: installing marketplace plugins...")
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
@@ -2554,9 +2566,9 @@ def _run_install(
     # toggled off).  Each orphan is unregistered from ~/.claude via
     # ``remove_marketplace`` (idempotent).  The claude binary is located lazily,
     # only when at least one orphan exists, so a no-orphan run never requires
-    # claude on PATH.  This diff runs even when marketplace install is DISABLED
-    # so toggling KANON_MARKETPLACE_INSTALL off prunes everything kanon
-    # previously registered (NEW=[], orphans=OLD).
+    # claude on PATH.  This diff runs even when every dependency has marketplace
+    # install DISABLED so removing the last KANON_SOURCE_<alias>_MARKETPLACE=true
+    # flag prunes everything kanon previously registered (NEW=[], orphans=OLD).
     new_marketplace_set: set[str] = set()
     for _names in attributed_marketplaces.values():
         new_marketplace_set.update(_names)
@@ -2597,8 +2609,8 @@ def _run_install(
             generator=f"kanon-cli/{__version__}",
             kanon_hash=computed_hash,
             sources=resolved_entries,
-            marketplace_registered=marketplace_install,
-            marketplace_dir=marketplace_dir_str if marketplace_install else "",
+            marketplace_registered=any_marketplace,
+            marketplace_dir=marketplace_dir_str if any_marketplace else "",
         )
         write_lockfile(lf, lockfile_path)
 
@@ -2612,8 +2624,8 @@ def _run_install(
             generator=f"kanon-cli/{__version__}",
             kanon_hash=reconcile_hash_nn,
             sources=resolved_entries,
-            marketplace_registered=marketplace_install,
-            marketplace_dir=marketplace_dir_str if marketplace_install else "",
+            marketplace_registered=any_marketplace,
+            marketplace_dir=marketplace_dir_str if any_marketplace else "",
         )
         write_lockfile(lf, lockfile_path)
 
@@ -2646,8 +2658,8 @@ def _run_install(
                 generator=f"kanon-cli/{__version__}",
                 kanon_hash=new_kanon_hash,
                 sources=resolved_entries,
-                marketplace_registered=marketplace_install,
-                marketplace_dir=marketplace_dir_str if marketplace_install else "",
+                marketplace_registered=any_marketplace,
+                marketplace_dir=marketplace_dir_str if any_marketplace else "",
             )
             write_lockfile(lf, lockfile_path)
 
@@ -2668,8 +2680,8 @@ def _run_install(
             generator=pruned_lf_nn.generator,
             kanon_hash=pruned_lf_nn.kanon_hash,
             sources=pruned_sources,
-            marketplace_registered=marketplace_install,
-            marketplace_dir=marketplace_dir_str if marketplace_install else "",
+            marketplace_registered=any_marketplace,
+            marketplace_dir=marketplace_dir_str if any_marketplace else "",
         )
         write_lockfile(pruned_lockfile, lockfile_path)
 
@@ -2710,14 +2722,16 @@ def install(
       3a. In LOCKFILE_CONSISTENT state: detect orphans and branch drift.
          Prune orphans (or raise OrphanedLockEntryError with --strict-lock).
          Log drift info-lines (or raise BranchDriftError with --strict-drift).
-      5. If KANON_MARKETPLACE_INSTALL=true: create and clean marketplace dir.
+      5. If any dependency sets KANON_SOURCE_<alias>_MARKETPLACE=true: create
+         and clean the marketplace dir.
       6. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
          On the REFRESH_LOCK_SOURCE path, only the named source is re-resolved;
          all other sources replay their pinned SHAs from the existing lockfile.
       7. Aggregate symlinks into .packages/.
       8. Update .gitignore.
       9. Emit state info-line via _emit_install_state.
-      10. If KANON_MARKETPLACE_INSTALL=true: run install script.
+      10. If any dependency sets KANON_SOURCE_<alias>_MARKETPLACE=true: run the
+          marketplace install script.
       11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK/RECONCILE;
           partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
           LOCKFILE_CONSISTENT with orphans; unchanged for LOCKFILE_CONSISTENT

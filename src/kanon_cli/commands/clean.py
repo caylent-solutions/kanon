@@ -19,10 +19,10 @@ def register(subparsers) -> None:
         help="Full teardown: uninstall, remove dirs",
         description=(
             "Execute the full Kanon clean lifecycle.\n\n"
-            "If KANON_MARKETPLACE_INSTALL=true, runs the uninstall script\n"
-            "and removes the marketplace directory. Then removes .packages/\n"
-            "and .kanon-data/ directories and prunes the content-addressed\n"
-            "entries from the shared KANON_HOME store.\n\n"
+            "If any dependency set KANON_SOURCE_<alias>_MARKETPLACE=true, runs\n"
+            "the uninstall script and removes the marketplace directory. Then\n"
+            "removes .packages/ and .kanon-data/ directories and prunes the\n"
+            "content-addressed entries from the shared KANON_HOME store.\n\n"
             "With --orphans, before the normal teardown kanon also unregisters\n"
             "any kanon-owned marketplaces recorded in .kanon.lock that are no\n"
             "longer referenced by .kanon (pruning them from ~/.claude)."

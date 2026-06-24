@@ -3,8 +3,9 @@
 Performs full Kanon teardown in the following order:
   1. Resolve symlinks in kanonenv_path so teardown targets the real project directory
   2. Determine marketplace state: consult .kanon.lock (marketplace_registered field)
-     when present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
-     lockfiles or when no lockfile exists (back-compat, AC-8).
+     when present; fall back to the .kanon per-dependency
+     KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency opts
+     in) for old lockfiles or when no lockfile exists (back-compat, AC-8).
   3. Resolve the artifact base directory via resolve_workspace_base_dir: the
      shared KANON_HOME store (<KANON_HOME>/store, default ~/.kanon/store), from
      which .packages/ and .kanon-data/ are removed.
@@ -19,6 +20,7 @@ import pathlib
 import shutil
 import sys
 
+from kanon_cli.constants import SOURCE_MARKETPLACE_KEY
 from kanon_cli.core.install import prune_store, resolve_workspace_base_dir
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
@@ -187,16 +189,18 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
          ``~/.kanon/store``).  This mirrors the resolution used by install so
          clean removes exactly what install wrote.
       4. Determine marketplace state from .kanon.lock (marketplace_registered) when
-         present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
-         lockfiles or when no lockfile exists.
+         present; fall back to the .kanon per-dependency
+         KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency
+         opts in) for old lockfiles or when no lockfile exists.
       5. If marketplace was registered: run uninstall, remove marketplace dir.
       6. Remove .packages/ and .kanon-data/, then prune the content-addressed
          store entries (spec Section 3.5 / FR-16).
 
-    The lockfile-first lookup ensures that an env-override install
-    (KANON_MARKETPLACE_INSTALL=true at install time, while .kanon stores false) is
-    cleaned up correctly: the lockfile records the actual install-time state, so
-    clean does not rely on the potentially stale .kanon flag.
+    The lockfile-first lookup ensures that an install whose registered set differs
+    from the current .kanon flags (e.g. a dependency's
+    KANON_SOURCE_<alias>_MARKETPLACE was flipped off after install) is cleaned up
+    correctly: the lockfile records the actual install-time state, so clean does
+    not rely on the potentially stale .kanon flags.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file. May be a symlink;
@@ -215,7 +219,12 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     print(f"kanon clean: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = resolve_workspace_base_dir()
-    kanon_flag_marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
+    # The per-dependency marketplace flag replaces the removed global
+    # KANON_MARKETPLACE_INSTALL header (spec Section 0 item 8 / FR-17): a clean is
+    # marketplace-relevant when ANY declared dependency opted in via
+    # KANON_SOURCE_<alias>_MARKETPLACE=true.  This is only the fallback used when
+    # the lockfile carries no registration record (see below).
+    kanon_flag_marketplace_install = any(bool(source[SOURCE_MARKETPLACE_KEY]) for source in config["sources"].values())
     globals_dict = config["globals"]
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
@@ -243,13 +252,14 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     else:
         # No lockfile, or lockfile lacks a registration (old lockfile migrated to
         # marketplace_registered=False, or fresh install with false).  Fall back to
-        # the .kanon flag for back-compat (AC-8).
+        # the per-dependency .kanon flags for back-compat (AC-8).
         effective_marketplace_install = kanon_flag_marketplace_install
         effective_marketplace_dir_str = marketplace_dir_str
 
     if effective_marketplace_install and not effective_marketplace_dir_str:
         print(
-            "Error: KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
+            "Error: a KANON_SOURCE_<alias>_MARKETPLACE=true dependency is declared "
+            "but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
             file=sys.stderr,
         )
         sys.exit(1)

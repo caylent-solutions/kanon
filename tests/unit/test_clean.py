@@ -27,6 +27,11 @@ _MINIMAL_KANONENV = (
     "KANON_SOURCE_build_GITBASE=https://example.com\n"
 )
 
+# Same minimal block, but with the 'build' dependency opting into marketplace
+# install via the per-dependency flag (spec Section 5.1 / FR-17). Used by the
+# clean tests that exercise the marketplace teardown path.
+_MINIMAL_KANONENV_MARKETPLACE = _MINIMAL_KANONENV + "KANON_SOURCE_build_MARKETPLACE=true\n"
+
 
 @pytest.mark.unit
 class TestDirectoryRemoval:
@@ -83,7 +88,7 @@ class TestCleanLifecycle:
         store = tmp_path / "home" / "store"
         monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
         kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(_MINIMAL_KANONENV)
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True, exist_ok=True)
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
@@ -93,7 +98,7 @@ class TestCleanLifecycle:
 
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=true\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(_MINIMAL_KANONENV_MARKETPLACE)
         with pytest.raises(SystemExit):
             clean(kanonenv)
 
@@ -102,7 +107,7 @@ class TestCleanLifecycle:
         store = tmp_path / "home" / "store"
         monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
         kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text(f"CLAUDE_MARKETPLACES_DIR={mp_dir}\nKANON_MARKETPLACE_INSTALL=true\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n" + _MINIMAL_KANONENV_MARKETPLACE)
         mp_dir.mkdir()
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True, exist_ok=True)
@@ -246,7 +251,7 @@ class TestCleanKanonHomeStore:
         cwd_dir.mkdir()
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(_MINIMAL_KANONENV)
 
         # Create artifacts under the store (as install would have)
         (store / ".packages").mkdir(parents=True)
@@ -289,7 +294,7 @@ class TestCleanKanonHomeStore:
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(_MINIMAL_KANONENV)
 
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True)
@@ -316,7 +321,7 @@ class TestCleanKanonHomeStore:
         cwd_dir.mkdir()
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+        kanonenv.write_text(_MINIMAL_KANONENV)
 
         # A published content-addressed entry (as install would have written).
         entry = store_entries_dir(store) / ("a" * 64)
@@ -382,10 +387,13 @@ def _write_lock(
 def _write_kanon_sources(
     directory: pathlib.Path, marketplace_dir: pathlib.Path, source_names: list[str]
 ) -> pathlib.Path:
-    """Write a .kanon declaring the given source names (marketplace install on)."""
+    """Write a .kanon declaring the given source names (marketplace install on).
+
+    Each source opts into marketplace install via its per-dependency
+    KANON_SOURCE_<name>_MARKETPLACE=true flag (spec Section 5.1 / FR-17).
+    """
     lines = [
         f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}",
-        "KANON_MARKETPLACE_INSTALL=true",
     ]
     for name in source_names:
         lines.append(f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git")
@@ -393,6 +401,7 @@ def _write_kanon_sources(
         lines.append(f"KANON_SOURCE_{name}_PATH=repo-specs/{name}.xml")
         lines.append(f"KANON_SOURCE_{name}_NAME={name}")
         lines.append(f"KANON_SOURCE_{name}_GITBASE=https://example.com")
+        lines.append(f"KANON_SOURCE_{name}_MARKETPLACE=true")
     kanonenv = directory / ".kanon"
     kanonenv.write_text("\n".join(lines) + "\n")
     return kanonenv

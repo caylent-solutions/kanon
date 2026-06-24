@@ -61,8 +61,8 @@ TAG_ERROR_DISPLAY_CAP = 10
 # Each dependency is one block keyed by a local alias. Every suffix below is a
 # required part of a complete source block; a partial block (any required key
 # missing) fails fast with no silent default. The optional `_MARKETPLACE` flag
-# (absence == false) is owned by the add source-explicit task and is not a
-# required member of the parsed source group.
+# (absence == false) is auto-detected and written by `kanon add` (spec Section
+# 4.2 / FR-17) and is not a required member of the parsed source group.
 SOURCE_PREFIX = "KANON_SOURCE_"
 SOURCE_URL_SUFFIX = "_URL"
 SOURCE_REF_SUFFIX = "_REF"
@@ -83,6 +83,22 @@ SUFFIX_TO_KEY = {
     SOURCE_NAME_SUFFIX: "name",
     SOURCE_GITBASE_SUFFIX: "gitbase",
 }
+# Optional per-dependency marketplace-install flag suffix (spec Section 5.1 /
+# FR-17). It is NOT a member of the required ``SOURCE_SUFFIXES`` block: absence
+# means false, ``=true`` is written explicitly, and a hand-written ``=false`` is
+# tolerated on read but never emitted by kanon. The flag is parsed into the
+# per-source group under ``SOURCE_MARKETPLACE_KEY`` and excluded from the source
+# triple used for hashing (only _URL/_REF/_PATH contribute to the kanon_hash).
+SOURCE_MARKETPLACE_SUFFIX = "_MARKETPLACE"
+SOURCE_MARKETPLACE_KEY = "marketplace"
+# Canonical string value written for an enabled per-dependency marketplace flag.
+# kanon only ever emits the enabled value; disabling is represented by the line's
+# absence (spec Section 4.4 / 5.1), so there is no companion "false" literal.
+MARKETPLACE_FLAG_TRUE = "true"
+# The ``<catalog-metadata><type>`` value that marks a catalog entry as a Claude
+# marketplace (spec Section 4.2 / FR-17). ``kanon add`` auto-detects this type
+# and writes ``KANON_SOURCE_<alias>_MARKETPLACE=true`` for the added dependency.
+CATALOG_TYPE_CLAUDE_MARKETPLACE = "claude-marketplace"
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 # -- Shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15, FR-16) --
@@ -507,9 +523,12 @@ KANON_KANON_FILE_DEFAULT = "./.kanon"
 
 # Standard-header line values written to a newly-created .kanon file.
 # These match the template in src/kanon_cli/catalog/kanon/.kanon verbatim.
+# The former global ``KANON_MARKETPLACE_INSTALL`` header line has been removed
+# (spec Section 0 item 8 / FR-17): marketplace install is now a per-dependency,
+# auto-detected ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (see
+# ``SOURCE_MARKETPLACE_SUFFIX`` above), not a single global header field.
 KANON_HEADER_GITBASE = "GITBASE=<YOUR_GIT_ORG_BASE_URL>"
 KANON_HEADER_CLAUDE_MARKETPLACES_DIR = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
-KANON_HEADER_MARKETPLACE_INSTALL = "KANON_MARKETPLACE_INSTALL=<true|false>"
 
 # -- kanon outdated revision normalization (DEFECT-007 fix) --
 # Individual git ref prefix constants for all recognized prefix forms.

@@ -2,11 +2,13 @@
 
 Resolves one or more catalog entries from a manifest repo and writes the
 alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block to the
-destination .kanon file (spec Section 5.1 / FR-5, FR-6). There is no global
-``[catalog]`` block and no standard header: the per-dependency blocks fully
-replace the single global header, so ``add`` writes neither a
-``KANON_MARKETPLACE_INSTALL`` header line nor a ``GITBASE`` header line. The
-``GITBASE`` org base is recorded per dependency in ``KANON_SOURCE_<alias>_GITBASE``.
+destination .kanon file (spec Section 5.1 / FR-5, FR-6), plus an optional
+per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE=true`` line when the entry is
+(or is forced to) a Claude marketplace (spec Section 4.2 / FR-17). There is no
+global ``[catalog]`` block and no standard header: the per-dependency blocks
+fully replace the single global header, so ``add`` writes neither a global
+marketplace-install header line nor a ``GITBASE`` header line. The ``GITBASE``
+org base is recorded per dependency in ``KANON_SOURCE_<alias>_GITBASE``.
 
 Spec reference: ``specs/kanon-refinements.md`` Section 5.1 (alias-keyed
 ``.kanon`` blocks, ``_REVISION`` -> ``_REF``, ``_NAME`` / ``_GITBASE``, no
@@ -28,10 +30,13 @@ import urllib.parse
 from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
+    CATALOG_TYPE_CLAUDE_MARKETPLACE,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
+    MARKETPLACE_FLAG_TRUE,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_PATH_SUFFIX,
     SOURCE_PREFIX,
     SOURCE_REF_SUFFIX,
@@ -180,11 +185,39 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    # The per-dependency KANON_SOURCE_<alias>_MARKETPLACE field and its
-    # --marketplace-install / --no-marketplace-install flags are introduced by
-    # the add source-explicit task (E4-F1-S3, AC-25). This task removes the
-    # global KANON_MARKETPLACE_INSTALL header writer, so no marketplace flag is
-    # registered here.
+    # Per-dependency marketplace-install override flags (spec Section 4.2 /
+    # FR-17). They are mutually exclusive: --marketplace-install forces the added
+    # dependency's KANON_SOURCE_<alias>_MARKETPLACE line on (a pretty error, not a
+    # crash, when the catalog entry is not a marketplace type);
+    # --no-marketplace-install forces it off (the line is omitted). When neither
+    # flag is supplied the value is auto-detected from <catalog-metadata><type>.
+    marketplace_group = parser.add_mutually_exclusive_group()
+    marketplace_group.add_argument(
+        "--marketplace-install",
+        dest="marketplace_install",
+        action="store_const",
+        const=True,
+        default=None,
+        help=(
+            "Force the added dependency to register as a Claude marketplace\n"
+            "(write KANON_SOURCE_<alias>_MARKETPLACE=true), overriding the\n"
+            "auto-detected <catalog-metadata><type>. Errors if the entry is not\n"
+            f"a '{CATALOG_TYPE_CLAUDE_MARKETPLACE}' type. Mutually exclusive with\n"
+            "--no-marketplace-install."
+        ),
+    )
+    marketplace_group.add_argument(
+        "--no-marketplace-install",
+        dest="marketplace_install",
+        action="store_const",
+        const=False,
+        help=(
+            "Force the added dependency to NOT register as a marketplace (omit\n"
+            "the KANON_SOURCE_<alias>_MARKETPLACE line), overriding the\n"
+            "auto-detected <catalog-metadata><type>. Mutually exclusive with\n"
+            "--marketplace-install."
+        ),
+    )
 
     parser.set_defaults(func=run_add)
 
@@ -240,6 +273,37 @@ class AliasOverrideError(ValueError):
             f"ERROR: invalid --as alias {self.alias!r}: {self.reason}\n"
             "An alias may contain only [A-Za-z0-9_] and must not contain a"
             " '__' run; pick a different --as value."
+        )
+
+
+class MarketplaceInstallError(ValueError):
+    """Raised when ``--marketplace-install`` is forced on a non-marketplace entry.
+
+    Spec reference: ``specs/kanon-refinements.md`` Section 4.2 (``add``
+    marketplace auto-detect / FR-17: ``--marketplace-install`` is a pretty error,
+    not a crash, when the catalog entry is not a ``claude-marketplace`` type) +
+    CLAUDE.md Error Handling Contract.
+
+    Args:
+        entry_name: The catalog entry name the operator tried to force on.
+        entry_type: The entry's ``<catalog-metadata><type>`` value (``None`` when
+            the recommended ``type`` field is absent).
+    """
+
+    def __init__(self, entry_name: str, entry_type: str | None) -> None:
+        self.entry_name = entry_name
+        self.entry_type = entry_type
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        found = "absent" if self.entry_type is None else repr(self.entry_type)
+        return (
+            f"ERROR: --marketplace-install requires catalog entry "
+            f"{self.entry_name!r} to declare "
+            f"<catalog-metadata><type>{CATALOG_TYPE_CLAUDE_MARKETPLACE}</type>, "
+            f"but its type is {found}.\n"
+            "Remove --marketplace-install to add it as a regular package, or pick "
+            "a marketplace-typed entry."
         )
 
 
@@ -582,6 +646,59 @@ def _resolve_override_alias(
     sys.exit(1)
 
 
+def _is_marketplace_type(entry_type: str | None) -> bool:
+    """Return True when a catalog entry's ``<type>`` marks it as a marketplace.
+
+    The comparison is exact against :data:`CATALOG_TYPE_CLAUDE_MARKETPLACE`
+    (spec Section 4.2 / FR-17); a ``None`` type (the recommended field absent)
+    is not a marketplace.
+
+    Args:
+        entry_type: The entry's ``<catalog-metadata><type>`` value, or ``None``.
+
+    Returns:
+        True iff ``entry_type`` equals the Claude marketplace type token.
+    """
+    return entry_type == CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+
+def _resolve_marketplace_flag(
+    entry_name: str,
+    entry_type: str | None,
+    flag_override: bool | None,
+) -> bool:
+    """Resolve the per-dependency marketplace-install flag for one added entry.
+
+    Precedence (spec Section 4.2 / FR-17):
+
+    - ``flag_override is True`` (``--marketplace-install``): force on, but raise
+      :class:`MarketplaceInstallError` when the entry is not a marketplace type
+      (a pretty error, never a silent write of a bogus marketplace flag).
+    - ``flag_override is False`` (``--no-marketplace-install``): force off.
+    - ``flag_override is None`` (neither flag): auto-detect from ``entry_type``.
+
+    Args:
+        entry_name: The catalog entry name (used in the forced-on error).
+        entry_type: The entry's ``<catalog-metadata><type>`` value, or ``None``.
+        flag_override: ``True`` for ``--marketplace-install``, ``False`` for
+            ``--no-marketplace-install``, ``None`` when neither flag was given.
+
+    Returns:
+        The resolved marketplace boolean for this dependency.
+
+    Raises:
+        MarketplaceInstallError: When ``--marketplace-install`` is forced on an
+            entry whose ``<type>`` is not the marketplace type.
+    """
+    if flag_override is True:
+        if not _is_marketplace_type(entry_type):
+            raise MarketplaceInstallError(entry_name=entry_name, entry_type=entry_type)
+        return True
+    if flag_override is False:
+        return False
+    return _is_marketplace_type(entry_type)
+
+
 def _build_source_block_lines(
     source_name: str,
     url: str,
@@ -589,13 +706,17 @@ def _build_source_block_lines(
     path: str,
     name: str,
     gitbase: str,
+    marketplace: bool,
 ) -> list[str]:
     """Construct the alias-keyed KANON_SOURCE_<alias>_* block lines.
 
     Emits the alias-keyed per-dependency block (spec Section 5.1 / FR-5, FR-6):
     ``_URL``, ``_REF`` (the verbatim version spec), ``_PATH``, ``_NAME`` (the
     original catalog manifest name), and ``_GITBASE`` (the org base for
-    ``${GITBASE}`` resolution). There is no ``_REVISION`` line and no global
+    ``${GITBASE}`` resolution). The optional ``_MARKETPLACE`` flag (spec Section
+    5.1 / FR-17) is appended as ``=true`` only when ``marketplace`` is true;
+    when false the line is omitted entirely (absence is the canonical false, so
+    kanon never emits ``=false``). There is no ``_REVISION`` line and no global
     ``[catalog]`` block.
 
     Args:
@@ -605,21 +726,27 @@ def _build_source_block_lines(
         path: Repo-relative path to the marketplace XML file.
         name: Original catalog manifest name (the pre-sanitization entry name).
         gitbase: Org base for ``${GITBASE}`` resolution (derived from the URL).
+        marketplace: Whether this dependency registers as a Claude marketplace.
+            ``True`` appends ``_MARKETPLACE=true``; ``False`` omits the line.
 
     Returns:
-        A list of exactly five strings: URL, REF, PATH, NAME, GITBASE lines.
+        A list of the URL, REF, PATH, NAME, GITBASE lines, plus a trailing
+        ``_MARKETPLACE=true`` line when ``marketplace`` is true.
     """
     prefix = f"{SOURCE_PREFIX}{source_name}"
     # The suffix tokens are written as literals (rather than interpolated from
     # the suffix constants) so this single canonical writer states the on-disk
     # alias-block schema verbatim: _URL, _REF, _PATH, _NAME, _GITBASE.
-    return [
+    lines = [
         f"{prefix}_URL={url}",
         f"{prefix}_REF={ref}",
         f"{prefix}_PATH={path}",
         f"{prefix}_NAME={name}",
         f"{prefix}_GITBASE={gitbase}",
     ]
+    if marketplace:
+        lines.append(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}={MARKETPLACE_FLAG_TRUE}")
+    return lines
 
 
 def _source_block_key_names(source_name: str) -> str:
@@ -987,8 +1114,11 @@ def _overwrite_source_block(
     """Replace the KANON_SOURCE_<alias>_* block lines in dest.
 
     Reads the entire file, removes any line whose key is one of the alias-keyed
-    block keys (every suffix in ``SOURCE_SUFFIXES``), and inserts the new block
-    lines in place of the first removed line (preserving order).
+    block keys (every suffix in ``SOURCE_SUFFIXES`` plus the optional
+    ``_MARKETPLACE`` flag), and inserts the new block lines in place of the first
+    removed line (preserving order). Including ``_MARKETPLACE`` in the removed set
+    means a ``--no-marketplace-install`` overwrite drops a previously written
+    ``_MARKETPLACE=true`` line rather than leaving it stale.
 
     Args:
         dest: Destination .kanon file (must exist and contain the block).
@@ -997,6 +1127,7 @@ def _overwrite_source_block(
     """
     prefix = f"{SOURCE_PREFIX}{source_name}"
     block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
+    block_keys.add(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}")
 
     existing_lines = dest.read_text(encoding="utf-8").splitlines(keepends=True)
     result: list[str] = []
@@ -1113,6 +1244,7 @@ def _existing_block_lines(dest: pathlib.Path, source_name: str) -> list[str]:
         return []
     prefix = f"{SOURCE_PREFIX}{source_name}"
     block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
+    block_keys.add(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}")
     matched: list[str] = []
     for raw_line in dest.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.strip()
@@ -1175,8 +1307,15 @@ def run_add(args: argparse.Namespace) -> int:
     - **Write phase** (Step 5): only after every entry is fully resolved and
       validated does the alias-block append/overwrite execute. There is no
       standard-header write (spec Section 5.1): the per-dependency block carries
-      its own ``_GITBASE`` and there is no global ``[catalog]`` /
-      ``KANON_MARKETPLACE_INSTALL`` header line.
+      its own ``_GITBASE`` and there is no global ``[catalog]`` header line.
+
+    Marketplace auto-detect (FR-17, spec Section 4.2): each entry's
+    ``KANON_SOURCE_<alias>_MARKETPLACE`` flag is auto-detected from its
+    ``<catalog-metadata><type>`` (a ``claude-marketplace`` type writes ``=true``
+    plus a notice naming the override flag; any other type writes no line).
+    ``--marketplace-install`` forces the flag on (a pretty error, not a crash,
+    when the entry is not a marketplace type); ``--no-marketplace-install``
+    forces it off (omit the line).
 
     When --dry-run is set, prints the diff that would be applied and exits 0
     without modifying any file.
@@ -1209,6 +1348,9 @@ def run_add(args: argparse.Namespace) -> int:
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
     alias_override: str | None = getattr(args, "alias_override", None)
+    # None == auto-detect from <catalog-metadata><type>; True/False == forced by
+    # --marketplace-install / --no-marketplace-install (spec Section 4.2 / FR-17).
+    marketplace_override: bool | None = getattr(args, "marketplace_install", None)
 
     # An --as override targets a single alias; rejecting the multi-entry case up
     # front (fail fast) avoids silently aliasing only one of several entries.
@@ -1301,6 +1443,33 @@ def run_add(args: argparse.Namespace) -> int:
                 new_path=rel_path,
             )
 
+        # Resolve the per-dependency marketplace flag (auto-detect from the
+        # entry's <type>, overridden by --[no-]marketplace-install). Forcing
+        # --marketplace-install on a non-marketplace entry is a pretty error
+        # (fail fast, before any file write -- AC-FUNC-004 holds).
+        try:
+            marketplace = _resolve_marketplace_flag(
+                entry_name=metadata.name,
+                entry_type=metadata.type,
+                flag_override=marketplace_override,
+            )
+        except MarketplaceInstallError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+
+        # Auto-detected marketplace entries print a notice naming the override
+        # flag (spec Section 4.2 / FR-17). The notice is emitted only on
+        # auto-detect (override unset); an explicit flag already states intent.
+        if marketplace and marketplace_override is None:
+            print(
+                f"Note: catalog entry '{metadata.name}' is a "
+                f"'{CATALOG_TYPE_CLAUDE_MARKETPLACE}' type; writing "
+                f"{SOURCE_PREFIX}{alias}{SOURCE_MARKETPLACE_SUFFIX}="
+                f"{MARKETPLACE_FLAG_TRUE}.\n"
+                "       Pass --no-marketplace-install to skip marketplace "
+                "registration for this dependency."
+            )
+
         lines = _build_source_block_lines(
             source_name=alias,
             url=entry_url,
@@ -1308,6 +1477,7 @@ def run_add(args: argparse.Namespace) -> int:
             path=rel_path,
             name=metadata.name,
             gitbase=entry_gitbase,
+            marketplace=marketplace,
         )
 
         # Record the resolved alias so a later entry in this same invocation

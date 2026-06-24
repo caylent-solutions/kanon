@@ -83,11 +83,38 @@ class TestValidParsing:
         assert result["globals"]["REPO_URL"] == "https://example.com"
         assert result["globals"]["REPO_REV"] == "v2.0.0"
 
-    def test_parses_marketplace_bool(self, tmp_path: pathlib.Path) -> None:
+    def test_parses_per_alias_marketplace_true(self, tmp_path: pathlib.Path) -> None:
+        """An explicit per-alias KANON_SOURCE_<alias>_MARKETPLACE=true parses to True
+        on that source only (spec Section 5.1 / FR-17).
+        """
         kanonenv = tmp_path / ".kanon"
-        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=true\n" + _block("build"))
+        kanonenv.write_text(
+            _block("build") + "KANON_SOURCE_build_MARKETPLACE=true\n" + _block("plain", path="plain.xml")
+        )
         result = parse_kanonenv(kanonenv)
-        assert result["KANON_MARKETPLACE_INSTALL"] is True
+        assert result["sources"]["build"]["marketplace"] is True
+        # A source with no _MARKETPLACE line defaults to False (absence == false).
+        assert result["sources"]["plain"]["marketplace"] is False
+        # The per-alias flag is never surfaced as a global.
+        assert "KANON_SOURCE_build_MARKETPLACE" not in result["globals"]
+        assert "KANON_MARKETPLACE_INSTALL" not in result
+
+    def test_per_alias_marketplace_case_insensitive_true(self, tmp_path: pathlib.Path) -> None:
+        """The per-alias flag parse is case-insensitive for the true token."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_block("build") + "KANON_SOURCE_build_MARKETPLACE=TRUE\n")
+        result = parse_kanonenv(kanonenv)
+        assert result["sources"]["build"]["marketplace"] is True
+
+    def test_per_alias_marketplace_false_tolerated(self, tmp_path: pathlib.Path) -> None:
+        """A hand-written KANON_SOURCE_<alias>_MARKETPLACE=false is tolerated on read
+        and parses to False (kanon never emits it, but reads it without error).
+        """
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_block("build") + "KANON_SOURCE_build_MARKETPLACE=false\n")
+        result = parse_kanonenv(kanonenv)
+        assert result["sources"]["build"]["marketplace"] is False
+        assert "KANON_SOURCE_build_MARKETPLACE" not in result["globals"]
 
 
 @pytest.mark.unit
@@ -201,10 +228,14 @@ class TestEdgeCases:
         assert result["KANON_SOURCES"] == ["alpha", "beta"]
 
     def test_marketplace_defaults_false(self, tmp_path: pathlib.Path) -> None:
+        """A source block with no _MARKETPLACE line defaults its marketplace flag to
+        False (absence == false), and there is no global marketplace key.
+        """
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(_block("build"))
         result = parse_kanonenv(kanonenv)
-        assert result["KANON_MARKETPLACE_INSTALL"] is False
+        assert result["sources"]["build"]["marketplace"] is False
+        assert "KANON_MARKETPLACE_INSTALL" not in result
 
     def test_bom_prefixed_file_parses_clean_keys(self, tmp_path: pathlib.Path) -> None:
         """BOM-prefixed .kanon file must parse with no leading U+FEFF on any key."""

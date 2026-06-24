@@ -342,24 +342,44 @@ class TestKanonAddConstants:
         assert isinstance(KANON_HEADER_CLAUDE_MARKETPLACES_DIR, str)
         assert "${HOME}/.claude-marketplaces" in KANON_HEADER_CLAUDE_MARKETPLACES_DIR
 
-    def test_kanon_header_marketplace_install_exists(self) -> None:
-        """KANON_HEADER_MARKETPLACE_INSTALL constant exists and contains the template placeholder."""
-        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
+    def test_global_marketplace_install_header_constant_removed(self) -> None:
+        """The global KANON_HEADER_MARKETPLACE_INSTALL constant is removed (spec
+        Section 0 item 8 / FR-17): marketplace install is now a per-dependency
+        KANON_SOURCE_<alias>_MARKETPLACE flag, so the global header template no
+        longer exists.
+        """
+        import kanon_cli.constants as constants
 
-        assert isinstance(KANON_HEADER_MARKETPLACE_INSTALL, str)
-        assert "<true|false>" in KANON_HEADER_MARKETPLACE_INSTALL
+        assert not hasattr(constants, "KANON_HEADER_MARKETPLACE_INSTALL")
+
+    def test_per_dependency_marketplace_constants_exist(self) -> None:
+        """The per-dependency marketplace constants replace the global header
+        (spec Section 4.2 / 5.1 / FR-17).
+        """
+        from kanon_cli.constants import (
+            CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            MARKETPLACE_FLAG_TRUE,
+            SOURCE_MARKETPLACE_KEY,
+            SOURCE_MARKETPLACE_SUFFIX,
+            SOURCE_SUFFIXES,
+        )
+
+        assert SOURCE_MARKETPLACE_SUFFIX == "_MARKETPLACE"
+        assert SOURCE_MARKETPLACE_KEY == "marketplace"
+        assert MARKETPLACE_FLAG_TRUE == "true"
+        assert CATALOG_TYPE_CLAUDE_MARKETPLACE == "claude-marketplace"
+        # The marketplace flag is optional, so it is NOT a required source suffix.
+        assert SOURCE_MARKETPLACE_SUFFIX not in SOURCE_SUFFIXES
 
     def test_header_constants_are_non_empty(self) -> None:
-        """All three standard-header constants are non-empty strings."""
+        """The remaining standard-header constants are non-empty strings."""
         from kanon_cli.constants import (
             KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
             KANON_HEADER_GITBASE,
-            KANON_HEADER_MARKETPLACE_INSTALL,
         )
 
         assert len(KANON_HEADER_GITBASE) > 0
         assert len(KANON_HEADER_CLAUDE_MARKETPLACES_DIR) > 0
-        assert len(KANON_HEADER_MARKETPLACE_INSTALL) > 0
 
     def test_gitbase_line_starts_with_gitbase(self) -> None:
         """KANON_HEADER_GITBASE starts with 'GITBASE=' per the .kanon template."""
@@ -372,12 +392,6 @@ class TestKanonAddConstants:
         from kanon_cli.constants import KANON_HEADER_CLAUDE_MARKETPLACES_DIR
 
         assert KANON_HEADER_CLAUDE_MARKETPLACES_DIR.startswith("CLAUDE_MARKETPLACES_DIR=")
-
-    def test_marketplace_install_line_starts_with_key(self) -> None:
-        """KANON_HEADER_MARKETPLACE_INSTALL starts with 'KANON_MARKETPLACE_INSTALL='."""
-        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
-
-        assert KANON_HEADER_MARKETPLACE_INSTALL.startswith("KANON_MARKETPLACE_INSTALL=")
 
 
 @pytest.mark.unit

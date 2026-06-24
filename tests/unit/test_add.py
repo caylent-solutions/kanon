@@ -54,8 +54,10 @@ def _make_metadata(
 class TestBuildSourceBlockLines:
     """Unit tests for the alias-keyed block-line constructor."""
 
-    def test_returns_five_lines(self) -> None:
-        """_build_source_block_lines returns exactly five non-empty strings."""
+    def test_returns_five_lines_when_not_marketplace(self) -> None:
+        """_build_source_block_lines returns exactly five strings when marketplace
+        is False (no _MARKETPLACE line is appended).
+        """
         from kanon_cli.commands.add import _build_source_block_lines
 
         lines = _build_source_block_lines(
@@ -65,8 +67,44 @@ class TestBuildSourceBlockLines:
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
             gitbase="https://example.com",
+            marketplace=False,
         )
         assert len(lines) == 5
+        joined = "\n".join(lines)
+        assert "_MARKETPLACE" not in joined
+
+    def test_marketplace_true_appends_marketplace_line(self) -> None:
+        """marketplace=True appends a sixth line: KANON_SOURCE_<alias>_MARKETPLACE=true."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            gitbase="https://example.com",
+            marketplace=True,
+        )
+        assert len(lines) == 6
+        assert lines[5] == "KANON_SOURCE_my_entry_MARKETPLACE=true"
+
+    def test_marketplace_false_omits_marketplace_line(self) -> None:
+        """marketplace=False never emits a _MARKETPLACE line (absence == false)."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            gitbase="https://example.com",
+            marketplace=False,
+        )
+        # kanon never writes =false; the disabled state is the line's absence.
+        assert not any(line.endswith("_MARKETPLACE=false") for line in lines)
+        assert not any("_MARKETPLACE" in line for line in lines)
 
     def test_url_line_format(self) -> None:
         """URL line is KANON_SOURCE_<alias>_URL=<url>."""
@@ -79,6 +117,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
             gitbase="https://example.com",
+            marketplace=False,
         )
         assert lines[0] == "KANON_SOURCE_my_entry_URL=https://example.com/repo.git"
 
@@ -93,6 +132,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/entry-marketplace.xml",
             name="foo-bar",
             gitbase="https://example.com",
+            marketplace=False,
         )
         assert lines[1] == "KANON_SOURCE_foo_bar_REF=refs/tags/2.1.0"
 
@@ -107,6 +147,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/entry-marketplace.xml",
             name="foo-bar",
             gitbase="https://example.com",
+            marketplace=False,
         )
         assert lines[2] == "KANON_SOURCE_foo_bar_PATH=repo-specs/entry-marketplace.xml"
 
@@ -121,6 +162,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/entry-marketplace.xml",
             name="Foo-Bar",
             gitbase="https://example.com",
+            marketplace=False,
         )
         assert lines[3] == "KANON_SOURCE_foo_bar_NAME=Foo-Bar"
 
@@ -135,6 +177,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/entry-marketplace.xml",
             name="foo-bar",
             gitbase="https://example.com/org",
+            marketplace=False,
         )
         assert lines[4] == "KANON_SOURCE_foo_bar_GITBASE=https://example.com/org"
 
@@ -149,6 +192,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
             gitbase="https://example.com",
+            marketplace=False,
         )
         joined = "\n".join(lines)
         assert "_REVISION" not in joined
@@ -166,6 +210,7 @@ class TestBuildSourceBlockLines:
             path="repo-specs/foo-bar-marketplace.xml",
             name="Foo-Bar",
             gitbase="https://example.com",
+            marketplace=False,
         )
         for line in lines:
             assert "foo_bar" in line
@@ -199,6 +244,7 @@ class TestBuildSourceBlockLines:
             path=path,
             name=source_name,
             gitbase="https://example.com",
+            marketplace=False,
         )
         joined = "\n".join(lines)
         assert f"KANON_SOURCE_{source_name}_URL" in joined

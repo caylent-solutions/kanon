@@ -2,9 +2,11 @@
 
 The ``kanon_hash`` function computes a stable, deterministic digest that
 covers only the KANON_SOURCE_<name>_{URL,REVISION,PATH} triples declared
-in a ``.kanon`` file. All comments, blank lines, ordering differences, and
-workspace-environment keys (GITBASE, CLAUDE_MARKETPLACES_DIR,
-KANON_MARKETPLACE_INSTALL) are excluded from the hash.
+in a ``.kanon`` file. All comments, blank lines, ordering differences,
+workspace-environment keys (GITBASE, CLAUDE_MARKETPLACES_DIR), and the
+per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag are excluded from the
+hash (the marketplace flag is an install-time side-effect, not a version pin,
+so it never perturbs the digest).
 
 Spec reference: spec/kanon-list-add-lock-features-spec.md Section 5.1.
 """
@@ -46,8 +48,9 @@ def kanon_hash(kanon_path: pathlib.Path) -> str:
     digest of those bytes prefixed with ``sha256:``.
 
     Only the source triples contribute to the digest. Comments, blank lines,
-    declaration order, and workspace-environment keys (GITBASE,
-    CLAUDE_MARKETPLACES_DIR, KANON_MARKETPLACE_INSTALL) are excluded.
+    declaration order, workspace-environment keys (GITBASE,
+    CLAUDE_MARKETPLACES_DIR), and the per-dependency
+    KANON_SOURCE_<alias>_MARKETPLACE flag are excluded.
 
     Args:
         kanon_path: Path to the .kanon file to hash.

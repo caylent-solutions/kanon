@@ -1,5 +1,6 @@
 usage: kanon add [-h] [--catalog-source <git-url>@<ref>] [--as <alias>]
                  [--kanon-file <path>] [--force] [--dry-run]
+                 [--marketplace-install | --no-marketplace-install]
                  <name>[@<spec>] [<name>[@<spec>] ...]
 
 Resolve catalog entries from a manifest repo and append the
@@ -53,6 +54,19 @@ options:
                         Alias resolution still runs first, so a within-request
                         duplicate or a re-add of an existing alias (without
                         --force) is reported before any diff is shown.
+  --marketplace-install
+                        Force the added dependency to register as a Claude
+                        marketplace (write
+                        KANON_SOURCE_<alias>_MARKETPLACE=true), overriding the
+                        auto-detected <catalog-metadata><type>. Errors if the
+                        entry is not a 'claude-marketplace' type. Mutually
+                        exclusive with --no-marketplace-install.
+  --no-marketplace-install
+                        Force the added dependency to NOT register as a
+                        marketplace (omit the KANON_SOURCE_<alias>_MARKETPLACE
+                        line), overriding the auto-detected <catalog-
+                        metadata><type>. Mutually exclusive with
+                        --marketplace-install.
 
 Note: when supplying a PEP 440 range, quote the spec to avoid shell parsing:
    kanon add 'package-a@>=1.0,<2.0'

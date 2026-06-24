@@ -6,7 +6,8 @@ format supports:
   - Shell variable expansion (``${VAR}``) resolved from environment
   - Environment variable overrides (env vars take precedence over file values)
   - Auto-discovered alias-keyed source groups from ``KANON_SOURCE_<alias>_URL`` keys
-  - Boolean parsing for KANON_MARKETPLACE_INSTALL
+  - Per-dependency boolean parsing for the optional
+    ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (absence == false)
 
 Source aliases are auto-discovered by scanning for keys matching the
 ``KANON_SOURCE_<alias>_URL`` pattern. Aliases are sorted alphabetically for
@@ -43,6 +44,8 @@ import sys
 
 from kanon_cli.constants import (
     SHELL_VAR_PATTERN,
+    SOURCE_MARKETPLACE_KEY,
+    SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_NON_URL_SUFFIXES,
     SOURCE_PREFIX,
     SOURCE_SUFFIXES,
@@ -95,9 +98,10 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
 
         - ``KANON_SOURCES``: list of source names (auto-discovered,
           sorted alphabetically)
-        - ``KANON_MARKETPLACE_INSTALL``: bool (defaults to False)
         - ``sources``: dict mapping each source alias to a dict with
-          ``url``, ``ref``, ``path``, ``name``, and ``gitbase`` keys
+          ``url``, ``ref``, ``path``, ``name``, ``gitbase`` keys plus a
+          ``marketplace`` bool (the per-dependency
+          ``KANON_SOURCE_<alias>_MARKETPLACE`` flag; defaults to False)
         - ``globals``: dict of all other KEY=VALUE pairs
 
     Raises:
@@ -508,8 +512,11 @@ def _build_result(expanded: dict[str, str]) -> dict:
         expanded: Dict of expanded KEY=VALUE pairs.
 
     Returns:
-        Structured dict with KANON_SOURCES (auto-discovered), sources,
-        globals, and KANON_MARKETPLACE_INSTALL.
+        Structured dict with KANON_SOURCES (auto-discovered), sources (each
+        carrying its per-dependency ``marketplace`` flag), and globals. There
+        is no global ``KANON_MARKETPLACE_INSTALL`` key: marketplace install is a
+        per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (spec Section 0
+        item 8 / Section 5.1 / FR-17), surfaced inside each source group.
 
     Raises:
         ValueError: If KANON_SOURCES is explicitly set, if no sources
@@ -527,11 +534,9 @@ def _build_result(expanded: dict[str, str]) -> dict:
     source_names = _discover_source_names(expanded)
     sources = _extract_sources(expanded, source_names)
     globals_dict = _extract_globals(expanded, source_names)
-    marketplace_install = _parse_bool(expanded.get("KANON_MARKETPLACE_INSTALL", "false"))
 
     return {
         "KANON_SOURCES": source_names,
-        "KANON_MARKETPLACE_INSTALL": marketplace_install,
         "sources": sources,
         "globals": globals_dict,
     }
@@ -571,27 +576,36 @@ def validate_sources(
 def _extract_sources(
     expanded: dict[str, str],
     source_names: list[str],
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, str | bool]]:
     """Extract named source groups after validation.
+
+    Each source group carries the five required string fields (url, ref, path,
+    name, gitbase) plus the optional per-dependency ``marketplace`` boolean
+    parsed from ``KANON_SOURCE_<alias>_MARKETPLACE`` (spec Section 5.1 / FR-17).
+    The marketplace flag is absent-means-false: a missing line yields ``False``,
+    an explicit ``=true`` yields ``True``, and a hand-written ``=false`` is
+    tolerated on read (also ``False``) though kanon never emits it.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict mapping source alias to {url, ref, path, name, gitbase}.
+        Dict mapping source alias to {url, ref, path, name, gitbase, marketplace}.
 
     Raises:
         ValueError: If a source is missing a required variable.
     """
     validate_sources(expanded, source_names)
-    sources: dict[str, dict[str, str]] = {}
+    sources: dict[str, dict[str, str | bool]] = {}
     for name in source_names:
-        source_data: dict[str, str] = {}
+        source_data: dict[str, str | bool] = {}
         for suffix in SOURCE_SUFFIXES:
             var_name = f"{SOURCE_PREFIX}{name}{suffix}"
             result_key = SUFFIX_TO_KEY[suffix]
             source_data[result_key] = expanded[var_name]
+        marketplace_var = f"{SOURCE_PREFIX}{name}{SOURCE_MARKETPLACE_SUFFIX}"
+        source_data[SOURCE_MARKETPLACE_KEY] = _parse_bool(expanded.get(marketplace_var, "false"))
         sources[name] = source_data
     return sources
 
@@ -600,25 +614,29 @@ def _extract_globals(
     expanded: dict[str, str],
     source_names: list[str],
 ) -> dict[str, str]:
-    """Extract non-source, non-special variables as globals.
+    """Extract non-source variables as globals.
+
+    Every per-dependency key (the required ``SOURCE_SUFFIXES`` block plus the
+    optional ``KANON_SOURCE_<alias>_MARKETPLACE`` flag) is excluded so that no
+    alias-scoped key leaks into the global namespace. The former global
+    ``KANON_MARKETPLACE_INSTALL`` field no longer exists (spec Section 0 item 8
+    / FR-17), so there is no global marketplace key to exclude.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict of global variables (excludes KANON_MARKETPLACE_INSTALL
-        and source-specific variables).
+        Dict of global variables (excludes every source-specific variable,
+        including each source's optional ``_MARKETPLACE`` flag).
     """
     source_keys: set[str] = set()
     for name in source_names:
         for suffix in SOURCE_SUFFIXES:
             source_keys.add(f"{SOURCE_PREFIX}{name}{suffix}")
+        source_keys.add(f"{SOURCE_PREFIX}{name}{SOURCE_MARKETPLACE_SUFFIX}")
 
-    special_keys = {"KANON_MARKETPLACE_INSTALL"}
-    exclude = source_keys | special_keys
-
-    return {k: v for k, v in expanded.items() if k not in exclude}
+    return {k: v for k, v in expanded.items() if k not in source_keys}
 
 
 def _parse_bool(value: str) -> bool:

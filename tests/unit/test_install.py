@@ -267,12 +267,12 @@ class TestInstallLifecycle:
     def test_marketplace_true_missing_dir_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com\n"
             "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
             "KANON_SOURCE_build_NAME=build\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
         with (
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
@@ -290,12 +290,12 @@ class TestInstallLifecycle:
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://example.com/\n"
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
             "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
             "KANON_SOURCE_build_NAME=build\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
 
         with (
@@ -319,8 +319,8 @@ class TestInstallLifecycle:
         self, tmp_path: pathlib.Path
     ) -> None:
         """BUG-3 fix: install() calls register_direct_checkout_marketplaces for each
-        source when KANON_MARKETPLACE_INSTALL=true, so that direct-checkout entries
-        carrying .claude-plugin/marketplace.json are registered even when no
+        source whose KANON_SOURCE_<alias>_MARKETPLACE=true, so that direct-checkout
+        entries carrying .claude-plugin/marketplace.json are registered even when no
         <linkfile> element is present in the manifest XML.
         """
         mp_dir = tmp_path / ".claude-mp"
@@ -329,12 +329,12 @@ class TestInstallLifecycle:
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://example.com/\n"
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
             "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
             "KANON_SOURCE_build_NAME=build\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
 
         with (
@@ -349,7 +349,7 @@ class TestInstallLifecycle:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_reg.called, (
-            "register_direct_checkout_marketplaces must be called when KANON_MARKETPLACE_INSTALL=true"
+            "register_direct_checkout_marketplaces must be called when KANON_SOURCE_<alias>_MARKETPLACE=true"
         )
         call_args = mock_reg.call_args
         assert call_args is not None
@@ -361,8 +361,9 @@ class TestInstallLifecycle:
         )
 
     def test_register_direct_checkout_marketplaces_not_called_without_flag(self, tmp_path: pathlib.Path) -> None:
-        """Without KANON_MARKETPLACE_INSTALL=true, register_direct_checkout_marketplaces
-        must NOT be called (AC-FUNC-003: default false registers nothing).
+        """Without any KANON_SOURCE_<alias>_MARKETPLACE=true flag,
+        register_direct_checkout_marketplaces must NOT be called (AC-FUNC-003:
+        default false registers nothing).
         """
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
@@ -384,7 +385,8 @@ class TestInstallLifecycle:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not mock_reg.called, (
-            "register_direct_checkout_marketplaces must NOT be called when KANON_MARKETPLACE_INSTALL is false/absent"
+            "register_direct_checkout_marketplaces must NOT be called when no "
+            "KANON_SOURCE_<alias>_MARKETPLACE flag is true/present"
         )
 
     def test_api_calls_in_correct_sequence(self, tmp_path: pathlib.Path) -> None:
@@ -762,19 +764,21 @@ class TestInstallMarketplaceLockfileState:
         self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
     def test_install_with_marketplace_writes_registered_true_to_lockfile(self, tmp_path: pathlib.Path) -> None:
-        """AC-7: install with KANON_MARKETPLACE_INSTALL=true writes marketplace_registered=true."""
+        """AC-7: install with a KANON_SOURCE_<alias>_MARKETPLACE=true dependency writes
+        marketplace_registered=true.
+        """
         from kanon_cli.core.lockfile import read_lockfile
 
         mp_dir = tmp_path / ".claude-mp"
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
             "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
             "KANON_SOURCE_build_NAME=build\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
         lock_path = tmp_path / ".kanon.lock"
 
@@ -794,14 +798,16 @@ class TestInstallMarketplaceLockfileState:
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is True, (
-            "install with KANON_MARKETPLACE_INSTALL=true must write marketplace_registered=true"
+            "install with a KANON_SOURCE_<alias>_MARKETPLACE=true dependency must write marketplace_registered=true"
         )
         assert lf.marketplace_dir == str(mp_dir), (
             "install must record marketplace_dir in the lockfile when marketplace is registered"
         )
 
     def test_install_without_marketplace_writes_registered_false_to_lockfile(self, tmp_path: pathlib.Path) -> None:
-        """AC-7: install with KANON_MARKETPLACE_INSTALL=false writes marketplace_registered=false."""
+        """AC-7: install with no KANON_SOURCE_<alias>_MARKETPLACE=true dependency writes
+        marketplace_registered=false.
+        """
         from kanon_cli.core.lockfile import read_lockfile
 
         kanonenv = tmp_path / ".kanon"
@@ -828,7 +834,7 @@ class TestInstallMarketplaceLockfileState:
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is False, (
-            "install with KANON_MARKETPLACE_INSTALL=false must write marketplace_registered=false"
+            "install with no KANON_SOURCE_<alias>_MARKETPLACE=true dependency must write marketplace_registered=false"
         )
         assert lf.marketplace_dir == "", "install must write empty marketplace_dir when no marketplace is registered"
 

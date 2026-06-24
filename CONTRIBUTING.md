@@ -35,6 +35,7 @@ We use the following tools to maintain code quality:
 
 - **Ruff**: For code formatting and linting
 - **yamllint**: For YAML validation and formatting
+- **no-comments gate**: Forbids `#` comments in kanon-owned Python (see below)
 - **pre-commit**: For automated checks on commit
 
 Before submitting a pull request, ensure your code passes all checks:
@@ -54,6 +55,35 @@ To run all pre-commit checks:
 ```bash
 make pre-commit-check
 ```
+
+### No-Comments Policy
+
+Kanon-owned Python (everything under `src/kanon_cli/` and `tests/`, excluding the
+vendored `src/kanon_cli/repo/` subtree) must contain no `#` comments. Docstrings
+are the sanctioned way to describe what code does: put intent in module, class,
+and function docstrings rather than inline comments. Code that needs an inline
+`#` note to be understood should be refactored or renamed so it reads clearly on
+its own.
+
+Only two `#` lines are allowed, and only at the very top of a file:
+
+- A line-1 shebang (for example `#!/usr/bin/env python3`).
+- A PEP 263 encoding cookie on line 1 or line 2 (for example
+  `# -*- coding: utf-8 -*-`).
+
+A `#` character inside a string literal is part of the string, not a comment, so
+it is never flagged.
+
+The gate is enforced three ways, all running the same
+`tools/lint/check_no_comments.py` check:
+
+- Run it locally with `make lint-no-comments`. It is also wired into
+  `make lint-check`, so `make lint` and `make check` run it too.
+- The `no-comments` pre-commit hook runs it on staged Python files; install the
+  hooks with `make install-hooks`.
+- CI enforces it through the `lint-check` job (which runs `make lint-check`) in
+  both `pr-validation.yml` and `main-validation.yml`, so no separate workflow
+  step is needed.
 
 ## Commit Message Conventions
 

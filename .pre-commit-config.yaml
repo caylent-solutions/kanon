@@ -28,3 +28,14 @@ repos:
     rev: v8.26.0
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: no-comments
+        name: no-comments (kanon-owned Python)
+        entry: python tools/lint/check_no_comments.py
+        language: system
+        types: [python]
+        files: ^(src/kanon_cli|tests)/
+        exclude: ^src/kanon_cli/repo/
+        pass_filenames: true

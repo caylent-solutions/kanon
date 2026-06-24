@@ -318,7 +318,7 @@ def test_fork_background_refresh_callable_is_picklable(
     """
     import kanon_cli.completions.cache as cache_mod
 
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
 
     captured: list[object] = []
@@ -360,7 +360,7 @@ def test_fork_background_refresh_windows_path_succeeds(
     if sys.platform != "win32":
         monkeypatch.setattr(sys, "platform", "win32")
 
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
 
     mock_proc = MagicMock()

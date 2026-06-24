@@ -206,9 +206,16 @@ _SEARCH_REF = "main"
 
 @pytest.fixture()
 def _isolated_search_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the cache root at tmp_path so the chmod walk terminates safely."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    return tmp_path
+    """Point KANON_HOME at tmp_path and return the resolved cache root.
+
+    The cache lives at <KANON_HOME>/cache, so the returned path is the value
+    ``cache_dir()`` resolves to (``tmp_path / "cache"``); the chmod walk
+    terminates safely at that root.
+    """
+    from kanon_cli.completions.cache import cache_dir
+
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
+    return cache_dir()
 
 
 @pytest.mark.unit

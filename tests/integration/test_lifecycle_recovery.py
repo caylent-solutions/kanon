@@ -10,6 +10,7 @@ that partial or stale state does not prevent subsequent operations from
 completing successfully.
 """
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +25,17 @@ from kanon_cli.repo import RepoCommandError
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _store_base() -> Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -121,6 +133,7 @@ class TestInstallCrashCleanReinstall:
           4. Run install again with no crash -- verify full successful state.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("crash"))
+        store_base = _store_base()
 
         # Step 1: Simulate crash during sync
         with (
@@ -135,25 +148,27 @@ class TestInstallCrashCleanReinstall:
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         # Step 2: Partial artifacts exist after crash
-        source_dir = tmp_path / ".kanon-data" / "sources" / "crash"
+        source_dir = store_base / ".kanon-data" / "sources" / "crash"
         assert source_dir.is_dir(), "Source dir must exist after partial install (created before failed sync)"
 
         # Step 3: Clean removes all partial state
         clean(kanonenv)
 
-        assert not (tmp_path / ".kanon-data").exists(), "clean() must remove .kanon-data/ even after a simulated crash"
-        assert not (tmp_path / ".packages").exists(), "clean() must remove .packages/ even after a simulated crash"
+        assert not (store_base / ".kanon-data").exists(), (
+            "clean() must remove .kanon-data/ even after a simulated crash"
+        )
+        assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a simulated crash"
 
         # Step 4: Reinstall succeeds after clean
         _install_with_synced_packages(kanonenv, {"crash": ["recovered-tool"]})
 
-        assert (tmp_path / ".kanon-data" / "sources" / "crash").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / "crash").is_dir(), (
             "Reinstall after crash recovery must recreate .kanon-data/sources/crash/"
         )
-        assert (tmp_path / ".packages" / "recovered-tool").is_symlink(), (
+        assert (store_base / ".packages" / "recovered-tool").is_symlink(), (
             "Reinstall after crash recovery must create .packages/recovered-tool symlink"
         )
-        assert (tmp_path / ".gitignore").is_file(), "Reinstall after crash recovery must create .gitignore"
+        assert (store_base / ".gitignore").is_file(), "Reinstall after crash recovery must create .gitignore"
 
     def test_manually_corrupted_packages_dir_is_recovered_by_reinstall(self, tmp_path: Path) -> None:
         """Orphaned .packages/ dir without matching source data is recovered by reinstall.
@@ -163,10 +178,11 @@ class TestInstallCrashCleanReinstall:
         A fresh install must repair the state by recreating all managed artifacts.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("orphan"))
+        store_base = _store_base()
 
         # Simulate a corrupted state: .packages/ exists but .kanon-data/ is absent
-        orphan_packages = tmp_path / ".packages"
-        orphan_packages.mkdir()
+        orphan_packages = store_base / ".packages"
+        orphan_packages.mkdir(parents=True)
         stale_link = orphan_packages / "stale-pkg"
         stale_link.mkdir()
 
@@ -174,11 +190,11 @@ class TestInstallCrashCleanReinstall:
         _install_with_synced_packages(kanonenv, {"orphan": ["fresh-tool"]})
 
         # After reinstall, fresh-tool must be present
-        assert (tmp_path / ".packages" / "fresh-tool").is_symlink(), (
+        assert (store_base / ".packages" / "fresh-tool").is_symlink(), (
             "Install must create .packages/fresh-tool even when .packages/ already existed"
         )
         # .kanon-data/ must exist
-        assert (tmp_path / ".kanon-data" / "sources" / "orphan").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / "orphan").is_dir(), (
             "Install must create .kanon-data/sources/orphan/"
         )
 
@@ -233,12 +249,13 @@ class TestInstallIdempotency:
         in the same structure, with no additional or missing entries.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("idem"))
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"idem": ["tool-one", "tool-two"]})
-        first_pkgs = sorted(p.name for p in (tmp_path / ".packages").iterdir())
+        first_pkgs = sorted(p.name for p in (store_base / ".packages").iterdir())
 
         _install_with_synced_packages(kanonenv, {"idem": ["tool-one", "tool-two"]})
-        second_pkgs = sorted(p.name for p in (tmp_path / ".packages").iterdir())
+        second_pkgs = sorted(p.name for p in (store_base / ".packages").iterdir())
 
         assert first_pkgs == second_pkgs, (
             f"Second install must not change .packages/ contents: first={first_pkgs}, second={second_pkgs}"
@@ -260,7 +277,7 @@ class TestInstallIdempotency:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        gitignore_content = (tmp_path / ".gitignore").read_text()
+        gitignore_content = (_store_base() / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (
             ".packages/ must appear exactly once in .gitignore after two installs"
         )
@@ -279,7 +296,7 @@ class TestInstallIdempotency:
         _install_with_synced_packages(kanonenv, {"idem3": ["pkg-a", "pkg-b"]})
         _install_with_synced_packages(kanonenv, {"idem3": ["pkg-a", "pkg-b"]})
 
-        packages_dir = tmp_path / ".packages"
+        packages_dir = _store_base() / ".packages"
         for entry in packages_dir.iterdir():
             assert entry.is_symlink(), f"{entry.name} must be a symlink in .packages/"
             assert entry.resolve().exists(), (
@@ -325,10 +342,11 @@ class TestKanonChangeReconciliation:
             refresh_lock=True,
         )
 
-        assert (tmp_path / ".packages" / "package-x").is_symlink(), (
+        store_base = _store_base()
+        assert (store_base / ".packages" / "package-x").is_symlink(), (
             "package-x from src-one must still be present after adding src-two"
         )
-        assert (tmp_path / ".packages" / "package-y").is_symlink(), (
+        assert (store_base / ".packages" / "package-y").is_symlink(), (
             "package-y from newly added src-two must be present after reconciliation"
         )
 
@@ -343,12 +361,13 @@ class TestKanonChangeReconciliation:
           5. Verify .kanon-data/ only contains alpha source dir.
         """
         kanonenv = _write_kanonenv(tmp_path, _two_source_content(name_a="alpha", name_b="beta"))
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"], "beta": ["tool-beta"]})
 
         # Both source dirs and packages must exist after first install
-        assert (tmp_path / ".kanon-data" / "sources" / "alpha").is_dir()
-        assert (tmp_path / ".kanon-data" / "sources" / "beta").is_dir()
+        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir()
+        assert (store_base / ".kanon-data" / "sources" / "beta").is_dir()
 
         # Update .kanon to remove beta
         kanonenv.write_text(_single_source_content("alpha"))
@@ -360,10 +379,10 @@ class TestKanonChangeReconciliation:
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"]}, refresh_lock=True)
 
         # Only alpha source dir must exist
-        assert (tmp_path / ".kanon-data" / "sources" / "alpha").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
             "alpha source dir must exist after reinstall with alpha-only .kanon"
         )
-        assert not (tmp_path / ".kanon-data" / "sources" / "beta").exists(), (
+        assert not (store_base / ".kanon-data" / "sources" / "beta").exists(), (
             "beta source dir must be absent after clean + reinstall without beta source"
         )
 
@@ -377,13 +396,14 @@ class TestKanonChangeReconciliation:
           4. Verify new-pkg is present; stale old-pkg symlink is replaced/absent.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("evolving"))
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"evolving": ["old-pkg"]})
 
-        assert (tmp_path / ".packages" / "old-pkg").is_symlink(), "old-pkg must be present after first install"
+        assert (store_base / ".packages" / "old-pkg").is_symlink(), "old-pkg must be present after first install"
 
         # Second install: source now produces new-pkg instead of old-pkg
         # (simulates a change in the upstream repo's package structure)
         _install_with_synced_packages(kanonenv, {"evolving": ["new-pkg"]})
 
-        assert (tmp_path / ".packages" / "new-pkg").is_symlink(), "new-pkg must be present after reconciling install"
+        assert (store_base / ".packages" / "new-pkg").is_symlink(), "new-pkg must be present after reconciling install"

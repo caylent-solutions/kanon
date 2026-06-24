@@ -205,9 +205,11 @@ class TestCaseSensitivityParity:
 
         kanon does not perform case folding on paths. On case-sensitive filesystems,
         passing the exact path returned by write is required. This test confirms that
-        install() accepts the canonical lowercase path on the current platform.
+        install() accepts the canonical lowercase path on the current platform and
+        writes its artifacts to the shared KANON_HOME store.
         """
         kanonenv = _write_kanonenv(tmp_path)
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -217,9 +219,9 @@ class TestCaseSensitivityParity:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created by install() using the canonical lowercase path. "
-            f"Contents of tmp_path: {list(tmp_path.iterdir())}"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store by install() using the canonical lowercase path. "
+            f"Contents of store_base: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
 
     @pytest.mark.parametrize(
@@ -236,18 +238,20 @@ class TestCaseSensitivityParity:
         tmp_path: pathlib.Path,
         dir_name: str,
     ) -> None:
-        """install() creates .kanon-data/ inside directories with mixed-case names.
+        """install() handles mixed-case project directory names and writes .kanon-data/ to the store.
 
         On case-sensitive platforms (Linux), each of these names is a distinct directory.
         On case-insensitive platforms (macOS HFS+), they may collide, but pytest's
         tmp_path already provides a unique root, so no collision occurs within the test.
 
         The CLI must handle mixed-case directory paths identically to lowercase ones --
-        no special treatment required.
+        no special treatment required. The .kanon file lives in the mixed-case project
+        directory; install artifacts are written to the shared KANON_HOME store.
         """
         project_dir = tmp_path / dir_name
         project_dir.mkdir()
         kanonenv = _write_kanonenv(project_dir)
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -257,8 +261,10 @@ class TestCaseSensitivityParity:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (project_dir / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created inside '{dir_name}' directory. Contents: {list(project_dir.iterdir())}"
+        assert kanonenv.is_file(), f".kanon must remain inside the '{dir_name}' project directory"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store for project dir '{dir_name}'. "
+            f"Contents: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
 
 
@@ -359,9 +365,11 @@ class TestDevNullAndTmpfsScenarios:
         pytest's tmp_path fixture uses the system's temporary directory, which is
         typically tmpfs on Linux and APFS-backed on macOS. This test confirms that
         the install business logic works correctly on whatever filesystem tmp_path
-        is mounted on -- no disk-specific behavior is assumed.
+        is mounted on -- no disk-specific behavior is assumed. Install artifacts are
+        written to the shared KANON_HOME store (also on the temporary filesystem).
         """
         kanonenv = _write_kanonenv(tmp_path)
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -371,24 +379,31 @@ class TestDevNullAndTmpfsScenarios:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created on tmpfs/tmp filesystem. Contents of tmp_path: {list(tmp_path.iterdir())}"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the store on tmpfs/tmp filesystem. "
+            f"Contents of store_base: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
 
     def test_clean_on_tmpfs_removes_artifacts(self, tmp_path: pathlib.Path) -> None:
-        """clean() removes .packages/ and .kanon-data/ correctly on tmpfs.
+        """clean() removes .packages/ and .kanon-data/ from the store on tmpfs.
 
         Confirms that clean() can remove directories on the system's temporary
         filesystem. The rmtree behavior must be identical to disk-backed filesystems.
+        Install artifacts live under the shared KANON_HOME store.
         """
         kanonenv = _write_kanonenv(tmp_path)
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists(), ".packages/ must be removed by clean() on tmpfs filesystem"
-        assert not (tmp_path / ".kanon-data").exists(), ".kanon-data/ must be removed by clean() on tmpfs filesystem"
+        assert not (store_base / ".packages").exists(), (
+            ".packages/ must be removed from the store by clean() on tmpfs filesystem"
+        )
+        assert not (store_base / ".kanon-data").exists(), (
+            ".kanon-data/ must be removed from the store by clean() on tmpfs filesystem"
+        )
 
     def test_subprocess_install_on_tmpfs_does_not_report_file_not_found(
         self,
@@ -578,15 +593,16 @@ class TestSymlinkSemanticsParity:
         stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
 
-    def test_install_via_absolute_symlink_creates_dirs_next_to_real_file(
+    def test_install_via_absolute_symlink_resolves_and_writes_to_store(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """install() via an absolute symlink creates .kanon-data/ in the real file's parent.
+        """install() via an absolute symlink resolves it and writes .kanon-data/ to the store.
 
         When the symlink target is an absolute path, install() resolves the symlink
-        and uses the real file's parent as the project root. Artifacts (.kanon-data/)
-        are created in the real directory, not in the symlink's directory.
+        to the real .kanon file. Install artifacts (.kanon-data/) are written to the
+        shared KANON_HOME store -- not in the symlink's directory and not next to the
+        real file.
 
         Shared behavior: Linux == macOS (absolute symlinks work identically).
         """
@@ -600,6 +616,8 @@ class TestSymlinkSemanticsParity:
         abs_symlink = link_dir / ".kanon"
         abs_symlink.symlink_to(kanonenv.resolve())
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -608,27 +626,31 @@ class TestSymlinkSemanticsParity:
         ):
             install(abs_symlink, lock_file_path=abs_symlink.parent / ".kanon.lock")
 
-        assert (real_dir / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created in the real file's parent when using an absolute symlink. "
-            f"Expected at {real_dir}, contents: {list(real_dir.iterdir())}"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store when using an absolute symlink. "
+            f"Expected at {store_base}, contents: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
+        assert kanonenv.is_file(), ".kanon must remain in the real project dir after install via absolute symlink"
         assert not (link_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in the symlink's directory."
+        assert not (real_dir / ".kanon-data").exists(), (
+            ".kanon-data/ must NOT be created next to the real file; it lives in the shared store."
+        )
 
-    def test_install_via_relative_symlink_creates_dirs_next_to_real_file(
+    def test_install_via_relative_symlink_resolves_and_writes_to_store(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """install() via a relative symlink creates .kanon-data/ in the real file's parent.
+        """install() via a relative symlink resolves it and writes .kanon-data/ to the store.
 
         When the symlink target is a relative path, install() still resolves the
-        symlink (resolve() handles relative targets on both platforms) and uses
-        the real file's parent as the project root.
+        symlink (resolve() handles relative targets on both platforms) to the real
+        .kanon file. Install artifacts are written to the shared KANON_HOME store.
 
         Shared behavior: Linux == macOS (relative symlinks work identically).
         """
         real_dir = tmp_path / "real_project"
         real_dir.mkdir()
-        _write_kanonenv(real_dir)
+        kanonenv = _write_kanonenv(real_dir)
 
         link_dir = tmp_path / "link_dir"
         link_dir.mkdir()
@@ -636,6 +658,8 @@ class TestSymlinkSemanticsParity:
         rel_target = pathlib.Path("..") / "real_project" / ".kanon"
         rel_symlink = link_dir / ".kanon"
         rel_symlink.symlink_to(rel_target)
+
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -645,11 +669,15 @@ class TestSymlinkSemanticsParity:
         ):
             install(rel_symlink, lock_file_path=rel_symlink.parent / ".kanon.lock")
 
-        assert (real_dir / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created in the real file's parent when using a relative symlink. "
-            f"Expected at {real_dir}, contents: {list(real_dir.iterdir())}"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store when using a relative symlink. "
+            f"Expected at {store_base}, contents: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
+        assert kanonenv.is_file(), ".kanon must remain in the real project dir after install via relative symlink"
         assert not (link_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in the symlink's directory."
+        assert not (real_dir / ".kanon-data").exists(), (
+            ".kanon-data/ must NOT be created next to the real file; it lives in the shared store."
+        )
 
     def test_find_kanonenv_discovers_via_symlinked_ancestor(self, tmp_path: pathlib.Path) -> None:
         """find_kanonenv() discovers .kanon when traversing through a symlinked directory.
@@ -678,15 +706,15 @@ class TestSymlinkSemanticsParity:
             f"Expected {kanonenv.resolve()}, got {discovered}"
         )
 
-    def test_clean_via_symlink_removes_artifacts_from_real_dir(
+    def test_clean_via_symlink_removes_artifacts_from_store(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """clean() via a symlinked .kanon removes artifacts from the real file's parent.
+        """clean() via a symlinked .kanon resolves it and removes artifacts from the store.
 
         Both Linux and macOS support symlinks in the same way: clean() resolves
-        the symlink before computing the project root, so artifacts are removed
-        from the real directory, not from the symlink's directory.
+        the symlink before operating, and removes install artifacts from the shared
+        KANON_HOME store (where install wrote them), not from the project directory.
 
         Shared behavior: Linux == macOS.
         AC-CHANNEL-001: stdout contains progress, stderr is empty.
@@ -694,8 +722,10 @@ class TestSymlinkSemanticsParity:
         real_dir = tmp_path / "real_project"
         real_dir.mkdir()
         kanonenv = _write_kanonenv(real_dir)
-        (real_dir / ".packages").mkdir()
-        (real_dir / ".kanon-data").mkdir()
+
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         link_dir = tmp_path / "via_link"
         link_dir.mkdir()
@@ -704,13 +734,13 @@ class TestSymlinkSemanticsParity:
 
         clean(sym_kanon)
 
-        assert not (real_dir / ".packages").exists(), (
-            ".packages/ must be removed from the real project dir when clean() is given a symlink"
+        assert not (store_base / ".packages").exists(), (
+            ".packages/ must be removed from the shared store when clean() is given a symlink"
         )
-        assert not (real_dir / ".kanon-data").exists(), (
-            ".kanon-data/ must be removed from the real project dir when clean() is given a symlink"
+        assert not (store_base / ".kanon-data").exists(), (
+            ".kanon-data/ must be removed from the shared store when clean() is given a symlink"
         )
-        # Artifacts must NOT be touched in the symlink directory.
+        # Artifacts must NOT be created or touched in the symlink directory.
         assert not (link_dir / ".packages").exists(), (
             "clean() must not create or touch .packages/ in the symlink's directory"
         )

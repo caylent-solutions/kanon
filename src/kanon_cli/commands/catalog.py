@@ -15,7 +15,7 @@ Check dispatch (T1 framework):
   T1 wires the framework: the registry exists and is iterated, but starts empty.
 
 Cache layout:
-  ${KANON_CACHE_DIR}/catalog-audit/<sha256(canonicalized url@ref)>/
+  <KANON_HOME>/cache/catalog-audit/<sha256(canonicalized url@ref)>/
   Cached clones are reused when their mtime is within
   KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS seconds of now.
 
@@ -50,9 +50,8 @@ if TYPE_CHECKING:
 import defusedxml.ElementTree as ET
 from packaging.version import InvalidVersion, Version
 
+from kanon_cli.completions.cache import cache_dir
 from kanon_cli.constants import (
-    KANON_CACHE_DIR_ENV,
-    KANON_CACHE_DIR_MODE,
     KANON_CATALOG_AUDIT_CACHE_SUBDIR,
     KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS,
     KANON_CATALOG_AUDIT_FORMAT_DEFAULT,
@@ -64,6 +63,7 @@ from kanon_cli.constants import (
     KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT,
     KANON_CATALOG_AUDIT_VALID_CHECKS,
     KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE,
+    KANON_HOME_CACHE_DIR_MODE,
 )
 from kanon_cli.core.manifest import collect_remote_url_findings
 from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name, find_catalog_entry_files
@@ -236,18 +236,9 @@ def _clone_audit_target(source: str) -> pathlib.Path:
         Path to the cloned repo directory.
 
     Raises:
-        SystemExit: If KANON_CACHE_DIR is unset, the clone fails, or the
-            cloned repo lacks a repo-specs/ subdirectory.
+        SystemExit: If the ref is empty, the clone fails, or the cloned repo
+            lacks a repo-specs/ subdirectory.
     """
-    cache_dir_env = os.environ.get(KANON_CACHE_DIR_ENV)
-    if not cache_dir_env:
-        print(
-            "ERROR: KANON_CACHE_DIR must be set to use a remote audit target. "
-            "Set the environment variable to a writable directory path.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     idx = source.rfind("@")
     url = source[:idx]
     ref = source[idx + 1 :]
@@ -263,7 +254,10 @@ def _clone_audit_target(source: str) -> pathlib.Path:
     canonical_url = canonicalize_repo_url(url)
     cache_key = hashlib.sha256(f"{canonical_url}@{ref}".encode()).hexdigest()
 
-    audit_cache_root = pathlib.Path(cache_dir_env) / KANON_CATALOG_AUDIT_CACHE_SUBDIR
+    # The catalog-audit clone cache lives under the shared KANON_HOME cache root
+    # (<KANON_HOME>/cache/catalog-audit/), resolved by the single cache_dir()
+    # helper so the audit cache shares the store with every other cache entry.
+    audit_cache_root = cache_dir() / KANON_CATALOG_AUDIT_CACHE_SUBDIR
     clone_path = audit_cache_root / cache_key
 
     # Reuse existing clone if it is fresh enough.
@@ -276,7 +270,7 @@ def _clone_audit_target(source: str) -> pathlib.Path:
 
     # Create the cache directory with owner-only permissions (spec Section 3.6).
     audit_cache_root.mkdir(parents=True, exist_ok=True)
-    audit_cache_root.chmod(KANON_CACHE_DIR_MODE)
+    audit_cache_root.chmod(KANON_HOME_CACHE_DIR_MODE)
 
     result = subprocess.run(
         ["git", "clone", "--depth", "1", "--branch", ref, url, str(clone_path)],
@@ -1010,7 +1004,7 @@ def _register_audit(
             "or INFO: prefix.\n"
             "Output format 'json': a single JSON object {\"findings\": [...]} "
             "written to stdout.\n\n"
-            "Cache layout: ${KANON_CACHE_DIR}/catalog-audit/<sha256>/ -- remote "
+            "Cache layout: <KANON_HOME>/cache/catalog-audit/<sha256>/ -- remote "
             "sources are cloned once and reused within KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

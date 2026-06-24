@@ -526,6 +526,30 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
     monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_kanon_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point KANON_HOME at a per-test temp dir so tests never touch the real ~/.kanon.
+
+    The shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15) defaults to
+    ``~/.kanon`` when KANON_HOME is unset. ``resolve_workspace_base_dir()`` (the
+    artifact store, ``<KANON_HOME>/store``) and ``cache_dir()`` (the completion /
+    catalog-audit cache, ``<KANON_HOME>/cache``) both resolve under it. Without
+    isolation, every test that drives ``install`` / ``clean`` / completion caching
+    would share a single real-home store and leak state between tests -- e.g. an
+    end-to-end scenario reusing a prior test's repo checkout under
+    ``~/.kanon/store/.kanon-data/sources/...``.
+
+    This autouse fixture sets KANON_HOME to a fresh per-test temporary directory
+    via ``monkeypatch.setenv`` (so it is reverted on teardown AND is inherited by
+    any ``python -m kanon_cli`` subprocess the test spawns). Tests that need a
+    specific KANON_HOME override it with their own ``monkeypatch.setenv`` /
+    ``extra_env`` (which runs after this fixture and therefore wins); tests
+    asserting the unset-default behaviour ``monkeypatch.delenv("KANON_HOME", ...)``
+    likewise override it.
+    """
+    monkeypatch.setenv("KANON_HOME", str(tmp_path_factory.mktemp("kanon_home")))
+
+
 @pytest.fixture()
 def make_install_args():
     """Factory fixture that returns a MagicMock suitable for the install CLI handler.

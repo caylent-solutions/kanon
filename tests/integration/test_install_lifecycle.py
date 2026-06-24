@@ -11,6 +11,7 @@ AC-FUNC-001: Lifecycle order is init -> envsubst -> sync -> aggregate -> gitigno
 AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 """
 
+import os
 import pathlib
 from unittest.mock import patch
 
@@ -24,6 +25,17 @@ from tests.conftest import write_manifest_for_sync
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _store_base() -> pathlib.Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory, so this resolves to a writable, isolated path.
+    """
+    return pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_single_source_kanonenv(directory: pathlib.Path, source_name: str = "primary") -> pathlib.Path:
@@ -142,19 +154,19 @@ class TestInstallCreatesDirectories:
     """AC-TEST-001: install creates .packages/ and .kanon-data/ directories.
 
     Verifies that after install() completes, the managed directory tree is
-    fully created: .packages/ at the project root and .kanon-data/sources/<name>/
-    for every declared source.
+    fully created: .packages/ under the shared store and
+    .kanon-data/sources/<name>/ for every declared source.
     """
 
     def test_packages_dir_created_after_install(self, tmp_path: pathlib.Path) -> None:
-        """install creates .packages/ at the project root.
+        """install creates .packages/ under the shared store.
 
         .packages/ must exist and be a directory after a successful install.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        packages_dir = tmp_path / ".packages"
+        packages_dir = _store_base() / ".packages"
         assert packages_dir.is_dir(), f".packages/ must be created by install at {packages_dir}; it does not exist"
 
     def test_kanon_data_dir_created_after_install(self, tmp_path: pathlib.Path) -> None:
@@ -165,7 +177,7 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        kanon_data_dir = tmp_path / ".kanon-data"
+        kanon_data_dir = _store_base() / ".kanon-data"
         assert kanon_data_dir.is_dir(), (
             f".kanon-data/ must be created by install at {kanon_data_dir}; it does not exist"
         )
@@ -178,7 +190,7 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path, "primary")
         _install_with_patched_repo(kanonenv)
 
-        source_dir = tmp_path / ".kanon-data" / "sources" / "primary"
+        source_dir = _store_base() / ".kanon-data" / "sources" / "primary"
         assert source_dir.is_dir(), (
             f".kanon-data/sources/primary/ must be created by install; it does not exist at {source_dir}"
         )
@@ -191,8 +203,9 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (tmp_path / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
+        store_base = _store_base()
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
+        assert (store_base / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
 
     @pytest.mark.parametrize("source_name", ["alpha", "bravo", "primary", "myrepo"])
     def test_source_workspace_named_correctly_for_source(
@@ -208,7 +221,7 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path, source_name)
         _install_with_patched_repo(kanonenv)
 
-        source_dir = tmp_path / ".kanon-data" / "sources" / source_name
+        source_dir = _store_base() / ".kanon-data" / "sources" / source_name
         assert source_dir.is_dir(), f".kanon-data/sources/{source_name}/ must exist for source '{source_name}'"
 
     def test_two_sources_create_separate_kanon_data_dirs(self, tmp_path: pathlib.Path) -> None:
@@ -219,8 +232,9 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
         _install_with_patched_repo(kanonenv)
 
-        alpha_dir = tmp_path / ".kanon-data" / "sources" / "alpha"
-        bravo_dir = tmp_path / ".kanon-data" / "sources" / "bravo"
+        store_base = _store_base()
+        alpha_dir = store_base / ".kanon-data" / "sources" / "alpha"
+        bravo_dir = store_base / ".kanon-data" / "sources" / "bravo"
 
         assert alpha_dir.is_dir(), ".kanon-data/sources/alpha/ must exist"
         assert bravo_dir.is_dir(), ".kanon-data/sources/bravo/ must exist"
@@ -249,11 +263,11 @@ class TestInstallGitignoreIdempotency:
         After install(), .gitignore must exist with the kanon-managed entries.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
-        assert not (tmp_path / ".gitignore").exists(), "Precondition: .gitignore must not exist"
+        assert not (_store_base() / ".gitignore").exists(), "Precondition: .gitignore must not exist"
 
         _install_with_patched_repo(kanonenv)
 
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must be created by install"
+        assert (_store_base() / ".gitignore").is_file(), ".gitignore must be created by install"
 
     @pytest.mark.parametrize("entry", _REQUIRED_ENTRIES)
     def test_install_writes_required_gitignore_entry(
@@ -269,7 +283,7 @@ class TestInstallGitignoreIdempotency:
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        content = (tmp_path / ".gitignore").read_text()
+        content = (_store_base() / ".gitignore").read_text()
         assert entry in content, (
             f"Required gitignore entry {entry!r} must be present after install; got content: {content!r}"
         )
@@ -289,7 +303,7 @@ class TestInstallGitignoreIdempotency:
         _install_with_patched_repo(kanonenv)
         _install_with_patched_repo(kanonenv)
 
-        content = (tmp_path / ".gitignore").read_text()
+        content = (_store_base() / ".gitignore").read_text()
         count = content.count(entry)
         assert count == 1, (
             f"{entry!r} must appear exactly once in .gitignore after two installs, "
@@ -303,7 +317,9 @@ class TestInstallGitignoreIdempotency:
         content must be preserved after install adds the kanon entries.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
-        gitignore = tmp_path / ".gitignore"
+        store_base = _store_base()
+        store_base.mkdir(parents=True, exist_ok=True)
+        gitignore = store_base / ".gitignore"
         gitignore.write_text("*.pyc\nbuild/\ndist/\n")
 
         _install_with_patched_repo(kanonenv)
@@ -320,7 +336,9 @@ class TestInstallGitignoreIdempotency:
         be identical before and after install runs.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
-        gitignore = tmp_path / ".gitignore"
+        store_base = _store_base()
+        store_base.mkdir(parents=True, exist_ok=True)
+        gitignore = store_base / ".gitignore"
         gitignore.write_text(".packages/\n.kanon-data/\n")
         original_content = gitignore.read_text()
 
@@ -340,7 +358,7 @@ class TestInstallGitignoreIdempotency:
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        lines = (tmp_path / ".gitignore").read_text().splitlines()
+        lines = (_store_base() / ".gitignore").read_text().splitlines()
         for entry in self._REQUIRED_ENTRIES:
             assert entry in lines, (
                 f"{entry!r} must be a standalone line in .gitignore, not embedded in another line; lines: {lines!r}"
@@ -603,10 +621,11 @@ class TestInstallMultiSourceAggregation:
             {"alpha": ["pkg-from-alpha"], "bravo": ["pkg-from-bravo"]},
         )
 
-        assert (tmp_path / ".packages" / "pkg-from-alpha").is_symlink(), (
+        store_base = _store_base()
+        assert (store_base / ".packages" / "pkg-from-alpha").is_symlink(), (
             "pkg-from-alpha from source 'alpha' must be symlinked in .packages/"
         )
-        assert (tmp_path / ".packages" / "pkg-from-bravo").is_symlink(), (
+        assert (store_base / ".packages" / "pkg-from-bravo").is_symlink(), (
             "pkg-from-bravo from source 'bravo' must be symlinked in .packages/"
         )
 
@@ -622,11 +641,12 @@ class TestInstallMultiSourceAggregation:
             {"alpha": ["pkg-from-alpha"], "bravo": ["pkg-from-bravo"]},
         )
 
-        alpha_link = tmp_path / ".packages" / "pkg-from-alpha"
-        bravo_link = tmp_path / ".packages" / "pkg-from-bravo"
+        store_base = _store_base()
+        alpha_link = store_base / ".packages" / "pkg-from-alpha"
+        bravo_link = store_base / ".packages" / "pkg-from-bravo"
 
-        alpha_workspace = tmp_path / ".kanon-data" / "sources" / "alpha" / ".packages" / "pkg-from-alpha"
-        bravo_workspace = tmp_path / ".kanon-data" / "sources" / "bravo" / ".packages" / "pkg-from-bravo"
+        alpha_workspace = store_base / ".kanon-data" / "sources" / "alpha" / ".packages" / "pkg-from-alpha"
+        bravo_workspace = store_base / ".kanon-data" / "sources" / "bravo" / ".packages" / "pkg-from-bravo"
 
         assert alpha_link.resolve() == alpha_workspace.resolve(), (
             f"pkg-from-alpha symlink must resolve to alpha workspace; got {alpha_link.resolve()}"
@@ -674,9 +694,10 @@ class TestInstallMultiSourceAggregation:
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
         _install_with_synced_packages(kanonenv, packages_by_source)
 
+        store_base = _store_base()
         all_expected = [pkg for pkgs in packages_by_source.values() for pkg in pkgs]
         for pkg_name in all_expected:
-            link = tmp_path / ".packages" / pkg_name
+            link = store_base / ".packages" / pkg_name
             assert link.is_symlink(), f"Package '{pkg_name}' must be symlinked in .packages/ after install"
 
     def test_ms01_collision_exits_nonzero_with_error(
@@ -731,10 +752,11 @@ class TestInstallLifecycleOrder:
         completes, .gitignore must exist. This verifies update_gitignore runs
         after the per-source sync loop.
         """
+        store_base = _store_base()
         gitignore_existed_during_sync: list[bool] = []
 
         def check_gitignore_during_sync(repo_dir: str, **kwargs: object) -> None:
-            gitignore_existed_during_sync.append((tmp_path / ".gitignore").exists())
+            gitignore_existed_during_sync.append((store_base / ".gitignore").exists())
 
         kanonenv = _write_single_source_kanonenv(tmp_path)
 
@@ -749,7 +771,7 @@ class TestInstallLifecycleOrder:
         assert not gitignore_existed_during_sync[0], (
             ".gitignore must NOT exist when repo_sync runs -- update_gitignore must run after sync"
         )
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must exist after install() completes"
+        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install() completes"
 
     def test_packages_dir_created_after_sync_and_before_gitignore(self, tmp_path: pathlib.Path) -> None:
         """.packages/ is created (aggregate step) after sync and before gitignore-update.
@@ -758,11 +780,12 @@ class TestInstallLifecycleOrder:
         sync loop finishes. This test confirms .packages/ exists after install.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
+        store_base = _store_base()
 
         packages_existed_during_sync: list[bool] = []
 
         def check_packages_during_sync(repo_dir: str, **kwargs: object) -> None:
-            packages_existed_during_sync.append((tmp_path / ".packages").exists())
+            packages_existed_during_sync.append((store_base / ".packages").exists())
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -774,7 +797,7 @@ class TestInstallLifecycleOrder:
         assert not packages_existed_during_sync[0], (
             ".packages/ must NOT exist when repo_sync runs -- aggregate_symlinks runs after sync"
         )
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after install() completes"
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist after install() completes"
 
     def test_full_lifecycle_stages_complete_in_order(self, tmp_path: pathlib.Path) -> None:
         """Full lifecycle stages run in order: init -> envsubst -> sync -> aggregate -> gitignore.

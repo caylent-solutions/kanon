@@ -211,12 +211,12 @@ class TestCompleteDisabled:
 
     def test_disabled_returns_empty(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 -> empty list (AC-FUNC-006)."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "0",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -225,12 +225,12 @@ class TestCompleteDisabled:
     def test_disabled_does_not_write_log(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 does not touch completion-errors.log (AC-FUNC-006)."""
         log_path = tmp_path / "completion-errors.log"
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "0",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -249,14 +249,14 @@ class TestCompleteHappyPath:
 
     def test_three_catalogs_no_prefix(self, tmp_path: Path) -> None:
         """AC-FUNC-001: three origin.txt files, empty prefix -> all three sorted."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -268,14 +268,14 @@ class TestCompleteHappyPath:
 
     def test_prefix_https_narrows(self, tmp_path: Path) -> None:
         """AC-FUNC-005: prefix 'https' returns only the two https URLs."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("https")
@@ -286,14 +286,14 @@ class TestCompleteHappyPath:
 
     def test_prefix_git_at_narrows(self, tmp_path: Path) -> None:
         """AC-FUNC-005: prefix 'git@' returns only the ssh URL."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("git@")
@@ -319,14 +319,14 @@ class TestCompleteHappyPath:
     )
     def test_prefix_filter_parametrized(self, tmp_path: Path, prefix: str, expected: list[str]) -> None:
         """Parametrized prefix-filter coverage (AC-FUNC-005)."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
@@ -344,14 +344,14 @@ class TestCompleteEmptyCatalogsDir:
 
     def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
         """AC-FUNC-002: empty catalogs/ dir -> empty stdout."""
-        catalogs_dir = tmp_path / "catalogs"
-        catalogs_dir.mkdir()
+        catalogs_dir = tmp_path / "cache" / "catalogs"
+        catalogs_dir.mkdir(parents=True)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -361,14 +361,14 @@ class TestCompleteEmptyCatalogsDir:
 
     def test_empty_dir_no_log_entry(self, tmp_path: Path) -> None:
         """AC-FUNC-002: empty dir is NOT an error -- no log entry written."""
-        catalogs_dir = tmp_path / "catalogs"
-        catalogs_dir.mkdir()
+        catalogs_dir = tmp_path / "cache" / "catalogs"
+        catalogs_dir.mkdir(parents=True)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -393,7 +393,7 @@ class TestCompleteMissingCacheDir:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -409,7 +409,7 @@ class TestCompleteMissingCacheDir:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -428,13 +428,13 @@ class TestCompleteMalformedOrigin:
 
     def test_malformed_skipped_valid_returned(self, tmp_path: Path) -> None:
         """AC-FUNC-004: malformed origin.txt is skipped; valid entries returned."""
-        _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha_bad", "")  # empty = malformed
+        _make_catalog(tmp_path / "cache", "sha_good", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha_bad", "")  # empty = malformed
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -442,14 +442,14 @@ class TestCompleteMalformedOrigin:
 
     def test_malformed_writes_log_entry(self, tmp_path: Path) -> None:
         """AC-FUNC-004: malformed origin.txt writes structured log entry with sha."""
-        _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha_bad", "no-at-sign")  # invalid shape
+        _make_catalog(tmp_path / "cache", "sha_good", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha_bad", "no-at-sign")  # invalid shape
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -470,13 +470,13 @@ class TestCompleteMalformedOrigin:
     )
     def test_parametrized_malformed_shapes(self, tmp_path: Path, bad_content: str) -> None:
         """Parametrized malformed origin.txt shapes all produce log entries."""
-        _make_catalog(tmp_path, "sha_bad", bad_content)
+        _make_catalog(tmp_path / "cache", "sha_bad", bad_content)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -498,14 +498,14 @@ class TestHandle:
         """_handle() with three-catalog setup prints sorted urls to stdout."""
         import argparse
 
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "git@b.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "git@b.example.com:org/m.git@develop\n")
         args = argparse.Namespace(current_token="")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -523,7 +523,7 @@ class TestHandle:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
             },
         ):
             result = _handle(args)
@@ -533,14 +533,14 @@ class TestHandle:
         """_handle() with prefix 'https' outputs only https URLs."""
         import argparse
 
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "git@b.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "git@b.example.com:org/m.git@develop\n")
         args = argparse.Namespace(current_token="https")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             _handle(args)

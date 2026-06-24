@@ -55,6 +55,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -206,7 +207,8 @@ def _run_ks(
         f"kanon install exited {install_result.returncode}\n"
         f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
     )
-    source_dir = work_dir / ".kanon-data" / "sources" / "pep"
+    store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+    source_dir = store_base / ".kanon-data" / "sources" / "pep"
     assert source_dir.is_dir(), f"source dir missing: {source_dir}"
     manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
     combined = manifest_result.stdout + manifest_result.stderr
@@ -399,7 +401,8 @@ class TestKS:
             f"kanon install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        source_dir = work_dir / ".kanon-data" / "sources" / "pep"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        source_dir = store_base / ".kanon-data" / "sources" / "pep"
         assert source_dir.is_dir(), f"source dir missing: {source_dir}"
         manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
         combined = manifest_result.stdout + manifest_result.stderr

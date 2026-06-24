@@ -366,8 +366,9 @@ class TestDoctorCommandEndToEndCycle:
     """AC-CYCLE-001: doctor_command emits errors log findings AND staleness warnings.
 
     Writes a completion-errors.log with seven lines AND an out-of-date bash
-    completion script under tmp_path. Sets KANON_CACHE_DIR to tmp_path and
-    runs doctor_command with a completion_generator that returns fresh content.
+    completion script under tmp_path. Sets KANON_HOME to tmp_path (the cache,
+    where doctor reads the log, resolves to <KANON_HOME>/cache) and runs
+    doctor_command with a completion_generator that returns fresh content.
     Asserts:
     - stderr contains the last five log lines.
     - stderr contains a staleness warning for bash.
@@ -400,9 +401,15 @@ class TestDoctorCommandEndToEndCycle:
             encoding="utf-8",
         )
 
-        # -- Create completion-errors.log with 7 lines --
+        # -- Point KANON_HOME at tmp_path; the cache (where doctor reads the
+        #    completion-errors log) resolves to <KANON_HOME>/cache. --
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        cache_dir_path = tmp_path / "cache"
+        cache_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # -- Create completion-errors.log with 7 lines under the resolved cache --
         log_lines = [f"2026-01-01T00:00:0{i}Z __complete_sources ValueError: msg {i}" for i in range(7)]
-        log_file = tmp_path / "completion-errors.log"
+        log_file = cache_dir_path / "completion-errors.log"
         _write_log(log_file, log_lines)
 
         # -- Create an out-of-date bash completion script --
@@ -410,9 +417,6 @@ class TestDoctorCommandEndToEndCycle:
         fresh_bash_content = "# NEW FRESH bash completion script\n"
         bash_script = tmp_path / "kanon_completion.bash"
         bash_script.write_text(stale_bash_content, encoding="utf-8")
-
-        # Point KANON_CACHE_DIR at tmp_path
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
 
         # -- Build a minimal args namespace (no lockfile => subcheck 1 returns NO_LOCKFILE) --
         args = argparse.Namespace(

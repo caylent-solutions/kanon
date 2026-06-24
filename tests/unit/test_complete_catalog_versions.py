@@ -143,7 +143,7 @@ class TestComplete:
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -329,7 +329,7 @@ class TestComplete:
     def test_missing_catalog_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing KANON_CATALOG_SOURCES: empty result, error logged."""
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(cv, "log_completion_error") as mock_log:
             result = complete("")
@@ -371,7 +371,7 @@ class TestFetchAndCacheVersions:
 
     def test_writes_cache_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On success, tags.txt is written with filtered+sorted entries."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         entry_dir = tmp_path / "entry"
 
         ls_output = "sha1\trefs/tags/1.0.0\nsha2\trefs/heads/main\n"
@@ -409,7 +409,7 @@ class TestHandle:
     ) -> None:
         """_handle() prints one name per line and exits 0."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -430,7 +430,7 @@ class TestHandle:
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -450,7 +450,7 @@ class TestHandle:
     ) -> None:
         """When refresh_only=True, _handle() does not print to stdout."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -474,7 +474,7 @@ class TestWriteStderrDiagnostic:
 
     def test_writes_to_stderr_when_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is True, diagnostic line is written."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
@@ -500,7 +500,7 @@ class TestWriteStderrDiagnostic:
 
     def test_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
@@ -536,7 +536,7 @@ class TestInlineFetchEnvRestore:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores it."""
         from kanon_cli.completions.catalog_versions import _inline_fetch
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         entry_dir = tmp_path / "entry"
 
@@ -566,7 +566,7 @@ class TestCompleteMalformedSource:
     def test_invalid_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """complete() with invalid KANON_CATALOG_SOURCES logs error and returns []."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "no-at-sign-here")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(cv, "log_completion_error") as mock_log:
             result = complete("")
@@ -662,7 +662,7 @@ class TestCompleteStaleNoBg:
     def test_stale_no_bg_calls_inline_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Stale cache + KANON_COMPLETION_REFRESH_BG=0: inline fetch replaces stale data."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)

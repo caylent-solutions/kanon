@@ -76,7 +76,9 @@ from kanon_cli import __version__
 from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_GIT_LS_REMOTE_TIMEOUT,
-    WORKSPACE_DIR_ENV_VAR,
+    KANON_HOME_ENV_VAR,
+    KANON_HOME_STORE_SUBDIR,
+    resolve_kanon_home,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
@@ -1159,60 +1161,56 @@ def _resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
     )
 
 
-def resolve_workspace_base_dir(kanonenv_parent: pathlib.Path) -> pathlib.Path:
+def resolve_workspace_base_dir() -> pathlib.Path:
     """Resolve the base directory for .packages/ and .kanon-data/ artifacts.
 
-    When the ``KANON_WORKSPACE_DIR`` environment variable is set, the value is
-    resolved to an absolute path and used as the base directory.  The directory
-    is created if it does not yet exist.  If creation fails or the resulting
-    directory is not writable, the function calls ``sys.exit(1)`` with an
-    actionable error message naming the path and the environment variable name.
-    There is no silent fallback to ``kanonenv_parent``; the contract is strict
-    fail-fast.
+    The base directory is the artifact store under the shared ``KANON_HOME``
+    root (spec Section 7.1 / Section 8 / FR-15): ``<KANON_HOME>/store``, where
+    ``KANON_HOME`` resolves with precedence ``KANON_HOME`` env > default
+    ``~/.kanon`` (the default is derived from the real user home directory, never
+    a hard-coded absolute path). All fetched data is content-addressed under this
+    shared store and deduped across projects, replacing the removed per-project
+    ``.packages/`` / ``.kanon-data/`` location and the two location env vars it
+    subsumed.
 
-    When ``KANON_WORKSPACE_DIR`` is not set, the function returns
-    ``kanonenv_parent`` -- the directory that contains the ``.kanon`` file --
-    which is the original pre-env-var behavior.
+    The resolved store directory is created if it does not yet exist.  If
+    creation fails or the resulting directory is not writable, the function
+    calls ``sys.exit(1)`` with an actionable error message naming the path and
+    the ``KANON_HOME`` environment variable.  There is no silent relocation; the
+    contract is strict fail-fast.
 
     This function is the single resolution point shared by both ``install`` and
     ``clean`` so that the two commands agree on where artifacts are placed and
     removed.  ``clean.py`` imports this function from ``install.py``.
 
-    Args:
-        kanonenv_parent: The resolved parent directory of the ``.kanon`` file.
-            Used as the fallback when ``KANON_WORKSPACE_DIR`` is unset.
-
     Returns:
-        The absolute ``pathlib.Path`` to use as the base directory.
+        The absolute ``pathlib.Path`` to use as the artifact store base
+        directory.
 
     Raises:
-        SystemExit: With exit code 1 when ``KANON_WORKSPACE_DIR`` is set to an
-            uncreatable or non-writable path.
+        SystemExit: With exit code 1 when the resolved ``KANON_HOME`` store is
+            uncreatable or not writable.
     """
-    raw = os.environ.get(WORKSPACE_DIR_ENV_VAR)
-    if not raw:
-        return kanonenv_parent
-
-    workspace_path = pathlib.Path(raw).resolve()
+    store_path = (pathlib.Path(resolve_kanon_home()) / KANON_HOME_STORE_SUBDIR).resolve()
     try:
-        workspace_path.mkdir(parents=True, exist_ok=True)
+        store_path.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         print(
-            f"ERROR: Cannot create {WORKSPACE_DIR_ENV_VAR} directory {workspace_path}: {exc.strerror}.\n"
-            f"  Set {WORKSPACE_DIR_ENV_VAR} to a path that can be created, or unset the variable.",
+            f"ERROR: Cannot create {KANON_HOME_ENV_VAR} store directory {store_path}: {exc.strerror}.\n"
+            f"  Set {KANON_HOME_ENV_VAR} to a path that can be created, or fix permissions on the parent.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    if not os.access(workspace_path, os.W_OK):
+    if not os.access(store_path, os.W_OK):
         print(
-            f"ERROR: {WORKSPACE_DIR_ENV_VAR} directory {workspace_path} is not writable.\n"
-            f"  Fix permissions or set {WORKSPACE_DIR_ENV_VAR} to a writable path.",
+            f"ERROR: {KANON_HOME_ENV_VAR} store directory {store_path} is not writable.\n"
+            f"  Fix permissions or set {KANON_HOME_ENV_VAR} to a writable path.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    return workspace_path
+    return store_path
 
 
 def create_source_dirs(
@@ -1872,7 +1870,7 @@ def _run_install(
             all_findings=placeholder_findings,
         )
 
-    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
+    base_dir = resolve_workspace_base_dir()
     source_names = config["KANON_SOURCES"]
     sources = config["sources"]
     marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
@@ -2504,7 +2502,7 @@ def install(
         RepoCommandError: If any repo sub-command exits non-zero.
     """
     kanonenv_path = kanonenv_path.resolve()
-    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
+    base_dir = resolve_workspace_base_dir()
 
     with kanon_workspace_lock(base_dir):
         _run_install(

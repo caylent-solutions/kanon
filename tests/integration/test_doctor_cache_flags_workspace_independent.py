@@ -132,7 +132,9 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         cache_dir.mkdir(mode=0o700)
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
+        # makes the resolved cache equal cache_dir (= tmp_path / "cache").
+        monkeypatch.setenv("KANON_HOME", str(cache_dir.parent))
 
         args = _parse_doctor_args(flag)
         exit_code = run_doctor(args)
@@ -182,7 +184,9 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         cache_dir.mkdir(mode=0o700)
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
+        # makes the resolved cache equal cache_dir (= tmp_path / "cache").
+        monkeypatch.setenv("KANON_HOME", str(cache_dir.parent))
 
         args = _parse_doctor_args(flag)
         exit_code = run_doctor(args)

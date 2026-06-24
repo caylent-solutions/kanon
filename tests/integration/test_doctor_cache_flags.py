@@ -39,7 +39,7 @@ import sys
 
 import pytest
 
-from kanon_cli.constants import KANON_CACHE_DIR_MODE
+from kanon_cli.constants import KANON_HOME_CACHE_DIR_MODE
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
     _run_kanon,
@@ -103,10 +103,10 @@ class TestDoctorCombinedFlags:
         """Combined cache flags produce both cache-op output lines and exit 0.
 
         Steps:
-        1. Create a KANON_CACHE_DIR with a completion-cache subdir containing
-           one old (expired) file, plus one old top-level file.
+        1. Create a <KANON_HOME>/cache dir with a completion-cache subdir
+           containing one old (expired) file, plus one old top-level file.
         2. Run `kanon doctor --refresh-completion-cache --prune-cache` from
-           an empty directory with KANON_CACHE_DIR set.
+           an empty directory with KANON_HOME set.
         3. Assert exit code is 0 (both cache actions succeed).
         4. For each substring in EXPECTED_CACHE_ACTION_SUBSTRINGS, assert the
            combined output (stdout + stderr) contains the substring.
@@ -124,7 +124,7 @@ class TestDoctorCombinedFlags:
         cache_dir.mkdir()
 
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         # One expired file in completion-cache (refresh clears it).
         comp_file = completion_cache / "comp.json"
@@ -138,7 +138,7 @@ class TestDoctorCombinedFlags:
 
         # -- Step 2: kanon doctor --refresh-completion-cache --prune-cache --
         env_with_cache = dict(os.environ)
-        env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
+        env_with_cache["KANON_HOME"] = str(cache_dir.parent)
         env_with_cache.pop("KANON_CATALOG_SOURCES", None)
 
         doctor_result = subprocess.run(
@@ -189,10 +189,10 @@ class TestDoctorCombinedFlags:
             tmp_path: Pytest-provided temporary directory with no .kanon file.
         """
         cache_dir = tmp_path / "cache"
-        cache_dir.mkdir(mode=KANON_CACHE_DIR_MODE)
+        cache_dir.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         env_with_cache = dict(os.environ)
-        env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
+        env_with_cache["KANON_HOME"] = str(cache_dir.parent)
         env_with_cache.pop("KANON_CATALOG_SOURCES", None)
 
         doctor_result = subprocess.run(
@@ -244,8 +244,16 @@ class TestDoctorCombinedFlags:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
+        # Isolate the shared KANON_HOME store + cache under tmp_path so install
+        # writes its artifacts to <KANON_HOME>/store (not the real ~/.kanon) and
+        # the doctor cache resolves to <KANON_HOME>/cache.
+        kanon_home = tmp_path / "kanon_home"
+        kanon_home.mkdir()
+        home_env = {"KANON_HOME": str(kanon_home)}
+
         add_result = _run_kanon(
             ["add", "widget", "--catalog-source", catalog_source],
+            extra_env=home_env,
             cwd=workspace,
         )
         assert add_result.returncode == 0, (
@@ -255,6 +263,7 @@ class TestDoctorCombinedFlags:
 
         env_no_catalog = dict(os.environ)
         env_no_catalog.pop("KANON_CATALOG_SOURCES", None)
+        env_no_catalog["KANON_HOME"] = str(kanon_home)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],
@@ -268,10 +277,11 @@ class TestDoctorCombinedFlags:
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
 
-        cache_dir = tmp_path / "cache"
-        cache_dir.mkdir()
+        # Seed an expired completion-cache file under the resolved cache dir
+        # (<KANON_HOME>/cache) so the refresh subcheck has something to clear.
+        cache_dir = kanon_home / "cache"
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE, parents=True)
         comp_file = completion_cache / "comp.json"
         comp_file.write_bytes(b"c" * 64)
         now = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -280,7 +290,6 @@ class TestDoctorCombinedFlags:
         os.utime(str(comp_file), (old_dt.timestamp(), mtime))
 
         env_with_cache = dict(env_no_catalog)
-        env_with_cache["KANON_CACHE_DIR"] = str(cache_dir)
 
         doctor_result = subprocess.run(
             [

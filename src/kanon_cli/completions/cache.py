@@ -57,12 +57,12 @@ from pathlib import Path
 
 from kanon_cli.completions.sanitize import SanitizationError, sanitize_entries
 from kanon_cli.constants import (
-    KANON_CACHE_DIR_DEFAULT,
-    KANON_CACHE_DIR_ENV,
     KANON_COMPLETION_ERRORS_LOG_FILENAME,
     KANON_COMPLETION_LOG_ENV,
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_REFRESH_BG_ENV,
+    KANON_HOME_CACHE_SUBDIR,
+    resolve_kanon_home,
 )
 from kanon_cli.utils.spawn import spawn_detached
 
@@ -121,22 +121,17 @@ def _mkdir_secure(path: Path) -> None:
 
 
 def cache_dir() -> Path:
-    """Return the resolved cache directory path.
+    """Return the resolved completion / catalog-audit cache directory path.
 
-    Resolution order (highest wins):
-    1. ``${KANON_CACHE_DIR}`` env var.
-    2. ``${XDG_CACHE_HOME}/kanon``.
-    3. ``~/.cache/kanon`` (XDG default; Section 11.4).
+    The cache lives under the shared ``KANON_HOME`` root as
+    ``<KANON_HOME>/cache`` (spec Section 4.1 / Section 7.3), where ``KANON_HOME``
+    resolves with precedence ``KANON_HOME`` env > default ``~/.kanon`` (the
+    default is derived from the real user home directory, never a hard-coded
+    absolute path). This replaces the removed per-user cache-dir override and its
+    XDG fallback; the cache now shares the single ``KANON_HOME`` store root with
+    every other piece of fetched data so it is deduped and located deterministically.
     """
-    env_val = os.environ.get(KANON_CACHE_DIR_ENV)
-    if env_val:
-        return Path(env_val)
-
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    if xdg_cache:
-        return Path(xdg_cache) / "kanon"
-
-    return Path(KANON_CACHE_DIR_DEFAULT).expanduser()
+    return Path(resolve_kanon_home()) / KANON_HOME_CACHE_SUBDIR
 
 
 def catalog_entry_dir(catalog_url: str, ref: str) -> Path:

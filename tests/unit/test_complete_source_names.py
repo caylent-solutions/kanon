@@ -153,7 +153,7 @@ class TestCompleteDisabled:
                 "KANON_COMPLETION_ENABLED": "0",
                 "KANON_KANON_FILE": str(kanon_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -183,7 +183,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -203,7 +203,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("f")
@@ -221,7 +221,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -253,7 +253,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
@@ -277,7 +277,7 @@ class TestCompleteMissingFile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -293,7 +293,7 @@ class TestCompleteMissingFile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -322,7 +322,7 @@ class TestCompleteMalformedFile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -339,7 +339,7 @@ class TestCompleteMalformedFile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -373,7 +373,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -392,7 +392,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)

@@ -12,9 +12,10 @@ asserting the spec Section 4.1 multi-source behavior:
   WARNING (FLAG-B) and does NOT hard-fail the whole search -- the reachable source
   is still rendered and the command exits 0.
 
-Each test isolates the TTL cache via a per-test ``KANON_CACHE_DIR`` so the
-concurrent enumeration writes/reads its ``search/<sha>/versions.txt`` entries in a
-sandbox and never touches the operator's real cache.
+Each test isolates the TTL cache via a per-test ``KANON_HOME`` so the concurrent
+enumeration writes/reads its ``cache/search/<sha>/versions.txt`` entries in a
+sandbox and never touches the operator's real cache. The cache resolves under
+``<KANON_HOME>/cache`` (the shared KANON_HOME store model).
 """
 
 from __future__ import annotations
@@ -103,7 +104,13 @@ _B_VERSIONS = ("0.9.0", "1.0.0")
 
 @pytest.fixture()
 def multi_source_setup(tmp_path: pathlib.Path) -> dict[str, object]:
-    """Build two reachable catalog sources, one unreachable source, and a cache dir."""
+    """Build two reachable catalog sources, one unreachable source, and a KANON_HOME.
+
+    The cache resolves under ``<KANON_HOME>/cache``; ``cache_dir`` in the returned
+    mapping is that resolved cache directory, so the existing
+    ``cache_dir / "search"`` assertions line up with where the CLI actually
+    writes its TTL cache.
+    """
     fixtures = tmp_path / "fixtures"
     fixtures.mkdir()
 
@@ -117,13 +124,17 @@ def multi_source_setup(tmp_path: pathlib.Path) -> dict[str, object]:
     missing = fixtures / "does-not-exist.git"
     source_unreachable = f"{missing.as_uri()}@main"
 
-    cache_dir = tmp_path / "kanon-cache"
-    cache_dir.mkdir()
+    kanon_home = tmp_path / "kanon-home"
+    kanon_home.mkdir()
+    # The CLI resolves the cache as <KANON_HOME>/cache; expose that resolved
+    # directory so search-cache assertions point at the real location.
+    cache_dir = kanon_home / "cache"
 
     return {
         "source_a": source_a,
         "source_b": source_b,
         "source_unreachable": source_unreachable,
+        "kanon_home": str(kanon_home),
         "cache_dir": str(cache_dir),
     }
 
@@ -145,7 +156,7 @@ class TestSearchMultiSourceJourney:
         """
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -153,7 +164,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -172,7 +183,7 @@ class TestSearchMultiSourceJourney:
         """-A/--all lists every refs/tags/<name>/<pep440> release plus the (latest) tip."""
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -181,7 +192,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -204,7 +215,7 @@ class TestSearchMultiSourceJourney:
         """-A renders alpha's releases newest-first (1.2.0 before 1.0.0)."""
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -213,7 +224,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         assert result.returncode == 0
@@ -231,7 +242,7 @@ class TestSearchMultiSourceJourney:
         """
         source_a = str(multi_source_setup["source_a"])
         source_unreachable = str(multi_source_setup["source_unreachable"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -239,7 +250,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_unreachable,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         # skip+warn: the whole search is NOT hard-failed.
@@ -257,7 +268,7 @@ class TestSearchMultiSourceJourney:
         """A positional substring filter narrows entries within each source group."""
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -266,7 +277,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -278,7 +289,7 @@ class TestSearchMultiSourceJourney:
         """A filter matching nothing across all sources exits 0 with a 'no matches' note."""
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
-        cache_dir = str(multi_source_setup["cache_dir"])
+        kanon_home = str(multi_source_setup["kanon_home"])
 
         result = run_kanon(
             "search",
@@ -287,7 +298,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": cache_dir},
+            extra_env={"KANON_HOME": kanon_home},
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -305,6 +316,9 @@ class TestSearchMultiSourceJourney:
         """
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
+        kanon_home = str(multi_source_setup["kanon_home"])
+        # The CLI writes its TTL cache under <KANON_HOME>/cache; the fixture's
+        # cache_dir is exactly that resolved directory.
         cache_dir = pathlib.Path(str(multi_source_setup["cache_dir"]))
 
         first = run_kanon(
@@ -314,7 +328,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": str(cache_dir)},
+            extra_env={"KANON_HOME": kanon_home},
         )
         assert first.returncode == 0, f"stdout={first.stdout!r} stderr={first.stderr!r}"
 
@@ -335,7 +349,7 @@ class TestSearchMultiSourceJourney:
             source_a,
             "--catalog-source",
             source_b,
-            extra_env={"KANON_CACHE_DIR": str(cache_dir)},
+            extra_env={"KANON_HOME": kanon_home},
         )
         assert second.returncode == 0
         assert f"{_A_ENTRY}@1.2.0" in second.stdout

@@ -2,10 +2,10 @@
 
 Covers:
 - Subparser registration structure
-- run_doctor --refresh-completion-cache uses KANON_CACHE_DIR/completion-cache/
+- run_doctor --refresh-completion-cache uses <KANON_HOME>/cache/completion-cache/
 - run_doctor (no flags) health check paths
 
-AC-FUNC-001: kanon doctor --refresh-completion-cache uses KANON_CACHE_DIR.
+AC-FUNC-001: kanon doctor --refresh-completion-cache uses the KANON_HOME cache.
 AC-FUNC-004: kanon doctor without flags does not mutate the cache.
 """
 
@@ -122,21 +122,21 @@ class TestDoctorSubparser:
 
 
 # ---------------------------------------------------------------------------
-# run_doctor -- --refresh-completion-cache uses KANON_CACHE_DIR
+# run_doctor -- --refresh-completion-cache uses the KANON_HOME cache
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunDoctorRefreshCompletionCache:
-    """run_doctor --refresh-completion-cache invalidates KANON_CACHE_DIR/completion-cache/."""
+    """run_doctor --refresh-completion-cache invalidates <KANON_HOME>/cache/completion-cache/."""
 
     def test_refresh_creates_completion_cache_dir_under_cache_dir(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--refresh-completion-cache creates KANON_CACHE_DIR/completion-cache/ with mode 0700.
+        """--refresh-completion-cache creates <KANON_HOME>/cache/completion-cache/ with mode 0700.
 
-        When KANON_CACHE_DIR is set, the completion-cache subdir is created there,
-        not under .kanon-data/.
+        The completion-cache subdir is created under the resolved KANON_HOME
+        cache, not under .kanon-data/.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -146,9 +146,8 @@ class TestRunDoctorRefreshCompletionCache:
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
-        cache_dir = tmp_path / "cache"
-        cache_dir.mkdir()
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        cache_dir = tmp_path / "cache"  # == cache_dir() under KANON_HOME=tmp_path
 
         args = _make_refresh_args(
             kanon_file=str(kanon_file),
@@ -159,15 +158,17 @@ class TestRunDoctorRefreshCompletionCache:
         assert result == 0
         completion_cache = cache_dir / "completion-cache"
         assert completion_cache.is_dir(), (
-            f"--refresh-completion-cache must create KANON_CACHE_DIR/completion-cache/; expected {completion_cache}"
+            f"--refresh-completion-cache must create <KANON_HOME>/cache/completion-cache/; expected {completion_cache}"
         )
 
-    def test_refresh_without_cache_dir_does_not_create_kanon_data(
+    def test_refresh_targets_kanon_home_cache_not_cwd(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Without KANON_CACHE_DIR, --refresh-completion-cache does not create .kanon-data/.
+        """--refresh-completion-cache acts on the KANON_HOME cache, never on cwd/.kanon-data/.
 
-        When KANON_CACHE_DIR is unset, the flag has no filesystem effect.
+        The cache always resolves under KANON_HOME (there is no unset state), so
+        the refresh creates the completion-cache under <KANON_HOME>/cache and never
+        beside the project .kanon.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -175,8 +176,11 @@ class TestRunDoctorRefreshCompletionCache:
         """
         from kanon_cli.commands.doctor import run_doctor
 
-        monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
-        kanon_file = tmp_path / ".kanon"
+        kanon_home = tmp_path / "home"
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        kanon_file = project / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
 
         args = _make_refresh_args(
@@ -186,8 +190,11 @@ class TestRunDoctorRefreshCompletionCache:
         result = run_doctor(args)
 
         assert result == 0
-        assert not (tmp_path / ".kanon-data").exists(), (
-            "--refresh-completion-cache must not create .kanon-data/ when KANON_CACHE_DIR is unset"
+        assert (kanon_home / "cache" / "completion-cache").is_dir(), (
+            "--refresh-completion-cache must create the completion-cache under <KANON_HOME>/cache"
+        )
+        assert not (project / ".kanon-data").exists(), (
+            "--refresh-completion-cache must not create .kanon-data/ beside the project .kanon"
         )
 
     def test_refresh_emits_info_finding_to_stderr(
@@ -204,9 +211,7 @@ class TestRunDoctorRefreshCompletionCache:
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
-        cache_dir = tmp_path / "cache"
-        cache_dir.mkdir()
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_refresh_args(
             kanon_file=str(kanon_file),

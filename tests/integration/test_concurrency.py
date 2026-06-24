@@ -295,10 +295,11 @@ class TestParallelInstallsDeterministic:
 
         Executes two install() calls in parallel threads against the same
         .kanon file. After both threads join, .packages/ and .kanon-data/
-        must exist and be complete, with no partially-written or missing
-        entries from the concurrency.
+        must exist and be complete in the shared KANON_HOME store, with no
+        partially-written or missing entries from the concurrency.
         """
         kanonenv = _write_kanonenv(tmp_path, "source1")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         # Barrier ensures both threads start the install at the same moment.
         barrier = threading.Barrier(2, timeout=30)
@@ -318,15 +319,15 @@ class TestParallelInstallsDeterministic:
             t.join()
 
         # At least one thread must have succeeded; state must be deterministic.
-        assert (tmp_path / ".packages").is_dir(), (
-            f".packages/ must exist after parallel installs; found: {list(tmp_path.iterdir())}"
+        assert (store_base / ".packages").is_dir(), (
+            f".packages/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            f".kanon-data/ must exist after parallel installs; found: {list(tmp_path.iterdir())}"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-        source_dir = tmp_path / ".kanon-data" / "sources" / "source1"
+        source_dir = store_base / ".kanon-data" / "sources" / "source1"
         assert source_dir.is_dir(), (
-            f".kanon-data/sources/source1/ must exist after parallel installs; found: {list((tmp_path / '.kanon-data').rglob('*'))}"
+            f".kanon-data/sources/source1/ must exist after parallel installs; found: {list((store_base / '.kanon-data').rglob('*'))}"
         )
 
     def test_parallel_installs_leave_consistent_gitignore(
@@ -336,9 +337,10 @@ class TestParallelInstallsDeterministic:
         """Two concurrent installs result in a .gitignore with no duplicate entries.
 
         Both required entries (.packages/ and .kanon-data/) must be present
-        exactly once, regardless of concurrent writes.
+        exactly once in the store .gitignore, regardless of concurrent writes.
         """
         kanonenv = _write_kanonenv(tmp_path, "src1")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         barrier = threading.Barrier(2, timeout=30)
         errors: list[Exception] = []
 
@@ -355,8 +357,8 @@ class TestParallelInstallsDeterministic:
         for t in threads:
             t.join()
 
-        gitignore = tmp_path / ".gitignore"
-        assert gitignore.exists(), ".gitignore must be written by install"
+        gitignore = store_base / ".gitignore"
+        assert gitignore.exists(), ".gitignore must be written by install under the store"
         lines = gitignore.read_text(encoding="utf-8").splitlines()
         packages_count = lines.count(".packages/")
         kanon_data_count = lines.count(".kanon-data/")
@@ -382,19 +384,20 @@ class TestConcurrentInstallSerialization:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """install() acquires an exclusive lock file inside .kanon-data/ during execution.
+        """install() acquires an exclusive lock file inside the store .kanon-data/ during execution.
 
-        A lock file (.kanon-data/.kanon-install.lock) must be present after
-        install() completes, indicating the exclusive lock was acquired and
-        the file persists for subsequent installs to re-lock on.
+        A lock file (.kanon-data/.kanon-install.lock) must be present under the
+        shared KANON_HOME store after install() completes, indicating the exclusive
+        lock was acquired and the file persists for subsequent installs to re-lock on.
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
-        lock_file_path = tmp_path / ".kanon-data" / _LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_file_path = store_base / ".kanon-data" / _LOCK_FILENAME
 
         _patched_install(kanonenv)
 
         assert lock_file_path.exists(), (
-            f"install() must create {_LOCK_FILENAME} inside .kanon-data/ "
+            f"install() must create {_LOCK_FILENAME} inside the store .kanon-data/ "
             f"to serialize concurrent runs; the file was not found at {lock_file_path}"
         )
 
@@ -409,7 +412,8 @@ class TestConcurrentInstallSerialization:
         with a clear error. It must NOT proceed into filesystem mutations while
         the first holds the lock.
         """
-        kanon_data_dir = tmp_path / ".kanon-data"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        kanon_data_dir = store_base / ".kanon-data"
         kanon_data_dir.mkdir(parents=True, exist_ok=True)
         lock_file_path = kanon_data_dir / _LOCK_FILENAME
 
@@ -504,13 +508,14 @@ class TestIdempotentRetryAfterPartialFailure:
                 )
 
         # Second attempt: all repo ops succeed.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
-        assert (tmp_path / ".packages").is_dir(), (
-            ".packages/ must exist after successful retry following partial failure"
+        assert (store_base / ".packages").is_dir(), (
+            ".packages/ must exist in the store after successful retry following partial failure"
         )
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+            ".kanon-data/sources/primary/ must exist in the store after successful retry"
         )
 
     def test_retry_after_repo_init_failure_succeeds(
@@ -539,13 +544,14 @@ class TestIdempotentRetryAfterPartialFailure:
                 )
 
         # Second attempt: all repo ops succeed.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
-        assert (tmp_path / ".packages").is_dir(), (
-            ".packages/ must exist after successful retry following repo_init failure"
+        assert (store_base / ".packages").is_dir(), (
+            ".packages/ must exist in the store after successful retry following repo_init failure"
         )
-        assert (tmp_path / ".kanon-data" / "sources" / "alpha").is_dir(), (
-            ".kanon-data/sources/alpha/ must exist after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
+            ".kanon-data/sources/alpha/ must exist in the store after successful retry"
         )
 
     def test_retry_with_partial_state_from_prior_run_succeeds(
@@ -558,18 +564,21 @@ class TestIdempotentRetryAfterPartialFailure:
         must succeed with no collision errors or OSError.
         """
         kanonenv = _write_kanonenv(tmp_path, "beta")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # Pre-populate .kanon-data/ as if a prior install partially completed.
-        partial_source_dir = tmp_path / ".kanon-data" / "sources" / "beta"
+        # Pre-populate the store .kanon-data/ as if a prior install partially completed.
+        partial_source_dir = store_base / ".kanon-data" / "sources" / "beta"
         partial_source_dir.mkdir(parents=True, exist_ok=True)
         (partial_source_dir / "leftover.txt").write_text("stale file", encoding="utf-8")
 
         # Install must succeed even with pre-existing partial state.
         _patched_install(kanonenv)
 
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after install succeeds over partial state"
-        assert (tmp_path / ".kanon-data" / "sources" / "beta").is_dir(), (
-            ".kanon-data/sources/beta/ must exist after install succeeds over partial state"
+        assert (store_base / ".packages").is_dir(), (
+            ".packages/ must exist in the store after install succeeds over partial state"
+        )
+        assert (store_base / ".kanon-data" / "sources" / "beta").is_dir(), (
+            ".kanon-data/sources/beta/ must exist in the store after install succeeds over partial state"
         )
 
     @pytest.mark.parametrize("failing_source", ["first", "second"])
@@ -613,13 +622,14 @@ class TestIdempotentRetryAfterPartialFailure:
                 )
 
         # Second attempt: all repo ops succeed.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
         for sn in source_names:
-            assert (tmp_path / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist after successful retry"
+            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
+                f".kanon-data/sources/{sn}/ must exist in the store after successful retry"
             )
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after retry"
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after retry"
 
 
 # ---------------------------------------------------------------------------
@@ -678,14 +688,15 @@ class TestInstallOverInstallIdempotent:
         """Repeated installs do not duplicate .gitignore entries.
 
         After two installs, .packages/ and .kanon-data/ must each appear
-        exactly once in .gitignore.
+        exactly once in the store .gitignore.
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
         _patched_install(kanonenv)
 
-        gitignore = tmp_path / ".gitignore"
-        assert gitignore.exists(), ".gitignore must exist after two installs"
+        gitignore = store_base / ".gitignore"
+        assert gitignore.exists(), ".gitignore must exist in the store after two installs"
         lines = gitignore.read_text(encoding="utf-8").splitlines()
         assert lines.count(".packages/") == 1, (
             f".packages/ must appear exactly once in .gitignore; found {lines.count('.packages/')} times"
@@ -701,16 +712,17 @@ class TestInstallOverInstallIdempotent:
         """Repeated installs with packages do not create duplicate symlinks.
 
         Running install() twice when sources produce packages must result in
-        exactly the same set of symlinks in .packages/ as a single install.
+        exactly the same set of symlinks in the store .packages/ as a single install.
         """
         kanonenv = _write_kanonenv(tmp_path, "alpha")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         packages = {"alpha": ["tool-a", "tool-b"]}
 
         _patched_install_with_packages(kanonenv, packages)
-        after_first = {p.name for p in (tmp_path / ".packages").iterdir()}
+        after_first = {p.name for p in (store_base / ".packages").iterdir()}
 
         _patched_install_with_packages(kanonenv, packages)
-        after_second = {p.name for p in (tmp_path / ".packages").iterdir()}
+        after_second = {p.name for p in (store_base / ".packages").iterdir()}
 
         assert after_first == after_second, (
             f"Second install changed package set.\n"
@@ -729,13 +741,14 @@ class TestInstallOverInstallIdempotent:
         Parameterized for 2 and 3 sequential installs.
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         for _ in range(num_installs):
             _patched_install(kanonenv)
 
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after repeated installs"
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist after repeated installs"
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated installs"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+            ".kanon-data/sources/primary/ must exist in the store after repeated installs"
         )
 
     def test_install_over_install_with_two_sources_is_idempotent(
@@ -748,14 +761,15 @@ class TestInstallOverInstallIdempotent:
         consistent after the second install.
         """
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
         _patched_install(kanonenv)
 
         for sn in ("alpha", "bravo"):
-            assert (tmp_path / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist after repeated install"
+            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
+                f".kanon-data/sources/{sn}/ must exist in the store after repeated install"
             )
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after repeated install"
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated install"
 
 
 # ---------------------------------------------------------------------------

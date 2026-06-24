@@ -6,6 +6,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -121,13 +122,17 @@ class TestLF:
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
+        # Install artifacts (.packages/, .kanon-data/) now live under the shared
+        # store (<KANON_HOME>/store), not beside the project .kanon in work_dir.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+
         # .packages/pkg-linked must exist as a symlink into .kanon-data/sources/
-        pkg_linked_link = work_dir / ".packages" / "pkg-linked"
+        pkg_linked_link = store_base / ".packages" / "pkg-linked"
         assert pkg_linked_link.is_symlink(), ".packages/pkg-linked is not a symlink"
 
         # The linkfile symlinks land inside the repo-tool sync root for this source,
         # which is .kanon-data/sources/linked/
-        sources_linked = work_dir / ".kanon-data" / "sources" / "linked"
+        sources_linked = store_base / ".kanon-data" / "sources" / "linked"
         assert sources_linked.is_dir(), ".kanon-data/sources/linked/ directory missing"
 
         app_config_link = sources_linked / "app-config.json"

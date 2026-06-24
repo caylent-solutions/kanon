@@ -136,7 +136,7 @@ class TestCompletePEP440Filter:
     """complete() applies PEP 440 filter to tags, passes branches through."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -225,7 +225,7 @@ class TestCompleteURLCanonicalization:
     """Two URL shapes that canonicalize to the same value share the same cache entry."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -295,7 +295,7 @@ class TestCompleteMalformedURL:
 
     def test_empty_url_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty URL causes ValueError from canonicalize_repo_url, empty result."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("", "")
@@ -307,7 +307,7 @@ class TestCompleteMalformedURL:
 
     def test_whitespace_url_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Whitespace-only URL fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("   ", "")
@@ -317,7 +317,7 @@ class TestCompleteMalformedURL:
 
     def test_url_with_query_string_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """URL with query string fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("https://example.com/proj?foo=bar", "")
@@ -327,7 +327,7 @@ class TestCompleteMalformedURL:
 
     def test_url_with_fragment_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """URL with fragment fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("https://example.com/proj#section", "")
@@ -337,8 +337,7 @@ class TestCompleteMalformedURL:
 
     def test_log_entry_contains_completer_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Log entry contains the completer name '__complete_project_versions'."""
-        cache_dir = tmp_path / "cache"
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         log_path = tmp_path / "errors.log"
         monkeypatch.setenv("KANON_COMPLETION_LOG", str(log_path))
 
@@ -360,7 +359,7 @@ class TestCompleteCacheStates:
     """Cache hit, stale, and miss behavior for project_versions."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -440,7 +439,7 @@ class TestCompletePrefixFilter:
     """Prefix filter narrows the candidate list correctly."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -493,7 +492,7 @@ class TestCompleteDisabled:
 
     def test_disabled_returns_empty_no_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """KANON_COMPLETION_ENABLED=0 exits early with []."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_ENABLED", "0")
 
         with patch.object(pv, "_fetch_and_cache_versions") as mock_fetch:
@@ -515,7 +514,7 @@ class TestCompleteNetworkError:
     """Network error: empty result returned, error logged."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -555,7 +554,7 @@ class TestFetchAndCacheVersions:
 
     def test_writes_cache_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On success, tags.txt is written with filtered+sorted entries."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         entry_dir = tmp_path / "entry"
 
         ls_output = "sha1\trefs/tags/1.0.0\nsha2\trefs/heads/main\n"
@@ -592,7 +591,7 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() prints one version per line and returns 0."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -612,7 +611,7 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -699,7 +698,7 @@ class TestWriteStderrDiagnostic:
 
     def test_writes_to_stderr_when_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is True, diagnostic line is written."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         err_lines: list[str] = []
 
@@ -724,7 +723,7 @@ class TestWriteStderrDiagnostic:
 
     def test_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         err_lines: list[str] = []
 
@@ -759,7 +758,7 @@ class TestInlineFetchEnvRestore:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores it."""
         from kanon_cli.completions.project_versions import _inline_fetch
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         entry_dir = tmp_path / "entry"
 
@@ -792,7 +791,7 @@ class TestBackgroundRefreshClosure:
 
     def _seed_stale_cache(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         """Seed a stale project cache entry and return its entry directory."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)

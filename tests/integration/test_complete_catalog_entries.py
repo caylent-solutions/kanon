@@ -79,7 +79,9 @@ def _run_complete(
     """Invoke `kanon __complete_catalog_entries <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_CATALOG_SOURCES"] = f"file://{repo_path}@main"
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=cache_dir.parent
+    # makes the resolved cache equal cache_dir.
+    env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
         env.update(extra_env)
@@ -154,7 +156,7 @@ class TestCompleteCatalogEntriesSubprocess:
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
         env["KANON_CATALOG_SOURCES"] = "file:///nonexistent/path@main"
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 
         result = subprocess.run(

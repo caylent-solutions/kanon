@@ -41,7 +41,9 @@ def _run_complete(
     """Invoke `kanon __complete_catalog_entries <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_CATALOG_SOURCES"] = catalog_source
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    # cache_dir() resolves to <KANON_HOME>/cache; point KANON_HOME at the
+    # parent so the resolved cache equals the seeded cache_dir.
+    env["KANON_HOME"] = str(cache_dir.parent)
     # Disable background refresh so any miss would trigger inline fetch (and fail).
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     # Use a very short timeout so if a fetch is attempted, it fails quickly.

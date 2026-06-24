@@ -36,7 +36,10 @@ def _run_complete(
     """Invoke `kanon __complete_source_names_in_kanon <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_KANON_FILE"] = str(kanon_path)
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    # The source-names completer does not touch the catalog cache; KANON_HOME
+    # only isolates cache resolution under <KANON_HOME>/cache. Every log path in
+    # these tests is set explicitly via KANON_COMPLETION_LOG.
+    env["KANON_HOME"] = str(cache_dir)
     env["KANON_COMPLETION_ENABLED"] = "1"
     if extra_env:
         env.update(extra_env)

@@ -3,7 +3,7 @@
 Performs workspace health checks and optionally refreshes the completion cache
 or prunes stale cache files.
 The --refresh-completion-cache flag invalidates all files under
-${KANON_CACHE_DIR}/completion-cache/ when KANON_CACHE_DIR is set.
+<KANON_HOME>/cache/completion-cache/ (the cache root resolved from KANON_HOME).
 The --prune-cache flag removes cache files whose atime is older than
 KANON_CACHE_PRUNE_AGE_DAYS days and reports stale install-lock advisories.
 
@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, NamedTuple
 if TYPE_CHECKING:
     from kanon_cli.core.lockfile import Lockfile
 
+from kanon_cli.completions.cache import cache_dir as resolve_cache_dir
 from kanon_cli.constants import (
     CATALOG_SOURCES_ENV_VAR,
     FINDING_PREFIX_FAIL,
@@ -43,8 +44,6 @@ from kanon_cli.constants import (
     GIT_RETRY_DELAY_DEFAULT,
     GIT_RETRY_DELAY_ENV_VAR,
     INSTALL_LOCK_FILENAME,
-    KANON_CACHE_DIR_ENV,
-    KANON_CACHE_DIR_MODE,
     KANON_CACHE_PRUNE_AGE_DAYS,
     KANON_COMPLETION_CACHE_DIR,
     KANON_COMPLETION_ERRORS_LOG_FILENAME,
@@ -52,6 +51,7 @@ from kanon_cli.constants import (
     KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS,
     KANON_DOCTOR_STALE_LOCK_AGE_HOURS,
     KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH,
+    KANON_HOME_CACHE_DIR_MODE,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
@@ -75,8 +75,8 @@ _UNSET: object = object()
 # Workspace-free flag names
 # ---------------------------------------------------------------------------
 
-# Flags whose actions operate solely on KANON_CACHE_DIR and require no
-# per-project .kanon workspace. When the set of active (truthy) flag names is
+# Flags whose actions operate solely on the shared KANON_HOME cache and require
+# no per-project .kanon workspace. When the set of active (truthy) flag names is
 # non-empty AND a subset of WORKSPACE_FREE_FLAGS, workspace discovery is
 # skipped entirely. Mixed invocations (any cache flag combined with any
 # subcheck flag) still require the workspace and are NOT short-circuited.
@@ -868,7 +868,7 @@ def _check_completion_errors_report(
 
     Args:
         cache_dir: Directory where the completion-errors log is stored.
-            Typically the value of the KANON_CACHE_DIR environment variable.
+            The resolved cache directory under the shared KANON_HOME root.
         limit: Maximum number of recent log lines to include in the finding.
 
     Returns:
@@ -1074,9 +1074,9 @@ def _run_completion_subchecks(
 ) -> None:
     """Run completion subchecks 7 and 9, printing findings to stderr.
 
-    Subcheck 7 reads the completion-errors log from the KANON_CACHE_DIR when
-    that environment variable is set. Subcheck 9 checks static completion
-    scripts for staleness when a completion_generator is provided.
+    Subcheck 7 reads the completion-errors log from the resolved cache directory
+    (<KANON_HOME>/cache). Subcheck 9 checks static completion scripts for
+    staleness when a completion_generator is provided.
 
     Both subchecks always run when invoked (no flag gates). This function
     encapsulates their logic so both the normal and NO_LOCKFILE code paths
@@ -1087,13 +1087,14 @@ def _run_completion_subchecks(
             the staleness check is skipped.
     """
     # -- Check 7: completion errors report --
-    cache_dir_str = os.environ.get(KANON_CACHE_DIR_ENV)
-    if cache_dir_str is not None:
-        errors_finding = _check_completion_errors_report(
-            pathlib.Path(cache_dir_str),
-            limit=KANON_COMPLETION_ERRORS_REPORT_LIMIT,
-        )
-        _print_finding(errors_finding)
+    # The cache directory always resolves under the shared KANON_HOME root, so
+    # the completion-errors report is read unconditionally (the cache has no
+    # "unset" state now that it shares the KANON_HOME store).
+    errors_finding = _check_completion_errors_report(
+        resolve_cache_dir(),
+        limit=KANON_COMPLETION_ERRORS_REPORT_LIMIT,
+    )
+    _print_finding(errors_finding)
 
     # -- Check 9: completion-script staleness --
     if completion_generator is not None:
@@ -1132,7 +1133,8 @@ def doctor_command(
     Checks 2-5 and 11 are only run when both files are present and the
     hash is valid.
 
-    Check 7 runs when KANON_CACHE_DIR is set in the environment.
+    Check 7 always runs, reading the completion-errors log from the cache
+    directory resolved under the shared KANON_HOME root.
 
     Check 9 runs when completion_generator is provided (not None).
 
@@ -1187,12 +1189,14 @@ def doctor_command(
     do_refresh: bool = getattr(args, "refresh_completion_cache", False)
     do_prune: bool = getattr(args, "prune_cache", False)
 
-    # Resolve cache_dir from environment (used by subchecks 7, 8, 10).
-    cache_dir_str: str | None = os.environ.get(KANON_CACHE_DIR_ENV)
-    cache_dir: pathlib.Path | None = pathlib.Path(cache_dir_str) if cache_dir_str is not None else None
+    # Resolve the cache directory from the shared KANON_HOME root (used by
+    # subchecks 8 and 10). The cache always resolves to <KANON_HOME>/cache; there
+    # is no "unset" state, so the cache-mutating subchecks run whenever their flag
+    # is set.
+    cache_dir: pathlib.Path = resolve_cache_dir()
 
     # -- Check 8: completion-cache invalidation (--refresh-completion-cache) --
-    if do_refresh and cache_dir is not None:
+    if do_refresh:
         completion_cache_dir = cache_dir / KANON_COMPLETION_CACHE_DIR
         try:
             removed = _refresh_completion_cache(completion_cache_dir)
@@ -1209,7 +1213,7 @@ def doctor_command(
         )
 
     # -- Check 10a: cache prune (--prune-cache) --
-    if do_prune and cache_dir is not None:
+    if do_prune:
         age_days = KANON_CACHE_PRUNE_AGE_DAYS
         count_pruned, total_bytes = _prune_cache(cache_dir, age_days, now)
         _print_finding(
@@ -1405,7 +1409,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             " 10. Stale cache pruning + stale-lock advisory (--prune-cache)\n"
             " 11. Remote reachability sanity check (warning only; exit 0)\n\n"
             "With --refresh-completion-cache, invalidates the completion-cache subdir\n"
-            "under KANON_CACHE_DIR. With --prune-cache, removes cache files whose\n"
+            "under the KANON_HOME cache. With --prune-cache, removes cache files whose\n"
             "atime exceeds KANON_CACHE_PRUNE_AGE_DAYS days and reports stale\n"
             "install-lock files as an advisory (does not delete them).\n"
             "Both flags are independent and may be combined."
@@ -1457,7 +1461,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         default=False,
         help=(
             "Subcheck 8: invalidate the shell completion cache under "
-            "${KANON_CACHE_DIR}/completion-cache/. "
+            "<KANON_HOME>/cache/completion-cache/. "
             "Removes all files there and recreates the directory with mode 0700. "
             "Reports an info finding with the count of files removed."
         ),
@@ -1469,7 +1473,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         action="store_true",
         default=False,
         help=(
-            f"Subcheck 10: remove cache files under ${{KANON_CACHE_DIR}} whose last-access "
+            f"Subcheck 10: remove cache files under the KANON_HOME cache whose last-access "
             f"time is older than KANON_CACHE_PRUNE_AGE_DAYS days (default {KANON_CACHE_PRUNE_AGE_DAYS}). "
             "Reports an info finding with the count and total byte size pruned. "
             "Also reports stale .kanon-data/.kanon-install.lock files as advisory "
@@ -1524,13 +1528,13 @@ def _refresh_completion_cache(cache_dir: pathlib.Path) -> int:
 
     Args:
         cache_dir: Path to the completion-cache directory to invalidate.
-            Typically ``${KANON_CACHE_DIR}/completion-cache``.
+            Typically ``<KANON_HOME>/cache/completion-cache``.
 
     Returns:
         The number of files that were removed.
     """
     if not cache_dir.exists():
-        cache_dir.mkdir(parents=True, mode=KANON_CACHE_DIR_MODE)
+        cache_dir.mkdir(parents=True, mode=KANON_HOME_CACHE_DIR_MODE)
         return 0
 
     # Count all files recursively before removal.
@@ -1538,7 +1542,7 @@ def _refresh_completion_cache(cache_dir: pathlib.Path) -> int:
 
     # Remove the entire directory tree and recreate it empty with mode 0700.
     shutil.rmtree(cache_dir)
-    cache_dir.mkdir(parents=True, mode=KANON_CACHE_DIR_MODE)
+    cache_dir.mkdir(parents=True, mode=KANON_HOME_CACHE_DIR_MODE)
 
     return removed
 

@@ -280,8 +280,11 @@ class TestInstallLifecycle:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-    def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
+    def test_full_lifecycle(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         mp_dir = tmp_path / ".claude-mp"
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "REPO_REV=v2.0.0\n"
@@ -306,7 +309,7 @@ class TestInstallLifecycle:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mp_dir.is_dir()
-        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
+        assert (store / ".kanon-data" / "sources" / "build").is_dir()
         mock_init.assert_called_once()
         mock_envsubst.assert_called_once()
         mock_sync.assert_called_once()
@@ -457,18 +460,24 @@ class TestInstallWorkspaceLock:
         sha="abc123",
     )
 
-    def test_install_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
-        """install() creates .kanon-data/ via kanon_workspace_lock eager-create.
+    def test_install_creates_kanon_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """install() creates .kanon-data/ under the KANON_HOME store via eager-create.
 
-        A fresh workspace with no prior .kanon-data/ must end up with the
-        directory after install() runs (even if the install fails later).
+        A fresh store with no prior .kanon-data/ must end up with the directory
+        under <KANON_HOME>/store after install() runs (even if the install fails
+        later).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
         """
         from kanon_cli.core.install import _RefResolution
 
         fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
+
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
@@ -479,7 +488,7 @@ class TestInstallWorkspaceLock:
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (store / ".kanon-data").exists()
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -490,25 +499,33 @@ class TestInstallWorkspaceLock:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "install() must create .kanon-data/ as a side effect of kanon_workspace_lock eager-create"
+        assert (store / ".kanon-data").is_dir(), (
+            "install() must create .kanon-data/ under <KANON_HOME>/store as a side effect "
+            "of kanon_workspace_lock eager-create"
         )
 
-    def test_install_lock_file_created_in_kanon_data(self, tmp_path: pathlib.Path) -> None:
-        """install() creates the workspace lock file inside .kanon-data/.
+    def test_install_lock_file_created_in_kanon_data(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """install() creates the workspace lock file inside the store .kanon-data/.
 
         After install() completes, the lock file must persist at
-        .kanon-data/INSTALL_LOCK_FILENAME so subsequent invocations can
-        lock on the same file.
+        <KANON_HOME>/store/.kanon-data/INSTALL_LOCK_FILENAME so subsequent
+        invocations can lock on the same file.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
         """
         from kanon_cli.constants import INSTALL_LOCK_FILENAME
         from kanon_cli.core.install import _RefResolution
 
         fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
 
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
@@ -527,7 +544,7 @@ class TestInstallWorkspaceLock:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        lock_path = store / ".kanon-data" / INSTALL_LOCK_FILENAME
         assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"
 
 
@@ -817,13 +834,19 @@ class TestInstallMarketplaceLockfileState:
 
 
 # ---------------------------------------------------------------------------
-# AC-1/AC-2/AC-4: install honors KANON_WORKSPACE_DIR
+# AC-23: install resolves the artifact base under the KANON_HOME store
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestInstallWorkspaceDirEnvVar:
-    """install() places .packages/ and .kanon-data/ under KANON_WORKSPACE_DIR when set."""
+class TestInstallKanonHomeStore:
+    """install() places .packages/ and .kanon-data/ under <KANON_HOME>/store.
+
+    The artifact base resolves to the shared KANON_HOME store (spec Section 7.1 /
+    Section 8 / FR-15), replacing the removed KANON_WORKSPACE_DIR override. The
+    .kanon / .kanon.lock files stay in the project directory; only fetched
+    artifacts move into the store.
+    """
 
     _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
     _FAKE_REF_RESOLUTION = None
@@ -833,149 +856,112 @@ class TestInstallWorkspaceDirEnvVar:
 
         self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
-    def test_install_creates_artifacts_under_workspace_dir(
+    def _write_kanonenv(self, path: pathlib.Path) -> None:
+        path.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+        )
+
+    def _patched_install(self, kanonenv: pathlib.Path, lock_path: pathlib.Path) -> None:
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path)
+
+    def test_install_creates_artifacts_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-1: artifacts land under KANON_WORKSPACE_DIR, not under cwd."""
-        alt_workspace = tmp_path / "alt_workspace"
+        """AC-23: .kanon-data/ lands under <KANON_HOME>/store, never in cwd."""
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "cwd_dir"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REF=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-            "KANON_SOURCE_build_NAME=build\n"
-            "KANON_SOURCE_build_GITBASE=https://example.com\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path)
+        self._patched_install(kanonenv, lock_path)
 
-        assert (alt_workspace / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ must be created under the alt workspace"
-        )
-        assert not (cwd_dir / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ must NOT be created in cwd"
-        )
-        assert not (cwd_dir / ".packages").exists(), "KANON_WORKSPACE_DIR set: .packages/ must NOT be created in cwd"
+        assert (store / ".kanon-data").exists(), ".kanon-data/ must be created under <KANON_HOME>/store"
+        assert not (cwd_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in cwd"
+        assert not (cwd_dir / ".packages").exists(), ".packages/ must NOT be created in cwd"
 
-    def test_install_creates_packages_under_workspace_dir(
+    def test_install_creates_packages_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-1: .packages/ lands under KANON_WORKSPACE_DIR."""
-        alt_workspace = tmp_path / "alt_ws"
+        """AC-23: .packages/ lands under <KANON_HOME>/store."""
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REF=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-            "KANON_SOURCE_build_NAME=build\n"
-            "KANON_SOURCE_build_GITBASE=https://example.com\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path)
+        self._patched_install(kanonenv, lock_path)
 
-        assert (alt_workspace / ".packages").exists(), (
-            "KANON_WORKSPACE_DIR set: .packages/ must be created under the alt workspace"
-        )
+        assert (store / ".packages").exists(), ".packages/ must be created under <KANON_HOME>/store"
 
-    def test_install_workspace_dir_created_if_absent(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-1: KANON_WORKSPACE_DIR is created automatically when it does not exist."""
-        alt_workspace = tmp_path / "new_dir" / "deeply_nested"
+    def test_install_store_created_if_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AC-23: the KANON_HOME store is created automatically when it does not exist."""
+        kanon_home = tmp_path / "new_dir" / "deeply_nested"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
-        assert not alt_workspace.exists(), "pre-condition: alt workspace must not exist before install"
+        assert not store.exists(), "pre-condition: the store must not exist before install"
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REF=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-            "KANON_SOURCE_build_NAME=build\n"
-            "KANON_SOURCE_build_GITBASE=https://example.com\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path)
+        self._patched_install(kanonenv, lock_path)
 
-        assert alt_workspace.exists(), "install must create KANON_WORKSPACE_DIR if it does not exist"
+        assert store.exists(), "install must create the <KANON_HOME>/store directory if it does not exist"
 
-    def test_install_unwritable_workspace_dir_exits_nonzero(
+    def test_install_unwritable_kanon_home_exits_nonzero(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-4: unwritable KANON_WORKSPACE_DIR causes non-zero exit with actionable message."""
+        """AC-23: an unwritable KANON_HOME causes a non-zero exit with no cwd fallback."""
         import stat
 
         locked_parent = tmp_path / "locked"
         locked_parent.mkdir()
-        unwritable = locked_parent / "workspace"
+        unwritable_home = locked_parent / "home"
         locked_parent.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(unwritable))
+        monkeypatch.setenv("KANON_HOME", str(unwritable_home))
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir(parents=True, exist_ok=True)
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REF=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-            "KANON_SOURCE_build_NAME=build\n"
-            "KANON_SOURCE_build_GITBASE=https://example.com\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
         try:
             with pytest.raises(SystemExit) as exc_info:
-                install(kanonenv, lock_file_path=lock_path)
-            assert exc_info.value.code != 0, "unwritable KANON_WORKSPACE_DIR must exit non-zero"
+                self._patched_install(kanonenv, lock_path)
+            assert exc_info.value.code != 0, "unwritable KANON_HOME must exit non-zero"
             assert not (cwd_dir / ".kanon-data").exists(), (
-                "on unwritable KANON_WORKSPACE_DIR, no artifacts must be written to cwd (no fallback)"
+                "on unwritable KANON_HOME, no artifacts must be written to cwd (no fallback)"
             )
             assert not (cwd_dir / ".packages").exists(), (
-                "on unwritable KANON_WORKSPACE_DIR, no .packages/ must appear in cwd (no fallback)"
+                "on unwritable KANON_HOME, no .packages/ must appear in cwd (no fallback)"
             )
         finally:
             locked_parent.chmod(stat.S_IRWXU)

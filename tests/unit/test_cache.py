@@ -9,7 +9,7 @@ TDD-paired test file covering:
   instead of os.fork/setsid/dup2 directly.
 - utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
 
-All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
+All tests set KANON_HOME to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
 PermissionError on /tmp.
 """
@@ -73,7 +73,7 @@ def test_missing_file_writes_and_returns_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """First-touch: missing accessed_at.txt -> write now, return True."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -89,7 +89,7 @@ def test_within_window_no_write_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Within coalesce window: no write, return False."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -108,7 +108,7 @@ def test_at_boundary_writes_and_returns_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """At boundary (now - prior == window): write now, return True."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -126,7 +126,7 @@ def test_past_window_writes_and_returns_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Past window (now - prior > window): write now, return True."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -144,7 +144,7 @@ def test_clock_skew_force_forward_returns_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Clock skew (prior > now): rewrite to now, return True."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -162,7 +162,7 @@ def test_corrupt_file_treated_as_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Non-integer content is treated as missing: write now, return True."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -180,7 +180,7 @@ def test_written_file_has_secure_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Written accessed_at.txt must have mode 0600 (owner read/write only)."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     path = tmp_path / "accessed_at.txt"
@@ -200,7 +200,7 @@ def test_write_entries_clean_entries_written(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Clean entries are written verbatim to the file, one per line."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     out = tmp_path / "index.txt"
@@ -214,7 +214,7 @@ def test_write_entries_dirty_entries_excluded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Entries with forbidden characters are excluded from the written file."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     out = tmp_path / "index.txt"
@@ -234,7 +234,7 @@ def test_write_entries_logs_dropped_entry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each dropped entry produces exactly one log line in completion-errors.log."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
 
@@ -245,7 +245,8 @@ def test_write_entries_logs_dropped_entry(
         completer_name="__complete_test",
     )
 
-    log_path = tmp_path / "completion-errors.log"
+    # With KANON_COMPLETION_LOG unset, the log defaults to <KANON_HOME>/cache.
+    log_path = tmp_path / "cache" / "completion-errors.log"
     assert log_path.exists(), "completion-errors.log was not created"
     lines = [ln for ln in log_path.read_text().splitlines() if ln.strip()]
     assert len(lines) == 2, f"Expected 2 log lines, got {len(lines)}: {lines}"
@@ -257,14 +258,15 @@ def test_write_entries_log_line_contains_newline_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Log line for a dropped newline entry contains 'newline' in the message."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
 
     out = tmp_path / "index.txt"
     write_entries(out, ["bad\nentry"], completer_name="__complete_test")
 
-    log_path = tmp_path / "completion-errors.log"
+    # With KANON_COMPLETION_LOG unset, the log defaults to <KANON_HOME>/cache.
+    log_path = tmp_path / "cache" / "completion-errors.log"
     content = log_path.read_text()
     assert "newline" in content
 
@@ -275,7 +277,7 @@ def test_write_entries_file_mode_is_0600(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Written entries file has mode 0600."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     out = tmp_path / "index.txt"
@@ -290,7 +292,7 @@ def test_write_entries_empty_input_writes_empty_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Empty entries list writes an empty file."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     out = tmp_path / "index.txt"
@@ -326,7 +328,7 @@ def test_fork_background_refresh_disabled_by_env_does_not_spawn(
     This test covers the fast-return branch of the function defined in cache.py
     and satisfies source-test atomicity for the fork_background_refresh symbol.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
 
     called: list[str] = []
@@ -352,7 +354,7 @@ def test_fork_background_refresh_routes_through_spawn_detached(
     This test verifies AC-9: the os.fork/setsid/dup2 sequence has been
     replaced by the spawn_detached helper.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
 
     called: list[str] = []
@@ -381,15 +383,15 @@ class TestSearchEntryDir:
         """The entry dir is cache_dir()/search/<sha256-of-url@ref>."""
         import hashlib
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         url = "https://example.com/org/catalog.git"
         ref = "main"
         expected_sha = hashlib.sha256(f"{url}@{ref}".encode()).hexdigest()
         entry_dir = search_entry_dir(url, ref)
-        assert entry_dir == tmp_path / "search" / expected_sha
+        assert entry_dir == tmp_path / "cache" / "search" / expected_sha
 
     def test_distinct_refs_yield_distinct_dirs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         url = "https://example.com/org/catalog.git"
         assert search_entry_dir(url, "main") != search_entry_dir(url, "v1.0.0")
 
@@ -428,7 +430,7 @@ class TestSearchVersionsRoundTrip:
     """write_search_versions then read_search_versions_with_freshness round-trips."""
 
     def test_round_trip_preserves_order(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         url = "https://example.com/org/catalog.git"
         ref = "main"
         written = ["alpha@1.2.0", "alpha@1.1.0", "alpha@1.0.0", "alpha@latest"]
@@ -445,7 +447,7 @@ class TestSearchVersionsRoundTrip:
         A tab delimiter would be dropped (control char < 0x20); the @ delimiter
         used by the search-path encoding survives, so the versions persist.
         """
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         url = "https://example.com/org/catalog.git"
         ref = "main"
         write_search_versions(url, ref, ["my-entry@2.3.4"], now=1_000_000)

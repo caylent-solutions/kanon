@@ -282,9 +282,9 @@ class TestConcurrentInstallSerialization:
     ) -> None:
         """The workspace lock file exists after two concurrent kanon install runs.
 
-        The lock file at .kanon-data/INSTALL_LOCK_FILENAME must be present after
-        both subprocesses exit (regardless of their exit code), since the context
-        manager creates it eagerly on entry.
+        The lock file at <store>/.kanon-data/INSTALL_LOCK_FILENAME must be present
+        after both subprocesses exit (regardless of their exit code), since the
+        context manager creates it eagerly on entry under the shared KANON_HOME store.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -293,13 +293,14 @@ class TestConcurrentInstallSerialization:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         _run_procs_wait([_install_cmd(kanonenv), _install_cmd(kanonenv)], env, str(tmp_path))
 
         assert lock_path.exists(), (
             f"Workspace lock file must exist at {lock_path} after concurrent installs "
-            "completed (the lock file is created eagerly on context entry)"
+            "completed (the lock file is created eagerly on context entry under the store)"
         )
 
     def test_serialisation_proven_by_mtime_ordering(
@@ -328,7 +329,8 @@ class TestConcurrentInstallSerialization:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         # First subprocess: creates and acquires lock, then exits (releases).
         subprocess.run(
@@ -413,7 +415,8 @@ class TestInstallPlusAddSerialization:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         _run_procs_wait(
             [_install_cmd(kanonenv), _add_cmd(kanonenv)],
@@ -455,7 +458,8 @@ class TestPairwiseSerialization:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         results = _run_procs_wait(
             [_install_cmd(kanonenv), _remove_cmd(kanonenv)],
@@ -480,7 +484,8 @@ class TestPairwiseSerialization:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         results = _run_procs_wait(
             [_install_cmd(kanonenv), _doctor_cmd(kanonenv)],
@@ -600,24 +605,26 @@ class TestConcurrentInstallCycle:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """The .kanon-data/ directory exists after two concurrent kanon install runs.
+        """The store .kanon-data/ directory exists after two concurrent kanon install runs.
 
         AC-CYCLE-001: the workspace lock context manager must create .kanon-data/
-        eagerly before acquiring the lock, so the directory is present regardless
-        of whether the install subsequently fails (e.g. remote unreachable).
+        eagerly before acquiring the lock under the shared KANON_HOME store, so the
+        directory is present regardless of whether the install subsequently fails
+        (e.g. remote unreachable).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         _run_procs_wait([_install_cmd(kanonenv), _install_cmd(kanonenv)], env, str(tmp_path))
 
-        kanon_data = tmp_path / ".kanon-data"
+        kanon_data = store_base / ".kanon-data"
         assert kanon_data.is_dir(), (
             f".kanon-data/ must exist at {kanon_data} after concurrent kanon install runs; "
-            "the workspace lock context manager must create it eagerly"
+            "the workspace lock context manager must create it eagerly under the store"
         )
 
     def test_no_output_corruption_from_concurrent_installs(
@@ -660,7 +667,8 @@ class TestConcurrentInstallCycle:
 
         kanonenv = _write_kanonenv(tmp_path)
         env = _build_env()
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         proc = subprocess.run(
             list(_install_cmd(kanonenv)),

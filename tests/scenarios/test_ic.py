@@ -102,37 +102,48 @@ def _kanonenv_content(manifest_url: str, *, extra_lines: list[str] | None = None
     return "\n".join(lines) + "\n"
 
 
-def _assert_install_pass_criteria(work_dir: pathlib.Path, result) -> None:
-    """Assert the standard install pass criteria documented for IC-01..IC-04."""
+def _assert_install_pass_criteria(work_dir: pathlib.Path, store_base: pathlib.Path, result) -> None:
+    """Assert the standard install pass criteria documented for IC-01..IC-04.
+
+    The committed ``.kanon`` stays in ``work_dir``; the install artifacts
+    (``.packages/``, ``.kanon-data/``, ``.gitignore``) live under the shared
+    store (``<KANON_HOME>/store``), passed in as ``store_base``.
+    """
     assert result.returncode == 0, (
         f"kanon install exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
     assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
-    assert (work_dir / ".kanon-data" / "sources" / "primary").is_dir(), ".kanon-data/sources/primary/ directory missing"
-    assert (work_dir / ".packages").is_dir(), ".packages/ directory missing"
-    pkg_alpha_link = work_dir / ".packages" / "pkg-alpha"
+    assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+        ".kanon-data/sources/primary/ directory missing under store"
+    )
+    assert (store_base / ".packages").is_dir(), ".packages/ directory missing under store"
+    pkg_alpha_link = store_base / ".packages" / "pkg-alpha"
     assert pkg_alpha_link.is_symlink(), ".packages/pkg-alpha is not a symlink"
     link_target = os.readlink(str(pkg_alpha_link))
     assert ".kanon-data/sources/primary" in link_target or (
-        work_dir / ".kanon-data" / "sources" / "primary"
+        store_base / ".kanon-data" / "sources" / "primary"
     ).as_posix() in os.path.realpath(str(pkg_alpha_link)), (
         f"symlink target does not reference .kanon-data/sources/primary: {link_target!r}"
     )
-    gitignore = work_dir / ".gitignore"
+    gitignore = store_base / ".gitignore"
     assert gitignore.exists(), ".gitignore does not exist"
     gitignore_text = gitignore.read_text()
     assert ".packages/" in gitignore_text, ".gitignore missing '.packages/'"
     assert ".kanon-data/" in gitignore_text, ".gitignore missing '.kanon-data/'"
 
 
-def _assert_clean_pass_criteria(work_dir: pathlib.Path, result) -> None:
-    """Assert the standard clean pass criteria documented for IC-01."""
+def _assert_clean_pass_criteria(store_base: pathlib.Path, result) -> None:
+    """Assert the standard clean pass criteria documented for IC-01.
+
+    Install artifacts live under the shared store, so clean removes
+    ``.packages/`` and ``.kanon-data/`` from ``store_base``.
+    """
     assert result.returncode == 0, (
         f"kanon clean exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
     assert "kanon clean: done" in result.stdout, f"'kanon clean: done' not in stdout: {result.stdout!r}"
-    assert not (work_dir / ".packages").exists(), ".packages/ still exists after clean"
-    assert not (work_dir / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
+    assert not (store_base / ".packages").exists(), ".packages/ still exists after clean"
+    assert not (store_base / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +159,7 @@ class TestIC:
 
         work_dir = tmp_path / "test-ic01"
         work_dir.mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         manifest_url = manifest_bare.as_uri()
         (work_dir / ".kanon").write_text(_kanonenv_content(manifest_url))
@@ -157,10 +169,10 @@ class TestIC:
             work_dir,
             extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
-        _assert_install_pass_criteria(work_dir, install_result)
+        _assert_install_pass_criteria(work_dir, store_base, install_result)
 
         clean_result = kanon_clean(work_dir)
-        _assert_clean_pass_criteria(work_dir, clean_result)
+        _assert_clean_pass_criteria(store_base, clean_result)
 
     def test_ic_02_shell_variable_expansion(self, tmp_path: pathlib.Path) -> None:
         """IC-02: ${HOME} in .kanon is expanded during parsing, not stored expanded."""
@@ -206,6 +218,7 @@ class TestIC:
 
         work_dir = tmp_path / "test-ic03"
         work_dir.mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         manifest_url = manifest_bare.as_uri()
         kanon_text = (
@@ -238,7 +251,7 @@ class TestIC:
         assert "kanon install: done" in install_result.stdout, (
             f"'kanon install: done' not in stdout: {install_result.stdout!r}"
         )
-        pkg_alpha_link = work_dir / ".packages" / "pkg-alpha"
+        pkg_alpha_link = store_base / ".packages" / "pkg-alpha"
         assert pkg_alpha_link.is_symlink(), (
             ".packages/pkg-alpha symlink missing -- comments/blank lines may have broken parsing"
         )

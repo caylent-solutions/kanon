@@ -20,9 +20,10 @@ from kanon_cli.completions.cache import (
     write_epoch,
 )
 from kanon_cli.constants import (
-    KANON_CACHE_DIR_DEFAULT,
-    KANON_CACHE_DIR_ENV,
     KANON_COMPLETION_LOG_ENV,
+    KANON_HOME_CACHE_SUBDIR,
+    KANON_HOME_DIR_NAME,
+    KANON_HOME_ENV_VAR,
 )
 
 
@@ -43,17 +44,20 @@ def _sha256(s: str) -> str:
 @pytest.fixture()
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove cache-related env vars so tests see a clean environment."""
-    monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("KANON_HOME", raising=False)
     monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
 
 
 @pytest.fixture()
 def tmp_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Set KANON_CACHE_DIR to a fresh tmp dir and return the dir."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-    return tmp_path
+    """Point KANON_HOME at a fresh tmp dir and return the resolved cache dir.
+
+    The cache lives at <KANON_HOME>/cache, so the returned path is
+    ``tmp_path / "cache"`` -- the exact value ``cache_dir()`` resolves to under
+    the configured KANON_HOME.
+    """
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
+    return cache_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -63,46 +67,36 @@ def tmp_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.unit
 class TestCacheDirPrecedence:
-    def test_kanon_cache_dir_wins_when_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-        assert cache_dir() == tmp_path
+    """cache_dir() resolves under the shared KANON_HOME root (<KANON_HOME>/cache).
 
-    def test_xdg_cache_home_used_when_kanon_cache_dir_unset(
+    The old per-user KANON_CACHE_DIR override and its XDG_CACHE_HOME fallback are
+    removed; the cache now always lives under KANON_HOME (env > default ~/.kanon).
+    """
+
+    def test_cache_dir_is_kanon_home_cache_subdir_when_env_set(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
-        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-        assert cache_dir() == tmp_path / "kanon"
+        """With KANON_HOME set, the cache is <KANON_HOME>/cache."""
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        assert cache_dir() == tmp_path / KANON_HOME_CACHE_SUBDIR
 
-    def test_fallback_to_home_cache_kanon(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
-        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-        expected = Path("~/.cache/kanon").expanduser()
+    def test_cache_dir_ignores_xdg_cache_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """XDG_CACHE_HOME no longer influences the cache location."""
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg_should_be_ignored"))
+        assert cache_dir() == tmp_path / KANON_HOME_CACHE_SUBDIR
+
+    def test_cache_dir_default_is_under_home_kanon_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With KANON_HOME unset, the cache defaults to $HOME/.kanon/cache (env-derived)."""
+        monkeypatch.delenv("KANON_HOME", raising=False)
+        expected = Path.home() / KANON_HOME_DIR_NAME / KANON_HOME_CACHE_SUBDIR
         assert cache_dir() == expected
 
-    @pytest.mark.parametrize(
-        "env_var_name,expected_suffix",
-        [
-            ("KANON_CACHE_DIR", None),  # exact path
-            ("XDG_CACHE_HOME", "kanon"),  # appended subdir
-        ],
-    )
-    def test_env_var_precedence_parametrized(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        env_var_name: str,
-        expected_suffix: str | None,
-    ) -> None:
-        monkeypatch.delenv("KANON_CACHE_DIR", raising=False)
-        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
-        monkeypatch.setenv(env_var_name, str(tmp_path))
-        result = cache_dir()
-        if expected_suffix is None:
-            assert result == tmp_path
-        else:
-            assert result == tmp_path / expected_suffix
+    def test_cache_dir_empty_home_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty KANON_HOME value resolves to the default $HOME/.kanon/cache."""
+        monkeypatch.setenv("KANON_HOME", "")
+        expected = Path.home() / KANON_HOME_DIR_NAME / KANON_HOME_CACHE_SUBDIR
+        assert cache_dir() == expected
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +323,7 @@ class TestLogCompletionError:
         assert os.stat(log_path).st_mode & 0o777 == 0o600
 
     def test_default_log_path_under_cache_dir(self, tmp_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When KANON_COMPLETION_LOG is unset, log goes to KANON_CACHE_DIR/completion-errors.log."""
+        """When KANON_COMPLETION_LOG is unset, log goes to <KANON_HOME>/cache/completion-errors.log."""
         monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
         log_completion_error("__complete_test", ValueError("x"))
         default_log = tmp_cache / "completion-errors.log"
@@ -351,11 +345,14 @@ class TestLogCompletionError:
 
 @pytest.mark.unit
 class TestCacheConstants:
-    def test_kanon_cache_dir_env_value(self) -> None:
-        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
+    def test_kanon_home_env_var_value(self) -> None:
+        assert KANON_HOME_ENV_VAR == "KANON_HOME"
 
-    def test_kanon_cache_dir_default_value(self) -> None:
-        assert KANON_CACHE_DIR_DEFAULT == "~/.cache/kanon"
+    def test_kanon_home_dir_name_default(self) -> None:
+        assert KANON_HOME_DIR_NAME == ".kanon"
+
+    def test_kanon_home_cache_subdir_value(self) -> None:
+        assert KANON_HOME_CACHE_SUBDIR == "cache"
 
     def test_kanon_completion_log_env_value(self) -> None:
         assert KANON_COMPLETION_LOG_ENV == "KANON_COMPLETION_LOG"

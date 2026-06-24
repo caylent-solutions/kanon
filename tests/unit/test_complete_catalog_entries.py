@@ -178,7 +178,7 @@ class TestFetchAndCache:
         # Build index returns controlled names; patch _build_index to avoid needing
         # a real clone.
         cache_entry_dir = tmp_path / "cache_entry"
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def _fake_clone(url: str, ref: str, dest: Path) -> Path:
             specs = dest / "repo-specs"
@@ -202,7 +202,7 @@ class TestFetchAndCache:
         # No repo-specs/ directory
 
         cache_entry_dir = tmp_path / "cache_entry"
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "_clone_manifest_repo", return_value=repo_dir):
             result = _fetch_and_cache("https://example.com/repo.git", "main", cache_entry_dir)
@@ -274,7 +274,7 @@ class TestInlineFetch:
 
     def test_success_returns_names(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On successful fetch, the name list is returned."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         cache_entry_dir = tmp_path / "entry"
         expected = ["alpha", "beta"]
 
@@ -285,7 +285,7 @@ class TestInlineFetch:
 
     def test_timeout_returns_empty_and_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On TimeoutError, returns empty list and logs the error."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         cache_entry_dir = tmp_path / "entry"
 
         with patch.object(ce, "_fetch_and_cache", side_effect=TimeoutError("timed out")):
@@ -297,7 +297,7 @@ class TestInlineFetch:
 
     def test_exception_returns_empty_and_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On any exception from _fetch_and_cache, returns empty list and logs."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         cache_entry_dir = tmp_path / "entry"
 
         with patch.object(ce, "_fetch_and_cache", side_effect=RuntimeError("network error")):
@@ -320,7 +320,7 @@ class TestComplete:
     def _env_setup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Configure env vars for a clean test environment."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -451,7 +451,7 @@ class TestComplete:
     def test_missing_catalog_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing KANON_CATALOG_SOURCES: empty result and error logged (AC-FUNC-008)."""
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "log_completion_error") as mock_log:
             result = complete("")
@@ -492,7 +492,7 @@ class TestHandle:
     ) -> None:
         """_handle() prints one name per line and exits 0 on success."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
             args = MagicMock()
@@ -510,7 +510,7 @@ class TestHandle:
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "complete", return_value=[]):
             args = MagicMock()
@@ -570,7 +570,7 @@ class TestParseCatalogSource:
     ) -> None:
         """complete() with invalid KANON_CATALOG_SOURCES logs error and returns [] (lines 266-268)."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "no-at-sign-here")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "log_completion_error") as mock_log:
             result = complete("")
@@ -620,7 +620,7 @@ class TestHandleRefreshOnly:
     ) -> None:
         """When args.refresh_only is True, _handle() refreshes cache but prints nothing."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
             args = MagicMock()
@@ -638,7 +638,7 @@ class TestHandleRefreshOnly:
     ) -> None:
         """When args.refresh_only is False, _handle() prints results normally."""
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(ce, "complete", return_value=["foo", "bar"]):
             args = MagicMock()
@@ -663,7 +663,7 @@ class TestInlineFetchTimeoutPassthrough:
 
     def test_timeout_passed_to_fetch_and_cache(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """_inline_fetch must pass the timeout value via environment to the underlying clone."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         cache_entry_dir = tmp_path / "entry"
 
         captured_env: dict[str, str] = {}
@@ -682,7 +682,7 @@ class TestInlineFetchTimeoutPassthrough:
 
     def test_timeout_restores_pre_existing_env_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores the original value after fetch."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         # Pre-set a different timeout value to verify restoration
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         cache_entry_dir = tmp_path / "entry"
@@ -716,7 +716,7 @@ class TestStderrTtyDiagnostic:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When sys.stderr.isatty() is True, a diagnostic line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         # Remove KANON_CATALOG_SOURCES to trigger the missing-source error path in complete()
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
@@ -744,7 +744,7 @@ class TestStderrTtyDiagnostic:
 
     def test_log_completion_error_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []

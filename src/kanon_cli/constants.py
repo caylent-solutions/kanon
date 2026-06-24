@@ -5,6 +5,7 @@ scattered across source files.
 """
 
 import os
+import pathlib
 import re
 
 
@@ -71,12 +72,57 @@ SUFFIX_TO_KEY = {
 }
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
-# -- Workspace directory --
-# When set, install and clean resolve .packages/ and .kanon-data/ relative to
-# this directory instead of beside .kanon.  The value is resolved to an
-# absolute path; the directory is created if absent.  An unwritable value
-# causes a non-zero exit with an actionable message -- no silent cwd fallback.
-WORKSPACE_DIR_ENV_VAR = "KANON_WORKSPACE_DIR"
+# -- Shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15, FR-16) --
+# Name of the environment variable that overrides the shared kanon home root.
+# The home root is the single content-addressed location under which all fetched
+# data lives (the store + the completion / catalog-audit cache + logs), deduped
+# across projects. Precedence: --home/--store-dir flag > KANON_HOME env > default.
+# An unwritable resolved home fails fast with an actionable message -- there is no
+# silent relocation. Subsumes the two removed location env vars (the former
+# per-workspace artifact-dir override and the per-user cache-dir override).
+KANON_HOME_ENV_VAR = "KANON_HOME"
+
+# Default kanon home directory name relative to the user home directory. The
+# absolute default is derived at runtime as ``Path.home() / KANON_HOME_DIR_NAME``
+# (never a hard-coded absolute path); resolve_kanon_home() performs the join so
+# the value honours the caller's real home directory.
+KANON_HOME_DIR_NAME = ".kanon"
+
+# Subdirectory under the resolved KANON_HOME root that holds the content-addressed
+# artifact base (the .packages/ and .kanon-data/ trees produced by install/clean).
+# Spec Section 8 store.
+KANON_HOME_STORE_SUBDIR = "store"
+
+# Subdirectory under the resolved KANON_HOME root that holds the shell-completion
+# and catalog-audit caches. Spec Section 4.1 / Section 7.3 (cache moves under
+# ~/.kanon/cache).
+KANON_HOME_CACHE_SUBDIR = "cache"
+
+
+def resolve_kanon_home() -> pathlib.Path:
+    """Resolve the shared kanon home root directory.
+
+    Resolution precedence (highest wins), per spec Section 7.1:
+    1. The ``KANON_HOME`` environment variable, when set to a non-empty value.
+    2. The default ``Path.home() / KANON_HOME_DIR_NAME`` (i.e. ``~/.kanon``).
+
+    The default is derived from the real user home directory at call time; no
+    absolute path is hard-coded. The returned path is NOT created here -- the
+    caller that needs a writable directory (the store base dir, the cache dir)
+    is responsible for creation and for failing fast on an unwritable target.
+
+    The ``--home`` / ``--store-dir`` CLI flag override (precedence step 0) is
+    threaded by the command layer in a later store-concurrency task; this helper
+    is the env-and-default resolution shared by every reader.
+
+    Returns:
+        A ``pathlib.Path`` to the resolved kanon home root.
+    """
+    raw = os.environ.get(KANON_HOME_ENV_VAR)
+    if raw:
+        return pathlib.Path(raw)
+    return pathlib.Path.home() / KANON_HOME_DIR_NAME
+
 
 # -- Catalog --
 # Name of the environment variable holding the plural catalog discovery set:
@@ -225,15 +271,6 @@ if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
         f"got {KANON_COMPLETION_ERRORS_REPORT_LIMIT}"
     )
 
-# Name of the environment variable that specifies the kanon cache directory.
-# The cache directory holds the completion-errors log and other cache files
-# written by E7 completion callbacks. When unset, there is no cache directory.
-KANON_CACHE_DIR_ENV = "KANON_CACHE_DIR"
-
-# Default cache directory path (XDG-style; resolved at runtime via expanduser).
-# Section 11.4 / Section 11.6 default.
-KANON_CACHE_DIR_DEFAULT = "~/.cache/kanon"
-
 # TTL in seconds for shell-completion cache entries.
 # Completers skip a remote fetch when the cached fetched_at is within this age.
 # Section 11.4 lifecycle header.
@@ -264,7 +301,8 @@ KANON_COMPLETION_ENABLED = 1
 KANON_ACCESSED_AT_COALESCE_SEC = 60
 
 # Name of the environment variable that overrides the completion-errors log
-# path. When unset, the log is written to ${KANON_CACHE_DIR}/completion-errors.log.
+# path. When unset, the log is written under the resolved cache directory
+# (KANON_HOME/cache) as completion-errors.log.
 KANON_COMPLETION_LOG_ENV = "KANON_COMPLETION_LOG"
 
 # Filename of the completion-errors log within the cache directory.
@@ -299,7 +337,7 @@ KANON_STALE_COMPLETION_SCRIPT_WARNING = (
 # -- Doctor cache management (subchecks 8 + 10) --
 # Permission bits for the completion-cache directory, enforcing owner-only
 # access as required by spec Section 3.6 (trust model / credential isolation).
-KANON_CACHE_DIR_MODE = 0o700
+KANON_HOME_CACHE_DIR_MODE = 0o700
 
 # Age threshold in days for the cache prune operation (subcheck 10).
 # Files whose atime is older than this many days are removed by
@@ -540,8 +578,8 @@ if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
         f"got {KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS}"
     )
 
-# Subdirectory name under KANON_CACHE_DIR for catalog-audit cloned repos.
-# Full path: ${KANON_CACHE_DIR}/catalog-audit/<sha256-of-canonicalized-url-at-ref>/
+# Subdirectory name under the resolved cache directory for catalog-audit cloned
+# repos. Full path: <KANON_HOME>/cache/catalog-audit/<sha256-of-canonicalized-url-at-ref>/
 KANON_CATALOG_AUDIT_CACHE_SUBDIR = "catalog-audit"
 
 # Environment variable name that controls the output format for 'kanon catalog audit'.

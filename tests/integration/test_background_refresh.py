@@ -139,7 +139,9 @@ class TestBackgroundRefreshEndToEnd:
 
         env = {k: v for k, v in os.environ.items()}
         env["KANON_CATALOG_SOURCES"] = f"{catalog_url}@{catalog_ref}"
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=tmp_path makes
+        # the resolved cache equal cache_dir (= tmp_path / "cache").
+        env["KANON_HOME"] = str(tmp_path)
         env["KANON_COMPLETION_REFRESH_BG"] = "1"
         # Use a generous TTL so no inline-fetch is triggered; the pre-seeded
         # fetched_at=1 ensures STALE classification even with this TTL.

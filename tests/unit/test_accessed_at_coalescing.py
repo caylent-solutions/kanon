@@ -13,7 +13,7 @@ Parametrized cases covering every coalescing rule from spec Section 11.4:
 Mtime assertions use os.stat().st_mtime_ns (nanosecond granularity) to
 verify that the no-write case leaves the file physically untouched.
 
-All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
+All tests set KANON_HOME to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
 PermissionError on /tmp.
 """
@@ -63,7 +63,7 @@ def test_maybe_update_accessed_at_parametrized(
     expect_write: bool,
 ) -> None:
     """maybe_update_accessed_at() follows the coalescing rules for each scenario."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"
@@ -106,7 +106,7 @@ def test_two_back_to_back_calls_same_now(
     """AC-FUNC-007: first call writes (first-touch); second call with same now
     is within the coalesce window (delta == 0) and returns False without writing.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"
@@ -143,7 +143,7 @@ def test_end_to_end_cycle(
     now=1000 then now=1030 (window=60); assert first wrote, second did not;
     then call with now=1100 and assert write happened.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"

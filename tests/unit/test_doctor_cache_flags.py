@@ -25,7 +25,7 @@ import stat
 
 import pytest
 
-from kanon_cli.constants import KANON_CACHE_DIR_MODE, KANON_DOCTOR_STALE_LOCK_AGE_HOURS
+from kanon_cli.constants import KANON_DOCTOR_STALE_LOCK_AGE_HOURS, KANON_HOME_CACHE_DIR_MODE
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ class TestRefreshCompletionCacheHelper:
         from kanon_cli.commands.doctor import _refresh_completion_cache
 
         cache_dir = tmp_path / "completion-cache"
-        cache_dir.mkdir(mode=KANON_CACHE_DIR_MODE)
+        cache_dir.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         count = _refresh_completion_cache(cache_dir)
 
@@ -135,7 +135,7 @@ class TestRefreshCompletionCacheHelper:
         from kanon_cli.commands.doctor import _refresh_completion_cache
 
         cache_dir = tmp_path / "completion-cache"
-        cache_dir.mkdir(mode=KANON_CACHE_DIR_MODE)
+        cache_dir.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         for i in range(n_files):
             (cache_dir / f"cache-{i}.json").write_text(f"data-{i}", encoding="utf-8")
@@ -162,7 +162,7 @@ class TestRefreshCompletionCacheHelper:
         _refresh_completion_cache(cache_dir)
 
         mode = stat.S_IMODE(cache_dir.stat().st_mode)
-        assert mode == KANON_CACHE_DIR_MODE, f"Expected mode {oct(KANON_CACHE_DIR_MODE)}, got {oct(mode)}"
+        assert mode == KANON_HOME_CACHE_DIR_MODE, f"Expected mode {oct(KANON_HOME_CACHE_DIR_MODE)}, got {oct(mode)}"
 
     def test_refresh_creates_dir_when_absent(self, tmp_path: pathlib.Path) -> None:
         """Creates the completion-cache dir when it does not exist, returning 0.
@@ -180,7 +180,7 @@ class TestRefreshCompletionCacheHelper:
         assert count == 0
         assert cache_dir.is_dir()
         mode = stat.S_IMODE(cache_dir.stat().st_mode)
-        assert mode == KANON_CACHE_DIR_MODE
+        assert mode == KANON_HOME_CACHE_DIR_MODE
 
     def test_refresh_handles_subdirectory_with_files(self, tmp_path: pathlib.Path) -> None:
         """Handles a completion-cache dir that contains a subdirectory with files.
@@ -195,7 +195,7 @@ class TestRefreshCompletionCacheHelper:
         from kanon_cli.commands.doctor import _refresh_completion_cache
 
         cache_dir = tmp_path / "completion-cache"
-        cache_dir.mkdir(mode=KANON_CACHE_DIR_MODE)
+        cache_dir.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         # Create a subdirectory with files inside the completion cache.
         subdir = cache_dir / "subdir"
@@ -213,7 +213,9 @@ class TestRefreshCompletionCacheHelper:
         remaining = list(cache_dir.iterdir())
         assert remaining == [], f"Expected empty dir after refresh; found {remaining}"
         mode = stat.S_IMODE(cache_dir.stat().st_mode)
-        assert mode == KANON_CACHE_DIR_MODE, f"Expected mode {oct(KANON_CACHE_DIR_MODE)} after refresh; got {oct(mode)}"
+        assert mode == KANON_HOME_CACHE_DIR_MODE, (
+            f"Expected mode {oct(KANON_HOME_CACHE_DIR_MODE)} after refresh; got {oct(mode)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +454,10 @@ class TestDoctorCommandCacheFlagWiring:
     """Tests that doctor_command honours --refresh-completion-cache and --prune-cache."""
 
     def _make_cache_dir(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        """Create a KANON_CACHE_DIR structure with a completion-cache subdir.
+        """Create a <KANON_HOME>/cache structure with a completion-cache subdir.
+
+        Returns tmp_path/"cache", which equals cache_dir() when KANON_HOME is set
+        to tmp_path (the caller sets KANON_HOME accordingly).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -463,7 +468,7 @@ class TestDoctorCommandCacheFlagWiring:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
         return cache_dir
 
     def _make_kanon_file(self, tmp_path: pathlib.Path) -> pathlib.Path:
@@ -502,7 +507,7 @@ class TestDoctorCommandCacheFlagWiring:
         (completion_cache / "a.json").write_text("aa", encoding="utf-8")
         (completion_cache / "b.json").write_text("bb", encoding="utf-8")
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -533,7 +538,7 @@ class TestDoctorCommandCacheFlagWiring:
 
         (completion_cache / "c.json").write_text("data", encoding="utf-8")
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -567,7 +572,7 @@ class TestDoctorCommandCacheFlagWiring:
         sentinel = completion_cache / "sentinel.json"
         sentinel.write_text("keep-me", encoding="utf-8")
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -607,7 +612,7 @@ class TestDoctorCommandCacheFlagWiring:
         _set_atime(old_file, _OLD_ATIME)
         _set_atime(new_file, _NEW_ATIME)
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -659,7 +664,7 @@ class TestDoctorCommandCacheFlagWiring:
         top_new.write_bytes(b"v" * 20)
         _set_atime(top_new, _NEW_ATIME)
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -693,7 +698,7 @@ class TestDoctorCommandCacheFlagWiring:
         from kanon_cli.commands.doctor import doctor_command
 
         kanon_file = self._make_kanon_file(tmp_path)
-        cache_dir = self._make_cache_dir(tmp_path)
+        self._make_cache_dir(tmp_path)
 
         # Create a stale install lock under cwd.
         lock_dir = tmp_path / "sub" / ".kanon-data"
@@ -703,7 +708,7 @@ class TestDoctorCommandCacheFlagWiring:
         stale_mtime = _NOW - datetime.timedelta(hours=KANON_DOCTOR_STALE_LOCK_AGE_HOURS + 1)
         _set_mtime(lock_file, stale_mtime)
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.chdir(tmp_path)
 
         args = _make_namespace(
@@ -927,9 +932,9 @@ class TestDoctorCommandDefaultNow:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         args = _make_namespace(
             kanon_file=str(kanon_file),
@@ -1015,9 +1020,9 @@ class TestDoctorCommandRefreshOSError:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def _raise_oserror(path: pathlib.Path) -> int:
             raise OSError(13, "Permission denied")

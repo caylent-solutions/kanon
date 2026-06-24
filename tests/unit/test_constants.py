@@ -1032,26 +1032,78 @@ class TestKanonCompletionErrorsReportLimitConstant:
 
 
 @pytest.mark.unit
-class TestKanonCacheDirEnvConstant:
-    """Tests for KANON_CACHE_DIR_ENV constant (E5-F1-S1-T3 AC-FUNC-008)."""
+class TestKanonHomeConstants:
+    """Tests for the shared KANON_HOME store constants + resolver (E5-F1-S1-T1 AC-23).
 
-    def test_constant_exists_and_is_importable(self) -> None:
-        """KANON_CACHE_DIR_ENV constant exists in kanon_cli.constants."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+    These replace the removed KANON_CACHE_DIR_ENV / KANON_CACHE_DIR_DEFAULT and
+    WORKSPACE_DIR_ENV_VAR constants, which were subsumed by the single KANON_HOME
+    root (spec Section 7.1 / Section 8 / FR-15, FR-16).
+    """
 
-        assert isinstance(KANON_CACHE_DIR_ENV, str)
+    def test_home_env_var_name(self) -> None:
+        """KANON_HOME_ENV_VAR names the KANON_HOME environment variable."""
+        from kanon_cli.constants import KANON_HOME_ENV_VAR
 
-    def test_constant_value_is_kanon_cache_dir(self) -> None:
-        """KANON_CACHE_DIR_ENV equals the string 'KANON_CACHE_DIR'."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+        assert KANON_HOME_ENV_VAR == "KANON_HOME"
 
-        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
+    def test_home_dir_name_default(self) -> None:
+        """KANON_HOME_DIR_NAME is the relative default '.kanon' (joined onto $HOME)."""
+        from kanon_cli.constants import KANON_HOME_DIR_NAME
 
-    def test_constant_is_non_empty(self) -> None:
-        """KANON_CACHE_DIR_ENV is a non-empty string."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+        assert KANON_HOME_DIR_NAME == ".kanon"
 
-        assert len(KANON_CACHE_DIR_ENV) > 0
+    def test_store_and_cache_subdir_names(self) -> None:
+        """The store and cache live in distinct, non-empty subdirs of the home root."""
+        from kanon_cli.constants import KANON_HOME_CACHE_SUBDIR, KANON_HOME_STORE_SUBDIR
+
+        assert KANON_HOME_STORE_SUBDIR == "store"
+        assert KANON_HOME_CACHE_SUBDIR == "cache"
+        assert KANON_HOME_STORE_SUBDIR != KANON_HOME_CACHE_SUBDIR
+
+    def test_resolve_kanon_home_default_is_under_real_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With KANON_HOME unset, the home resolves to $HOME/.kanon (env-derived, not hard-coded)."""
+        import pathlib
+
+        from kanon_cli.constants import KANON_HOME_DIR_NAME, resolve_kanon_home
+
+        monkeypatch.delenv("KANON_HOME", raising=False)
+        assert resolve_kanon_home() == pathlib.Path.home() / KANON_HOME_DIR_NAME
+
+    def test_resolve_kanon_home_env_override_wins(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A set KANON_HOME env value overrides the default."""
+        import pathlib
+
+        from kanon_cli.constants import resolve_kanon_home
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        assert resolve_kanon_home() == pathlib.Path(str(tmp_path))
+
+    def test_resolve_kanon_home_empty_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty KANON_HOME value is treated as unset and resolves to the default."""
+        import pathlib
+
+        from kanon_cli.constants import KANON_HOME_DIR_NAME, resolve_kanon_home
+
+        monkeypatch.setenv("KANON_HOME", "")
+        assert resolve_kanon_home() == pathlib.Path.home() / KANON_HOME_DIR_NAME
+
+    def test_removed_cache_dir_env_constant_is_gone(self) -> None:
+        """KANON_CACHE_DIR_ENV must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "KANON_CACHE_DIR_ENV")
+
+    def test_removed_cache_dir_default_constant_is_gone(self) -> None:
+        """KANON_CACHE_DIR_DEFAULT must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "KANON_CACHE_DIR_DEFAULT")
+
+    def test_removed_workspace_dir_env_var_constant_is_gone(self) -> None:
+        """WORKSPACE_DIR_ENV_VAR must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "WORKSPACE_DIR_ENV_VAR")
 
 
 @pytest.mark.unit
@@ -2107,17 +2159,12 @@ class TestExitCodeDeprecated:
 class TestCompletionCacheConstants:
     """TDD-paired test for the cache constants added to constants.py by E7-F3-S1-T1."""
 
-    def test_kanon_cache_dir_env_is_string(self) -> None:
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+    def test_kanon_home_cache_subdir_is_string(self) -> None:
+        """The cache now lives under the KANON_HOME cache subdir, not a standalone env var."""
+        from kanon_cli.constants import KANON_HOME_CACHE_SUBDIR
 
-        assert isinstance(KANON_CACHE_DIR_ENV, str)
-        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
-
-    def test_kanon_cache_dir_default_is_string(self) -> None:
-        from kanon_cli.constants import KANON_CACHE_DIR_DEFAULT
-
-        assert isinstance(KANON_CACHE_DIR_DEFAULT, str)
-        assert KANON_CACHE_DIR_DEFAULT == "~/.cache/kanon"
+        assert isinstance(KANON_HOME_CACHE_SUBDIR, str)
+        assert KANON_HOME_CACHE_SUBDIR == "cache"
 
     def test_kanon_completion_cache_ttl_is_int(self) -> None:
         from kanon_cli.constants import KANON_COMPLETION_CACHE_TTL
@@ -2241,29 +2288,6 @@ class TestCompletionSanitizationConstants:
 
         for char in COMPLETION_UNSAFE_CHARS:
             assert len(char) == 1, f"Non-single-char element in COMPLETION_UNSAFE_CHARS: {char!r}"
-
-
-@pytest.mark.unit
-class TestWorkspaceDirEnvVar:
-    """Tests for WORKSPACE_DIR_ENV_VAR constant (E58-F4-S1-T1 AC-1..AC-4)."""
-
-    def test_workspace_dir_env_var_exists(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR constant exists in kanon_cli.constants."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
-
-        assert isinstance(WORKSPACE_DIR_ENV_VAR, str)
-
-    def test_workspace_dir_env_var_value(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR must be exactly 'KANON_WORKSPACE_DIR'."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
-
-        assert WORKSPACE_DIR_ENV_VAR == "KANON_WORKSPACE_DIR"
-
-    def test_workspace_dir_env_var_is_non_empty(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR must not be empty."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
-
-        assert len(WORKSPACE_DIR_ENV_VAR) > 0
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ Covers:
   - install with mocked repo APIs
 """
 
+import os
 import pathlib
 from unittest.mock import patch
 
@@ -223,11 +224,13 @@ class TestCleanLifecycle:
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+        # Artifacts live under the shared KANON_HOME store, not next to .kanon.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
         clean(kanonenv)
-        assert not (tmp_path / ".packages").exists()
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (store_base / ".packages").exists()
+        assert not (store_base / ".kanon-data").exists()
 
 
 # -------------------------------------------------------------------------
@@ -284,5 +287,7 @@ class TestKanonenvEdgeCases:
             patch("kanon_cli.repo.repo_sync"),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
-        assert (tmp_path / ".kanon-data" / "sources" / "s").is_dir()
-        assert (tmp_path / ".gitignore").is_file()
+        # Install artifacts are written under the shared KANON_HOME store.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".kanon-data" / "sources" / "s").is_dir()
+        assert (store_base / ".gitignore").is_file()

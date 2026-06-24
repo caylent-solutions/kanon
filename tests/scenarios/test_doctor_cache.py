@@ -52,9 +52,9 @@ def _run_doctor_cache_flag(
     """Run 'kanon doctor <flag>' from an empty cwd and assert pass contract.
 
     Invokes the real 'kanon' CLI as a subprocess from tmp_path (no .kanon
-    present). Sets KANON_CACHE_DIR to a subdirectory of tmp_path. Asserts
-    exit 0, a cache-op info-line in combined output, and no "no kanon
-    workspace" error in stderr.
+    present). Sets KANON_HOME to tmp_path so the cache resolves under
+    <KANON_HOME>/cache. Asserts exit 0, a cache-op info-line in combined
+    output, and no "no kanon workspace" error in stderr.
 
     Args:
         tmp_path: Empty temporary directory with no .kanon file.
@@ -66,7 +66,9 @@ def _run_doctor_cache_flag(
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(mode=0o700)
 
-    extra_env: dict[str, str] = {"KANON_CACHE_DIR": str(cache_dir)}
+    # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
+    # makes the resolved cache equal cache_dir (= tmp_path / "cache").
+    extra_env: dict[str, str] = {"KANON_HOME": str(cache_dir.parent)}
 
     result = run_kanon(
         "doctor",

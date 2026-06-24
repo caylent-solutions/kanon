@@ -299,7 +299,7 @@ class TestCompleteDisabled:
                 "KANON_COMPLETION_ENABLED": "0",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -337,7 +337,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -367,7 +367,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("foo")
@@ -393,7 +393,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("https")
@@ -431,7 +431,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
@@ -455,7 +455,7 @@ class TestCompleteMissingLockfile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -471,7 +471,7 @@ class TestCompleteMissingLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -500,7 +500,7 @@ class TestCompleteMalformedLockfile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -517,7 +517,7 @@ class TestCompleteMalformedLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -539,7 +539,7 @@ class TestCompleteMalformedLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -569,7 +569,7 @@ class TestCompleteDeepRecursion:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -598,7 +598,7 @@ class TestCompleteLockfilePathResolution:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -613,7 +613,7 @@ class TestCompleteLockfilePathResolution:
         env = {k: v for k, v in os.environ.items() if k not in ("KANON_LOCK_FILE", "KANON_KANON_FILE")}
         env["KANON_KANON_FILE"] = str(kanon_file)
         env["KANON_COMPLETION_ENABLED"] = "1"
-        env["KANON_CACHE_DIR"] = str(tmp_path)
+        env["KANON_HOME"] = str(tmp_path)
         with patch.dict(os.environ, env, clear=True):
             result = complete("")
         assert result == ["derived_source"]
@@ -644,7 +644,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -661,7 +661,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)

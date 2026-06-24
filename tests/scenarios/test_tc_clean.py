@@ -16,6 +16,7 @@ Scenarios automated:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 
@@ -124,8 +125,9 @@ class TestTCClean:
             f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}\nstderr={clean_result.stderr!r}"
         )
 
-        assert not (work_dir / ".packages").exists(), ".packages still present after clean"
-        assert not (work_dir / ".kanon-data").exists(), ".kanon-data still present after clean"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), ".packages still present in store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data still present in store after clean"
 
     # ------------------------------------------------------------------
     # TC-clean-02: .gitignore lines retained after clean
@@ -161,8 +163,9 @@ class TestTCClean:
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
 
-        gitignore_path = work_dir / ".gitignore"
-        assert gitignore_path.exists(), ".gitignore not created by install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        gitignore_path = store_base / ".gitignore"
+        assert gitignore_path.exists(), ".gitignore not created by install in store"
         install_gitignore = gitignore_path.read_text()
         assert ".packages/" in install_gitignore, (
             f".packages/ not found in .gitignore after install: {install_gitignore!r}"
@@ -343,5 +346,10 @@ class TestTCClean:
         assert "- unregistering marketplace: keep-mp" not in prune_lines, (
             f"TC-clean-03: keep-mp is still referenced and must NOT be pruned; prune lines={prune_lines!r}"
         )
-        assert not (work_dir / ".packages").exists(), "TC-clean-03: .packages still present after clean --orphans"
-        assert not (work_dir / ".kanon-data").exists(), "TC-clean-03: .kanon-data still present after clean --orphans"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), (
+            "TC-clean-03: .packages still present in store after clean --orphans"
+        )
+        assert not (store_base / ".kanon-data").exists(), (
+            "TC-clean-03: .kanon-data still present in store after clean --orphans"
+        )

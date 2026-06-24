@@ -78,7 +78,9 @@ def _run_complete_project_versions(
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `kanon __complete_project_versions <repo_url> <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=cache_dir.parent
+    # makes the resolved cache equal cache_dir.
+    env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
         env.update(extra_env)
@@ -187,7 +189,7 @@ class TestCompleteProjectVersionsSubprocess:
         cache_dir = tmp_path / "cache"
         log_path = tmp_path / "errors.log"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
         env["KANON_COMPLETION_LOG"] = str(log_path)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 
@@ -215,7 +217,7 @@ class TestCompleteProjectVersionsSubprocess:
         """Non-existent repo URL returns empty stdout, exit 0, error logged."""
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 
         result = subprocess.run(
@@ -266,7 +268,7 @@ class TestCompleteProjectVersionsSubprocess:
         """AC-FUNC-004: missing current_token (second positional) fails with non-zero exit."""
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
 
         result = subprocess.run(
             [

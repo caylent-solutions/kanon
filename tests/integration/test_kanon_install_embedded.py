@@ -17,6 +17,17 @@ import pytest
 from kanon_cli.core.install import install
 
 
+def _store_base() -> Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return Path(os.environ["KANON_HOME"]) / "store"
+
+
 def _write_kanonenv(directory: Path, content: str) -> Path:
     """Write a .kanon file in directory and return its path."""
     kanonenv = directory / ".kanon"
@@ -92,7 +103,7 @@ class TestInstallWithoutPipx:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir()
+        assert (_store_base() / ".kanon-data" / "sources" / "primary").is_dir()
 
 
 @pytest.mark.integration
@@ -118,8 +129,9 @@ class TestInstallWithoutRepoOnPath:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".gitignore").is_file()
-        gitignore_content = (tmp_path / ".gitignore").read_text()
+        store_base = _store_base()
+        assert (store_base / ".gitignore").is_file()
+        gitignore_content = (store_base / ".gitignore").read_text()
         assert ".packages/" in gitignore_content
         assert ".kanon-data/" in gitignore_content
 
@@ -173,10 +185,11 @@ class TestInstallSubdirectoryAutoDiscovery:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Verify that running install from a subdirectory finds the .kanon in
-        a parent directory and writes output files (e.g. .gitignore) relative to
-        that parent directory -- not the subdirectory.
+        a parent directory and writes managed artifacts (e.g. .gitignore) under
+        the shared store -- independent of the subdirectory the command runs in.
         """
         _write_kanonenv(tmp_path, _minimal_kanonenv_content())
+        store_base = _store_base()
 
         subdir = tmp_path / "subproject" / "nested"
         subdir.mkdir(parents=True)
@@ -196,11 +209,9 @@ class TestInstallSubdirectoryAutoDiscovery:
         ):
             install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (tmp_path / ".gitignore").is_file(), (
-            "install() should write .gitignore relative to the .kanon parent directory"
-        )
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() should create .kanon-data/ relative to the .kanon parent directory"
+        assert (store_base / ".gitignore").is_file(), "install() should write .gitignore under the shared store"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+            "install() should create .kanon-data/ under the shared store"
         )
 
 
@@ -372,9 +383,11 @@ class TestInstallRelativeKanonPath:
         assert "manifest_file must be abspath" not in result.stderr, (
             f"ManifestParseError must not appear in stderr; got: {result.stderr!r}"
         )
-        # The install lifecycle creates .kanon-data/sources/<name>/ with .repo/ inside.
-        source_dir = workspace / ".kanon-data" / "sources" / "primary" / ".repo"
+        # The install lifecycle creates .kanon-data/sources/<name>/ with .repo/ inside,
+        # under the shared store (<KANON_HOME>/store) that the subprocess inherits via env.
+        store_base = Path(env["KANON_HOME"]) / "store"
+        source_dir = store_base / ".kanon-data" / "sources" / "primary" / ".repo"
         assert source_dir.is_dir(), (
-            f"Expected {source_dir} to exist after install; contents of workspace: "
-            f"{sorted(p.name for p in workspace.iterdir())!r}"
+            f"Expected {source_dir} to exist after install; contents of store base: "
+            f"{sorted(p.name for p in store_base.iterdir()) if store_base.exists() else 'MISSING'!r}"
         )

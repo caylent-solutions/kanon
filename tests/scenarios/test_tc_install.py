@@ -114,9 +114,8 @@ class TestTCInstall:
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        assert (project_root / ".packages" / "pkg-alpha").is_symlink(), (
-            ".packages/pkg-alpha symlink not found in project root"
-        )
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages" / "pkg-alpha").is_symlink(), ".packages/pkg-alpha symlink not found in store"
 
         clean_result = kanon_clean(project_root)
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}"
@@ -159,8 +158,9 @@ class TestTCInstall:
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        assert (work_dir / ".packages" / "pkg-alpha").is_symlink(), (
-            ".packages/pkg-alpha symlink not found after explicit-path install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages" / "pkg-alpha").is_symlink(), (
+            ".packages/pkg-alpha symlink not found in store after explicit-path install"
         )
 
         clean_result = run_kanon("clean", str(kanon_file), cwd=work_dir)

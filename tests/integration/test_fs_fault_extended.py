@@ -243,10 +243,15 @@ class TestUnicodePathsWork:
         tmp_path: pathlib.Path,
         dir_name: str,
     ) -> None:
-        """install creates .kanon-data/ correctly inside a Unicode-named directory."""
+        """install handles a Unicode-named project dir and writes .kanon-data/ to the store.
+
+        The .kanon file lives in the Unicode-named directory; install artifacts are
+        written to the shared KANON_HOME store regardless of the project directory name.
+        """
         unicode_dir = tmp_path / dir_name
         unicode_dir.mkdir()
         kanonenv = _write_kanonenv(unicode_dir)
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -256,8 +261,9 @@ class TestUnicodePathsWork:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (unicode_dir / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created in Unicode-named directory: {unicode_dir}"
+        assert kanonenv.is_file(), ".kanon must remain in the Unicode-named project directory"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store for Unicode-named project {unicode_dir}: {store_base}"
         )
 
     @pytest.mark.parametrize(
@@ -275,20 +281,21 @@ class TestUnicodePathsWork:
         tmp_path: pathlib.Path,
         dir_name: str,
     ) -> None:
-        """clean removes .packages/ and .kanon-data/ inside a Unicode-named directory."""
+        """clean removes .packages/ and .kanon-data/ from the store for a Unicode-named project."""
         unicode_dir = tmp_path / dir_name
         unicode_dir.mkdir()
         kanonenv = _write_kanonenv(unicode_dir)
-        (unicode_dir / ".packages").mkdir()
-        (unicode_dir / ".kanon-data").mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         clean(kanonenv)
 
-        assert not (unicode_dir / ".packages").exists(), (
-            f".packages/ must be removed by clean in Unicode directory: {unicode_dir}"
+        assert not (store_base / ".packages").exists(), (
+            f".packages/ must be removed from the store by clean for Unicode-named project {unicode_dir}"
         )
-        assert not (unicode_dir / ".kanon-data").exists(), (
-            f".kanon-data/ must be removed by clean in Unicode directory: {unicode_dir}"
+        assert not (store_base / ".kanon-data").exists(), (
+            f".kanon-data/ must be removed from the store by clean for Unicode-named project {unicode_dir}"
         )
 
     @pytest.mark.parametrize(
@@ -487,10 +494,11 @@ class TestMidOperationDeletionRace:
 
     The race is simulated by:
       - using in-process API tests where install() is called directly after the
-        base directory is made read-only (so create_source_dirs raises OSError)
-      - using subprocess tests where the base directory is made read-only before
-        the subprocess runs, ensuring the OS-level permission error propagates
-        through the full CLI error-handling chain.
+        store sources directory (<KANON_HOME>/store/.kanon-data/sources/) is made
+        read-only (so create_source_dirs raises OSError)
+      - using subprocess tests where the project directory is made read-only before
+        the subprocess runs, ensuring the install error path propagates through the
+        full CLI error-handling chain and surfaces a clean 'Error:' on stderr.
     """
 
     def test_source_dir_creation_fails_install_exits_1(
@@ -590,19 +598,27 @@ class TestMidOperationDeletionRace:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """install() propagates OSError when the project directory is read-only.
+        """install() propagates OSError when the store sources directory is read-only.
 
         This tests the library boundary: install() must let OSError from
         create_source_dirs propagate to the caller. The CLI command handler
         in commands/install.py catches this and prints 'Error:' + sys.exit(1).
+
+        Source directories are now created under the shared KANON_HOME store
+        (<KANON_HOME>/store/.kanon-data/sources/), so the read-only target that
+        triggers the OSError is the store's sources directory, not the project dir.
+        The store root itself stays writable (so the workspace lock can be created),
+        and the sources/ child is made read-only so the per-source mkdir fails.
         """
         kanonenv = _write_kanonenv(tmp_path)
-        tmp_path.chmod(0o555)
+        store_sources = pathlib.Path(os.environ["KANON_HOME"]) / "store" / ".kanon-data" / "sources"
+        store_sources.mkdir(parents=True)
+        store_sources.chmod(0o555)
         try:
             with pytest.raises(OSError, match="Cannot create source directory"):
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
         finally:
-            tmp_path.chmod(0o755)
+            store_sources.chmod(0o755)
 
     def test_kanon_data_already_absent_clean_exits_0(
         self,

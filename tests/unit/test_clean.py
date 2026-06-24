@@ -59,15 +59,17 @@ class TestDirectoryRemoval:
 
 @pytest.mark.unit
 class TestCleanLifecycle:
-    def test_marketplace_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
+    def test_marketplace_false_skips_uninstall(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir(exist_ok=True)
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True, exist_ok=True)
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)
             mock_uninstall.assert_not_called()
-        assert not (tmp_path / ".packages").exists()
+        assert not (store / ".packages").exists()
 
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
@@ -75,13 +77,15 @@ class TestCleanLifecycle:
         with pytest.raises(SystemExit):
             clean(kanonenv)
 
-    def test_order_of_operations(self, tmp_path: pathlib.Path) -> None:
+    def test_order_of_operations(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         mp_dir = tmp_path / ".mp"
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(f"CLAUDE_MARKETPLACES_DIR={mp_dir}\nKANON_MARKETPLACE_INSTALL=true\n" + _MINIMAL_KANONENV)
         mp_dir.mkdir()
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir(exist_ok=True)
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True, exist_ok=True)
 
         ops: list[str] = []
 
@@ -111,26 +115,34 @@ class TestCleanLifecycle:
 
 @pytest.mark.unit
 class TestCleanSymlinkResolution:
-    """Verify AC-1 and AC-2: clean() resolves .kanon symlinks before using kanonenv_path.parent.
+    """Verify clean() resolves .kanon symlinks and removes artifacts from the KANON_HOME store.
 
-    When .kanon is a symlink pointing into a subdirectory, .packages/ and .kanon-data/
-    must be removed from the symlink target's parent (the real project directory), not
-    from the symlink's parent.
+    Under the shared KANON_HOME store model the fetched artifacts (.packages/,
+    .kanon-data/) live under <KANON_HOME>/store, not beside .kanon. clean() must
+    still resolve a symlinked .kanon (so the committed .kanon.lock is read from the
+    real project directory) and must remove the store artifacts. Directories that
+    merely sit beside the .kanon symlink must never be touched.
     """
 
-    def test_clean_removes_dirs_from_symlink_target_parent(self, tmp_path: pathlib.Path) -> None:
-        """AC-1/AC-2: clean() uses the resolved path so artifacts are removed from the real project.
+    def test_clean_resolves_symlink_and_removes_store_artifacts(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """clean() resolves the .kanon symlink and removes .packages/ + .kanon-data/ from the store.
 
         Layout:
           tmp_path/
-            real_project/
-              .kanon           <- the real .kanon file
+            home/store/
               .packages/       <- must be removed by clean()
               .kanon-data/     <- must be removed by clean()
+            real_project/
+              .kanon           <- the real .kanon file
             symlink_dir/
               .kanon -> ../real_project/.kanon   <- symlink passed to clean()
               .packages/       <- must NOT be touched by clean()
         """
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+
         real_project = tmp_path / "real_project"
         real_project.mkdir()
         symlink_dir = tmp_path / "symlink_dir"
@@ -144,27 +156,23 @@ class TestCleanSymlinkResolution:
         symlink_kanonenv = symlink_dir / ".kanon"
         symlink_kanonenv.symlink_to(real_kanonenv)
 
-        # Set up artifact directories in both locations
-        (real_project / ".packages").mkdir()
-        (real_project / ".kanon-data").mkdir()
+        # Fetched artifacts live in the shared store; a decoy dir sits beside the symlink.
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True)
         (symlink_dir / ".packages").mkdir()  # should NOT be touched
 
         # Preconditions: verify symlink is set up correctly
-        assert symlink_kanonenv.is_symlink(), "AC-2 setup: .kanon in symlink_dir must be a symlink"
-        assert symlink_kanonenv.resolve() == real_kanonenv, "AC-2 setup: symlink must point to real .kanon"
-        assert (real_project / ".packages").exists(), "AC-2 setup: real_project/.packages must exist before clean()"
-        assert (symlink_dir / ".packages").exists(), "AC-2 setup: symlink_dir/.packages must exist before clean()"
+        assert symlink_kanonenv.is_symlink(), "setup: .kanon in symlink_dir must be a symlink"
+        assert symlink_kanonenv.resolve() == real_kanonenv, "setup: symlink must point to real .kanon"
+        assert (store / ".packages").exists(), "setup: store/.packages must exist before clean()"
+        assert (symlink_dir / ".packages").exists(), "setup: symlink_dir/.packages must exist before clean()"
 
         clean(symlink_kanonenv)
 
-        assert not (real_project / ".packages").exists(), (
-            "AC-1/AC-2: .packages/ must be removed from symlink target's parent (real_project)"
-        )
-        assert not (real_project / ".kanon-data").exists(), (
-            "AC-1/AC-2: .kanon-data/ must be removed from symlink target's parent (real_project)"
-        )
+        assert not (store / ".packages").exists(), ".packages/ must be removed from the KANON_HOME store"
+        assert not (store / ".kanon-data").exists(), ".kanon-data/ must be removed from the KANON_HOME store"
         assert (symlink_dir / ".packages").exists(), (
-            "AC-1/AC-2: .packages/ in the symlink's parent (symlink_dir) must NOT be removed"
+            ".packages/ beside the .kanon symlink must NOT be removed by clean()"
         )
 
 
@@ -200,73 +208,80 @@ class TestCleanSubparserHelp:
 
 
 # ---------------------------------------------------------------------------
-# AC-2: clean honors KANON_WORKSPACE_DIR
+# AC-23: clean removes artifacts from the shared KANON_HOME store
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestCleanWorkspaceDirEnvVar:
-    """clean() removes .packages/ and .kanon-data/ from KANON_WORKSPACE_DIR when set."""
+class TestCleanKanonHomeStore:
+    """clean() removes .packages/ and .kanon-data/ from the <KANON_HOME>/store."""
 
-    def test_clean_removes_dirs_from_workspace_dir(
+    def test_clean_removes_dirs_from_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-2: clean removes .packages/ and .kanon-data/ from KANON_WORKSPACE_DIR."""
-        alt_workspace = tmp_path / "alt_workspace"
+        """AC-23: clean removes .packages/ and .kanon-data/ from <KANON_HOME>/store, never from cwd."""
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
 
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
 
-        # Create artifacts under the alt workspace (as install would have)
-        (alt_workspace / ".packages").mkdir(parents=True)
-        (alt_workspace / ".kanon-data").mkdir(parents=True)
+        # Create artifacts under the store (as install would have)
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True)
         # Also create decoy artifacts in cwd (should NOT be touched by clean)
         (cwd_dir / ".packages").mkdir()
         (cwd_dir / ".kanon-data").mkdir()
 
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 
-        assert not (alt_workspace / ".packages").exists(), (
-            "KANON_WORKSPACE_DIR set: .packages/ must be removed from the alt workspace"
-        )
-        assert not (alt_workspace / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ must be removed from the alt workspace"
-        )
+        assert not (store / ".packages").exists(), ".packages/ must be removed from the KANON_HOME store"
+        assert not (store / ".kanon-data").exists(), ".kanon-data/ must be removed from the KANON_HOME store"
         # Decoy artifacts in cwd must not be touched
-        assert (cwd_dir / ".packages").exists(), (
-            "KANON_WORKSPACE_DIR set: .packages/ in cwd must NOT be touched by clean"
-        )
-        assert (cwd_dir / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ in cwd must NOT be touched by clean"
-        )
+        assert (cwd_dir / ".packages").exists(), ".packages/ in cwd must NOT be touched by clean"
+        assert (cwd_dir / ".kanon-data").exists(), ".kanon-data/ in cwd must NOT be touched by clean"
 
-    def test_clean_without_workspace_dir_uses_kanonenv_parent(
+    def test_clean_default_home_resolves_to_home_kanon_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When KANON_WORKSPACE_DIR is not set, clean removes dirs beside .kanon (original behavior)."""
+        """With KANON_HOME unset, clean resolves the store under $HOME/.kanon/store (env-derived).
+
+        The clean removal targets the resolved store; this test points $HOME at a
+        temp dir so the default ~/.kanon/store resolves inside the sandbox and no
+        real home directory is touched.
+        """
+        import os
+
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        store = fake_home / ".kanon" / "store"
+        monkeypatch.delenv("KANON_HOME", raising=False)
+        # Redirect Path.home() / expanduser by overriding HOME (and USERPROFILE on Windows).
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setenv("USERPROFILE", str(fake_home))
+        os.environ.pop("KANON_HOME", None)
+
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
-        monkeypatch.delenv("KANON_WORKSPACE_DIR", raising=False)
-
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
 
-        (cwd_dir / ".packages").mkdir()
-        (cwd_dir / ".kanon-data").mkdir()
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 
-        assert not (cwd_dir / ".packages").exists(), (
-            "Without KANON_WORKSPACE_DIR, .packages/ must be removed beside .kanon"
+        assert not (store / ".packages").exists(), (
+            "Without KANON_HOME, .packages/ must be removed from $HOME/.kanon/store"
         )
-        assert not (cwd_dir / ".kanon-data").exists(), (
-            "Without KANON_WORKSPACE_DIR, .kanon-data/ must be removed beside .kanon"
+        assert not (store / ".kanon-data").exists(), (
+            "Without KANON_HOME, .kanon-data/ must be removed from $HOME/.kanon/store"
         )
 
 

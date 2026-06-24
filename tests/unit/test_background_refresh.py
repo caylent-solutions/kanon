@@ -24,7 +24,7 @@ Cases covered:
   spawn path).
 - KANON_COMPLETION_LOG selects the log path forwarded to spawn_detached.
 
-All cases set KANON_CACHE_DIR to tmp_path so the real cache is never touched.
+All cases set KANON_HOME to tmp_path so the real cache is never touched.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def test_refresh_bg_disabled_integer_zero_does_not_spawn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KANON_COMPLETION_REFRESH_BG=0 (integer zero): spawn_detached not called, no warning."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
 
     fake_stderr = StringIO()
@@ -88,7 +88,7 @@ def test_refresh_bg_non_integer_does_not_spawn_and_warns(
 ) -> None:
     """KANON_COMPLETION_REFRESH_BG=<non-integer>: spawn_detached not called AND a
     warning identifying the invalid value and expected format is written to stderr."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", env_value)
 
     fake_stderr = StringIO()
@@ -118,7 +118,7 @@ def test_refresh_bg_enabled_calls_spawn_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KANON_COMPLETION_REFRESH_BG=1: spawn_detached called exactly once."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
     with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
@@ -132,7 +132,7 @@ def test_refresh_bg_unset_defaults_to_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KANON_COMPLETION_REFRESH_BG unset: spawn_detached IS called (default 1)."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_REFRESH_BG", raising=False)
 
     with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
@@ -156,7 +156,7 @@ def test_parent_returns_without_running_refresh_fn_in_process(
     spawn_detached is responsible for running refresh_fn in the detached child;
     the parent must never execute it itself.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
     called: list[str] = []
@@ -190,7 +190,7 @@ def test_spawn_detached_receives_picklable_partial_wrapper(
     A functools.partial of a module-level function is picklable, which the
     Windows spawn path requires. A nested closure would be unpicklable.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
     captured: list[object] = []
@@ -221,7 +221,7 @@ def test_spawn_failure_propagates_runtimeerror(
     """When spawn_detached raises RuntimeError, fork_background_refresh
     propagates it unchanged (fail-fast, no silent fallback).
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
 
     with patch(
@@ -244,7 +244,7 @@ def test_kanon_completion_log_env_selects_spawn_log_path(
 ) -> None:
     """KANON_COMPLETION_LOG, when set, is forwarded to spawn_detached as log_path."""
     custom_log = tmp_path / "custom-errors.log"
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
     monkeypatch.setenv("KANON_COMPLETION_LOG", str(custom_log))
 

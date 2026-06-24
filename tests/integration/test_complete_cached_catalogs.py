@@ -1,8 +1,8 @@
 """Integration tests for kanon __complete_cached_catalogs -- AC-TEST-002, AC-CYCLE-001.
 
-Seeds ${KANON_CACHE_DIR}/catalogs/<sha>/origin.txt files with known url@ref values,
-invokes `kanon __complete_cached_catalogs` via subprocess, and asserts stdout
-matches the expected sorted output.
+Seeds ``<KANON_HOME>/cache/catalogs/<sha>/origin.txt`` files with known url@ref
+values, invokes `kanon __complete_cached_catalogs` via subprocess, and asserts
+stdout matches the expected sorted output.
 """
 
 from __future__ import annotations
@@ -14,27 +14,43 @@ from pathlib import Path
 
 import pytest
 
+from kanon_cli.completions.cache import cache_dir
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_catalog(cache_dir: Path, sha: str, origin: str) -> None:
-    """Create catalogs/<sha>/origin.txt with the given content."""
-    entry = cache_dir / "catalogs" / sha
+def _resolved_cache(home: Path) -> Path:
+    """Return the cache directory resolved from KANON_HOME=*home*.
+
+    Mirrors ``cache_dir()`` (= ``<KANON_HOME>/cache``) without depending on the
+    parent process environment, so seed paths line up with what the subprocess
+    resolves when ``KANON_HOME`` is set to *home*.
+    """
+    os.environ["KANON_HOME"] = str(home)
+    try:
+        return cache_dir()
+    finally:
+        del os.environ["KANON_HOME"]
+
+
+def _make_catalog(home: Path, sha: str, origin: str) -> None:
+    """Create <KANON_HOME>/cache/catalogs/<sha>/origin.txt with the given content."""
+    entry = _resolved_cache(home) / "catalogs" / sha
     entry.mkdir(parents=True, exist_ok=True)
     (entry / "origin.txt").write_text(origin)
 
 
 def _run_complete(
-    cache_dir: Path,
+    home: Path,
     current_token: str = "",
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `kanon __complete_cached_catalogs <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    env["KANON_HOME"] = str(home)
     env["KANON_COMPLETION_ENABLED"] = "1"
     if extra_env:
         env.update(extra_env)
@@ -70,8 +86,8 @@ class TestCompleteCachedCatalogsSubprocess:
 
     def test_empty_catalogs_dir_empty_stdout(self, tmp_path: Path) -> None:
         """AC-FUNC-002: empty catalogs/ directory -> empty stdout, exit 0."""
-        catalogs_dir = tmp_path / "catalogs"
-        catalogs_dir.mkdir()
+        catalogs_dir = _resolved_cache(tmp_path) / "catalogs"
+        catalogs_dir.mkdir(parents=True)
         log_path = tmp_path / "completion-errors.log"
         result = _run_complete(tmp_path, extra_env={"KANON_COMPLETION_LOG": str(log_path)})
         assert result.returncode == 0
@@ -79,11 +95,11 @@ class TestCompleteCachedCatalogsSubprocess:
         assert not log_path.exists()
 
     def test_missing_cache_dir_empty_stdout(self, tmp_path: Path) -> None:
-        """AC-FUNC-003: missing KANON_CACHE_DIR -> empty stdout, exit 0, no log."""
-        missing_dir = tmp_path / "no_cache_dir"
+        """AC-FUNC-003: missing cache dir under KANON_HOME -> empty stdout, exit 0, no log."""
+        missing_home = tmp_path / "no_cache_home"
         log_path = tmp_path / "completion-errors.log"
         result = _run_complete(
-            missing_dir,
+            missing_home,
             extra_env={"KANON_COMPLETION_LOG": str(log_path)},
         )
         assert result.returncode == 0

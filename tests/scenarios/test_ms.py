@@ -6,6 +6,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -124,12 +125,20 @@ class TestMS:
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
+        # Install artifacts (.kanon-data/, .packages/) now live under the shared
+        # store (<KANON_HOME>/store), not beside the project .kanon in work_dir.
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+
         # Both source directories must exist
-        assert (work_dir / ".kanon-data" / "sources" / "alpha").is_dir(), ".kanon-data/sources/alpha/ directory missing"
-        assert (work_dir / ".kanon-data" / "sources" / "bravo").is_dir(), ".kanon-data/sources/bravo/ directory missing"
+        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
+            ".kanon-data/sources/alpha/ directory missing"
+        )
+        assert (store_base / ".kanon-data" / "sources" / "bravo").is_dir(), (
+            ".kanon-data/sources/bravo/ directory missing"
+        )
 
         # .packages/ directory must exist and contain symlinks from both sources
-        packages_dir = work_dir / ".packages"
+        packages_dir = store_base / ".packages"
         assert packages_dir.is_dir(), ".packages/ directory missing"
 
         pkg_alpha_link = packages_dir / "pkg-alpha"

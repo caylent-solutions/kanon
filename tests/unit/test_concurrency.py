@@ -1,9 +1,8 @@
 """Unit tests for kanon_cli.utils.concurrency.
 
-Platform-agnostic tests for the public ``kanon_workspace_lock`` contract.
-There is no platform skip-marker anywhere in this module (AC-8): every test
-exercises the public context manager and the cross-process backend, which is
-selected at acquisition time (POSIX ``fcntl.flock`` / Windows ``msvcrt.locking``).
+Tests for the public ``kanon_workspace_lock`` contract. There is no platform
+skip-marker anywhere in this module (AC-8): every test exercises the public
+context manager and its cross-process POSIX backend (``fcntl.flock``).
 
 Covers:
 - AC-FUNC-001: eager .kanon-data/ creation before lock acquisition
@@ -20,7 +19,6 @@ AC-TEST-001
 import multiprocessing
 import multiprocessing.synchronize
 import pathlib
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -42,12 +40,11 @@ _LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "10.
 _LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "5.0"))
 
 # Multiprocessing start method: "fork" on POSIX (fast, inherits the parent's
-# state, no pickling required) and "spawn" on Windows where "fork" is
-# unavailable. The cross-process helpers below are module-level so they are
-# importable by reference under the "spawn" start method. This keeps the
-# cross-process lock contract (AC-8) exercised on both platforms with no skip
-# marker -- the lock is cross-platform and so are its tests.
-_MP_CONTEXT = multiprocessing.get_context("fork" if sys.platform != "win32" else "spawn")
+# state, no pickling required). The workspace lock is POSIX-only (the
+# ``fcntl.flock`` backend), so the cross-process contract is exercised on the
+# single Linux set. The cross-process helpers below remain module-level so they
+# are importable by reference if the context ever changes.
+_MP_CONTEXT = multiprocessing.get_context("fork")
 
 
 # ---------------------------------------------------------------------------

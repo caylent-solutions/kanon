@@ -118,9 +118,9 @@ def test_make_test_scenarios_selects_scenario_marker(makefile_lines: list[str]) 
         "Add a 'test-scenarios:' target that runs 'uv run pytest -m scenario'."
     )
     combined = " ".join(recipe_lines)
-    # The recipe selects the scenario tier and threads a platform filter via the
-    # PYTEST_PLATFORM_MARK make variable, e.g. `-m "scenario$(PYTEST_PLATFORM_MARK)"`,
-    # so accept the bare, single-quoted, or double-quoted scenario-marker forms.
+    # The recipe selects the scenario tier with the bare tier marker (kanon is a
+    # single Linux set; there is no per-OS platform filter), so accept the bare,
+    # single-quoted, or double-quoted scenario-marker forms.
     selects_scenario = "-m scenario" in combined or "-m 'scenario" in combined or '-m "scenario' in combined
     assert selects_scenario, (
         f"ERROR: 'make test-scenarios' recipe does not select the 'scenario' "

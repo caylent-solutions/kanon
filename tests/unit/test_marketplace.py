@@ -680,13 +680,13 @@ class TestDiscoverRegisteredMarketplaceNames:
 
 
 # ---------------------------------------------------------------------------
-# E2-F1-S3-T1: Junction-aware directory-link helper (AC-10)
+# E2-F1-S3-T1: POSIX directory-symlink helper (AC-10)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestCreateDirsymlink:
-    """create_dirsymlink creates a junction-aware directory link (POSIX symlink on Linux/macOS)."""
+    """create_dirsymlink creates a POSIX directory symlink."""
 
     def test_creates_symlink_pointing_at_target_directory(self, tmp_path: pathlib.Path) -> None:
         """create_dirsymlink creates a symlink at link_path pointing at target on POSIX."""

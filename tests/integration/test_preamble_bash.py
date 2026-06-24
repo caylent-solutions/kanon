@@ -19,11 +19,9 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
-# linux_only: this suite shells out to a real bash to exercise the dynamic
-# bash-completion machinery (a POSIX shell-completion feature with no Windows
-# equivalent), so it is deselected on the Windows CI leg and runs in full on
-# the Linux leg.
-pytestmark = pytest.mark.linux_only
+# This suite shells out to a real bash to exercise the dynamic bash-completion
+# machinery (a POSIX shell-completion feature) and runs in full on the single
+# Linux CI set.
 
 _REQUIRED_HELPERS = [
     "_kanon_complete_catalog_entries",

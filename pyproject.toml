@@ -72,8 +72,6 @@ markers = [
     "functional: Functional tests -- exercise CLI via subprocess",
     "integration: Integration tests -- verify modules load and run end-to-end",
     "scenario: End-to-end scenario tests mirroring docs/integration-testing.md",
-    "linux_only: test only applicable on POSIX/Linux (skipped on Windows CI)",
-    "windows_only: test only applicable on Windows (skipped on Linux CI)",
 ]
 
 [tool.coverage.run]

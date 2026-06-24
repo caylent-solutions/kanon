@@ -1,26 +1,24 @@
-"""Cross-platform contract integration tests (J11, AC-56).
+"""POSIX contract integration tests (J11, AC-56).
 
-Asserts the cross-platform contract of:
+Asserts the POSIX contract of:
 - kanon_workspace_lock: cross-process exclusion, release on exit/exception,
   fail-fast on configurable timeout.
-- spawn_detached: detached-process spawn contract (POSIX and Windows paths).
-- create_dirsymlink: junction/symlink dir-link helper.
+- spawn_detached: detached-process spawn contract (POSIX fork path).
+- create_dirsymlink: symlink dir-link helper.
 
-The Windows-specific branches (junctions, DETACHED_PROCESS) are exercised
-by mocking sys.platform so the contract is verified on any CI host.
+Kanon is POSIX-only; the Windows backends were removed (the recommended
+Windows path is WSL/WSL2), so there are no Windows-specific branches to
+exercise here.
 
-The workspace-lock tests use the real cross-platform ``kanon_workspace_lock``
-context manager via child processes on both POSIX and Windows; the backend
-(POSIX ``fcntl.flock`` / Windows ``msvcrt.locking``) is selected at acquisition
-time inside the context manager, so the same cross-process exclusion contract
-holds on every platform in the matrix.
+The workspace-lock tests use the real ``kanon_workspace_lock`` context manager
+via child processes; the POSIX backend (``fcntl.flock``) gives cross-process
+exclusion, asserted here through a non-blocking ``fcntl.flock`` probe of the same
+lock region the context manager locks.
 
-No platform-conditional guards are used -- the full contract test file
-collects and runs on every platform in the matrix.
+No platform-conditional guards are used -- the contract test file collects and
+runs on the single Linux set.
 
-FR-32: windows-latest CI matrix leg runs this file natively on Windows.
-FR-34, FR-35, FR-36: spawn_detached and create_dirsymlink cross-platform
-    contract.
+FR-34, FR-35, FR-36: spawn_detached and create_dirsymlink POSIX contract.
 AC-56: real assertions for every contract property; no platform guards.
 """
 
@@ -30,8 +28,7 @@ import multiprocessing
 import multiprocessing.synchronize
 import os
 import pathlib
-import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -75,55 +72,33 @@ def _attempt_nonblocking_lock(
     """Child-process helper: probe the workspace lock NON-blocking; report the result.
 
     Probes the exact lock-file region that the production
-    ``kanon_workspace_lock`` backend locks, using the OS-native non-blocking
-    primitive so there is no acquisition timeout to race:
+    ``kanon_workspace_lock`` POSIX backend locks, using the OS-native
+    non-blocking primitive so there is no acquisition timeout to race:
 
     * POSIX: ``fcntl.flock(LOCK_EX | LOCK_NB)`` -- raises ``BlockingIOError`` when
       another process already holds the exclusive lock.
-    * Windows: ``msvcrt.locking(LK_NBLCK, 1)`` on byte region ``[0, 1)`` (the same
-      single-byte region the Windows backend locks) -- raises ``OSError`` when
-      that region is already locked by another process.
 
     Reports True when the probe acquired the lock (no other holder) and False
-    when it was blocked by an existing holder, on any platform.
+    when it was blocked by an existing holder.
 
     Args:
         workspace: Workspace root path.
         result_queue: Queue for reporting the outcome.
     """
-    import sys
+    import fcntl
 
     from kanon_cli.constants import INSTALL_LOCK_FILENAME
 
     lock_path = workspace / ".kanon-data" / INSTALL_LOCK_FILENAME
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if sys.platform == "win32":
-        import msvcrt
-
-        with open(lock_path, "wb") as fh:
-            # Match the production backend's locked region: write a sentinel byte
-            # and lock byte [0, 1) so this probe contends on the same region.
-            fh.seek(0)
-            fh.write(b"\0")
-            fh.flush()
-            fh.seek(0)
-            try:
-                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                result_queue.put(True)
-            except OSError:
-                result_queue.put(False)
-    else:
-        import fcntl
-
-        with open(lock_path, "w", encoding="utf-8") as fh:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-                result_queue.put(True)
-            except BlockingIOError:
-                result_queue.put(False)
+    with open(lock_path, "w", encoding="utf-8") as fh:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            result_queue.put(True)
+        except BlockingIOError:
+            result_queue.put(False)
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +111,11 @@ def _noop_refresh() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multiprocessing context: use "fork" on POSIX (fast, no pickling required),
-# "spawn" on Windows (fork is unavailable).
+# Multiprocessing context: "fork" on POSIX (fast, no pickling required). Kanon
+# is POSIX-only, so the fork context is always available.
 # ---------------------------------------------------------------------------
 
-_MP_CONTEXT = multiprocessing.get_context("fork" if sys.platform != "win32" else "spawn")
+_MP_CONTEXT = multiprocessing.get_context("fork")
 
 
 # ---------------------------------------------------------------------------
@@ -153,17 +128,16 @@ class TestWorkspaceLockCrossProcessExclusion:
     """Cross-process exclusion contract for kanon_workspace_lock.
 
     kanon_workspace_lock acquires an exclusive kernel-level lock through the
-    per-OS backend selected at acquisition time (POSIX ``fcntl.flock`` / Windows
-    ``msvcrt.locking``). These tests assert the same cross-process exclusion on
-    both platforms via child processes.
+    POSIX backend (``fcntl.flock``). These tests assert cross-process exclusion
+    via child processes.
     """
 
     def test_second_process_blocked_while_first_holds_lock(self, tmp_path: pathlib.Path) -> None:
         """A second process cannot acquire the lock while the first holds it.
 
         Holds the lock in a child process, then a contender child probes the same
-        lock region non-blocking (per-OS native primitive) and must report it was
-        blocked (False) on every platform.
+        lock region non-blocking (``fcntl.flock`` LOCK_NB) and must report it was
+        blocked (False).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -204,7 +178,7 @@ class TestWorkspaceLockCrossProcessExclusion:
         """A second process can acquire the lock after the first releases it.
 
         The holder child acquires then releases the lock; a contender child then
-        acquires it successfully (reports True) on every platform.
+        acquires it successfully (reports True).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -240,19 +214,19 @@ class TestWorkspaceLockCrossProcessExclusion:
 
 @pytest.mark.integration
 class TestWorkspaceLockReleaseOnExit:
-    """Lock is released on both normal exit and exception exit (cross-platform).
+    """Lock is released on both normal exit and exception exit.
 
     Release is asserted by a contender child process that acquires the lock
-    after the holder has exited; the contender uses the real cross-platform
-    ``kanon_workspace_lock`` so the probe works on POSIX and Windows alike. A
-    successful acquisition (True) proves the holder's lock was released.
+    after the holder has exited; the contender probes the POSIX ``fcntl.flock``
+    lock region. A successful acquisition (True) proves the holder's lock was
+    released.
     """
 
     def _assert_lock_acquirable_by_child(self, ctx, tmp_path: pathlib.Path) -> None:
         """Spawn a contender child and assert it acquires the (now-free) lock.
 
         Args:
-            ctx: Multiprocessing context (fork on POSIX, spawn on Windows).
+            ctx: Multiprocessing context (fork on POSIX).
             tmp_path: Workspace root whose lock must currently be free.
         """
         result_queue: multiprocessing.Queue[bool] = ctx.Queue()
@@ -283,7 +257,7 @@ class TestWorkspaceLockReleaseOnExit:
         """The lock is acquirable after an exception propagates out of the context.
 
         Demonstrates try/finally semantics: even when managed code raises, the
-        file descriptor is closed and the OS releases the lock on every platform.
+        file descriptor is closed and the OS releases the lock.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -304,8 +278,8 @@ class TestWorkspaceLockFailFastOnMkdirFailure:
     def test_raises_oserror_when_kanon_data_dir_cannot_be_created(self, tmp_path: pathlib.Path) -> None:
         """kanon_workspace_lock raises OSError immediately when mkdir fails.
 
-        Fail-fast contract on every platform: a failed ``.kanon-data/`` creation
-        surfaces as an OSError, never a silent skip.
+        Fail-fast contract: a failed ``.kanon-data/`` creation surfaces as an
+        OSError, never a silent skip.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -325,7 +299,7 @@ class TestWorkspaceLockFailFastOnMkdirFailure:
 
 @pytest.mark.integration
 class TestSpawnDetachedContract:
-    """Cross-platform spawn_detached contract."""
+    """POSIX spawn_detached contract (fork-based detached process)."""
 
     def test_posix_parent_returns_without_running_refresh_fn(self, tmp_path: pathlib.Path) -> None:
         """On POSIX, parent returns immediately after fork; refresh_fn runs in child.
@@ -356,50 +330,6 @@ class TestSpawnDetachedContract:
 
         with patch("os.fork", side_effect=OSError("resource limit reached")):
             with pytest.raises(RuntimeError, match="spawn_detached: failed to fork"):
-                spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
-
-    def test_windows_path_uses_detached_process_flag(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Windows path launches subprocess with DETACHED_PROCESS flag (0x8).
-
-        The contract is verified by mocking sys.platform so the Windows branch
-        executes on any CI host.
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-            monkeypatch: Pytest monkeypatch fixture.
-        """
-        if sys.platform != "win32":
-            monkeypatch.setattr(sys, "platform", "win32")
-
-        from kanon_cli.utils.spawn import spawn_detached
-
-        mock_proc = MagicMock()
-        mock_proc.pid = 1234
-
-        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
-            mock_popen.assert_called_once()
-            kwargs = mock_popen.call_args[1]
-            assert kwargs.get("creationflags", 0) & 0x00000008, "Windows spawn must set DETACHED_PROCESS flag (0x8)"
-
-    def test_windows_popen_failure_raises_runtime_error(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Windows path raises RuntimeError on Popen failure (fail-fast contract).
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-            monkeypatch: Pytest monkeypatch fixture.
-        """
-        if sys.platform != "win32":
-            monkeypatch.setattr(sys, "platform", "win32")
-
-        from kanon_cli.utils.spawn import spawn_detached
-
-        with patch("subprocess.Popen", side_effect=OSError("access denied")):
-            with pytest.raises(RuntimeError, match="spawn_detached: failed to spawn"):
                 spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
 
     def test_child_exception_recorded_to_log_not_swallowed(self, tmp_path: pathlib.Path) -> None:
@@ -442,7 +372,7 @@ class TestSpawnDetachedContract:
 
 @pytest.mark.integration
 class TestCreateDirsymlinkContract:
-    """Junction/symlink dir-link helper cross-platform contract."""
+    """POSIX symlink dir-link helper contract (os.symlink)."""
 
     def test_posix_creates_symlink_pointing_to_target(self, tmp_path: pathlib.Path) -> None:
         """On POSIX, create_dirsymlink creates a symlink that resolves to the target.
@@ -460,62 +390,6 @@ class TestCreateDirsymlinkContract:
 
         assert link_path.is_symlink(), "create_dirsymlink must create a symlink on POSIX"
         assert link_path.resolve() == target.resolve(), "Symlink must resolve to the target directory"
-
-    def test_windows_path_runs_mklink_j(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """On Windows, create_dirsymlink runs mklink /J (NTFS junction).
-
-        The Windows branch is exercised by mocking sys.platform so the
-        contract is verified on any CI host.
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-            monkeypatch: Pytest monkeypatch fixture.
-        """
-        if sys.platform != "win32":
-            monkeypatch.setattr(sys, "platform", "win32")
-
-        from kanon_cli.core.marketplace import create_dirsymlink
-
-        target = tmp_path / "target_dir"
-        target.mkdir()
-        link_path = tmp_path / "link"
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stderr = ""
-
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            create_dirsymlink(link_path, target)
-            mock_run.assert_called_once()
-            cmd = mock_run.call_args[0][0]
-            assert "/J" in cmd, "Windows junction must use mklink /J flag"
-            assert str(link_path) in cmd
-            assert str(target) in cmd
-
-    def test_windows_path_raises_oserror_on_mklink_failure(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """On Windows, a non-zero mklink exit raises OSError (fail-fast contract).
-
-        Args:
-            tmp_path: Pytest-provided temporary directory.
-            monkeypatch: Pytest monkeypatch fixture.
-        """
-        if sys.platform != "win32":
-            monkeypatch.setattr(sys, "platform", "win32")
-
-        from kanon_cli.core.marketplace import create_dirsymlink
-
-        target = tmp_path / "target_dir"
-        link_path = tmp_path / "link"
-
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "Access is denied."
-
-        with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(OSError, match="junction"):
-                create_dirsymlink(link_path, target)
 
     def test_posix_raises_oserror_when_link_path_already_exists(self, tmp_path: pathlib.Path) -> None:
         """On POSIX, create_dirsymlink raises OSError if link_path already exists.

@@ -15,17 +15,16 @@ import xml.etree.ElementTree as ET
 
 
 def create_dirsymlink(link_path: pathlib.Path, target: pathlib.Path) -> None:
-    """Create a junction-aware directory link at *link_path* pointing at *target*.
+    """Create a directory symlink at *link_path* pointing at *target* (POSIX).
 
-    On POSIX (Linux, macOS) this creates a standard directory symlink via
-    ``os.symlink``.  On Windows this creates an NTFS junction (no Developer Mode
-    required) by running ``mklink /J`` via ``subprocess``.
+    This creates a standard directory symlink via ``os.symlink``.  Kanon is
+    POSIX-only; on Windows the recommended path is WSL/WSL2.
 
     The function fails fast with an actionable ``OSError`` if the link cannot be
     created.  It never silently skips the link.
 
     Args:
-        link_path: Path at which the link (or junction) should be created.
+        link_path: Path at which the symlink should be created.
         target: Path to the directory the link should resolve to.
 
     Raises:
@@ -33,21 +32,7 @@ def create_dirsymlink(link_path: pathlib.Path, target: pathlib.Path) -> None:
             exists as a non-symlink entry, or the filesystem does not support
             symbolic links).
     """
-    if sys.platform == "win32":
-        result = subprocess.run(
-            ["cmd", "/C", "mklink", "/J", str(link_path), str(target)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise OSError(
-                f"ERROR: Failed to create directory junction at '{link_path}' -> '{target}'.\n"
-                f"mklink /J exited {result.returncode}: {result.stderr.strip()}\n"
-                f"Remediation: ensure the parent directory is writable and the"
-                f" link path does not already exist."
-            )
-    else:
-        os.symlink(target, link_path)
+    os.symlink(target, link_path)
 
 
 def locate_claude_binary() -> str:

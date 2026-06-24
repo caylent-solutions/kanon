@@ -9,8 +9,7 @@ windows-support-removal spec:
 - The two-set Linux/Windows matrix is collapsed: each test tier (unit /
   integration / functional / scenario) runs exactly once on a Linux runner
   with the bare tier marker (for example `-m "unit"`, `-m "integration"`),
-  with no per-OS marker filter (`and not windows_only` / `and not
-  linux_only`).
+  with no per-OS marker filter (an `and not <os>_only` exclusion).
 - Surviving conventions are preserved: every `run` step uses `shell: bash`,
   the workflow YAML is valid, the integration job runs in parallel with the
   unit job, and the ruff check / format-check steps cover `src/`.
@@ -37,8 +36,11 @@ WORKFLOW_IDS = ["pr-validation", "main-validation"]
 TEST_TIERS = ["unit", "integration", "functional", "scenario"]
 
 # Matches a per-OS marker filter that the single-Linux-set contract forbids,
-# for example `unit and not windows_only` or `scenario and not linux_only`.
-PER_OS_MARKER_FILTER = re.compile(r"and not (windows_only|linux_only)")
+# for example an `and not <os>_only` exclusion threaded into a pytest -m
+# expression. The OS token is composed from parts so this guard never embeds a
+# literal per-OS marker name (the markers were removed; AC-2 forbids the literal
+# token anywhere under tests/).
+PER_OS_MARKER_FILTER = re.compile(r"and not (windows|linux)_only")
 
 
 def _load_workflow(path: pathlib.Path) -> dict:
@@ -143,9 +145,9 @@ def test_no_per_os_marker_filter(workflow_path: pathlib.Path):
 
     Given: A workflow YAML file
     When: Every run step's command text is inspected
-    Then: No step contains an `and not windows_only` / `and not linux_only`
-        marker filter. Each tier runs with the bare tier marker on the single
-        Linux set. This fails if a per-OS filter is reintroduced.
+    Then: No step contains an `and not <os>_only` marker filter. Each tier runs
+        with the bare tier marker on the single Linux set. This fails if a
+        per-OS filter is reintroduced.
     """
     workflow = _load_workflow(workflow_path)
     run_steps = _collect_run_steps(workflow)
@@ -154,7 +156,7 @@ def test_no_per_os_marker_filter(workflow_path: pathlib.Path):
     ]
     assert not offending, (
         f"Workflow {workflow_path.name} must not thread a per-OS marker filter "
-        f"('and not windows_only' / 'and not linux_only') into any run step "
+        f"(an 'and not <os>_only' exclusion) into any run step "
         f"(single-Linux-set contract, FR-6). Offending steps: {offending}"
     )
 

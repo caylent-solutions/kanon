@@ -25,14 +25,9 @@ import pytest
 
 from kanon_cli.core.install import install
 
-# fcntl is POSIX-only; these tests exercise the POSIX fcntl.flock locking path.
-# On Windows (no fcntl) the whole module is skipped at collection -- the Windows
-# lock backend is covered by tests/integration/test_cross_platform_contract.py.
-# The linux_only marker deselects the suite on the Windows CI leg for
-# consistency with the platform-marker scheme (the importorskip is the
-# defence-in-depth collection guard).
-pytestmark = pytest.mark.linux_only
-
+# fcntl is POSIX-only; these tests exercise the POSIX fcntl.flock locking path,
+# which is the only workspace-lock backend. The importorskip is the collection
+# guard that keeps the suite POSIX-only.
 fcntl = pytest.importorskip("fcntl")
 
 

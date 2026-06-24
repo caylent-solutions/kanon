@@ -43,7 +43,7 @@ if _THIS_DIR not in sys.path:
 
 
 # ---------------------------------------------------------------------------
-# Auto-apply the unit + linux_only markers to every test in this directory.
+# Auto-apply the unit marker to every test in this directory.
 #
 # The upstream files under tests/unit/repo/ were copied from the Gerrit repo
 # test suite, which predates the project-level pytest marker conventions
@@ -52,17 +52,6 @@ if _THIS_DIR not in sys.path:
 # of the three registered markers, so every test runs under exactly one of
 # the three make targets (make test-unit / test-integration / test-functional)
 # and nothing is orphaned.
-#
-# It also applies @pytest.mark.linux_only to every test in this directory. The
-# embedded Google "repo" tool (src/kanon_cli/repo/**) is a POSIX-oriented
-# subsystem: it shells out to git, relies on fork-based process isolation,
-# POSIX signal handling, and symlink semantics that have no Windows equivalent
-# in the kanon embedding. kanon shells out to it; making the vendored internals
-# Windows-clean is out of scope for the cross-platform CI effort, which targets
-# kanon's own primitives (kanonenv ACL, workspace lock, spawn). Marking the
-# whole repo-tool suite linux_only deselects it on the Windows CI leg while it
-# still runs in full on the Linux leg. The marker is applied here (one place)
-# rather than with 215 per-file decorators (DRY).
 # ---------------------------------------------------------------------------
 
 
@@ -70,7 +59,7 @@ _MARKERS = {"unit", "integration", "functional"}
 
 
 def pytest_collection_modifyitems(config, items):
-    """Apply @pytest.mark.unit and @pytest.mark.linux_only under tests/unit/repo/."""
+    """Apply @pytest.mark.unit under tests/unit/repo/."""
     this_dir = pathlib.Path(__file__).resolve().parent
     for item in items:
         try:
@@ -81,7 +70,6 @@ def pytest_collection_modifyitems(config, items):
             item_path.relative_to(this_dir)
         except ValueError:
             continue
-        item.add_marker(pytest.mark.linux_only)
         if any(mark.name in _MARKERS for mark in item.iter_markers()):
             continue
         item.add_marker(pytest.mark.unit)

@@ -86,15 +86,11 @@ jobs:
         run: make publish
 
   # ---------------------------------------------------------------------------
-  # Test tiers are split into a LINUX set (ubuntu-24.04) and a WINDOWS set
-  # (windows-latest). Every test invocation threads a platform filter into the
-  # tier marker so platform-specific suites are deselected on the other OS:
-  #   * Linux runs:   -m "<tier> and not windows_only"
-  #   * Windows runs: -m "<tier> and not linux_only"
-  # Tests with neither marker are cross-platform and run on both legs. Each leg
-  # is an independent job (fail-fast: false equivalent -- jobs do not cancel one
-  # another). Every run step uses `shell: bash` (Git bash is present on the
-  # windows-latest runner).
+  # Test tiers run on a single LINUX set (ubuntu-24.04). Each tier runs exactly
+  # once with the bare tier marker (for example -m "unit", -m "integration");
+  # no per-OS marker filter is threaded. Each leg is an independent job. Every
+  # run step uses `shell: bash` and fails the job on a non-zero exit, so there
+  # is no fallback or silent skip.
   # ---------------------------------------------------------------------------
 
   unit-tests-linux:
@@ -110,7 +106,7 @@ jobs:
       - name: Run unit tests with 90% coverage gate
         shell: bash
         run: |
-          python -m pytest -m "unit and not windows_only" --cov=kanon_cli --cov-report=term-missing
+          python -m pytest -m "unit" --cov=kanon_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -118,22 +114,6 @@ jobs:
             echo "Error: Code coverage is below 90% threshold ($coverage_percent%)"
             exit 1
           fi
-
-  unit-tests-windows:
-    name: Unit tests (Windows)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-      - name: Run unit tests
-        shell: bash
-        # No coverage gate on Windows: the 90% threshold is measured on the
-        # Linux leg, which runs the full unit suite (including linux_only).
-        run: python -m pytest -m "unit and not linux_only"
 
   integration-tests-linux:
     name: Integration tests (Linux)
@@ -147,21 +127,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run integration tests
         shell: bash
-        run: python -m pytest -m "integration and not windows_only"
-
-  integration-tests-windows:
-    name: Integration tests (Windows)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-      - name: Run integration tests
-        shell: bash
-        run: python -m pytest -m "integration and not linux_only"
+        run: python -m pytest -m "integration"
 
   functional-tests-linux:
     name: Functional tests (Linux)
@@ -175,21 +141,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run functional tests
         shell: bash
-        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -m "functional and not windows_only"
-
-  functional-tests-windows:
-    name: Functional tests (Windows)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-      - name: Run functional tests
-        shell: bash
-        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -m "functional and not linux_only"
+        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -m "functional"
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)
@@ -203,27 +155,9 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run scenario tests
         shell: bash
-        # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it)
-        # and threads the platform filter via PYTEST_PLATFORM_MARK so the recipe
-        # runs `pytest -m "scenario and not windows_only"`.
-        run: make test-scenarios PYTEST_PLATFORM_MARK=' and not windows_only'
-
-  scenario-tests-windows:
-    name: Scenario tests (Windows, docs/integration-testing.md)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-      - name: Run scenario tests
-        shell: bash
-        # Direct pytest invocation (GNU make is not guaranteed on the
-        # windows-latest runner image); same scenario tier with the linux_only
-        # suites deselected.
-        run: python -m pytest -m "scenario and not linux_only"
+        # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it).
+        # The recipe runs `pytest -m "scenario"` with no platform filter.
+        run: make test-scenarios
 
   full-suite-regression:
     name: Full suite regression (cross-suite isolation guard)
@@ -272,13 +206,9 @@ jobs:
       - security-scan
       - build
       - unit-tests-linux
-      - unit-tests-windows
       - integration-tests-linux
-      - integration-tests-windows
       - functional-tests-linux
-      - functional-tests-windows
       - scenario-tests-linux
-      - scenario-tests-windows
       - full-suite-regression
       - codeql
     runs-on: ubuntu-24.04

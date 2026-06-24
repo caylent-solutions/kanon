@@ -54,6 +54,39 @@ class TestBuildParser:
         args = parser.parse_args(["validate", "xml", "--repo-root", "/some/path"])
         assert str(args.repo_root) == "/some/path"
 
+    def test_parser_marketplace_enable_subcommand(self) -> None:
+        """build_parser() registers 'marketplace enable <alias>' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_enable
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "enable", "foo"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "enable"
+        assert args.alias == "foo"
+        assert args.func is run_enable
+
+    def test_parser_marketplace_disable_subcommand(self) -> None:
+        """build_parser() registers 'marketplace disable <alias>' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_disable
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "disable", "foo"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "disable"
+        assert args.alias == "foo"
+        assert args.func is run_disable
+
+    def test_parser_marketplace_status_subcommand(self) -> None:
+        """build_parser() registers 'marketplace status [--all]' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_status
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "status", "--all"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "status"
+        assert args.show_all is True
+        assert args.func is run_status
+
     def test_parser_doctor_subcommand(self) -> None:
         """build_parser() registers the 'doctor' subcommand (AC-FUNC-007)."""
         parser = build_parser()
@@ -377,6 +410,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "catalog": ["audit"],
             "completion": ["bash"],
             "install": [_FAKE_KANON_PATH],
+            "marketplace": ["status"],
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
             "validate": ["xml"],

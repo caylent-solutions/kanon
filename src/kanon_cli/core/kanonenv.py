@@ -28,11 +28,12 @@ variables, validates required fields, and returns a structured dict.
 Security guards are applied before any data is returned:
   - Symlink detection (TOCTOU mitigation): the .kanon file must not be a symlink.
   - Permission check: the .kanon file must not be writable by anyone other than
-    its owner. On POSIX this rejects the group-write and world-write mode bits;
-    on Windows the ACL-equivalent rejects a discretionary ACL (DACL) that grants
-    write access to any principal other than the file owner or the local
-    Administrators group. The control is selected per-OS at the check site and
-    is never silently skipped on either platform.
+    its owner (and, on Windows, the privileged administrative principals the OS
+    itself grants). On POSIX this rejects the group-write and world-write mode
+    bits; on Windows the ACL-equivalent rejects a discretionary ACL (DACL) that
+    grants write access to any principal other than the file owner, the local
+    Administrators group, or the SYSTEM account. The control is selected per-OS
+    at the check site and is never silently skipped on either platform.
   - Path traversal rejection: KANON_SOURCE_<name>_PATH values must not contain '..'.
 """
 
@@ -84,10 +85,12 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
     Security guards are applied before returning:
       - Symlink TOCTOU: the file must not be a symlink.
       - Permissions: the file must not be writable by anyone other than its
-        owner. On POSIX the group-write and world-write mode bits are rejected;
-        on Windows the ACL-equivalent rejects any DACL entry that grants write
-        access to a principal other than the owner or local Administrators. The
-        per-OS control is selected at the check site and is never skipped.
+        owner (and, on Windows, the privileged administrative principals the OS
+        itself grants). On POSIX the group-write and world-write mode bits are
+        rejected; on Windows the ACL-equivalent rejects any DACL entry that
+        grants write access to a principal other than the owner, the local
+        Administrators group, or the SYSTEM account. The per-OS control is
+        selected at the check site and is never skipped.
       - Path traversal: no KANON_SOURCE_<name>_PATH value may contain '..'.
 
     Args:
@@ -159,7 +162,7 @@ def _check_write_permission(path: pathlib.Path) -> None:
       - On Windows (``sys.platform == "win32"``) the ACL-equivalent
         (``_check_windows_acl``) reads the file's discretionary ACL via
         ``GetFileSecurity`` and rejects any write grant to a principal other
-        than the owner or the local Administrators group.
+        than the owner, the local Administrators group, or the SYSTEM account.
       - On every other platform the POSIX mode-bit control
         (``_check_permissions``) rejects the group-write and world-write bits.
 
@@ -171,7 +174,7 @@ def _check_write_permission(path: pathlib.Path) -> None:
 
     Raises:
         ValueError: If the file grants write access beyond its owner (and, on
-            Windows, the local Administrators group).
+            Windows, the local Administrators group and SYSTEM account).
     """
     if sys.platform == "win32":
         _check_windows_acl(path)
@@ -220,16 +223,22 @@ def _evaluate_acl_write_principals(
     is given the set of security principals that the file's DACL grants write
     access to (``write_principals``, as string SIDs) and the set of principals
     that are permitted to hold write access (``allowed_principals`` -- the file
-    owner SID and the local Administrators SID). Any write grant to a principal
-    outside ``allowed_principals`` fails fast with the same actionable error
-    shape the POSIX mode-bit path raises. Separating this decision from the
-    ``GetFileSecurity`` mechanism (``_check_windows_acl``) keeps the control
-    falsifiable and exercisable on every platform.
+    owner SID, the local Administrators group SID, and the local SYSTEM account
+    SID). These three are the trusted, administrative principals that the
+    Windows filesystem itself grants on a per-user temp/profile file; they are
+    the Windows equivalent of POSIX owner-only write (a non-privileged "group"
+    or "world" principal cannot tamper with the file). Any write grant to a
+    principal outside ``allowed_principals`` -- e.g. Everyone (``S-1-1-0``),
+    Authenticated Users (``S-1-5-11``), or the Users group (``S-1-5-32-545``) --
+    is the ACL equivalent of a group/world-writable file and fails fast with the
+    same actionable error shape the POSIX mode-bit path raises. Separating this
+    decision from the ``GetFileSecurity`` mechanism (``_check_windows_acl``)
+    keeps the control falsifiable and exercisable on every platform.
 
     Args:
         write_principals: String SIDs that the DACL grants write access to.
-        allowed_principals: String SIDs permitted to hold write access (owner
-            and local Administrators).
+        allowed_principals: String SIDs permitted to hold write access (the file
+            owner, the local Administrators group, and the local SYSTEM account).
         path: Path to the .kanon file (for the error message).
 
     Raises:
@@ -248,14 +257,19 @@ def _evaluate_acl_write_principals(
 
 
 def _check_windows_acl(path: pathlib.Path) -> None:
-    """Reject a .kanon file whose Windows DACL grants write access beyond owner/admin.
+    """Reject a .kanon file whose Windows DACL grants write access beyond owner/admin/SYSTEM.
 
     Windows ACL-equivalent of the POSIX group/world-writable mode-bit check
     (FR-37). Reads the file's owner SID and discretionary ACL (DACL) via
-    ``win32security.GetFileSecurity``, derives the local Administrators
-    well-known SID, collects every principal that an allow ACE grants a
-    write-class right to, and delegates the accept/reject decision to
-    ``_evaluate_acl_write_principals``. The ``win32security`` /
+    ``win32security.GetFileSecurity``, derives the local Administrators and
+    local SYSTEM well-known SIDs, collects every principal that an allow ACE
+    grants a write-class right to, and delegates the accept/reject decision to
+    ``_evaluate_acl_write_principals``. Write access granted to the file owner,
+    the local Administrators group, or the SYSTEM account is the privileged
+    administrative baseline that Windows itself applies to a per-user file
+    (the equivalent of POSIX owner-only write); any broader grant (Everyone,
+    Authenticated Users, the Users group) is the ACL equivalent of a
+    group/world-writable file and is rejected. The ``win32security`` /
     ``ntsecuritycon`` imports live inside this Windows-only branch so the
     module imports cleanly on POSIX (mirroring the per-OS backend import idiom
     used elsewhere in this codebase). A non-compliant ACL fails fast; this
@@ -266,7 +280,8 @@ def _check_windows_acl(path: pathlib.Path) -> None:
 
     Raises:
         ValueError: If the DACL grants write access to any principal other than
-            the file owner or the local Administrators group.
+            the file owner, the local Administrators group, or the local SYSTEM
+            account.
     """
     import ntsecuritycon
     import win32security
@@ -285,9 +300,11 @@ def _check_windows_acl(path: pathlib.Path) -> None:
     )
     owner_sid = descriptor.GetSecurityDescriptorOwner()
     administrators_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid)
+    local_system_sid = win32security.CreateWellKnownSid(win32security.WinLocalSystemSid)
     allowed_principals = {
         win32security.ConvertSidToStringSid(owner_sid),
         win32security.ConvertSidToStringSid(administrators_sid),
+        win32security.ConvertSidToStringSid(local_system_sid),
     }
 
     dacl = descriptor.GetSecurityDescriptorDacl()

@@ -13,6 +13,7 @@ according to E0-F9-S1-T2 requirements:
 """
 
 import pathlib
+import re
 import stat
 
 import pytest
@@ -275,8 +276,14 @@ def test_makefile_test_integration_uses_integration_marker():
         elif line.strip() and not line.startswith("\t"):
             break
     recipe_text = "\n".join(recipe_lines)
-    assert "-m integration" in recipe_text, (
-        f"Makefile test-integration target must invoke pytest with '-m integration'. Recipe lines:\n{recipe_text}"
+    # The recipe selects the integration tier and threads a platform filter via
+    # the PYTEST_PLATFORM_MARK make variable, e.g.
+    #   uv run pytest -m "integration$(PYTEST_PLATFORM_MARK)"
+    # which expands to `-m "integration"` locally (empty default) or
+    # `-m "integration and not windows_only"` on the Linux CI leg.
+    assert re.search(r'-m "integration', recipe_text), (
+        f"Makefile test-integration target must invoke pytest selecting the integration tier "
+        f'(-m "integration[...]"). Recipe lines:\n{recipe_text}'
     )
 
 

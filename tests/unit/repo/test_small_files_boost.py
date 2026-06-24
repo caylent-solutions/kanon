@@ -631,7 +631,7 @@ class TestPlatformUtilsWindows:
             mock.patch.object(platform_utils, "isWindows", return_value=True),
             mock.patch.object(platform_utils, "_validate_winpath", side_effect=lambda p: p),
             mock.patch.object(platform_utils, "isdir", return_value=True),
-            mock.patch.dict(sys.modules, {"platform_utils_win32": mock_win32}),
+            mock.patch.dict(sys.modules, {"kanon_cli.repo.platform_utils_win32": mock_win32}),
         ):
             platform_utils.symlink("source", "link")
             mock_win32.create_dirsymlink.assert_called_once()

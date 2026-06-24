@@ -20,6 +20,7 @@ AC-TEST-001
 import multiprocessing
 import multiprocessing.synchronize
 import pathlib
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -39,6 +40,14 @@ import os
 
 _LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "10.0"))
 _LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "5.0"))
+
+# Multiprocessing start method: "fork" on POSIX (fast, inherits the parent's
+# state, no pickling required) and "spawn" on Windows where "fork" is
+# unavailable. The cross-process helpers below are module-level so they are
+# importable by reference under the "spawn" start method. This keeps the
+# cross-process lock contract (AC-8) exercised on both platforms with no skip
+# marker -- the lock is cross-platform and so are its tests.
+_MP_CONTEXT = multiprocessing.get_context("fork" if sys.platform != "win32" else "spawn")
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +353,7 @@ class TestFailFastTimeout:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        ctx = multiprocessing.get_context("fork")
+        ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
 
@@ -387,7 +396,7 @@ class TestFailFastTimeout:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        ctx = multiprocessing.get_context("fork")
+        ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
 
@@ -437,7 +446,7 @@ class TestCrossProcessContention:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        ctx = multiprocessing.get_context("fork")
+        ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
 
@@ -476,7 +485,7 @@ class TestCrossProcessContention:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        ctx = multiprocessing.get_context("fork")
+        ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
 

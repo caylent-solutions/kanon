@@ -20,10 +20,16 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("zsh") is None,
-    reason="zsh is not installed (e.g. Windows runners); zsh completion is validated on POSIX runners",
-)
+# linux_only: the suite shells out to a real zsh, a POSIX-only shell with no
+# Windows equivalent, so it is deselected on the Windows CI leg. The skipif is
+# retained so the suite also self-skips on any POSIX host that lacks zsh.
+pytestmark = [
+    pytest.mark.linux_only,
+    pytest.mark.skipif(
+        shutil.which("zsh") is None,
+        reason="zsh is not installed (e.g. Windows runners); zsh completion is validated on POSIX runners",
+    ),
+]
 
 _REQUIRED_HELPERS = [
     "_kanon_complete_catalog_entries",

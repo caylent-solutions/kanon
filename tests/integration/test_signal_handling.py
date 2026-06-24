@@ -23,6 +23,11 @@ from kanon_cli.core.install import install
 
 # fcntl + SIGALRM are POSIX-only; these tests exercise the POSIX locking/signal
 # path. On Windows (no fcntl) the whole module is skipped at collection.
+# The linux_only marker deselects the suite on the Windows CI leg for
+# consistency with the platform-marker scheme (the importorskip is the
+# defence-in-depth collection guard).
+pytestmark = pytest.mark.linux_only
+
 fcntl = pytest.importorskip("fcntl")
 
 # ---------------------------------------------------------------------------

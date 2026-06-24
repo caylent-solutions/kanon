@@ -42,6 +42,12 @@ from typing import Optional
 
 import pytest
 
+# linux_only: this suite shells out to a real bash to exercise the dynamic
+# bash-completion machinery (a POSIX shell-completion feature with no Windows
+# equivalent), so it is deselected on the Windows CI leg and runs in full on
+# the Linux leg.
+pytestmark = pytest.mark.linux_only
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

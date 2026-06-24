@@ -35,7 +35,7 @@ def symlink(source, link_name):
     to know whether to create a "File" or a "Directory" symbolic link.
     """
     if isWindows():
-        import platform_utils_win32
+        from . import platform_utils_win32
 
         source = _validate_winpath(source)
         link_name = _validate_winpath(link_name)
@@ -223,7 +223,7 @@ def islink(path):
     Availability: Windows, Unix.
     """
     if isWindows():
-        import platform_utils_win32
+        from . import platform_utils_win32
 
         return platform_utils_win32.islink(_makelongpath(path))
     else:
@@ -239,7 +239,7 @@ def readlink(path):
     Availability: Windows, Unix.
     """
     if isWindows():
-        import platform_utils_win32
+        from . import platform_utils_win32
 
         return platform_utils_win32.readlink(_makelongpath(path))
     else:

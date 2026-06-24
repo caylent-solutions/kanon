@@ -278,8 +278,21 @@ class TestEdgeCases:
 _FAKE_ACCESS_ALLOWED_ACE_TYPE = 0
 _FAKE_ACCESS_DENIED_ACE_TYPE = 1
 _FAKE_OWNER_SID = "S-1-5-21-OWNER"
-_FAKE_ADMINISTRATORS_SID = "S-1-5-32-544"
+_FAKE_ADMINISTRATORS_SID = "S-1-5-32-544"  # local Administrators group
+_FAKE_SYSTEM_SID = "S-1-5-18"  # local SYSTEM account
 _FAKE_OTHER_SID = "S-1-1-0"  # well-known "Everyone" SID, a broader-than-owner grant
+_FAKE_USERS_SID = "S-1-5-32-545"  # built-in Users group, a broad non-privileged grant
+
+# Distinct sentinel objects so the fake CreateWellKnownSid can dispatch on the
+# requested well-known SID kind (Administrators vs SYSTEM), mirroring how the
+# real win32security maps WinBuiltinAdministratorsSid / WinLocalSystemSid to
+# different SIDs.
+_WIN_BUILTIN_ADMINISTRATORS_KIND = object()
+_WIN_LOCAL_SYSTEM_KIND = object()
+_FAKE_WELL_KNOWN_SIDS = {
+    id(_WIN_BUILTIN_ADMINISTRATORS_KIND): _FAKE_ADMINISTRATORS_SID,
+    id(_WIN_LOCAL_SYSTEM_KIND): _FAKE_SYSTEM_SID,
+}
 
 
 class _FakeAcl:
@@ -315,9 +328,10 @@ def _make_fake_win32security(descriptor: _FakeSecurityDescriptor) -> types.Modul
     module.OWNER_SECURITY_INFORMATION = 0x1
     module.DACL_SECURITY_INFORMATION = 0x4
     module.ACCESS_ALLOWED_ACE_TYPE = _FAKE_ACCESS_ALLOWED_ACE_TYPE
-    module.WinBuiltinAdministratorsSid = object()
+    module.WinBuiltinAdministratorsSid = _WIN_BUILTIN_ADMINISTRATORS_KIND
+    module.WinLocalSystemSid = _WIN_LOCAL_SYSTEM_KIND
     module.GetFileSecurity = lambda _path, _info: descriptor
-    module.CreateWellKnownSid = lambda _kind: _FAKE_ADMINISTRATORS_SID
+    module.CreateWellKnownSid = lambda kind: _FAKE_WELL_KNOWN_SIDS[id(kind)]
     module.ConvertSidToStringSid = lambda sid: sid
     return module
 
@@ -396,43 +410,54 @@ class TestPosixWritePermission:
 
 @pytest.mark.unit
 class TestAclWritePrincipalPolicy:
-    """Verify the platform-agnostic owner/admin-only ACL write-grant policy."""
+    """Verify the platform-agnostic owner/admin/SYSTEM-only ACL write-grant policy."""
 
-    def test_accepts_owner_and_admin_only(self, tmp_path: pathlib.Path) -> None:
-        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID}
-        # No exception: every write principal is the owner or Administrators.
+    def test_accepts_owner_admin_and_system(self, tmp_path: pathlib.Path) -> None:
+        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID, _FAKE_SYSTEM_SID}
+        # No exception: every write principal is the owner, Administrators, or SYSTEM.
+        # This is the ACL a Windows runner's per-user temp .kanon actually carries.
         _evaluate_acl_write_principals(
-            [_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID],
+            [_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID, _FAKE_SYSTEM_SID],
             allowed,
             tmp_path / ".kanon",
         )
 
     def test_accepts_empty_write_grant(self, tmp_path: pathlib.Path) -> None:
-        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID}
+        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID, _FAKE_SYSTEM_SID}
         # No write principals at all is trivially compliant.
         _evaluate_acl_write_principals([], allowed, tmp_path / ".kanon")
 
-    def test_rejects_broader_than_owner_admin_grant(self, tmp_path: pathlib.Path) -> None:
-        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID}
-        with pytest.raises(ValueError, match=_FAKE_OTHER_SID):
+    @pytest.mark.parametrize(
+        ("broad_sid", "label"),
+        [
+            (_FAKE_OTHER_SID, "Everyone"),
+            ("S-1-5-11", "Authenticated Users"),
+            (_FAKE_USERS_SID, "Users group"),
+        ],
+    )
+    def test_rejects_broad_non_privileged_grant(self, tmp_path: pathlib.Path, broad_sid: str, label: str) -> None:
+        # A write grant to any broad non-privileged principal (the ACL
+        # equivalent of group/world-writable) must still be rejected even though
+        # owner/admin/SYSTEM are now accepted.
+        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID, _FAKE_SYSTEM_SID}
+        with pytest.raises(ValueError, match=broad_sid):
             _evaluate_acl_write_principals(
-                [_FAKE_OWNER_SID, _FAKE_OTHER_SID],
+                [_FAKE_OWNER_SID, _FAKE_SYSTEM_SID, broad_sid],
                 allowed,
                 tmp_path / ".kanon",
             )
 
     def test_rejects_names_every_disallowed_principal(self, tmp_path: pathlib.Path) -> None:
-        allowed = {_FAKE_OWNER_SID}
-        second_other = "S-1-5-11"  # Authenticated Users
+        allowed = {_FAKE_OWNER_SID, _FAKE_ADMINISTRATORS_SID, _FAKE_SYSTEM_SID}
         with pytest.raises(ValueError) as exc_info:
             _evaluate_acl_write_principals(
-                [_FAKE_OTHER_SID, second_other, _FAKE_OWNER_SID],
+                [_FAKE_OTHER_SID, _FAKE_USERS_SID, _FAKE_OWNER_SID],
                 allowed,
                 tmp_path / ".kanon",
             )
         message = str(exc_info.value)
         assert _FAKE_OTHER_SID in message
-        assert second_other in message
+        assert _FAKE_USERS_SID in message
 
 
 @pytest.mark.unit
@@ -447,38 +472,48 @@ class TestWindowsAclMechanism:
         monkeypatch.setitem(sys.modules, "win32security", _make_fake_win32security(descriptor))
         monkeypatch.setitem(sys.modules, "ntsecuritycon", _make_fake_ntsecuritycon())
 
-    def test_accepts_dacl_granting_write_to_owner_and_admin_only(
+    def test_accepts_dacl_granting_write_to_owner_admin_and_system(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # This is the DACL a GitHub-hosted windows-latest runner's per-user temp
+        # .kanon file actually carries: write to the owner, the Administrators
+        # group, and the SYSTEM account. The check must accept it.
         nt = _make_fake_ntsecuritycon()
         dacl = _FakeAcl(
             [
                 _allow_ace(nt.FILE_GENERIC_WRITE, _FAKE_OWNER_SID),
                 _allow_ace(nt.FILE_GENERIC_WRITE, _FAKE_ADMINISTRATORS_SID),
+                _allow_ace(nt.FILE_GENERIC_WRITE, _FAKE_SYSTEM_SID),
             ]
         )
         descriptor = _FakeSecurityDescriptor(_FAKE_OWNER_SID, dacl)
         self._install_fake_win32(monkeypatch, descriptor)
-        # No exception: only owner and Administrators hold write access.
+        # No exception: owner, Administrators, and SYSTEM are the privileged baseline.
         _check_windows_acl(tmp_path / ".kanon")
 
-    def test_rejects_dacl_granting_write_to_everyone(
+    @pytest.mark.parametrize("broad_sid", [_FAKE_OTHER_SID, _FAKE_USERS_SID])
+    def test_rejects_dacl_granting_write_to_broad_principal(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
+        broad_sid: str,
     ) -> None:
+        # A write grant to Everyone or the built-in Users group is the ACL
+        # equivalent of group/world-writable and must be rejected, even though
+        # SYSTEM is also present in the DACL alongside the broad principal.
         nt = _make_fake_ntsecuritycon()
         dacl = _FakeAcl(
             [
                 _allow_ace(nt.FILE_GENERIC_WRITE, _FAKE_OWNER_SID),
-                _allow_ace(nt.FILE_WRITE_DATA, _FAKE_OTHER_SID),
+                _allow_ace(nt.FILE_GENERIC_WRITE, _FAKE_SYSTEM_SID),
+                _allow_ace(nt.FILE_WRITE_DATA, broad_sid),
             ]
         )
         descriptor = _FakeSecurityDescriptor(_FAKE_OWNER_SID, dacl)
         self._install_fake_win32(monkeypatch, descriptor)
-        with pytest.raises(ValueError, match=_FAKE_OTHER_SID):
+        with pytest.raises(ValueError, match=broad_sid):
             _check_windows_acl(tmp_path / ".kanon")
 
     def test_ignores_read_only_ace_for_other_principal(

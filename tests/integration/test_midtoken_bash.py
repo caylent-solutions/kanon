@@ -30,6 +30,12 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
+# linux_only: this suite shells out to a real bash to exercise the dynamic
+# bash-completion machinery (a POSIX shell-completion feature with no Windows
+# equivalent), so it is deselected on the Windows CI leg and runs in full on
+# the Linux leg.
+pytestmark = pytest.mark.linux_only
+
 
 def _write_preamble_file(tmp_path: Path, content: str) -> str:
     """Write preamble content to a temp file and return its path."""

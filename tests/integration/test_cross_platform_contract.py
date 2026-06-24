@@ -9,9 +9,11 @@ Asserts the cross-platform contract of:
 The Windows-specific branches (junctions, DETACHED_PROCESS) are exercised
 by mocking sys.platform so the contract is verified on any CI host.
 
-On POSIX the workspace-lock tests use real fcntl-based exclusion via child
-processes.  On Windows, fcntl is not available and the workspace-lock tests
-assert the expected RuntimeError (fail-fast contract for unsupported platform).
+The workspace-lock tests use the real cross-platform ``kanon_workspace_lock``
+context manager via child processes on both POSIX and Windows; the backend
+(POSIX ``fcntl.flock`` / Windows ``msvcrt.locking``) is selected at acquisition
+time inside the context manager, so the same cross-process exclusion contract
+holds on every platform in the matrix.
 
 No platform-conditional guards are used -- the full contract test file
 collects and runs on every platform in the matrix.
@@ -70,25 +72,58 @@ def _attempt_nonblocking_lock(
     workspace: pathlib.Path,
     result_queue: "multiprocessing.Queue[bool]",
 ) -> None:
-    """Child-process helper: try LOCK_NB and report True (acquired) or False (blocked).
+    """Child-process helper: probe the workspace lock NON-blocking; report the result.
+
+    Probes the exact lock-file region that the production
+    ``kanon_workspace_lock`` backend locks, using the OS-native non-blocking
+    primitive so there is no acquisition timeout to race:
+
+    * POSIX: ``fcntl.flock(LOCK_EX | LOCK_NB)`` -- raises ``BlockingIOError`` when
+      another process already holds the exclusive lock.
+    * Windows: ``msvcrt.locking(LK_NBLCK, 1)`` on byte region ``[0, 1)`` (the same
+      single-byte region the Windows backend locks) -- raises ``OSError`` when
+      that region is already locked by another process.
+
+    Reports True when the probe acquired the lock (no other holder) and False
+    when it was blocked by an existing holder, on any platform.
 
     Args:
         workspace: Workspace root path.
         result_queue: Queue for reporting the outcome.
     """
-    import fcntl
+    import sys
 
     from kanon_cli.constants import INSTALL_LOCK_FILENAME
 
     lock_path = workspace / ".kanon-data" / INSTALL_LOCK_FILENAME
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
+
+    if sys.platform == "win32":
+        import msvcrt
+
+        with open(lock_path, "wb") as fh:
+            # Match the production backend's locked region: write a sentinel byte
+            # and lock byte [0, 1) so this probe contends on the same region.
+            fh.seek(0)
+            fh.write(b"\0")
+            fh.flush()
+            fh.seek(0)
+            try:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                result_queue.put(True)
+            except OSError:
+                result_queue.put(False)
+    else:
+        import fcntl
+
         with open(lock_path, "w", encoding="utf-8") as fh:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            result_queue.put(True)
-    except BlockingIOError:
-        result_queue.put(False)
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                result_queue.put(True)
+            except BlockingIOError:
+                result_queue.put(False)
 
 
 # ---------------------------------------------------------------------------
@@ -117,28 +152,22 @@ _MP_CONTEXT = multiprocessing.get_context("fork" if sys.platform != "win32" else
 class TestWorkspaceLockCrossProcessExclusion:
     """Cross-process exclusion contract for kanon_workspace_lock.
 
-    On Windows, kanon_workspace_lock raises RuntimeError because fcntl is
-    unavailable.  These tests assert the POSIX flock exclusion on POSIX and
-    the fail-fast RuntimeError on Windows.
+    kanon_workspace_lock acquires an exclusive kernel-level lock through the
+    per-OS backend selected at acquisition time (POSIX ``fcntl.flock`` / Windows
+    ``msvcrt.locking``). These tests assert the same cross-process exclusion on
+    both platforms via child processes.
     """
 
     def test_second_process_blocked_while_first_holds_lock(self, tmp_path: pathlib.Path) -> None:
-        """A second process cannot acquire LOCK_NB while the first holds LOCK_EX (POSIX).
+        """A second process cannot acquire the lock while the first holds it.
 
-        On Windows, kanon_workspace_lock raises RuntimeError immediately
-        (fcntl unavailable), which is the correct fail-fast contract.
+        Holds the lock in a child process, then a contender child probes the same
+        lock region non-blocking (per-OS native primitive) and must report it was
+        blocked (False) on every platform.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        if sys.platform == "win32":
-            from kanon_cli.utils.concurrency import kanon_workspace_lock
-
-            with pytest.raises(RuntimeError, match="not supported on Windows"):
-                with kanon_workspace_lock(tmp_path):
-                    pass
-            return
-
         ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
@@ -172,22 +201,14 @@ class TestWorkspaceLockCrossProcessExclusion:
         )
 
     def test_second_process_acquires_after_first_releases(self, tmp_path: pathlib.Path) -> None:
-        """A second process can acquire the lock after the first releases it (POSIX).
+        """A second process can acquire the lock after the first releases it.
 
-        On Windows, kanon_workspace_lock raises RuntimeError immediately
-        (fcntl unavailable), which is the correct fail-fast contract.
+        The holder child acquires then releases the lock; a contender child then
+        acquires it successfully (reports True) on every platform.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        if sys.platform == "win32":
-            from kanon_cli.utils.concurrency import kanon_workspace_lock
-
-            with pytest.raises(RuntimeError, match="not supported on Windows"):
-                with kanon_workspace_lock(tmp_path):
-                    pass
-            return
-
         ctx = _MP_CONTEXT
         ready_event = ctx.Event()
         release_event = ctx.Event()
@@ -219,78 +240,61 @@ class TestWorkspaceLockCrossProcessExclusion:
 
 @pytest.mark.integration
 class TestWorkspaceLockReleaseOnExit:
-    """Lock is released on both normal exit and exception exit (POSIX only)."""
+    """Lock is released on both normal exit and exception exit (cross-platform).
+
+    Release is asserted by a contender child process that acquires the lock
+    after the holder has exited; the contender uses the real cross-platform
+    ``kanon_workspace_lock`` so the probe works on POSIX and Windows alike. A
+    successful acquisition (True) proves the holder's lock was released.
+    """
+
+    def _assert_lock_acquirable_by_child(self, ctx, tmp_path: pathlib.Path) -> None:
+        """Spawn a contender child and assert it acquires the (now-free) lock.
+
+        Args:
+            ctx: Multiprocessing context (fork on POSIX, spawn on Windows).
+            tmp_path: Workspace root whose lock must currently be free.
+        """
+        result_queue: multiprocessing.Queue[bool] = ctx.Queue()
+        contender = ctx.Process(
+            target=_attempt_nonblocking_lock,
+            args=(tmp_path, result_queue),
+            daemon=True,
+        )
+        contender.start()
+        contender.join(timeout=_LOCK_JOIN_TIMEOUT)
+        acquired = result_queue.get_nowait() if not result_queue.empty() else None
+        assert acquired is True, f"Lock must be acquirable after the holder exits; result was {acquired!r}"
 
     def test_lock_released_after_normal_context_exit(self, tmp_path: pathlib.Path) -> None:
-        """LOCK_NB succeeds immediately after a normal context exit (POSIX).
-
-        On Windows, kanon_workspace_lock raises RuntimeError immediately
-        because fcntl is unavailable; the fail-fast RuntimeError IS the
-        contract on that platform.
+        """The lock is acquirable by another process after a normal context exit.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
         from kanon_cli.utils.concurrency import kanon_workspace_lock
-
-        if sys.platform == "win32":
-            with pytest.raises(RuntimeError, match="not supported on Windows"):
-                with kanon_workspace_lock(tmp_path):
-                    pass
-            return
-
-        import fcntl
-
-        from kanon_cli.constants import INSTALL_LOCK_FILENAME
-
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         with kanon_workspace_lock(tmp_path):
             pass
 
-        with open(lock_path, "w", encoding="utf-8") as fh:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            except BlockingIOError:
-                pytest.fail("Lock was not released after normal context exit")
+        self._assert_lock_acquirable_by_child(_MP_CONTEXT, tmp_path)
 
     def test_lock_released_after_exception_exit(self, tmp_path: pathlib.Path) -> None:
-        """LOCK_NB succeeds immediately after an exception propagates out of context.
+        """The lock is acquirable after an exception propagates out of the context.
 
         Demonstrates try/finally semantics: even when managed code raises, the
-        file descriptor is closed and the OS releases the lock.
-
-        On Windows, kanon_workspace_lock raises RuntimeError immediately
-        (fcntl unavailable); the fail-fast RuntimeError IS the contract.
+        file descriptor is closed and the OS releases the lock on every platform.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
         from kanon_cli.utils.concurrency import kanon_workspace_lock
-
-        if sys.platform == "win32":
-            with pytest.raises(RuntimeError, match="not supported on Windows"):
-                with kanon_workspace_lock(tmp_path):
-                    pass
-            return
-
-        import fcntl
-
-        from kanon_cli.constants import INSTALL_LOCK_FILENAME
-
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
 
         with pytest.raises(ValueError, match="forced exception"):
             with kanon_workspace_lock(tmp_path):
                 raise ValueError("forced exception")
 
-        with open(lock_path, "w", encoding="utf-8") as fh:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            except BlockingIOError:
-                pytest.fail("Lock was not released after exception propagated from context")
+        self._assert_lock_acquirable_by_child(_MP_CONTEXT, tmp_path)
 
 
 @pytest.mark.integration
@@ -300,19 +304,13 @@ class TestWorkspaceLockFailFastOnMkdirFailure:
     def test_raises_oserror_when_kanon_data_dir_cannot_be_created(self, tmp_path: pathlib.Path) -> None:
         """kanon_workspace_lock raises OSError immediately when mkdir fails.
 
-        On Windows, the RuntimeError for fcntl-unavailable is raised before
-        mkdir is attempted; the test asserts RuntimeError on that platform.
+        Fail-fast contract on every platform: a failed ``.kanon-data/`` creation
+        surfaces as an OSError, never a silent skip.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
         from kanon_cli.utils.concurrency import kanon_workspace_lock
-
-        if sys.platform == "win32":
-            with pytest.raises(RuntimeError, match="not supported on Windows"):
-                with kanon_workspace_lock(tmp_path):
-                    pass
-            return
 
         with patch.object(pathlib.Path, "mkdir", side_effect=OSError(13, "Permission denied")):
             with pytest.raises(OSError):

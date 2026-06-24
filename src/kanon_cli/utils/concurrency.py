@@ -43,9 +43,16 @@ The acquisition timeout is read from
 ``constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS`` (env-driven via ``_env_int``,
 default 30; no inline literal here). On expiry the acquisition fails fast with
 ``WorkspaceLockTimeoutError`` carrying an actionable stale-lock-recovery message
-(pid / host / timestamp, spec Section 7.3). The timeout is enforced with a
-kernel timer (``signal.setitimer`` / ``SIGALRM``) that interrupts the blocking
-syscall -- there is no poll loop and no ``sleep``.
+(pid / host / timestamp, spec Section 7.3). The timeout is enforced per-OS
+without any poll loop or ``sleep``:
+
+* POSIX: a kernel timer (``signal.setitimer`` / ``SIGALRM``) interrupts the
+  blocking ``flock`` syscall on expiry (PEP 475 does not retry when the handler
+  raises).
+* Windows: the blocking ``msvcrt.locking`` runs on a worker thread and the
+  calling thread waits on its completion with ``Thread.join(timeout_seconds)``;
+  if the join returns while the worker is still blocked, the timeout has
+  expired and the acquisition fails fast.
 
 Eager creation
 --------------
@@ -175,7 +182,14 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
         )
 
     timeout_seconds = _acquire_timeout_seconds()
-    with open(lock_path, "w", encoding="utf-8") as lock_fd:
+    # The lock file is opened in binary mode (not text) because the Windows
+    # backend (``msvcrt.locking``) locks a byte region of the raw file
+    # descriptor: a buffered TextIOWrapper offers no guarantee about the raw
+    # fd's position, and locking a region of a 0-byte text file is unreliable.
+    # Binary mode lets the Windows backend seek/write a single sentinel byte so
+    # the locked region is always within the file on every platform. The POSIX
+    # backend (``fcntl.flock``) is a whole-file lock and is mode-agnostic.
+    with open(lock_path, "wb") as lock_fd:
         with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
             _held_lock_paths.add(lock_key)
             try:
@@ -186,7 +200,7 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
 
 @contextlib.contextmanager
 def _exclusive_kernel_lock(
-    lock_fd: IO[str],
+    lock_fd: IO[bytes],
     workspace_root: pathlib.Path,
     lock_path: pathlib.Path,
     timeout_seconds: int,
@@ -216,7 +230,7 @@ def _exclusive_kernel_lock(
 
 @contextlib.contextmanager
 def _exclusive_kernel_lock_posix(
-    lock_fd: IO[str],
+    lock_fd: IO[bytes],
     workspace_root: pathlib.Path,
     lock_path: pathlib.Path,
     timeout_seconds: int,
@@ -259,51 +273,87 @@ def _exclusive_kernel_lock_posix(
         fcntl.flock(fileno, fcntl.LOCK_UN)
 
 
+def _seek_to_lock_region(lock_fd: IO[bytes]) -> None:
+    """Ensure the lock file holds a sentinel byte and seek to its start.
+
+    ``msvcrt.locking`` locks the byte region ``[pos, pos + nbytes)`` relative to
+    the file descriptor's current position. On a freshly opened (0-byte) lock
+    file that region would lie beyond end-of-file, which is unreliable on
+    Windows. Writing a single sentinel byte and seeking back to offset 0
+    guarantees the one-byte region ``[0, 1)`` is always within the file, so the
+    same fixed region is locked by every process that contends for this
+    workspace.
+
+    Args:
+        lock_fd: The open binary lock-file object.
+    """
+    lock_fd.seek(0)
+    lock_fd.write(b"\0")
+    lock_fd.flush()
+    lock_fd.seek(0)
+
+
 @contextlib.contextmanager
 def _exclusive_kernel_lock_windows(
-    lock_fd: IO[str],
+    lock_fd: IO[bytes],
     workspace_root: pathlib.Path,
     lock_path: pathlib.Path,
     timeout_seconds: int,
 ) -> Iterator[None]:
-    """Windows backend: ``msvcrt.locking(LK_LOCK)`` with a kernel-timer timeout.
+    """Windows backend: ``msvcrt.locking(LK_LOCK)`` with a fail-fast join timeout.
 
-    ``msvcrt.locking`` provides kernel-level blocking (the OS, not this code,
-    waits for the lock); on expiry the lock attempt raises ``OSError``. A
-    ``threading.Timer`` arms a kernel-level abort: when the configured timeout
-    elapses the timer raises the lock file handle's wait via ``_thread`` interrupt
-    semantics, so there is no poll loop and no ``sleep`` in this code.
+    ``msvcrt.locking(LK_LOCK, 1)`` provides kernel-level blocking on a fixed
+    single-byte region (the OS, not this code, waits for the lock). The blocking
+    acquisition runs on a worker thread; the calling thread waits on the
+    thread's completion event with ``Thread.join(timeout_seconds)``. If the join
+    returns while the worker is still blocked, the configured timeout has expired
+    and the acquisition fails fast with ``WorkspaceLockTimeoutError``. The wait
+    is event-driven (thread completion), not a poll loop, and contains no
+    ``sleep``.
+
+    A sentinel byte is written first (``_seek_to_lock_region``) so the locked
+    region ``[0, 1)`` is always within the file rather than beyond EOF.
     """
-    import msvcrt
     import threading
-    import _thread
 
+    import msvcrt
+
+    _seek_to_lock_region(lock_fd)
     fileno = lock_fd.fileno()
-    timed_out = threading.Event()
 
-    def _abort() -> None:
-        timed_out.set()
-        _thread.interrupt_main()
+    acquired = threading.Event()
+    acquire_error: list[BaseException] = []
 
-    timer = threading.Timer(timeout_seconds, _abort)
-    timer.start()
-    try:
-        # LK_LOCK blocks at the OS level until the single-byte region is locked.
-        msvcrt.locking(fileno, msvcrt.LK_LOCK, 1)
-    except (OSError, KeyboardInterrupt) as exc:
-        if timed_out.is_set():
-            raise WorkspaceLockTimeoutError(
-                f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
-                f"after {timeout_seconds}s.\n"
-                f"Lock file: {lock_path}\n"
-                f"Another process is holding the lock ({_stale_lock_diagnostics()}).\n"
-                "If you believe the lock is stale (the owning process has exited), inspect it "
-                "with 'kanon doctor --prune-cache' and remove the lock file once you have "
-                "confirmed no kanon process is running against this workspace."
-            ) from exc
-        raise
-    finally:
-        timer.cancel()
+    def _blocking_acquire() -> None:
+        try:
+            # LK_LOCK blocks at the OS level until the single-byte region is
+            # locked. The worker thread holds no Python-level loop while blocked.
+            msvcrt.locking(fileno, msvcrt.LK_LOCK, 1)
+        except BaseException as exc:  # surface to the caller; never swallow
+            acquire_error.append(exc)
+            return
+        acquired.set()
+
+    worker = threading.Thread(target=_blocking_acquire, daemon=True)
+    worker.start()
+    worker.join(timeout_seconds)
+
+    if worker.is_alive() and not acquired.is_set():
+        # The worker is still blocked in the kernel after the configured
+        # timeout: fail fast. The OS releases the orphaned blocking attempt when
+        # the descriptor is closed on context teardown.
+        raise WorkspaceLockTimeoutError(
+            f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
+            f"after {timeout_seconds}s.\n"
+            f"Lock file: {lock_path}\n"
+            f"Another process is holding the lock ({_stale_lock_diagnostics()}).\n"
+            "If you believe the lock is stale (the owning process has exited), inspect it "
+            "with 'kanon doctor --prune-cache' and remove the lock file once you have "
+            "confirmed no kanon process is running against this workspace."
+        )
+
+    if acquire_error:
+        raise acquire_error[0]
 
     try:
         yield

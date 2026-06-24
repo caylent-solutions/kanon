@@ -145,11 +145,14 @@ def test_integration_job_runs_in_parallel_with_unit_tests(workflow_path: pathlib
 @pytest.mark.unit
 @pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
 def test_integration_job_invokes_integration_mark(workflow_path: pathlib.Path):
-    """Validate that the integration job runs pytest with the integration marker.
+    """Validate that each integration job runs pytest with the integration marker.
 
-    Given: A workflow with an integration job
-    When: The run steps of that job are inspected
-    Then: At least one step runs pytest with '-m integration'
+    Given: A workflow with integration jobs (a Linux leg and a Windows leg)
+    When: The run steps of each job are inspected
+    Then: Each integration job runs pytest with a marker expression selecting the
+        integration tier and threading a platform filter, i.e.
+        '-m "integration and not windows_only"' (Linux) or
+        '-m "integration and not linux_only"' (Windows).
 
     AC-FUNC-002
     """
@@ -158,40 +161,47 @@ def test_integration_job_invokes_integration_mark(workflow_path: pathlib.Path):
     integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
     assert integration_jobs, f"No integration job found in {workflow_path.name}"
 
+    platform_filter = re.compile(r'-m "integration and not (windows_only|linux_only)"')
     for job_name, job in integration_jobs.items():
         run_commands = [step.get("run", "") for step in job.get("steps", []) if "run" in step]
         full_run_text = "\n".join(run_commands)
-        assert "-m integration" in full_run_text, (
-            f"Integration job '{job_name}' in {workflow_path.name} must run "
-            f"pytest with '-m integration'. Run steps found:\n{full_run_text}"
+        assert platform_filter.search(full_run_text), (
+            f"Integration job '{job_name}' in {workflow_path.name} must run pytest with the "
+            f"integration tier marker plus a platform filter "
+            f'(-m "integration and not windows_only|linux_only"). Run steps found:\n{full_run_text}'
         )
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
 def test_unit_tests_step_runs_with_unit_marker(workflow_path: pathlib.Path):
-    """Validate that the unit tests step uses the 'unit' pytest marker.
+    """Validate that a unit tests step uses the 'unit' pytest marker.
 
     Given: A workflow YAML file
     When: The run steps are inspected
-    Then: A step exists that runs pytest with '-m unit'
+    Then: A step exists that runs pytest with a marker expression selecting the
+        unit tier and threading a platform filter, i.e.
+        '-m "unit and not windows_only"' (Linux) or
+        '-m "unit and not linux_only"' (Windows).
 
     AC-FUNC-001
     """
     workflow = _load_workflow(workflow_path)
     jobs = workflow.get("jobs", {})
+    unit_filter = re.compile(r'-m "unit and not (windows_only|linux_only)"')
     found = False
     for job in jobs.values():
         for step in job.get("steps", []):
             run = step.get("run", "")
-            if "pytest" in run and "-m unit" in run:
+            if "pytest" in run and unit_filter.search(run):
                 found = True
                 break
         if found:
             break
     assert found, (
-        f"Workflow {workflow_path.name} must have a step that runs pytest with '-m unit'. "
-        "This ensures the unit test matrix includes all unit tests."
+        f"Workflow {workflow_path.name} must have a step that runs pytest with the unit tier "
+        'marker plus a platform filter (-m "unit and not windows_only|linux_only"). '
+        "This ensures the unit test set includes all unit tests for that platform."
     )
 
 

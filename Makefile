@@ -34,21 +34,30 @@ validate: check test-unit ## Run per-unit validation (lint + unit tests). Full s
 test: ## Run full test suite with coverage
 	uv run pytest --cov=kanon_cli --cov-report=term-missing
 
+# PYTEST_PLATFORM_MARK threads a platform filter into the tier marker so the
+# same make targets serve both the Linux and Windows CI legs. It defaults to
+# empty (no filter) for local runs and full-suite parity. CI sets it to
+# ' and not windows_only' (Linux leg) or ' and not linux_only' (Windows leg),
+# e.g. `make test-integration PYTEST_PLATFORM_MARK=' and not windows_only'`
+# expands to `pytest -m "integration and not windows_only"`. The leading space
+# is part of the override value so the bare-marker default stays clean.
+PYTEST_PLATFORM_MARK ?=
+
 test-unit: ## Run unit tests only
-	uv run pytest -m unit
+	uv run pytest -m "unit$(PYTEST_PLATFORM_MARK)"
 
 test-integration: ## Run integration tests only
-	uv run pytest -m integration
+	uv run pytest -m "integration$(PYTEST_PLATFORM_MARK)"
 
 security-scan: ## Run security scan with bandit (high severity, high confidence, excludes vendored repo submodule)
 	uv run bandit -r src/kanon_cli/ -x src/kanon_cli/repo -lll -iii
 
 test-functional: SMOKE_TEST_TIMEOUT ?= 300
 test-functional: ## Run functional tests only
-	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m functional
+	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m "functional$(PYTEST_PLATFORM_MARK)"
 
 test-scenarios: ## Run end-to-end scenario tests (mirrors docs/integration-testing.md)
-	uv run pytest -m scenario
+	uv run pytest -m "scenario$(PYTEST_PLATFORM_MARK)"
 
 test-operator-path: ## Run operator-path scenario tests (E49 subprocess path tests -- fast lane for tests/scenarios/test_why_url_path.py etc.)
 	uv run pytest -m scenario tests/scenarios/test_why_url_path.py tests/scenarios/test_doctor_cache.py tests/scenarios/test_rls_exact_vs_range.py

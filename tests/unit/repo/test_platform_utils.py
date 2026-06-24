@@ -94,7 +94,7 @@ class SymlinkTests(unittest.TestCase):
         with mock.patch("kanon_cli.repo.platform_utils.isWindows", return_value=True):
             with mock.patch("kanon_cli.repo.platform_utils._validate_winpath") as mock_validate:
                 with mock.patch("kanon_cli.repo.platform_utils.isdir", return_value=False):
-                    with mock.patch("sys.modules", {"platform_utils_win32": mock.Mock()}):
+                    with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock.Mock()}):
                         mock_validate.return_value = "valid_path"
                         platform_utils.symlink("target", "link")
                         self.assertEqual(mock_validate.call_count, 2)
@@ -400,7 +400,7 @@ class IslinkTests(unittest.TestCase):
             with mock.patch("kanon_cli.repo.platform_utils._makelongpath", side_effect=lambda x: x):
                 mock_win32 = mock.Mock()
                 mock_win32.islink.return_value = False
-                with mock.patch.dict("sys.modules", {"platform_utils_win32": mock_win32}):
+                with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock_win32}):
                     result = platform_utils.islink("C:\\path")
                     mock_win32.islink.assert_called_once()
                     self.assertFalse(result)
@@ -425,7 +425,7 @@ class ReadlinkTests(unittest.TestCase):
             with mock.patch("kanon_cli.repo.platform_utils._makelongpath", side_effect=lambda x: x):
                 mock_win32 = mock.Mock()
                 mock_win32.readlink.return_value = "C:\\target"
-                with mock.patch.dict("sys.modules", {"platform_utils_win32": mock_win32}):
+                with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock_win32}):
                     result = platform_utils.readlink("C:\\link")
                     mock_win32.readlink.assert_called_once()
                     self.assertEqual(result, "C:\\target")

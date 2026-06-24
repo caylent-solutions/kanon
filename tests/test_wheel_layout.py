@@ -25,7 +25,7 @@ _CATALOG_PREFIX = "kanon_cli/catalog/"
 
 _EXPECTED_CORE_FILES = [
     "kanon_cli/__init__.py",
-    "kanon_cli/commands/bootstrap.py",
+    "kanon_cli/commands/search.py",
     "kanon_cli/core/catalog.py",
     "kanon_cli/constants.py",
 ]

@@ -34,6 +34,7 @@ AC-FUNC-004 -- the generated script starts with ``#compdef kanon``.
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -43,6 +44,11 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("zsh") is None,
+    reason="zsh is not installed (e.g. Windows runners); zsh completion is validated on POSIX runners",
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

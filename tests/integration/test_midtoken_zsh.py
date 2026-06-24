@@ -21,6 +21,7 @@ include 1.0.0 and 2.0.0.
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import textwrap
@@ -29,6 +30,11 @@ from pathlib import Path
 import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("zsh") is None,
+    reason="zsh is not installed (e.g. Windows runners); zsh completion is validated on POSIX runners",
+)
 
 
 def _has_zsh() -> bool:

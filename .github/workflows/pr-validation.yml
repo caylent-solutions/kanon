@@ -139,6 +139,7 @@ jobs:
     name: Integration tests (${{ matrix.os }})
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}

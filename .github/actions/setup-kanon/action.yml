@@ -111,6 +111,7 @@ runs:
           ${{ runner.os }}-pip-
 
     - name: Install zsh (for shell-completion integration tests)
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         # tests/integration/test_completion_zsh.py,

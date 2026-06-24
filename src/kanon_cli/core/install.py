@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import datetime
 import enum
+import hashlib
 import os
 import pathlib
 import re
@@ -66,6 +67,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from typing import NamedTuple, cast
 
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -77,7 +79,11 @@ from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_GIT_LS_REMOTE_TIMEOUT,
     KANON_HOME_ENV_VAR,
+    KANON_HOME_STORE_ENTRIES_SUBDIR,
+    KANON_HOME_STORE_GITIGNORE_ENTRY,
+    KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
+    KANON_HOME_STORE_TMP_SUBDIR,
     resolve_kanon_home,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
@@ -123,7 +129,13 @@ __all__ = [
     "MalformedIncludeError",
     "_canonicalize_include_path",
     "_walk_includes",
+    "compute_store_entry_address",
+    "kanon_home_inside_git_repo",
+    "prune_store",
+    "publish_store_entry",
     "resolve_workspace_base_dir",
+    "store_entries_dir",
+    "write_store_gitignore_if_in_git_repo",
 ]
 
 
@@ -1213,6 +1225,234 @@ def resolve_workspace_base_dir() -> pathlib.Path:
     return store_path
 
 
+# ---------------------------------------------------------------------------
+# Content-addressed store publish (spec Section 3.5 / Section 7.1 / FR-16)
+# ---------------------------------------------------------------------------
+
+
+def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
+    """Return the directory under ``store_base`` that holds content-addressed entries.
+
+    The entries directory is ``<store_base>/<KANON_HOME_STORE_ENTRIES_SUBDIR>``.
+    Each immutable store entry is published into a content-addressed
+    subdirectory of this path. The directory is the single prune surface for
+    ``kanon clean`` (spec Section 3.5).
+
+    Args:
+        store_base: The resolved store base directory (``<KANON_HOME>/store``).
+
+    Returns:
+        The absolute path to the store-entries directory. The directory is not
+        created here; ``publish_store_entry`` creates it on demand.
+    """
+    return store_base / KANON_HOME_STORE_ENTRIES_SUBDIR
+
+
+def compute_store_entry_address(url: str, resolved_sha: str) -> str:
+    """Compute the content address for an immutable store entry.
+
+    The address is the lowercase hex SHA-256 digest of the canonicalized
+    repository URL joined to the resolved commit SHA. Two project directories
+    that install the same ``manifest@SHA`` from the same canonical remote
+    therefore compute an identical address and dedup to a single store entry
+    (spec Section 3.5 / FR-16). The address is a single path component (no
+    directory separators) so it is safe to use as a store subdirectory name.
+
+    Args:
+        url: The source repository URL as declared in ``.kanon`` (any scheme;
+            canonicalized before hashing so SSH/HTTPS/SCP variants of the same
+            remote collapse to one address).
+        resolved_sha: The resolved commit SHA the entry materializes
+            (40 or 64 lowercase hex characters).
+
+    Returns:
+        A 64-character lowercase hex string -- the content address.
+
+    Raises:
+        ValueError: If ``url`` or ``resolved_sha`` is empty; a content address
+            for an unidentified entry is a logic error and must fail fast.
+    """
+    if not url:
+        raise ValueError("compute_store_entry_address: url must be a non-empty string")
+    if not resolved_sha:
+        raise ValueError("compute_store_entry_address: resolved_sha must be a non-empty string")
+    canonical = canonicalize_repo_url(url)
+    digest = hashlib.sha256(f"{canonical}@{resolved_sha}".encode("utf-8"))
+    return digest.hexdigest()
+
+
+def kanon_home_inside_git_repo(store_base: pathlib.Path) -> bool:
+    """Return ``True`` when the resolved ``KANON_HOME`` store sits inside a git repo.
+
+    Walks ``store_base`` and each of its ancestors looking for a ``.git`` entry
+    (a directory for a normal clone, or a file for a worktree / submodule). The
+    walk terminates at the filesystem root. The check is a pure filesystem
+    inspection: it never shells out to git and never raises on a missing path.
+
+    A positive result means a ``.gitignore`` safety net must be written into the
+    store so the fetched-artifact cache is never accidentally committed
+    (spec Section 3.5 conditional ``.gitignore``).
+
+    Args:
+        store_base: The resolved store base directory (``<KANON_HOME>/store``).
+
+    Returns:
+        ``True`` if ``store_base`` or any ancestor contains a ``.git`` entry;
+        ``False`` otherwise.
+    """
+    current = store_base.resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return True
+    return False
+
+
+def write_store_gitignore_if_in_git_repo(store_base: pathlib.Path) -> bool:
+    """Ensure a ``.gitignore`` safety net in the store, only when inside a git repo.
+
+    When ``store_base`` (or an ancestor) is a git working tree, the whole-store
+    ignore entry (``KANON_HOME_STORE_GITIGNORE_ENTRY``) is ensured present in
+    ``store_base/.gitignore`` so the fetched-artifact cache is never committed.
+    When the store is NOT inside a git repo, nothing is added (the safety net is
+    conditional, spec Section 3.5).
+
+    The write is idempotent and additive: the entry is appended only when absent,
+    reusing ``update_gitignore`` so existing entries (e.g. the per-project
+    ``.packages/`` / ``.kanon-data/`` lines) are preserved. ``store_base`` is
+    created if absent so the safety net can always be ensured when required.
+
+    Args:
+        store_base: The resolved store base directory (``<KANON_HOME>/store``).
+
+    Returns:
+        ``True`` if the safety-net entry was ensured because the store is inside a
+        git repo; ``False`` if the store is not inside a git repo and nothing was
+        added.
+
+    Raises:
+        OSError: If the ``.gitignore`` file cannot be written (e.g. permission
+            denied). The error is not swallowed; the caller sees the failure.
+    """
+    if not kanon_home_inside_git_repo(store_base):
+        return False
+    store_base.mkdir(parents=True, exist_ok=True)
+    update_gitignore(store_base, entries=[KANON_HOME_STORE_GITIGNORE_ENTRY])
+    return True
+
+
+def publish_store_entry(
+    store_base: pathlib.Path,
+    address: str,
+    materialize: Callable[[pathlib.Path], None],
+) -> pathlib.Path:
+    """Publish an immutable content-addressed entry into the store atomically.
+
+    Concurrency-safe publish (spec Section 3.5 / FR-16):
+
+    1. Readiness via final-path existence -- if the final content-addressed path
+       already exists, the entry is already published (a dedup hit) and the path
+       is returned immediately. There is NO poll-sleep; existence is the readiness
+       signal.
+    2. Otherwise a per-entry lock is acquired through the E2 cross-platform lock
+       interface (``kanon_workspace_lock``) on a per-address lock root, with the
+       configurable fail-fast acquisition timeout
+       (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``) and stale-lock recovery
+       diagnostics (pid / host / timestamp) the interface already carries
+       (spec Section 7.3). Distinct addresses use distinct lock roots, so
+       publishes of different entries never serialise against one another.
+    3. Inside the lock the existence check is repeated -- a racing publisher may
+       have completed between step 1 and lock acquisition; if so the freshly
+       published path is returned without re-materializing.
+    4. The content is materialized into a private temp directory inside the store
+       (same filesystem as the final path) via the caller-supplied ``materialize``
+       callback, then moved into the final content-addressed path with
+       ``Path.replace`` (an atomic rename). A partially-materialized temp dir is
+       removed on any failure so a crash never leaves a half-written final entry.
+
+    Args:
+        store_base: The resolved store base directory (``<KANON_HOME>/store``).
+        address: The content address (a single path component) produced by
+            ``compute_store_entry_address``.
+        materialize: A callback that populates the passed temp directory with the
+            entry's content. It must not assume any particular starting state
+            beyond the directory existing and being empty.
+
+    Returns:
+        The absolute path to the published content-addressed entry directory.
+
+    Raises:
+        ValueError: If ``address`` is empty or contains a path separator (a
+            non-single-component address is a logic error and must fail fast).
+        WorkspaceLockTimeoutError: If the per-entry lock cannot be acquired within
+            ``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS`` (carries pid/host/timestamp).
+        OSError: If a store directory cannot be created or the rename fails.
+    """
+    if not address or os.sep in address or (os.altsep and os.altsep in address) or "/" in address:
+        raise ValueError(f"publish_store_entry: address must be a single path component; got {address!r}")
+
+    entries_dir = store_entries_dir(store_base)
+    final_path = entries_dir / address
+
+    # Step 1: readiness via final-path existence (dedup hit, no poll-sleep).
+    if final_path.exists():
+        return final_path
+
+    entries_dir.mkdir(parents=True, exist_ok=True)
+    lock_root = store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
+    lock_root.mkdir(parents=True, exist_ok=True)
+
+    # Step 2: per-entry lock via the E2 cross-platform lock interface. The lock
+    # file lives at <lock_root>/.kanon-data/<INSTALL_LOCK_FILENAME>; the timeout
+    # and stale-lock-recovery diagnostics are owned by kanon_workspace_lock.
+    with kanon_workspace_lock(lock_root):
+        # Step 3: re-check existence under the lock (a racing publisher may have
+        # finished between step 1 and lock acquisition).
+        if final_path.exists():
+            return final_path
+
+        # Step 4: materialize into a private temp dir inside the store, then
+        # atomically rename into the final content-addressed path.
+        tmp_root = store_base / KANON_HOME_STORE_TMP_SUBDIR
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        tmp_dir = tmp_root / address
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        tmp_dir.mkdir(parents=True)
+        try:
+            materialize(tmp_dir)
+            tmp_dir.replace(final_path)
+        except BaseException:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+
+    return final_path
+
+
+def prune_store(store_base: pathlib.Path) -> None:
+    """Remove every published content-addressed entry from the store.
+
+    Removes the store-entries directory (``store_entries_dir``) and the private
+    publish-scratch directories (the per-address lock roots and the temp dir).
+    The store base directory itself is preserved so a subsequent install can
+    repopulate it without re-resolving ``KANON_HOME``. This is the prune surface
+    invoked by ``kanon clean`` (spec Section 3.5 / FR-16).
+
+    The removals tolerate an already-absent directory (a clean before any
+    install is a no-op), but any other OS error during removal is NOT swallowed:
+    a store that cannot be pruned must surface to the operator.
+
+    Args:
+        store_base: The resolved store base directory (``<KANON_HOME>/store``).
+    """
+    for subdir in (
+        store_entries_dir(store_base),
+        store_base / KANON_HOME_STORE_LOCKS_SUBDIR,
+        store_base / KANON_HOME_STORE_TMP_SUBDIR,
+    ):
+        if subdir.exists():
+            shutil.rmtree(subdir)
+
+
 def create_source_dirs(
     source_names: list[str],
     base_dir: pathlib.Path,
@@ -2239,6 +2479,21 @@ def _run_install(
             resolved_sha=resolved_entries[-1].resolved_sha,
         )
 
+        # Publish the freshly-synced source as an immutable content-addressed
+        # store entry (spec Section 3.5 / FR-16).  The address is derived from
+        # the canonical URL + resolved SHA, so two project dirs sharing one
+        # KANON_HOME that sync the same manifest@SHA dedup to a single entry.
+        # The publish is concurrency-safe: a per-entry lock guards each address
+        # and the content is materialized into a temp dir then atomically renamed
+        # into the final content-addressed path (readiness via final-path
+        # existence, never a poll-sleep).
+        entry_address = compute_store_entry_address(source_data["url"], resolved_entries[-1].resolved_sha)
+        publish_store_entry(
+            base_dir,
+            entry_address,
+            lambda dest, src=source_dir: shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True),
+        )
+
     # Canonical-URL conflict check on the absent/refresh paths: run the detector
     # against the freshly-resolved entries now that all sources have been resolved.
     # The consistent path already ran this check against the lockfile contents above.
@@ -2251,6 +2506,12 @@ def _run_install(
     print("kanon install: aggregating packages into .packages/...")
     package_owners = aggregate_symlinks(source_names, base_dir)
     update_gitignore(base_dir)
+
+    # Conditional .gitignore safety net: when the resolved KANON_HOME store sits
+    # inside a git working tree, ensure a .gitignore entry that ignores the whole
+    # store so the fetched-artifact cache is never committed (spec Section 3.5).
+    # Runs after update_gitignore so the safety-net entry is appended idempotently.
+    write_store_gitignore_if_in_git_repo(base_dir)
 
     # Step 6: Emit the spec's info-line for the current state.
     if install_state is InstallState.REFRESH_LOCK_SOURCE and target_source_entry is not None:

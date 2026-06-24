@@ -12,13 +12,14 @@ Performs full Kanon teardown in the following order:
      then remove CLAUDE_MARKETPLACES_DIR.
   5. Remove .packages/ directory (ignore_errors=True)
   6. Remove .kanon-data/ directory (ignore_errors=True)
+  7. Prune the content-addressed store entries via prune_store (spec Section 3.5)
 """
 
 import pathlib
 import shutil
 import sys
 
-from kanon_cli.core.install import resolve_workspace_base_dir
+from kanon_cli.core.install import prune_store, resolve_workspace_base_dir
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
     remove_marketplace,
@@ -54,6 +55,21 @@ def remove_kanon_dir(base_dir: pathlib.Path) -> None:
         base_dir: Project root directory.
     """
     shutil.rmtree(base_dir / ".kanon-data", ignore_errors=True)
+
+
+def remove_store_entries(base_dir: pathlib.Path) -> None:
+    """Prune the content-addressed store entries from the KANON_HOME store.
+
+    Delegates to ``prune_store`` (spec Section 3.5 / FR-16): removes the
+    content-addressed entries directory plus the per-entry lock roots and the
+    publish temp dir, leaving the store base directory itself in place. This is
+    the store-prune half of ``kanon clean`` alongside the per-project
+    ``.packages/`` and ``.kanon-data/`` removal.
+
+    Args:
+        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+    """
+    prune_store(base_dir)
 
 
 def _print_remove_summary(packages_dir: pathlib.Path) -> None:
@@ -174,7 +190,8 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
          present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
          lockfiles or when no lockfile exists.
       5. If marketplace was registered: run uninstall, remove marketplace dir.
-      6. Remove .packages/ and .kanon-data/.
+      6. Remove .packages/ and .kanon-data/, then prune the content-addressed
+         store entries (spec Section 3.5 / FR-16).
 
     The lockfile-first lookup ensures that an env-override install
     (KANON_MARKETPLACE_INSTALL=true at install time, while .kanon stores false) is
@@ -254,4 +271,6 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     remove_packages_dir(base_dir)
     print("kanon clean: removing .kanon-data/...")
     remove_kanon_dir(base_dir)
+    print("kanon clean: pruning content-addressed store entries...")
+    remove_store_entries(base_dir)
     print("kanon clean: done.")

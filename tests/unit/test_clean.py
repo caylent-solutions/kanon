@@ -56,6 +56,26 @@ class TestDirectoryRemoval:
     def test_kanon_missing_ok(self, tmp_path: pathlib.Path) -> None:
         remove_kanon_dir(tmp_path)
 
+    def test_removes_store_entries(self, tmp_path: pathlib.Path) -> None:
+        """remove_store_entries prunes content-addressed entries, keeping the store base."""
+        from kanon_cli.core.clean import remove_store_entries
+        from kanon_cli.core.install import store_entries_dir
+
+        store = tmp_path / "store"
+        (store_entries_dir(store) / "deadbeef").mkdir(parents=True)
+        remove_store_entries(store)
+        assert not store_entries_dir(store).exists()
+        assert store.exists(), "the store base directory must survive a prune"
+
+    def test_store_entries_missing_ok(self, tmp_path: pathlib.Path) -> None:
+        """remove_store_entries on an empty store is a no-op (clean before install)."""
+        from kanon_cli.core.clean import remove_store_entries
+
+        store = tmp_path / "store"
+        store.mkdir()
+        remove_store_entries(store)
+        assert store.exists()
+
 
 @pytest.mark.unit
 class TestCleanLifecycle:
@@ -283,6 +303,36 @@ class TestCleanKanonHomeStore:
         assert not (store / ".kanon-data").exists(), (
             "Without KANON_HOME, .kanon-data/ must be removed from $HOME/.kanon/store"
         )
+
+    def test_clean_prunes_content_addressed_store_entries(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-52: clean prunes the content-addressed store entries in addition to per-project artifacts."""
+        from kanon_cli.core.install import store_entries_dir
+
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+
+        kanonenv = cwd_dir / ".kanon"
+        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+
+        # A published content-addressed entry (as install would have written).
+        entry = store_entries_dir(store) / ("a" * 64)
+        entry.mkdir(parents=True)
+        (entry / "payload").write_text("data")
+        (store / ".packages").mkdir(parents=True)
+        (store / ".kanon-data").mkdir(parents=True)
+
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+            clean(kanonenv)
+
+        assert not entry.exists(), "the content-addressed store entry must be pruned by clean"
+        assert not store_entries_dir(store).exists(), "the store entries directory must be pruned by clean"
+        assert store.exists(), "the store base directory must survive clean"
 
 
 # ---------------------------------------------------------------------------

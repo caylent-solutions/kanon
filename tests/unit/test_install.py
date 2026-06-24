@@ -1079,3 +1079,294 @@ class TestInstallPyUtf8EncodingSweep:
             f"core/install.py has bare write_text() calls: {write_bare}. "
             "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
         )
+
+
+# ---------------------------------------------------------------------------
+# E5-F1-S2-T1: content-addressed store publish (atomic rename + per-entry lock)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestComputeStoreEntryAddress:
+    """compute_store_entry_address derives a deterministic content address."""
+
+    def test_deterministic_for_same_url_and_sha(self) -> None:
+        """The same (url, sha) yields the same address across calls (dedup key)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        sha = "a" * 40
+        first = compute_store_entry_address("https://example.com/repo.git", sha)
+        second = compute_store_entry_address("https://example.com/repo.git", sha)
+        assert first == second
+        assert len(first) == 64
+        assert all(c in "0123456789abcdef" for c in first)
+
+    def test_canonical_url_variants_collapse_to_one_address(self) -> None:
+        """SSH and HTTPS forms of the same remote produce one address (canonicalized)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        sha = "b" * 40
+        https = compute_store_entry_address("https://example.com/org/repo.git", sha)
+        ssh = compute_store_entry_address("git@example.com:org/repo.git", sha)
+        assert https == ssh
+
+    def test_distinct_sha_yields_distinct_address(self) -> None:
+        """A different SHA produces a different content address (immutability)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        url = "https://example.com/repo.git"
+        assert compute_store_entry_address(url, "a" * 40) != compute_store_entry_address(url, "c" * 40)
+
+    @pytest.mark.parametrize(
+        "url,sha",
+        [
+            ("", "a" * 40),
+            ("https://example.com/repo.git", ""),
+        ],
+    )
+    def test_empty_argument_fails_fast(self, url: str, sha: str) -> None:
+        """An empty url or sha raises ValueError (no silent unidentified address)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        with pytest.raises(ValueError):
+            compute_store_entry_address(url, sha)
+
+
+@pytest.mark.unit
+class TestPublishStoreEntry:
+    """publish_store_entry publishes via atomic rename, dedups, and locks per entry."""
+
+    def test_publishes_into_final_content_addressed_path(self, tmp_path: pathlib.Path) -> None:
+        """A fresh publish materializes content under store/entries/<address>."""
+        from kanon_cli.core.install import publish_store_entry, store_entries_dir
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "f" * 64
+
+        def materialize(dest: pathlib.Path) -> None:
+            (dest / "marker.txt").write_text("payload", encoding="utf-8")
+
+        final = publish_store_entry(store, address, materialize)
+
+        assert final == store_entries_dir(store) / address
+        assert final.is_dir()
+        assert (final / "marker.txt").read_text(encoding="utf-8") == "payload"
+
+    def test_dedup_skips_rematerialize_when_final_path_exists(self, tmp_path: pathlib.Path) -> None:
+        """A second publish of the same address is a dedup no-op (readiness via existence)."""
+        from kanon_cli.core.install import publish_store_entry
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "1" * 64
+        call_count = {"n": 0}
+
+        def materialize(dest: pathlib.Path) -> None:
+            call_count["n"] += 1
+            (dest / "data").write_text("x", encoding="utf-8")
+
+        first = publish_store_entry(store, address, materialize)
+        second = publish_store_entry(store, address, materialize)
+
+        assert first == second
+        assert call_count["n"] == 1, "the second publish must not re-materialize an existing entry"
+
+    def test_no_sleep_call_in_install_core(self) -> None:
+        """AC-24: no time.sleep() call is introduced under src/kanon_cli/core (no poll-sleep).
+
+        The check matches the call syntax ``time.sleep(`` (a real sleep call),
+        not the bare token that appears in prose. ``core/git_runner.py`` documents
+        the ABSENCE of a sleep with the literal token inside its docstring; that
+        prose is not a sleep call and must not be flagged. The store-publish path
+        added by this work unit blocks on a kernel lock and detects readiness via
+        final-path existence, never a poll-sleep.
+        """
+        import re
+
+        core_dir = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core"
+        call_pattern = re.compile(r"\btime\.sleep\s*\(")
+        offenders = []
+        for py in core_dir.rglob("*.py"):
+            text = py.read_text(encoding="utf-8")
+            if call_pattern.search(text):
+                offenders.append(str(py))
+        assert offenders == [], f"time.sleep() call must not appear under core/: {offenders}"
+
+    def test_atomic_rename_used_in_publish(self) -> None:
+        """AC-24: the publish path uses an atomic rename (Path.replace) into the store."""
+        install_py = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
+        text = install_py.read_text(encoding="utf-8")
+        assert ".replace(final_path)" in text, "publish must atomically rename the temp dir into the final path"
+
+    def test_partial_materialize_leaves_no_final_entry(self, tmp_path: pathlib.Path) -> None:
+        """A failing materialize callback removes the temp dir and never creates the final entry."""
+        from kanon_cli.core.install import publish_store_entry, store_entries_dir
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "2" * 64
+
+        def materialize(dest: pathlib.Path) -> None:
+            (dest / "half").write_text("partial", encoding="utf-8")
+            raise RuntimeError("materialize blew up")
+
+        with pytest.raises(RuntimeError, match="materialize blew up"):
+            publish_store_entry(store, address, materialize)
+
+        assert not (store_entries_dir(store) / address).exists(), "no final entry on materialize failure"
+
+    @pytest.mark.parametrize("bad_address", ["", "with/slash", "a" + __import__("os").sep + "b"])
+    def test_non_single_component_address_fails_fast(self, tmp_path: pathlib.Path, bad_address: str) -> None:
+        """An address that is not a single path component raises ValueError (fail fast)."""
+        from kanon_cli.core.install import publish_store_entry
+
+        store = tmp_path / "store"
+        store.mkdir()
+        with pytest.raises(ValueError):
+            publish_store_entry(store, bad_address, lambda dest: None)
+
+    def test_contended_publish_fails_fast_on_timeout(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A held per-entry lock makes a second in-process publish fail fast with diagnostics.
+
+        The E2 ``kanon_workspace_lock`` re-entrance guard raises immediately when
+        the same process already holds the per-entry lock, so a nested publish of
+        the same address fails fast (no deadlock, no sleep). This proves the
+        publish guards each entry with the per-entry lock rather than racing.
+        """
+        from kanon_cli.core.install import compute_store_entry_address, publish_store_entry
+        from kanon_cli.utils.concurrency import WorkspaceLockReentranceError
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = compute_store_entry_address("https://example.com/repo.git", "d" * 40)
+
+        captured: dict[str, Exception] = {}
+
+        def nested_materialize(dest: pathlib.Path) -> None:
+            # While THIS publish holds the per-entry lock, a nested publish of the
+            # same address must fail fast through the per-entry lock guard.
+            try:
+                publish_store_entry(store, address, lambda d: None)
+            except WorkspaceLockReentranceError as exc:
+                captured["err"] = exc
+            (dest / "ok").write_text("done", encoding="utf-8")
+
+        publish_store_entry(store, address, nested_materialize)
+
+        assert "err" in captured, "nested publish of a held entry must hit the per-entry lock guard"
+        message = str(captured["err"])
+        assert "already held by this process" in message
+
+
+@pytest.mark.unit
+class TestStoreGitignoreSafetyNet:
+    """write_store_gitignore_if_in_git_repo writes .gitignore only inside a git repo."""
+
+    def test_no_gitignore_when_store_not_in_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """Outside a git working tree nothing is written (conditional safety net)."""
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        store = tmp_path / "home" / "store"
+        store.mkdir(parents=True)
+        wrote = write_store_gitignore_if_in_git_repo(store)
+        assert wrote is False
+        assert not (store / ".gitignore").exists()
+
+    def test_gitignore_written_when_store_inside_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """Inside a git working tree the store .gitignore gains the whole-store ignore entry."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "nested" / "store"
+        store.mkdir(parents=True)
+
+        wrote = write_store_gitignore_if_in_git_repo(store)
+
+        assert wrote is True
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY in lines
+
+    def test_gitignore_safety_net_preserves_existing_entries(self, tmp_path: pathlib.Path) -> None:
+        """The safety net appends the ignore entry without clobbering existing lines."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "store"
+        store.mkdir(parents=True)
+        (store / ".gitignore").write_text(".packages/\n.kanon-data/\n", encoding="utf-8")
+
+        write_store_gitignore_if_in_git_repo(store)
+
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert ".packages/" in lines, "existing entries must be preserved"
+        assert ".kanon-data/" in lines, "existing entries must be preserved"
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY in lines, "the whole-store ignore entry must be appended"
+
+    def test_gitignore_safety_net_is_idempotent(self, tmp_path: pathlib.Path) -> None:
+        """Calling the safety net twice does not duplicate the ignore entry."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "store"
+        store.mkdir(parents=True)
+
+        write_store_gitignore_if_in_git_repo(store)
+        write_store_gitignore_if_in_git_repo(store)
+
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert lines.count(KANON_HOME_STORE_GITIGNORE_ENTRY) == 1
+
+    def test_kanon_home_inside_git_repo_detects_worktree_dotgit_file(self, tmp_path: pathlib.Path) -> None:
+        """A .git FILE (worktree/submodule) is detected as inside a git repo too."""
+        from kanon_cli.core.install import kanon_home_inside_git_repo
+
+        repo = tmp_path / "wt"
+        repo.mkdir()
+        (repo / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+        store = repo / "store"
+        store.mkdir()
+        assert kanon_home_inside_git_repo(store) is True
+
+
+@pytest.mark.unit
+class TestPruneStore:
+    """prune_store removes content-addressed entries but keeps the store base."""
+
+    def test_prunes_entries_and_keeps_store_base(self, tmp_path: pathlib.Path) -> None:
+        """prune_store removes entries/.locks/.tmp, preserving the store base dir."""
+        from kanon_cli.constants import (
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        )
+        from kanon_cli.core.install import prune_store, store_entries_dir
+
+        store = tmp_path / "store"
+        entries = store_entries_dir(store)
+        (entries / "abc").mkdir(parents=True)
+        (store / KANON_HOME_STORE_LOCKS_SUBDIR / "abc").mkdir(parents=True)
+        (store / KANON_HOME_STORE_TMP_SUBDIR).mkdir(parents=True)
+
+        prune_store(store)
+
+        assert not entries.exists()
+        assert not (store / KANON_HOME_STORE_LOCKS_SUBDIR).exists()
+        assert not (store / KANON_HOME_STORE_TMP_SUBDIR).exists()
+        assert store.exists(), "the store base directory must survive a prune"
+
+    def test_prune_on_absent_store_is_noop(self, tmp_path: pathlib.Path) -> None:
+        """Pruning a store that was never populated is a no-op (clean before install)."""
+        from kanon_cli.core.install import prune_store
+
+        store = tmp_path / "store"
+        store.mkdir()
+        prune_store(store)
+        assert store.exists()

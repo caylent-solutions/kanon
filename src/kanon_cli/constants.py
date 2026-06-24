@@ -93,6 +93,28 @@ KANON_HOME_DIR_NAME = ".kanon"
 # Spec Section 8 store.
 KANON_HOME_STORE_SUBDIR = "store"
 
+# Subdirectory under the store base that holds the immutable content-addressed
+# store entries (one directory per content address). install publishes each
+# entry here via temp-then-rename; clean prunes this tree. Spec Section 3.5.
+KANON_HOME_STORE_ENTRIES_SUBDIR = "entries"
+
+# Subdirectory under the store base that holds the per-entry lock roots. Each
+# content address gets its own lock root so concurrent publishes of distinct
+# entries never serialise against one another (spec Section 3.5 per-entry lock).
+KANON_HOME_STORE_LOCKS_SUBDIR = ".locks"
+
+# Subdirectory under the store base into which an entry's content is materialized
+# before the atomic rename into its final content-addressed path. Living inside
+# the store guarantees the rename is same-filesystem (atomic). Spec Section 3.5.
+KANON_HOME_STORE_TMP_SUBDIR = ".tmp"
+
+# The single .gitignore entry that ignores the whole store. The store is a cache
+# of fetched artifacts that must never be committed; this entry is added to the
+# store's .gitignore safety net only when the resolved KANON_HOME store sits
+# inside a git working tree (spec Section 3.5 conditional .gitignore). The bare
+# "*" pattern ignores every path under the store directory.
+KANON_HOME_STORE_GITIGNORE_ENTRY = "*"
+
 # Subdirectory under the resolved KANON_HOME root that holds the shell-completion
 # and catalog-audit caches. Spec Section 4.1 / Section 7.3 (cache moves under
 # ~/.kanon/cache).

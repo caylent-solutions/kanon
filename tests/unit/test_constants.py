@@ -1060,6 +1060,35 @@ class TestKanonHomeConstants:
         assert KANON_HOME_CACHE_SUBDIR == "cache"
         assert KANON_HOME_STORE_SUBDIR != KANON_HOME_CACHE_SUBDIR
 
+    def test_store_publish_subdir_names_are_distinct_and_non_empty(self) -> None:
+        """The store entries, lock, and temp subdirs are distinct non-empty names.
+
+        publish_store_entry writes content into the temp subdir, atomically
+        renames into the entries subdir, and guards each address with a lock root
+        under the lock subdir; clean prunes all three. The three names must be
+        distinct so the trees never collide (spec Section 3.5).
+        """
+        from kanon_cli.constants import (
+            KANON_HOME_STORE_ENTRIES_SUBDIR,
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        )
+
+        names = {
+            KANON_HOME_STORE_ENTRIES_SUBDIR,
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        }
+        assert len(names) == 3, "the three store publish subdir names must be distinct"
+        assert all(name for name in names), "no store publish subdir name may be empty"
+        assert "/" not in "".join(names), "store publish subdir names must be single path components"
+
+    def test_store_gitignore_entry_ignores_everything(self) -> None:
+        """KANON_HOME_STORE_GITIGNORE_ENTRY ignores the whole store ('*')."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY == "*", "the store .gitignore safety net must ignore everything"
+
     def test_resolve_kanon_home_default_is_under_real_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With KANON_HOME unset, the home resolves to $HOME/.kanon (env-derived, not hard-coded)."""
         import pathlib

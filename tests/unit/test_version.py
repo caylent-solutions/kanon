@@ -371,11 +371,11 @@ class TestIsPep440VersionSharedGrammar:
         ``refs/tags/ex/<token>`` tag matches ``is_pep440_version(token)`` and
         the resolver's bare-version normalization.
         """
-        from kanon_cli.core.marketplace_validator import _is_valid_revision
+        from kanon_cli.core.marketplace_validator import _is_exact_tag_revision
 
         for token in ["1", "1.2", "1.2.0a1", "2024.6", "1.2.x", "not-a-version"]:
             shared = is_pep440_version(token)
-            validator = _is_valid_revision(f"refs/tags/ex/{token}")
+            validator = _is_exact_tag_revision(f"refs/tags/ex/{token}")
             resolver_normalized = _normalize_bare_semver_to_tag(token) == f"refs/tags/{token}"
             assert validator == shared, f"validator disagrees with shared grammar on {token!r}"
             assert resolver_normalized == shared, f"resolver disagrees with shared grammar on {token!r}"

@@ -516,13 +516,13 @@ class TestFullJourneyBootstrapInstallValidateClean:
         marketplace_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
-            '  <remote name="origin" fetch="https://github.com/caylent-solutions/" />\n'
-            '  <default revision="main" remote="origin" />\n'
+            '  <remote name="origin" fetch="https://example.invalid/caylent-solutions/" />\n'
+            '  <default revision="refs/tags/some-plugin/1.0.0" remote="origin" />\n'
             "  <project\n"
             '    name="some-plugin"\n'
             '    path="some-plugin-path"\n'
             '    remote="origin"\n'
-            '    revision="main"\n'
+            '    revision="refs/tags/some-plugin/1.0.0"\n'
             "  >\n"
             '    <linkfile src="plugin.sh" dest="${CLAUDE_MARKETPLACES_DIR}/some-plugin.sh" />\n'
             "  </project>\n"

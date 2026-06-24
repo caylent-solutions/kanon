@@ -370,25 +370,22 @@ class TestProjectUniquenessValidation:
 
 @pytest.mark.functional
 class TestTagFormatValidation:
-    """AC-TEST-003: revision tag format, branch format, and constraint format."""
+    """AC-54 / AC-TEST-003: exact-only revision tag format (spec Section 4.5 / FR-22)."""
 
     @pytest.mark.parametrize(
         "valid_revision",
         [
             "refs/tags/example/proj/1.0.0",
             "refs/tags/example/proj/2.3.4",
-            "main",
-            "~=1.2.0",
-            ">=1.0.0",
-            ">=1.0.0,<2.0.0",
-            "*",
+            "refs/tags/example/proj/2024.6",
+            "refs/tags/deep/nested/proj/1.2.0a1",
         ],
     )
-    def test_valid_revision_format_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
-        """AC-TEST-003 positive: valid revision formats pass validation.
+    def test_exact_tag_revision_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
+        """AC-54 positive: an exact refs/tags/<path>/<pep440> revision passes validation.
 
-        Covers refs/tags semver, allowed branch names, version constraints,
-        compound constraints, and the wildcard format.
+        Covers full PEP 440 trailing components (releases, calver, prereleases)
+        on deep tag paths -- the exact-only content scheme.
         """
         repo_root = _make_repo(tmp_path)
         _write_xml(
@@ -399,7 +396,7 @@ class TestTagFormatValidation:
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
         assert result.returncode == 0, (
-            f"AC-TEST-003: expected exit 0 for valid revision={valid_revision!r}.\n"
+            f"AC-54: expected exit 0 for exact-tag revision={valid_revision!r}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert result.stderr == "", f"AC-CHANNEL-001: expected no stderr on success.\nstderr: {result.stderr!r}"
@@ -407,6 +404,12 @@ class TestTagFormatValidation:
     @pytest.mark.parametrize(
         "invalid_revision",
         [
+            "main",
+            "*",
+            "~=1.2.0",
+            ">=1.0.0",
+            ">=1.0.0,<2.0.0",
+            "refs/tags/example/proj/*",
             "refs/tags/no-semver",
             "random-string",
             "refs/heads/main",
@@ -414,8 +417,8 @@ class TestTagFormatValidation:
             "feature/my-branch",
         ],
     )
-    def test_invalid_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
-        """AC-TEST-003 negative: invalid revision formats fail validation.
+    def test_non_exact_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
+        """AC-54 negative: branches, the wildcard, constraints, and malformed shapes fail.
 
         AC-CHANNEL-001: error goes to stderr, not stdout.
         """

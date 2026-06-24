@@ -33,13 +33,15 @@ EXIT_CODE_DEPRECATED = 3
 
 # -- Marketplace validation --
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
-ALLOWED_BRANCHES = frozenset({"main"})
 
-# Wildcard revision token accepted by the marketplace validator and the version
-# resolver: a bare "*" (or a "*" trailing component of a refs/tags/<path>/* tag)
-# means "resolve to the highest available tag". Defined here so the validator
-# does not embed the literal (spec Section 4.5 / FR-23 -- no hard-coded values).
-REVISION_WILDCARD = "*"
+# Environment variable that makes the <project revision> existence check
+# mandatory (a CI/gate flag). When set to "1", a revision whose existence cannot
+# be confirmed -- because the manifest's remote is unreachable or offline --
+# becomes a hard validation ERROR instead of degrading to a format-only WARN
+# (spec Section 4.5: "a CI/gate flag makes existence mandatory"). Read at
+# validation time; absent or any value other than "1" leaves the offline-degrade
+# behaviour in place so local/offline developer runs are not blocked.
+REVISION_EXISTENCE_REQUIRED_ENV_VAR = "KANON_VALIDATE_REQUIRE_EXISTENCE"
 
 # Legacy SemVer-floored revision regexes. These are NO LONGER the marketplace
 # validator's version grammar: the validator now parses the trailing component

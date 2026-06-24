@@ -5,7 +5,7 @@ kanon source tree under src/kanon_cli/.  Each test scans specific files or
 directories and asserts the absence of the targeted pattern.
 
 Covered acceptance criteria:
-  - AC-FUNC-001: ALLOWED_BRANCHES does not contain 'review/caylent-claude'
+  - AC-FUNC-001: constants.py does not contain 'review/caylent-claude'
   - AC-FUNC-003: catalog .kanon has no REPO_URL or REPO_REV lines
   - AC-FUNC-004: kanon-readme.md has no reference to rpm-git-repo as external tool
   - AC-TEST-001: Automated scan of src/ for hard-coded org-specific values passes
@@ -42,8 +42,8 @@ def _collect_matching_lines(directory: Path, pattern: str, glob: str = "**/*") -
 
 
 @pytest.mark.integration
-class TestAllowedBranchesNoOrgValue:
-    """AC-FUNC-001: ALLOWED_BRANCHES must not contain org-specific branch names."""
+class TestConstantsNoOrgBranchValue:
+    """AC-FUNC-001: constants.py must not contain org-specific branch names."""
 
     def test_constants_does_not_contain_caylent_claude_branch(self) -> None:
         """'review/caylent-claude' must not appear in constants.py."""
@@ -53,7 +53,7 @@ class TestAllowedBranchesNoOrgValue:
         text = constants_file.read_text(encoding="utf-8")
         assert "review/caylent-claude" not in text, (
             f"Found org-specific branch 'review/caylent-claude' in {constants_file}. "
-            "Remove it from ALLOWED_BRANCHES -- only universally valid branches belong there."
+            "Only universally valid, org-agnostic values belong in constants.py."
         )
 
 

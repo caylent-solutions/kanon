@@ -9,6 +9,7 @@ via declarative manifests.
 
 ## Table of Contents
 
+- [Platform support](#platform-support)
 - [Quick Start: Find and Add Dependencies](#quick-start-find-and-add-dependencies)
 - [Tab Completion](#tab-completion)
 - [Subcommands](#subcommands)
@@ -84,6 +85,21 @@ via declarative manifests.
   - [CI/CD Pipeline](#cicd-pipeline)
 - [Documentation](#documentation)
 - [License](#license)
+
+---
+
+## Platform support
+
+Kanon runs on macOS and Linux. **Windows is not currently supported
+(planned).** Native Windows support is on the roadmap but not yet
+available; in the meantime, run kanon under WSL2 (Windows Subsystem for
+Linux), where the Linux instructions throughout this documentation apply
+unchanged.
+
+The shell-completion docs describe a cross-platform PowerShell Core
+(`pwsh`) completer that also runs on macOS and Linux; see
+[docs/shell-completion.md](docs/shell-completion.md). PowerShell Core
+support is not a claim of native Windows support.
 
 ---
 
@@ -1322,7 +1338,8 @@ version bumps.
 - [Integration Testing](docs/integration-testing.md) -- End-to-end CLI test
   plan
 - [kanon repo reference](docs/repo/README.md) -- Manifest format, `.repo/`
-  layout, hooks, smart sync, Python support, Windows notes
+  layout, hooks, smart sync, Python support (Windows is not currently
+  supported; see [Platform support](#platform-support) and use WSL2)
 - [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon
   packages and marketplaces
 

@@ -11,9 +11,12 @@ names, versions, and other live data fetched through a TTL-cached
 local mirror. The PowerShell script provides static completion of the
 top-level subcommands (see [PowerShell](#powershell) below).
 
-Windows `cmd.exe` has no programmable tab-completion mechanism, so it
-is a documented gap rather than a supported completion shell (see
-[cmd.exe (no tab-completion)](#cmdexe-no-tab-completion)).
+The `powershell` target is a **cross-platform PowerShell Core
+(`pwsh`)** capability: it runs anywhere PowerShell Core runs --
+macOS and Linux included -- and is not a claim of native Windows
+support. Windows is not currently supported (planned); see the README
+[Platform support](../README.md#platform-support) note and use WSL2 in
+the meantime.
 
 ## Install
 
@@ -66,13 +69,18 @@ they diverge. See [Update lifecycle](#update-lifecycle) below.
 
 ### PowerShell
 
-On Windows PowerShell (and PowerShell Core / `pwsh` on any platform),
-`kanon completion powershell` emits a script that registers a native
-argument completer for the `kanon` command via
-`Register-ArgumentCompleter`. The completer offers static completion
-of every top-level kanon subcommand. shtab (used for bash and zsh)
-does not support PowerShell, so kanon generates the PowerShell script
-directly from the root command parser.
+`kanon completion powershell` targets **PowerShell Core (`pwsh`)**, the
+cross-platform PowerShell that runs on macOS and Linux as well as on
+Windows. It emits a script that registers a native argument completer
+for the `kanon` command via `Register-ArgumentCompleter`. The completer
+offers static completion of every top-level kanon subcommand. shtab (used
+for bash and zsh) does not support PowerShell, so kanon generates the
+PowerShell script directly from the root command parser.
+
+This is a cross-platform `pwsh` capability, not a statement of native
+Windows support. Windows is not currently supported (planned); under
+WSL2 the bash or zsh completers above apply. See the README
+[Platform support](../README.md#platform-support) note.
 
 To enable completion for the current session, evaluate the emitted
 script inline:
@@ -94,20 +102,20 @@ the auto-updating `eval` approach used for bash and zsh.
 
 ### cmd.exe (no tab-completion)
 
-Windows `cmd.exe` (the legacy Command Prompt) has **no programmable
+The legacy Windows Command Prompt (`cmd.exe`) has **no programmable
 tab-completion mechanism**: there is no `Register-ArgumentCompleter`
-equivalent and no completion hook a program can install. Every kanon
-command runs identically in `cmd.exe` -- the absence of completion
-affects only the tab-key suggestion UX, not command behaviour or
-output.
+equivalent and no completion hook a program can install.
 
 For this reason `cmd` is **not** a value accepted by
 `kanon completion`. The supported set is `bash`, `zsh`, `powershell`;
 running `kanon completion cmd` produces an argparse choice error that
 names that supported set. This is a documented gap (FR-39), not a
-defect. To get tab-completion on Windows, use PowerShell (see
-[PowerShell](#powershell) above), which is available on every
-supported Windows version.
+defect.
+
+Windows is not currently supported (planned); see the README
+[Platform support](../README.md#platform-support) note. Run kanon under
+WSL2 and use the bash or zsh completers above, or use the cross-platform
+PowerShell Core (`pwsh`) completer (see [PowerShell](#powershell)).
 
 ## Update lifecycle
 

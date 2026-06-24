@@ -237,8 +237,12 @@ See [troubleshooting.md](troubleshooting.md) for the full entry on this warning.
 
 ### Mixed line endings
 
-If your `.kanon` file was created or edited on Windows, it may contain a mixture
-of CRLF (`\r\n`) and LF (`\n`) line endings.
+If your `.kanon` file was edited with an editor that writes CRLF (`\r\n`)
+line endings -- common when the file originated on a Windows host before
+kanon ran under WSL2 -- it may contain a mixture of CRLF and LF (`\n`) line
+endings. Windows itself is **not currently supported (planned)**; run kanon
+under WSL2 (Windows Subsystem for Linux), where the `.kanon` file behaves
+exactly as it does on Linux.
 
 `kanon install` reads the file regardless of line-ending style. `kanon remove`
 detects the dominant line ending in the file and preserves it. When the file
@@ -248,14 +252,11 @@ contains a mix, kanon normalizes all line endings to LF and prints a warning:
 WARNING: .kanon contains mixed line endings; normalized to LF.
 ```
 
-If you want to fix this proactively:
+If you want to fix this proactively, run the following inside WSL2, Linux,
+or macOS:
 
 ```shell
-# On Linux or macOS
 sed -i 's/\r//' .kanon
-
-# On Windows (PowerShell)
-(Get-Content .kanon) | Set-Content .kanon
 ```
 
 After normalizing, verify the change with `git diff --check`.

@@ -235,93 +235,17 @@ To clear a stale credential on Linux:
    git ls-remote https://git.example.com/<repo>.git
    ```
 
-## Windows
+## Windows (not currently supported -- use WSL2)
 
-### HTTPS via credential helpers
+Windows is **not currently supported (planned)**: native Windows support is
+on the roadmap but not yet available. In the meantime, run kanon under WSL2
+(Windows Subsystem for Linux) and follow the [Linux](#linux) git-auth
+instructions above -- inside a WSL2 distribution, kanon and git behave
+exactly as they do on Linux, including credential helpers, `ssh-agent`, and
+`url.insteadOf` rewrites.
 
-Windows git installations include Git Credential Manager (GCM) by default.
-
-**Git Credential Manager (native install):**
-
-Git for Windows ships with GCM pre-configured. If GCM is not active:
-
-```text
-git config --global credential.helper manager
-```
-
-GCM opens a browser or device-flow dialog on the first connection and stores
-the resulting token in the Windows Credential Manager vault. Subsequent
-connections are silent.
-
-To verify the active helper:
-
-```text
-git config --global credential.helper
-```
-
-Expected output: `manager`
-
-### SSH via ~/.ssh/config + ssh-agent
-
-Windows 10 1809+ includes OpenSSH. To use it:
-
-1. Enable the OpenSSH Authentication Agent service:
-
-   ```powershell
-   # Run in PowerShell as Administrator
-   Set-Service -Name ssh-agent -StartupType Automatic
-   Start-Service ssh-agent
-   ```
-
-2. Generate a key and add it to the agent:
-
-   ```powershell
-   ssh-keygen -t ed25519 -C "<label>" -f "$env:USERPROFILE\.ssh\id_git_example"
-   ssh-add "$env:USERPROFILE\.ssh\id_git_example"
-   ```
-
-3. Configure `%USERPROFILE%\.ssh\config`:
-
-   ```text
-   Host git.example.com
-       HostName git.example.com
-       User git
-       IdentityFile ~/.ssh/id_git_example
-   ```
-
-4. Instruct git to use the Windows OpenSSH binary rather than the bundled
-   one:
-
-   ```text
-   git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"
-   ```
-
-### url.insteadOf
-
-```text
-git config --global url."git@git.example.com:".insteadOf "https://git.example.com/"
-```
-
-Or in `%USERPROFILE%\.gitconfig`:
-
-```ini
-[url "git@git.example.com:"]
-    insteadOf = https://git.example.com/
-```
-
-### Clean-slate procedure (Windows)
-
-To clear a stale credential on Windows:
-
-1. Open **Credential Manager** (search in Start menu).
-2. Select **Windows Credentials**.
-3. Find and remove entries for the host (they appear under
-   `git:https://git.example.com` or similar).
-4. Re-authenticate by running:
-
-   ```text
-   git ls-remote https://git.example.com/<repo>.git
-   ```
+See the README [Platform support](../README.md#platform-support) note for
+the project-wide statement of supported platforms.
 
 ## Per-host configuration patterns
 

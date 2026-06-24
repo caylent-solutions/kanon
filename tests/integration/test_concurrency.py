@@ -11,7 +11,6 @@ AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 """
 
 import contextlib
-import fcntl
 import multiprocessing
 import multiprocessing.synchronize
 import os
@@ -25,6 +24,11 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import install
+
+# fcntl is POSIX-only; these tests exercise the POSIX fcntl.flock locking path.
+# On Windows (no fcntl) the whole module is skipped at collection -- the Windows
+# lock backend is covered by tests/integration/test_cross_platform_contract.py.
+fcntl = pytest.importorskip("fcntl")
 
 
 # ---------------------------------------------------------------------------

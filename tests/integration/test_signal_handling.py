@@ -9,7 +9,6 @@ AC-FUNC-001: Signals produce graceful termination with cleanup contracts.
 AC-CHANNEL-001: stdout vs stderr discipline is verified (no cross-channel leakage).
 """
 
-import fcntl
 import os
 import pathlib
 import signal
@@ -21,6 +20,10 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import install
+
+# fcntl + SIGALRM are POSIX-only; these tests exercise the POSIX locking/signal
+# path. On Windows (no fcntl) the whole module is skipped at collection.
+fcntl = pytest.importorskip("fcntl")
 
 # ---------------------------------------------------------------------------
 # Module-level constants

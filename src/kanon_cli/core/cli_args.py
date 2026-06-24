@@ -20,13 +20,17 @@ uninvokable for every command (add/search/doctor/why/outdated) -- the resolution
 must be deferred to the handler so multi-source configs only fail (or succeed, for
 ``search``) at the point a single source is actually required.
 
-Global flags factory: ``add_global_flags(parser)`` adds the three
-spec-required global flags -- ``--quiet``, ``--verbose``, and
-``--no-color`` -- to any parser. ``--quiet`` and ``--verbose`` are
-mutually exclusive (argparse enforces this; passing both causes an
+Global flags factory: ``add_global_flags(parser)`` adds the
+spec-required global flags -- ``--quiet``, ``--verbose``, ``--no-color``,
+and ``--no-update-check`` -- to any parser. ``--quiet`` and ``--verbose``
+are mutually exclusive (argparse enforces this; passing both causes an
 immediate non-zero exit per spec Section 7 fail-fast rule).
 ``--no-color`` is independent and takes precedence over the ``NO_COLOR``
-env var (spec Section 7 lines 735-746).
+env var (spec Section 7 lines 735-746). ``--no-update-check`` (spec
+Section 7.1 / FR-29) suppresses the best-effort "update available" PyPI
+lookup for the invocation; it is read directly by the update-check hook
+in ``cli.main`` (via ``kanon_cli.core.update_check.should_skip``) and so
+needs no translation in ``_apply_global_flags``.
 
 The companion ``_apply_global_flags(args)`` translates the parsed
 namespace into runtime state: root logger level and the module-level
@@ -102,8 +106,14 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
     --no-color disables ANSI color regardless of TTY / NO_COLOR env var
     (precedence: --no-color > NO_COLOR env var > TTY auto-detect).
 
+    --no-update-check skips the best-effort "update available" PyPI lookup
+    for the invocation (spec Section 7.1 / FR-29); it is equivalent to
+    setting KANON_SKIP_UPDATE_CHECK=1 and is consumed by the update-check
+    pre-dispatch hook in cli.main, not by _apply_global_flags.
+
     Spec reference: ``spec/kanon-list-add-lock-features-spec.md``
-    Section 7 lines 735-746 and Section 14 lines 1349-1350.
+    Section 7 lines 735-746 and Section 14 lines 1349-1350; spec
+    ``kanon-refinements.md`` Section 7.1 (update alert) for --no-update-check.
 
     Args:
         parser: The ``ArgumentParser`` to extend with global flags.
@@ -130,6 +140,16 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
         default=False,
         help=(
             "Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection."
+        ),
+    )
+    parser.add_argument(
+        "--no-update-check",
+        dest="no_update_check",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip the best-effort 'update available' PyPI lookup for this invocation. "
+            "Equivalent to setting KANON_SKIP_UPDATE_CHECK=1."
         ),
     )
 

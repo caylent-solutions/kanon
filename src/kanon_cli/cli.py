@@ -43,6 +43,7 @@ from kanon_cli.completions.midtoken import register as register_resolve_entry_to
 from kanon_cli.completions.source_names import register as register_complete_source_names
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
+from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
 # ---------------------------------------------------------------------------
@@ -126,6 +127,7 @@ Global options (always available):
   --help                         Show this and exit.
   --quiet / --verbose            Logging verbosity (mutually exclusive).
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
+  --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
@@ -281,6 +283,15 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     _apply_global_flags(args)
+
+    # Best-effort "update available" alert (spec Section 7.1 / FR-29), emitted on
+    # stderr before subcommand dispatch. It honours every skip condition
+    # (completion invocations, dev/editable installs, --no-update-check,
+    # KANON_SKIP_UPDATE_CHECK=1) internally and is graceful-fail: a network or
+    # cache problem prints no alert and never disturbs the chosen command. It runs
+    # for the no-command case too (bare `kanon`) since that still resolves a real
+    # invocation; only the completer subcommands and the explicit skips suppress it.
+    maybe_alert_update(args, args.command, environ=os.environ)
 
     if args.command is None:
         parser.print_help()

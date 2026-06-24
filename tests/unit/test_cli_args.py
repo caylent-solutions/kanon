@@ -481,3 +481,57 @@ class TestApplyGlobalFlagsDefenceInDepth:
         msg = str(exc_info.value)
         assert "--quiet" in msg
         assert "--verbose" in msg
+
+
+# ---------------------------------------------------------------------------
+# Tests for the --no-update-check global flag (spec Section 7.1 / FR-29 / AC-28)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestNoUpdateCheckGlobalFlag:
+    """add_global_flags registers the --no-update-check global flag."""
+
+    def test_no_update_check_dest_registered(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args([])
+        assert hasattr(args, "no_update_check")
+
+    def test_no_update_check_defaults_false(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args([])
+        assert args.no_update_check is False
+
+    def test_no_update_check_sets_true(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args(["--no-update-check"])
+        assert args.no_update_check is True
+
+    def test_no_update_check_independent_of_other_flags(self) -> None:
+        """--no-update-check composes with --quiet and --no-color (not in any mutex group)."""
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args(["--quiet", "--no-color", "--no-update-check"])
+        assert args.quiet is True
+        assert args.no_color is True
+        assert args.no_update_check is True
+
+    def test_apply_global_flags_tolerates_namespace_without_no_update_check(self) -> None:
+        """_apply_global_flags does not read no_update_check (consumed by the cli hook)."""
+        from kanon_cli.core.cli_args import _apply_global_flags
+
+        # A namespace lacking no_update_check still applies cleanly: the flag is
+        # read by the update-check hook in cli.main, not by _apply_global_flags.
+        args = argparse.Namespace(quiet=False, verbose=False, no_color=False)
+        _apply_global_flags(args)  # must not raise AttributeError

@@ -2482,3 +2482,145 @@ class TestKanonWorkspaceLockTimeoutSeconds:
             importlib.reload(constants)
         monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
         importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestUpdateCheckConstants:
+    """Tests for the update-available alert constants (spec Section 7.1 / FR-29).
+
+    The PyPI endpoint, upgrade command, TTL, connect/read timeouts, and body-size
+    cap are all defined in constants.py so update_check.py holds no operative
+    literal. The integer knobs route through _env_int and are env-overridable.
+    """
+
+    def test_pypi_endpoint_and_command_locked_values(self) -> None:
+        """The endpoint and upgrade command match the locked spec source values."""
+        from kanon_cli.constants import (
+            KANON_PYPI_JSON_URL,
+            KANON_PYPI_PROJECT_NAME,
+            KANON_UPDATE_UPGRADE_COMMAND,
+        )
+
+        assert KANON_PYPI_PROJECT_NAME == "kanon-cli"
+        assert KANON_PYPI_JSON_URL == "https://pypi.org/pypi/kanon-cli/json"
+        assert KANON_UPDATE_UPGRADE_COMMAND == "pipx upgrade kanon-cli"
+
+    def test_default_ttl_is_86400(self) -> None:
+        """KANON_UPDATE_CHECK_TTL default is 86400 (24h)."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_UPDATE_CHECK_TTL", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CHECK_TTL == 86400
+        finally:
+            if saved is not None:
+                os.environ["KANON_UPDATE_CHECK_TTL"] = saved
+            importlib.reload(constants)
+
+    def test_default_timeouts_and_cap(self) -> None:
+        """The connect/read timeouts default to 2s/3s and the body cap to 200KB."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = {
+            key: os.environ.pop(key, None)
+            for key in (
+                "KANON_UPDATE_CONNECT_TIMEOUT",
+                "KANON_UPDATE_READ_TIMEOUT",
+                "KANON_UPDATE_BODY_SIZE_CAP",
+            )
+        }
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CONNECT_TIMEOUT == 2
+            assert constants.KANON_UPDATE_READ_TIMEOUT == 3
+            assert constants.KANON_UPDATE_BODY_SIZE_CAP == 200 * 1024
+        finally:
+            for key, value in saved.items():
+                if value is not None:
+                    os.environ[key] = value
+            importlib.reload(constants)
+
+    def test_ttl_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CHECK_TTL env var overrides the default via _env_int."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "3600")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CHECK_TTL == 3600
+        finally:
+            monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+            importlib.reload(constants)
+
+    def test_connect_timeout_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CONNECT_TIMEOUT env var overrides the default."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CONNECT_TIMEOUT", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CONNECT_TIMEOUT == 5
+        finally:
+            monkeypatch.delenv("KANON_UPDATE_CONNECT_TIMEOUT", raising=False)
+            importlib.reload(constants)
+
+    def test_ttl_non_integer_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A non-integer KANON_UPDATE_CHECK_TTL fails fast with SystemExit (_env_int guard)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+        importlib.reload(constants)
+
+    def test_ttl_zero_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CHECK_TTL set to 0 raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+        importlib.reload(constants)
+
+    def test_body_size_cap_negative_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A negative KANON_UPDATE_BODY_SIZE_CAP raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_BODY_SIZE_CAP", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_BODY_SIZE_CAP", raising=False)
+        importlib.reload(constants)
+
+    def test_skip_env_and_cache_layout_constants(self) -> None:
+        """The skip-env name, cache subdir, and version filename constants exist."""
+        from kanon_cli.constants import (
+            KANON_SKIP_UPDATE_CHECK_ENV,
+            KANON_SKIP_UPDATE_CHECK_TRUE,
+            KANON_UPDATE_CHECK_CACHE_SUBDIR,
+            KANON_UPDATE_CHECK_VERSION_FILENAME,
+        )
+
+        assert KANON_SKIP_UPDATE_CHECK_ENV == "KANON_SKIP_UPDATE_CHECK"
+        assert KANON_SKIP_UPDATE_CHECK_TRUE == "1"
+        assert KANON_UPDATE_CHECK_CACHE_SUBDIR
+        assert KANON_UPDATE_CHECK_VERSION_FILENAME

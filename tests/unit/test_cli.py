@@ -176,6 +176,65 @@ class TestMainDispatch:
 
 
 @pytest.mark.unit
+class TestUpdateCheckHook:
+    """main() wires the update-available alert before subcommand dispatch (AC-28 / FR-29)."""
+
+    def test_parser_registers_no_update_check_flag(self) -> None:
+        """build_parser() accepts the --no-update-check global flag."""
+        parser = build_parser()
+        args = parser.parse_args(["--no-update-check", "install", _FAKE_KANON_PATH])
+        assert args.no_update_check is True
+
+    def test_top_level_help_mentions_no_update_check(self) -> None:
+        """The verbatim top-level help text names --no-update-check (AC-28 grep target)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "--no-update-check" in _TOP_LEVEL_HELP
+
+    def test_main_invokes_update_check_before_dispatch(self) -> None:
+        """main() calls maybe_alert_update with the parsed command before dispatching."""
+        calls: list[tuple[object, object]] = []
+
+        def _record(args: object, command: object, **kwargs: object) -> None:
+            calls.append((args, command))
+
+        with patch("kanon_cli.cli.maybe_alert_update", side_effect=_record):
+            with pytest.raises(SystemExit):
+                main([])
+
+        assert len(calls) == 1, "maybe_alert_update must be called exactly once per invocation"
+        # The no-subcommand invocation passes command=None to the hook.
+        assert calls[0][1] is None
+
+    def test_main_passes_resolved_command_to_hook(self) -> None:
+        """main() forwards the resolved subcommand name to the update-check hook."""
+        recorded: dict[str, object] = {}
+
+        class _StopDispatch(Exception):
+            """Sentinel raised from the hook to short-circuit before dispatch runs."""
+
+        def _record(args: object, command: object, **kwargs: object) -> None:
+            recorded["command"] = command
+            raise _StopDispatch
+
+        # Raising from the hook proves it runs BEFORE the install handler (no real
+        # install work happens) and lets us assert the forwarded command name.
+        with patch("kanon_cli.cli.maybe_alert_update", side_effect=_record):
+            with pytest.raises(_StopDispatch):
+                main(["install", _FAKE_KANON_PATH])
+
+        assert recorded.get("command") == "install"
+
+    def test_update_check_hook_failure_does_not_crash_main(self) -> None:
+        """A skip in the hook (editable install) leaves dispatch unaffected: no-arg still exits 2."""
+        # In the test tree kanon is editable-installed, so the real hook skips and
+        # writes nothing; main([]) must still reach the no-subcommand exit(2).
+        with pytest.raises(SystemExit) as exc_info:
+            main([])
+        assert exc_info.value.code == 2
+
+
+@pytest.mark.unit
 class TestTopLevelHelpAlias:
     """Verify -h is registered as an alias for --help on the top-level parser (AC-FUNC-003, AC-FUNC-004)."""
 

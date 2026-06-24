@@ -276,6 +276,89 @@ KANONENV_REPO_DIR_DEFAULT = ".repo"
 # -- Selfupdate embedded mode --
 SELFUPDATE_EMBEDDED_MESSAGE = "selfupdate is not available -- upgrade kanon-cli instead: pipx upgrade kanon-cli"
 
+# -- Update-available alert (spec Section 7.1 / Section 7.3 / FR-29) --
+# The published PyPI project name and the JSON metadata endpoint queried for the
+# latest released version. The endpoint is the locked source value; it is defined
+# here (never inlined in update_check.py) so no URL literal lives in source code.
+KANON_PYPI_PROJECT_NAME = "kanon-cli"
+KANON_PYPI_JSON_URL = "https://pypi.org/pypi/kanon-cli/json"
+
+# The exact upgrade command surfaced by the update alert. It is always
+# ``pipx upgrade kanon-cli`` (spec Section 7.1); defined here so the literal is
+# not duplicated across the alert template and the module.
+KANON_UPDATE_UPGRADE_COMMAND = "pipx upgrade kanon-cli"
+
+# Name of the environment variable that, when set to "1", skips the update check
+# entirely (spec Section 7.1: KANON_SKIP_UPDATE_CHECK=1). Any value other than
+# "1" leaves the check enabled.
+KANON_SKIP_UPDATE_CHECK_ENV = "KANON_SKIP_UPDATE_CHECK"
+
+# Sentinel value of KANON_SKIP_UPDATE_CHECK that disables the update check.
+KANON_SKIP_UPDATE_CHECK_TRUE = "1"
+
+# TTL in seconds for the cached PyPI latest-version lookup (spec Section 7.1,
+# default 86400 / 24h). A cached entry within this age is reused without a
+# network call; a stale entry triggers a detached background refresh while the
+# foreground command serves the last cached value. Routed through _env_int so the
+# value is env-overridable and never a hard-coded literal in update_check.py.
+KANON_UPDATE_CHECK_TTL_ENV = "KANON_UPDATE_CHECK_TTL"
+KANON_UPDATE_CHECK_TTL: int = _env_int(KANON_UPDATE_CHECK_TTL_ENV, 86400)
+if KANON_UPDATE_CHECK_TTL <= 0:
+    raise SystemExit(f"ERROR: {KANON_UPDATE_CHECK_TTL_ENV} must be a positive integer; got {KANON_UPDATE_CHECK_TTL}")
+
+# Connect timeout (seconds) for the PyPI lookup (spec Section 7.1, default 2s).
+# Env-overridable via KANON_UPDATE_CONNECT_TIMEOUT; routed through _env_int so no
+# timeout literal lives in update_check.py.
+KANON_UPDATE_CONNECT_TIMEOUT_ENV = "KANON_UPDATE_CONNECT_TIMEOUT"
+KANON_UPDATE_CONNECT_TIMEOUT: int = _env_int(KANON_UPDATE_CONNECT_TIMEOUT_ENV, 2)
+if KANON_UPDATE_CONNECT_TIMEOUT <= 0:
+    raise SystemExit(
+        f"ERROR: {KANON_UPDATE_CONNECT_TIMEOUT_ENV} must be a positive integer; got {KANON_UPDATE_CONNECT_TIMEOUT}"
+    )
+
+# Read timeout (seconds) for the PyPI lookup (spec Section 7.1, default 3s).
+# Env-overridable via KANON_UPDATE_READ_TIMEOUT; routed through _env_int.
+KANON_UPDATE_READ_TIMEOUT_ENV = "KANON_UPDATE_READ_TIMEOUT"
+KANON_UPDATE_READ_TIMEOUT: int = _env_int(KANON_UPDATE_READ_TIMEOUT_ENV, 3)
+if KANON_UPDATE_READ_TIMEOUT <= 0:
+    raise SystemExit(
+        f"ERROR: {KANON_UPDATE_READ_TIMEOUT_ENV} must be a positive integer; got {KANON_UPDATE_READ_TIMEOUT}"
+    )
+
+# Maximum number of response-body bytes read from the PyPI endpoint before the
+# lookup is abandoned (spec Section 7.1, default 200KB = 204800 bytes). An
+# oversized body yields no alert and no error (graceful-fail). Env-overridable via
+# KANON_UPDATE_BODY_SIZE_CAP; routed through _env_int so the cap is not a literal.
+KANON_UPDATE_BODY_SIZE_CAP_ENV = "KANON_UPDATE_BODY_SIZE_CAP"
+KANON_UPDATE_BODY_SIZE_CAP: int = _env_int(KANON_UPDATE_BODY_SIZE_CAP_ENV, 200 * 1024)
+if KANON_UPDATE_BODY_SIZE_CAP <= 0:
+    raise SystemExit(
+        f"ERROR: {KANON_UPDATE_BODY_SIZE_CAP_ENV} must be a positive integer; got {KANON_UPDATE_BODY_SIZE_CAP}"
+    )
+
+# Subdirectory under the resolved KANON_HOME cache directory that holds the
+# update-check cache entry. The entry reuses the completions/cache.py TTL layout
+# (a versions.txt-style value file plus a fetched_at.txt freshness sidecar).
+KANON_UPDATE_CHECK_CACHE_SUBDIR = "update-check"
+
+# Filename within the update-check cache entry holding the last looked-up latest
+# PyPI version string (one line). Reuses the completions/cache.py entries layout.
+KANON_UPDATE_CHECK_VERSION_FILENAME = "latest.txt"
+
+# ANSI SGR escape sequence used to render the bright update alert. Color is
+# applied only when stderr is a TTY and NO_COLOR is unset (spec Section 7.3);
+# the reset sequence ANSI_RESET (defined above) closes the colored span.
+ANSI_BRIGHT_CYAN = "\033[1;36m"
+
+# Alert template emitted to stderr when a newer kanon-cli version is available
+# (spec Section 7.1 / Section 7.3 / FR-29). Call with
+# .format(latest=<version>, current=<version>, command=<upgrade-command>) to
+# produce the final message. The alert names the available version and the
+# upgrade command; it is colored only on a TTY with NO_COLOR unset.
+KANON_UPDATE_ALERT_TEMPLATE = (
+    "A new release of kanon-cli is available: {current} -> {latest}.\nRun '{command}' to upgrade."
+)
+
 # -- git ls-remote retry --
 GIT_RETRY_COUNT_ENV_VAR = "KANON_GIT_RETRY_COUNT"
 GIT_RETRY_DELAY_ENV_VAR = "KANON_GIT_RETRY_DELAY"

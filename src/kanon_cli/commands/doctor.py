@@ -64,28 +64,11 @@ from kanon_cli.core.catalog import parse_catalog_sources
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.git_runner import run_git_ls_remote
 
-# Sentinel for detecting whether --catalog-source was explicitly supplied on the
-# command line versus left at the argparse default.  argparse sets catalog_source
-# to _UNSET when the user did not supply the flag; any other value (including the
-# single source resolved from KANON_CATALOG_SOURCES) means the user typed it on
-# the CLI.
+
 _UNSET: object = object()
 
-# ---------------------------------------------------------------------------
-# Workspace-free flag names
-# ---------------------------------------------------------------------------
 
-# Flags whose actions operate solely on the shared KANON_HOME cache and require
-# no per-project .kanon workspace. When the set of active (truthy) flag names is
-# non-empty AND a subset of WORKSPACE_FREE_FLAGS, workspace discovery is
-# skipped entirely. Mixed invocations (any cache flag combined with any
-# subcheck flag) still require the workspace and are NOT short-circuited.
 WORKSPACE_FREE_FLAGS: frozenset[str] = frozenset({"refresh_completion_cache", "prune_cache"})
-
-
-# ---------------------------------------------------------------------------
-# DoctorArgsTypeError exception
-# ---------------------------------------------------------------------------
 
 
 class DoctorArgsTypeError(TypeError):
@@ -105,22 +88,9 @@ class DoctorArgsTypeError(TypeError):
         )
 
 
-# ---------------------------------------------------------------------------
-# Subcheck name constants (DEFECT-012 fix)
-# ---------------------------------------------------------------------------
-
-# Canonical name strings emitted by the dispatcher for each subcheck on success.
-# These identifiers appear in `[ok] <name>` / `[fail] <name>: <reason>` output.
-# All code that constructs a Finding for a named subcheck MUST reference these
-# constants rather than inline string literals (CLAUDE.md NO HARD-CODED VALUES).
 DOCTOR_SUBCHECK_KANON_HASH = "kanon_hash consistency"
 DOCTOR_SUBCHECK_ORPHAN_LOCKS = "no orphaned lock entries"
 DOCTOR_SUBCHECK_BRANCH_DRIFT = "no branch drift"
-
-
-# ---------------------------------------------------------------------------
-# DoctorContractError exception
-# ---------------------------------------------------------------------------
 
 
 class DoctorContractError(RuntimeError):
@@ -143,10 +113,6 @@ class DoctorContractError(RuntimeError):
             "All subcheck handlers must return a Finding instance."
         )
 
-
-# ---------------------------------------------------------------------------
-# Finding dataclass (DEFECT-012 fix)
-# ---------------------------------------------------------------------------
 
 _VALID_FINDING_SEVERITIES: frozenset[str] = frozenset(
     {FINDING_SEVERITY_OK, FINDING_SEVERITY_FAIL, FINDING_SEVERITY_INFO}
@@ -183,11 +149,6 @@ class Finding:
             )
 
 
-# ---------------------------------------------------------------------------
-# DoctorFinding dataclass
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class DoctorFinding:
     """A single finding produced by one kanon doctor subcheck.
@@ -205,11 +166,6 @@ class DoctorFinding:
     remediation: str
 
 
-# ---------------------------------------------------------------------------
-# Utility: _is_branch_revision
-# ---------------------------------------------------------------------------
-
-# SHA-1 (40 chars) and SHA-256 (64 chars) hex digits.
 _SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
 
 
@@ -230,11 +186,6 @@ def _is_branch_revision(revision_spec: str) -> bool:
     if revision_spec.startswith("refs/"):
         return False
     return True
-
-
-# ---------------------------------------------------------------------------
-# Utility: _run_ls_remote
-# ---------------------------------------------------------------------------
 
 
 def _run_ls_remote(
@@ -305,11 +256,6 @@ def _run_ls_remote_exit_code(
     return run_git_ls_remote(cmd, timeout, retry_count)
 
 
-# ---------------------------------------------------------------------------
-# Subcheck 1: .kanon / .kanon.lock consistency
-# ---------------------------------------------------------------------------
-
-
 def _check_kanon_hash(
     kanon_file: pathlib.Path,
     lock_file: pathlib.Path,
@@ -360,10 +306,7 @@ def _check_kanon_hash(
     from kanon_cli.core.lockfile import read_lockfile
 
     lockfile = read_lockfile(lock_file)
-    # Recomputing kanon_hash re-parses the .kanon file; a zero-source workspace
-    # (no KANON_SOURCE_<name>_* triples) raises NoSourcesError. Convert it to a
-    # structured finding so doctor reports a clean error and exits non-zero
-    # instead of leaking the raw exception (which would surface as a traceback).
+
     try:
         computed = kanon_hash(kanon_file)
     except NoSourcesError:
@@ -382,11 +325,6 @@ def _check_kanon_hash(
         )
 
     return None
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 3: Orphaned lock entries
-# ---------------------------------------------------------------------------
 
 
 def _check_orphan_locks(
@@ -429,11 +367,6 @@ def _check_orphan_locks(
             )
 
     return findings
-
-
-# ---------------------------------------------------------------------------
-# RetryPolicy: shared named tuple for git ls-remote retry parameters
-# ---------------------------------------------------------------------------
 
 
 class RetryPolicy(NamedTuple):
@@ -482,11 +415,6 @@ def _read_retry_policy() -> RetryPolicy:
     return RetryPolicy(timeout=timeout, retry_count=retry_count, retry_delay=retry_delay)
 
 
-# ---------------------------------------------------------------------------
-# Subcheck 4: Branch drift
-# ---------------------------------------------------------------------------
-
-
 def _check_branch_drift(
     lockfile: Lockfile,
     strict_drift: bool,
@@ -529,10 +457,8 @@ def _check_branch_drift(
         )
 
         if returncode != 0:
-            # Cannot query the remote -- skip (network issues are not drift errors)
             continue
 
-        # Parse the SHA from ls-remote output: "<sha>\t<ref>\n"
         current_sha: str | None = None
         for line in stdout.splitlines():
             parts = line.split("\t", 1)
@@ -559,11 +485,6 @@ def _check_branch_drift(
             )
 
     return findings
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 5: Dangling SHA
-# ---------------------------------------------------------------------------
 
 
 def _check_dangling_shas(
@@ -598,17 +519,10 @@ def _check_dangling_shas(
     findings: list[DoctorFinding] = []
     for source in lockfile.sources:
         sha = source.resolved_sha
-        # Skip branch-pinned sources: the locked SHA is an old branch tip that
-        # may no longer be referenced by any remote ref even though the commit
-        # still exists in the repo. Branch drift (subcheck 4) already covers
-        # this case. The dangling SHA check is meaningful only for SHA-pinned
-        # sources (40/64 hex-char ref_spec) where the operator intended to
-        # lock a specific commit that must remain accessible.
+
         if _is_branch_revision(source.ref_spec):
             continue
 
-        # Pass empty ref to list all refs -- needed because ls-remote only
-        # matches on ref names (second column), not SHAs (first column).
         returncode, stdout, stderr = _run_ls_remote(
             url=source.url,
             ref="",
@@ -631,7 +545,6 @@ def _check_dangling_shas(
             )
             continue
 
-        # Search first column of each tab-delimited line for the locked SHA.
         sha_found = any(line.split("\t")[0] == sha for line in stdout.strip().splitlines() if "\t" in line)
         if not sha_found:
             findings.append(
@@ -647,11 +560,6 @@ def _check_dangling_shas(
             )
 
     return findings
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 11: Remote reachability sanity check
-# ---------------------------------------------------------------------------
 
 
 def _check_remote_reachability(
@@ -692,10 +600,6 @@ def _check_remote_reachability(
     """
     from kanon_cli.core.url import canonicalize_repo_url
 
-    # Build a mapping from canonical URL -> raw URL (first occurrence wins).
-    # Deduplication ensures each distinct remote is checked exactly once.
-    # A URL that cannot be canonicalized is malformed; emit a warning finding
-    # and skip it (it cannot be de-duplicated against other entries).
     seen: dict[str, str] = {}
     findings: list[DoctorFinding] = []
     for source in lockfile.sources:
@@ -729,7 +633,6 @@ def _check_remote_reachability(
         if returncode == 0:
             continue
 
-        # Extract and truncate the first line of stderr.
         first_stderr_line = stderr.splitlines()[0] if stderr.strip() else ""
         stderr_preview = first_stderr_line[:KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS]
 
@@ -749,11 +652,6 @@ def _check_remote_reachability(
         )
 
     return findings
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 6: Effective catalog source resolution
-# ---------------------------------------------------------------------------
 
 
 def _check_effective_catalog_source(
@@ -813,9 +711,6 @@ def _check_effective_catalog_source(
     cli_value: str | None = None if raw_catalog_source is _UNSET else str(raw_catalog_source)
     env_sources = parse_catalog_sources(env.get(CATALOG_SOURCES_ENV_VAR))
 
-    # Determine provenance by walking the precedence chain.
-    # CLI flag wins unambiguously: catalog_source is not the _UNSET sentinel
-    # only when the user typed --catalog-source on the command line.
     if cli_value is not None:
         effective = cli_value
         provenance = "(from --catalog-source CLI flag)"
@@ -843,11 +738,6 @@ def _check_effective_catalog_source(
         message=message,
         remediation="",
     )
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 7: Completion errors report
-# ---------------------------------------------------------------------------
 
 
 def _check_completion_errors_report(
@@ -909,11 +799,6 @@ def _check_completion_errors_report(
     )
 
 
-# ---------------------------------------------------------------------------
-# Subcheck 9: Completion-script staleness
-# ---------------------------------------------------------------------------
-
-
 def _check_completion_script_staleness(
     search_paths: list[tuple[str, str]],
     completion_generator: Callable[[str], str],
@@ -968,11 +853,6 @@ def _check_completion_script_staleness(
             )
 
     return findings
-
-
-# ---------------------------------------------------------------------------
-# Printing helpers
-# ---------------------------------------------------------------------------
 
 
 def _print_finding(finding: DoctorFinding) -> None:
@@ -1064,11 +944,6 @@ def _emit_subcheck_result(
     return False
 
 
-# ---------------------------------------------------------------------------
-# Completion subchecks runner (7 + 9)
-# ---------------------------------------------------------------------------
-
-
 def _run_completion_subchecks(
     completion_generator: Callable[[str], str] | None,
 ) -> None:
@@ -1086,17 +961,13 @@ def _run_completion_subchecks(
         completion_generator: Optional callable for subcheck 9. When None,
             the staleness check is skipped.
     """
-    # -- Check 7: completion errors report --
-    # The cache directory always resolves under the shared KANON_HOME root, so
-    # the completion-errors report is read unconditionally (the cache has no
-    # "unset" state now that it shares the KANON_HOME store).
+
     errors_finding = _check_completion_errors_report(
         resolve_cache_dir(),
         limit=KANON_COMPLETION_ERRORS_REPORT_LIMIT,
     )
     _print_finding(errors_finding)
 
-    # -- Check 9: completion-script staleness --
     if completion_generator is not None:
         staleness_findings = _check_completion_script_staleness(
             search_paths=list(KANON_STATIC_COMPLETION_SEARCH_PATHS),
@@ -1104,11 +975,6 @@ def _run_completion_subchecks(
         )
         for finding in staleness_findings:
             _print_finding(finding)
-
-
-# ---------------------------------------------------------------------------
-# doctor_command -- main entrypoint for 'kanon doctor' (checks 1-5, 7, 9)
-# ---------------------------------------------------------------------------
 
 
 def doctor_command(
@@ -1189,13 +1055,8 @@ def doctor_command(
     do_refresh: bool = getattr(args, "refresh_completion_cache", False)
     do_prune: bool = getattr(args, "prune_cache", False)
 
-    # Resolve the cache directory from the shared KANON_HOME root (used by
-    # subchecks 8 and 10). The cache always resolves to <KANON_HOME>/cache; there
-    # is no "unset" state, so the cache-mutating subchecks run whenever their flag
-    # is set.
     cache_dir: pathlib.Path = resolve_cache_dir()
 
-    # -- Check 8: completion-cache invalidation (--refresh-completion-cache) --
     if do_refresh:
         completion_cache_dir = cache_dir / KANON_COMPLETION_CACHE_DIR
         try:
@@ -1212,7 +1073,6 @@ def doctor_command(
             )
         )
 
-    # -- Check 10a: cache prune (--prune-cache) --
     if do_prune:
         age_days = KANON_CACHE_PRUNE_AGE_DAYS
         count_pruned, total_bytes = _prune_cache(cache_dir, age_days, now)
@@ -1228,7 +1088,6 @@ def doctor_command(
             )
         )
 
-    # -- Check 10b: stale install-lock advisory (--prune-cache) --
     if do_prune:
         stale_locks = list(
             _scan_stale_install_locks(
@@ -1252,19 +1111,6 @@ def doctor_command(
                 )
             )
 
-    # -- Short-circuit for workspace-free flags --
-    # When only workspace-free flags (e.g. --refresh-completion-cache,
-    # --prune-cache) are active, skip all workspace-dependent checks and return
-    # 0 immediately. Mixed invocations (cache flag + any subcheck flag) fall
-    # through to the full workspace-dependent path below.
-    #
-    # active_flag_names uses `value is True` (not just `if value`) to exclude
-    # non-boolean attributes injected by argparse set_defaults(): catalog_source
-    # is set to the _UNSET sentinel object (truthy but not True) and func is
-    # set to run_doctor (a callable, also truthy but not True). Using `if value`
-    # caused those attributes to be included in active_flag_names, which
-    # prevented the subset check from firing and caused _check_kanon_hash to
-    # be reached even when only cache flags were active (DEFECT-013).
     if not isinstance(args, argparse.Namespace):
         raise DoctorArgsTypeError(type(args))
     active_flag_names = {name for name, value in vars(args).items() if value is True}
@@ -1273,7 +1119,6 @@ def doctor_command(
 
     quiet: bool = bool(getattr(args, "quiet", False))
 
-    # -- Check 1: .kanon / .kanon.lock presence + hash match --
     consistency_finding = _check_kanon_hash(kanon_file, lock_file)
 
     if consistency_finding is not None:
@@ -1291,7 +1136,7 @@ def doctor_command(
 
         if consistency_finding.code == "NO_LOCKFILE":
             _print_finding(consistency_finding)
-            # Lockfile absent: run subchecks 6, 7, 9 with no lockfile; skip 2-5 and 11.
+
             source_finding = _check_effective_catalog_source(args, dict(os.environ), None)
             print(source_finding.message)
             _run_completion_subchecks(completion_generator)
@@ -1310,9 +1155,6 @@ def doctor_command(
             return 1
 
         if consistency_finding.code == "NO_SOURCES":
-            # Zero-source .kanon: invalid workspace. Report the structured
-            # finding and exit non-zero; subchecks 2-5/11 cannot run without
-            # any source to inspect.
             _print_finding(consistency_finding)
             _print_structured_finding(
                 Finding(
@@ -1324,37 +1166,31 @@ def doctor_command(
             )
             return 1
 
-    # Subcheck 1 passed -- emit structured ok finding.
     _print_structured_finding(
         Finding(severity=FINDING_SEVERITY_OK, name=DOCTOR_SUBCHECK_KANON_HASH),
         quiet=quiet,
     )
 
-    # Hash matched -- load the lockfile and run checks 3-5 and 6.
     from kanon_cli.core.lockfile import read_lockfile
 
     lockfile = read_lockfile(lock_file)
 
     has_errors = False
 
-    # -- Check 3: orphan lock entries --
     orphan_findings = _check_orphan_locks(kanon_file, lockfile)
     if _emit_subcheck_result(DOCTOR_SUBCHECK_ORPHAN_LOCKS, orphan_findings, quiet):
         has_errors = True
 
-    # -- Check 4: branch drift --
     drift_findings = _check_branch_drift(lockfile, strict_drift=strict_drift)
     if _emit_subcheck_result(DOCTOR_SUBCHECK_BRANCH_DRIFT, drift_findings, quiet):
         has_errors = True
 
-    # -- Check 5: dangling SHA --
     dangling_findings = _check_dangling_shas(lockfile)
     for finding in dangling_findings:
         _print_finding(finding)
         if finding.kind == "error":
             has_errors = True
 
-    # -- Check 11: remote reachability sanity check --
     remote_findings = _check_remote_reachability(
         lockfile,
         _run_ls_remote_exit_code,
@@ -1362,21 +1198,13 @@ def doctor_command(
     )
     for finding in remote_findings:
         _print_finding(finding)
-        # Remote-reachability findings are always warnings -- they never set has_errors.
 
-    # -- Check 6: effective catalog source --
     source_finding = _check_effective_catalog_source(args, dict(os.environ), lockfile)
     print(source_finding.message)
 
-    # -- Checks 7 + 9: completion errors and script staleness --
     _run_completion_subchecks(completion_generator)
 
     return 1 if has_errors else 0
-
-
-# ---------------------------------------------------------------------------
-# register -- argparse subcommand registration
-# ---------------------------------------------------------------------------
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -1481,20 +1309,10 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    # Delegate --catalog-source registration to the shared factory (DRY).
-    # Then override the default to _UNSET so _check_effective_catalog_source
-    # can distinguish a CLI-supplied value from the argparse-injected default.
-    # The env-var fallback baked in by add_catalog_source_arg's default= would
-    # conflate CLI-absent with env-var-present, breaking provenance tracking.
     add_catalog_source_arg(parser)
     parser.set_defaults(catalog_source=_UNSET)
 
     parser.set_defaults(func=run_doctor)
-
-
-# ---------------------------------------------------------------------------
-# run_doctor -- registered CLI entrypoint for 'kanon doctor'
-# ---------------------------------------------------------------------------
 
 
 def run_doctor(args: argparse.Namespace) -> int:
@@ -1510,11 +1328,6 @@ def run_doctor(args: argparse.Namespace) -> int:
         0 on success; non-zero on failure.
     """
     return doctor_command(args)
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 8: _refresh_completion_cache -- completion cache refresh helper
-# ---------------------------------------------------------------------------
 
 
 def _refresh_completion_cache(cache_dir: pathlib.Path) -> int:
@@ -1537,19 +1350,12 @@ def _refresh_completion_cache(cache_dir: pathlib.Path) -> int:
         cache_dir.mkdir(parents=True, mode=KANON_HOME_CACHE_DIR_MODE)
         return 0
 
-    # Count all files recursively before removal.
     removed = sum(1 for child in cache_dir.rglob("*") if child.is_file())
 
-    # Remove the entire directory tree and recreate it empty with mode 0700.
     shutil.rmtree(cache_dir)
     cache_dir.mkdir(parents=True, mode=KANON_HOME_CACHE_DIR_MODE)
 
     return removed
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 10: _prune_cache -- age-based cache prune helper
-# ---------------------------------------------------------------------------
 
 
 def _prune_cache(
@@ -1602,11 +1408,6 @@ def _prune_cache(
             count_pruned += 1
 
     return (count_pruned, total_bytes)
-
-
-# ---------------------------------------------------------------------------
-# Subcheck 10: _scan_stale_install_locks -- advisory stale-lock scanner
-# ---------------------------------------------------------------------------
 
 
 def _scan_stale_install_locks(

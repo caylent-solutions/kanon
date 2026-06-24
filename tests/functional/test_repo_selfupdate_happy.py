@@ -47,42 +47,34 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Selfupdate Happy Test User"
 _GIT_USER_EMAIL = "repo-selfupdate-happy@example.com"
 _PROJECT_PATH = "selfupdate-test-project"
 
-# CLI token for the selfupdate subcommand
+
 _CLI_TOKEN_SELFUPDATE = "selfupdate"
 
-# Option flag for skipping repo source code verification
+
 _CLI_FLAG_NO_REPO_VERIFY = "--no-repo-verify"
 
-# Expected exit code for all embedded-mode invocations.
-# Updated per E2-F2-S2-T2: selfupdate exits 1 in embedded mode.
+
 _EXPECTED_EXIT = 1
 
-# Composed CLI command phrase for diagnostic messages (no inline literals)
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
 
-# Expected stdout for a successful selfupdate invocation (empty in embedded mode)
+
 _EXPECTED_STDOUT = ""
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Parametrize tuples for AC-TEST-002: two distinct invocation forms
+
 _INVOCATION_FORMS = [
     pytest.param((), id="default-args"),
     pytest.param((_CLI_FLAG_NO_REPO_VERIFY,), id="no-repo-verify"),
 ]
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-002: happy-path tests for all invocation forms
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -171,11 +163,6 @@ class TestRepoSelfupdateInvocationFormHappyPath:
             f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} in stderr of '{_CLI_COMMAND_PHRASE} {extra_args}'.\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

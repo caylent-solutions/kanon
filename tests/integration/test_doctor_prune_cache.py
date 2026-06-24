@@ -25,11 +25,6 @@ import pytest
 from kanon_cli.constants import KANON_HOME_CACHE_DIR_MODE
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _set_atime(path: pathlib.Path, dt: datetime.datetime) -> None:
     """Set the atime of path to dt, leaving mtime unchanged.
 
@@ -83,13 +78,9 @@ def _base_env(cache_dir: pathlib.Path, kanon_file: pathlib.Path) -> dict[str, st
     return env
 
 
-# ---------------------------------------------------------------------------
-# Test fixtures
-# ---------------------------------------------------------------------------
-
 _NOW = datetime.datetime.now(tz=datetime.timezone.utc)
-_OLD_DAYS = 31  # older than the default 30-day threshold
-_NEW_DAYS = 10  # newer than the threshold
+_OLD_DAYS = 31
+_NEW_DAYS = 10
 
 
 @pytest.mark.integration
@@ -252,17 +243,14 @@ class TestDoctorPruneCacheIntegration:
         old_dt = _NOW - datetime.timedelta(days=_OLD_DAYS)
         new_dt = _NOW - datetime.timedelta(days=_NEW_DAYS)
 
-        # File in completion-cache (refresh should clear it).
         comp_file = completion_cache / "comp.json"
         comp_file.write_bytes(b"c" * 50)
         _set_atime(comp_file, old_dt)
 
-        # Old file at top level (prune should remove it).
         old_top = cache_dir / "old.json"
         old_top.write_bytes(b"o" * 100)
         _set_atime(old_top, old_dt)
 
-        # New file at top level (must survive).
         new_top = cache_dir / "new.json"
         new_top.write_bytes(b"n" * 100)
         _set_atime(new_top, new_dt)

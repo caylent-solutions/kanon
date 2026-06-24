@@ -65,9 +65,6 @@ def _run_install_with_fixture_sync(
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
     ):
-        # install is hermetic in 3.0.0: it takes no catalog source (it never
-        # resolves a remote catalog). The conftest autouse fixture mocks
-        # _resolve_ref_to_sha so source refs are resolved without network.
         install(
             kanonenv,
             lock_file_path=kanonenv.parent / ".kanon.lock",
@@ -118,10 +115,6 @@ class TestInstallIncludeDiamond:
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
         store = resolve_workspace_base_dir()
 
-        # Pre-populate the manifest checkout directory that install() will use.
-        # After real repo init + repo sync, manifests live at
-        # <store>/.kanon-data/sources/test/.repo/manifests/; pre-populate that
-        # path so _walk_includes finds the fixture files where code expects.
         source_dir = store / ".kanon-data" / "sources" / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
@@ -136,7 +129,7 @@ class TestInstallIncludeDiamond:
     def test_diamond_install_succeeds(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """install() does NOT raise for a diamond-shaped include fixture."""
         kanonenv, _source_dir = self._build_diamond_fixture(tmp_path, monkeypatch)
-        # Must not raise -- diamond is a valid (non-cyclic) structure.
+
         _run_install_with_fixture_sync(kanonenv)
 
     def test_diamond_lockfile_written(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,7 +152,6 @@ class TestInstallIncludeDiamond:
         assert len(lockfile.sources) == 1
         source = lockfile.sources[0]
 
-        # Collect all path_in_repo values from the include tree.
         all_paths = _collect_include_paths(source.includes)
         d_count = sum(1 for p in all_paths if p == "d.xml")
         assert d_count == 1, f"d.xml appeared {d_count} times in lockfile; expected exactly 1"
@@ -174,7 +166,7 @@ class TestInstallIncludeDiamond:
 
         source = lockfile.sources[0]
         total_includes = _count_include_entries(source.includes)
-        # b + d (under b) + c = 3 entries (d is not repeated under c)
+
         assert total_includes == 3, f"expected 3 include entries (b, d, c); got {total_includes}"
 
     def test_diamond_d_under_b_not_c(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -186,16 +178,14 @@ class TestInstallIncludeDiamond:
         lockfile = read_lockfile(lockfile_path)
 
         source = lockfile.sources[0]
-        # source.includes == [b_entry, c_entry]
+
         assert len(source.includes) == 2
         b_entry = source.includes[0]
         c_entry = source.includes[1]
 
-        # d is a child of b
         b_child_paths = [e.path_in_repo for e in b_entry.includes]
         assert "d.xml" in b_child_paths, "d.xml must appear under b.xml in lockfile"
 
-        # d is NOT a child of c (diamond-deduped)
         c_child_paths = [e.path_in_repo for e in c_entry.includes]
         assert "d.xml" not in c_child_paths, "d.xml must NOT appear under c.xml (deduped)"
 
@@ -223,7 +213,7 @@ class TestInstallIncludeDiamond:
 
         source = lockfile.sources[0]
         all_paths = _collect_include_paths(source.includes)
-        # DFS pre-order: b, d (child of b), c
+
         assert all_paths[0] == "b.xml"
         assert all_paths[1] == "d.xml"
         assert all_paths[2] == "c.xml"

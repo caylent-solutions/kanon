@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for BV-09: envsubst .bak preserves first-run content.
 
 Covers the skip-if-exists semantics for the .bak backup file:
@@ -33,10 +19,6 @@ from kanon_cli.repo.subcmds.envsubst import Envsubst
 from kanon_cli.repo.subcmds.envsubst import _ensure_backup_once
 
 
-# ---------------------------------------------------------------------------
-# Shared manifest XML templates
-# ---------------------------------------------------------------------------
-
 _ORIGINAL_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -45,11 +27,6 @@ _ORIGINAL_XML = """\
 """
 
 _SUBSTITUTED_FETCH = "https://example.com/repos"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_manifest(path: pathlib.Path, content: str) -> None:
@@ -64,11 +41,6 @@ def _make_cmd() -> Envsubst:
     return cmd
 
 
-# ---------------------------------------------------------------------------
-# AC-CODE-002: BAK_SUFFIX constant exists in module scope
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_bak_suffix_constant_exists() -> None:
     """BAK_SUFFIX is a module-level constant; no inline literals allowed.
@@ -76,11 +48,6 @@ def test_bak_suffix_constant_exists() -> None:
     AC-CODE-002
     """
     assert BAK_SUFFIX == ".bak", f"Expected BAK_SUFFIX == '.bak', got {BAK_SUFFIX!r}"
-
-
-# ---------------------------------------------------------------------------
-# _ensure_backup_once helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -119,11 +86,6 @@ def test_ensure_backup_once_skips_when_bak_exists(tmp_path: pathlib.Path) -> Non
     )
 
 
-# ---------------------------------------------------------------------------
-# Parametrized: first-run, second-run, pre-existing .bak
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "scenario",
@@ -152,7 +114,6 @@ def test_bak_preservation_scenarios(tmp_path: pathlib.Path, scenario: str) -> No
     cmd = _make_cmd()
 
     if scenario == "first_run_creates_bak":
-        # AC-TEST-001
         _write_manifest(manifest, _ORIGINAL_XML)
         original_bytes = manifest.read_bytes()
 
@@ -165,16 +126,13 @@ def test_bak_preservation_scenarios(tmp_path: pathlib.Path, scenario: str) -> No
         )
 
     elif scenario == "second_run_preserves_bak":
-        # AC-TEST-002: run once to substitute, then run again
         _write_manifest(manifest, _ORIGINAL_XML)
         original_bytes = manifest.read_bytes()
 
-        # First run: creates .bak
         cmd.EnvSubst(str(manifest))
         bak_after_first = bak.read_bytes()
         assert bak_after_first == original_bytes, "Precondition: after first run .bak should contain original bytes"
 
-        # Second run on the now-substituted manifest
         cmd.EnvSubst(str(manifest))
         bak_after_second = bak.read_bytes()
 
@@ -185,7 +143,6 @@ def test_bak_preservation_scenarios(tmp_path: pathlib.Path, scenario: str) -> No
         )
 
     elif scenario == "pre_existing_bak_preserved":
-        # AC-TEST-003: .bak exists BEFORE first envsubst
         _write_manifest(manifest, _ORIGINAL_XML)
         user_content = b"user-placed backup content -- must not be touched"
         bak.write_bytes(user_content)
@@ -201,11 +158,6 @@ def test_bak_preservation_scenarios(tmp_path: pathlib.Path, scenario: str) -> No
         raise AssertionError(f"Unknown scenario: {scenario!r}")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: backup write failure exits non-zero; substitution NOT applied
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_backup_write_failure_exits_nonzero_and_no_substitution(tmp_path: pathlib.Path) -> None:
     """AC-TEST-004: When .bak creation fails, envsubst raises and does NOT substitute.
@@ -218,7 +170,6 @@ def test_backup_write_failure_exits_nonzero_and_no_substitution(tmp_path: pathli
     _write_manifest(manifest, _ORIGINAL_XML)
     original_bytes = manifest.read_bytes()
 
-    # Make the directory read-only so .bak cannot be created
     tmp_path.chmod(stat.S_IRUSR | stat.S_IXUSR)
     try:
         cmd = _make_cmd()
@@ -229,19 +180,12 @@ def test_backup_write_failure_exits_nonzero_and_no_substitution(tmp_path: pathli
             f"Error message must name the manifest path. Got: {exc_info.value!r}"
         )
 
-        # Substitution must NOT have been applied
         assert manifest.read_bytes() == original_bytes, (
             f"Manifest must be unchanged when .bak write fails. "
             f"Expected {original_bytes!r}, got {manifest.read_bytes()!r}"
         )
     finally:
-        # Restore permissions so pytest can clean up tmp_path
         tmp_path.chmod(stat.S_IRWXU)
-
-
-# ---------------------------------------------------------------------------
-# AC-CODE-001: Old remove-then-recreate code path is gone
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -258,11 +202,6 @@ def test_old_remove_recreate_code_path_absent() -> None:
         "AC-CODE-001: os.remove must not appear in EnvSubst.EnvSubst -- "
         "the old Bug-12 remove-then-recreate code path must be fully removed."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CODE-003: Implementation uses .exists() check, not FileExistsError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -33,17 +33,8 @@ from unittest.mock import patch
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Timeout constants (configurable for slow CI via environment variables)
-# ---------------------------------------------------------------------------
-
 _LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "10.0"))
 _LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "5.0"))
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers for multiprocessing child processes (spawn-safe)
-# ---------------------------------------------------------------------------
 
 
 def _hold_lock_then_signal(
@@ -101,26 +92,11 @@ def _attempt_nonblocking_lock(
             result_queue.put(False)
 
 
-# ---------------------------------------------------------------------------
-# Module-level callable for spawn_detached picklability tests
-# ---------------------------------------------------------------------------
-
-
 def _noop_refresh() -> None:
     """No-op module-level callable (picklable by reference)."""
 
 
-# ---------------------------------------------------------------------------
-# Multiprocessing context: "fork" on POSIX (fast, no pickling required). Kanon
-# is POSIX-only, so the fork context is always available.
-# ---------------------------------------------------------------------------
-
 _MP_CONTEXT = multiprocessing.get_context("fork")
-
-
-# ---------------------------------------------------------------------------
-# kanon_workspace_lock contract
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -292,11 +268,6 @@ class TestWorkspaceLockFailFastOnMkdirFailure:
                     pass
 
 
-# ---------------------------------------------------------------------------
-# spawn_detached contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSpawnDetachedContract:
     """POSIX spawn_detached contract (fork-based detached process)."""
@@ -365,11 +336,6 @@ class TestSpawnDetachedContract:
         assert "child refresh failed" in content
 
 
-# ---------------------------------------------------------------------------
-# create_dirsymlink contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCreateDirsymlinkContract:
     """POSIX symlink dir-link helper contract (os.symlink)."""
@@ -405,7 +371,7 @@ class TestCreateDirsymlinkContract:
         target = tmp_path / "target_dir"
         target.mkdir()
         link_path = tmp_path / "link"
-        link_path.mkdir()  # pre-existing directory, not a symlink
+        link_path.mkdir()
 
         with pytest.raises(OSError):
             create_dirsymlink(link_path, target)

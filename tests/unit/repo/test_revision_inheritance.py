@@ -30,10 +30,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -105,15 +101,6 @@ def _get_project(m: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in m.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: project with no revision inherits from remote.revision
-#
-# When a <project> element has no revision attribute but its <remote> element
-# carries a revision attribute, the project's revisionExpr must equal the
-# remote's revision.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -195,15 +182,6 @@ class TestProjectInheritsFromRemoteRevision:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: project with no revision and remote with no revision inherits
-#              from default.revision
-#
-# When neither the <project> element nor the <remote> element carries a
-# revision attribute, the project must inherit from the <default> element.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectInheritsFromDefaultRevision:
     """Verify that a project inherits default.revision when remote has no revision.
@@ -275,15 +253,6 @@ class TestProjectInheritsFromDefaultRevision:
         assert proj.revisionExpr == project_revision, (
             f"expected revisionExpr={project_revision!r} from project attribute, got {proj.revisionExpr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: no revision anywhere raises 'no revision for project'
-#
-# When no revision is available from the project, remote, or default element,
-# ManifestParseError must be raised with a message containing "no revision for
-# project".
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

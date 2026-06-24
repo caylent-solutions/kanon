@@ -19,9 +19,6 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
-# This suite shells out to a real bash to exercise the dynamic bash-completion
-# machinery (a POSIX shell-completion feature) and runs in full on the single
-# Linux CI set.
 
 _REQUIRED_HELPERS = [
     "_kanon_complete_catalog_entries",
@@ -91,9 +88,6 @@ def _write_stub_kanon(tmp_path, outputs: dict[str, str] | None = None) -> str:
     output_cases = ""
     if outputs:
         for subcmd, out in outputs.items():
-            # Use printf with %b to interpret \n as newlines in the output string.
-            # The output is written to a temp data file so the stub can cat it,
-            # avoiding any shell quoting issues with embedded newlines.
             out_file = tmp_path / f"out_{subcmd.lstrip('_')}.txt"
             out_file.write_text(out, encoding="utf-8")
             output_cases += f'        "{subcmd}") cat {out_file} ;;\n'
@@ -144,7 +138,7 @@ def test_bash_helper_disabled_returns_empty_compreply(tmp_path, helper_name: str
     assert "COMPREPLY_COUNT=0" in result.stdout, (
         f"Expected empty COMPREPLY when KANON_COMPLETION_ENABLED=0, got: {result.stdout!r}"
     )
-    # Verify the stub was NOT called.
+
     import pathlib
 
     call_log_path = pathlib.Path(call_log)

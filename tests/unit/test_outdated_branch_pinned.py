@@ -24,34 +24,23 @@ from kanon_cli.commands.outdated import _build_row
 from kanon_cli.version import _classify_revision_shape, RevisionShape, _list_branch_head
 
 
-# ---------------------------------------------------------------------------
-# Shape classification tests (AC-FUNC-001, AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "revision, expected_shape",
     [
-        # Branch-pinned: plain branch names without PEP 440 operators
         ("main", RevisionShape.BRANCH),
         ("develop", RevisionShape.BRANCH),
         ("feature/foo", RevisionShape.BRANCH),
         ("release/v1", RevisionShape.BRANCH),
-        # SHA-pinned: 40-char hex
         ("a" * 40, RevisionShape.SHA),
-        # SHA-pinned: 64-char hex
         ("b" * 64, RevisionShape.SHA),
-        # Tag-pinned: PEP 440 constraint
         (">=1.0.0", RevisionShape.TAG),
         ("~=1.0.0", RevisionShape.TAG),
         (">=1.0.0,<2.0.0", RevisionShape.TAG),
         ("*", RevisionShape.TAG),
         ("latest", RevisionShape.TAG),
-        # Tag-pinned: refs/tags prefix
         ("refs/tags/>=1.0.0", RevisionShape.TAG),
         ("refs/tags/1.0.0", RevisionShape.TAG),
-        # Tag-pinned: refs/tags prefix but with non-SHA revision
         ("refs/tags/~=1.0.0", RevisionShape.TAG),
     ],
 )
@@ -62,10 +51,6 @@ class TestClassifyRevisionShape:
             f"_classify_revision_shape({revision!r}) returned {result!r}, expected {expected_shape!r}"
         )
 
-
-# ---------------------------------------------------------------------------
-# Branch-pinned: no drift (locked SHA == HEAD)  (AC-FUNC-001, AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 _FAKE_HEAD_SHA_FULL = "abcdef1234567890abcdef1234567890abcdef12"
 _FAKE_HEAD_SHA_12 = "abcdef123456"
@@ -139,13 +124,7 @@ class TestBranchPinnedNoDrift:
                 lock_ref=_FAKE_HEAD_SHA_FULL,
             )
 
-        # current column uses the first 12 chars of the locked SHA
         assert row.current == _FAKE_HEAD_SHA_12
-
-
-# ---------------------------------------------------------------------------
-# Branch-pinned: drift (locked SHA != HEAD)  (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -243,11 +222,6 @@ class TestBranchPinnedDriftBranchNames:
         assert row.latest_available == _FAKE_HEAD_SHA_12
 
 
-# ---------------------------------------------------------------------------
-# Branch-pinned: no lockfile (live-resolve HEAD)  (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBranchPinnedNoLockfile:
     """Branch-pinned source with no lockfile: current is live-resolved HEAD."""
@@ -312,11 +286,6 @@ class TestBranchPinnedNoLockfile:
 
         assert row.latest_matching_spec == _FAKE_HEAD_SHA_12
         assert row.latest_available == _FAKE_HEAD_SHA_12
-
-
-# ---------------------------------------------------------------------------
-# SHA-pinned source  (AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -393,7 +362,7 @@ class TestShaPinned:
             "ref": sha_40,
             "path": "./src",
         }
-        # Even with a different lock_ref, upgrade-type should be none for SHA-pinned
+
         row = _build_row(
             name="FOO",
             source=source,
@@ -404,11 +373,6 @@ class TestShaPinned:
         assert row.upgrade_type == "none"
         assert row.latest_matching_spec == sha_12
         assert row.latest_available == sha_12
-
-
-# ---------------------------------------------------------------------------
-# SHA truncation must be exactly 12 leading hex chars
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -442,11 +406,6 @@ class TestShaTruncation:
 
         assert row.latest_matching_spec == expected_12
         assert len(row.latest_matching_spec) == 12
-
-
-# ---------------------------------------------------------------------------
-# _resolve_lock_sha unit tests (AC-FINAL-014 coverage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -515,11 +474,6 @@ class TestResolveLockSha:
         )
         result = _resolve_lock_sha("FOO", lock_file)
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# run() dispatch: branch-pinned and SHA-pinned sources
-# ---------------------------------------------------------------------------
 
 
 def _make_args(
@@ -628,11 +582,6 @@ class TestRunDispatchShaPinned:
         assert "none" in captured.out
 
 
-# ---------------------------------------------------------------------------
-# _list_branch_head error paths (AC-FINAL-014 coverage for version.py helpers)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestListBranchHeadErrors:
     """Error path tests for _list_branch_head in version.py.
@@ -668,7 +617,7 @@ class TestListBranchHeadErrors:
         """Empty git ls-remote output (branch not found) raises ValueError."""
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = ""  # No matching refs
+        mock_result.stdout = ""
 
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(ValueError, match="not found on remote"):
@@ -704,7 +653,7 @@ class TestListBranchHeadErrors:
         """Empty lines in git ls-remote output are skipped; ValueError raised if no match."""
         mock_result = MagicMock()
         mock_result.returncode = 0
-        # Output with an empty line in the middle (between two non-empty lines)
+
         mock_result.stdout = "abc123\trefs/heads/other\n\ndef456\trefs/heads/another\n"
 
         with patch("subprocess.run", return_value=mock_result):
@@ -722,12 +671,6 @@ class TestListBranchHeadErrors:
             sha = _list_branch_head("file:///some/repo", "main")
 
         assert sha == expected_sha
-
-
-# ---------------------------------------------------------------------------
-# run() error paths: RuntimeError and ValueError from _list_branch_head
-# cause sys.exit(1)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

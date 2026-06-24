@@ -28,9 +28,6 @@ import pytest
 
 from tests.functional.conftest import _git, _git_branch_list, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Start Happy Test User"
 _GIT_USER_EMAIL = "repo-start-happy@example.com"
@@ -41,37 +38,22 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "start-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 
-# Branch names used in start tests -- each test uses a unique name to avoid
-# cross-test interference when the same synced repo is reused in parametrize.
+
 _BRANCH_DEFAULT = "feature/default-start"
 _BRANCH_WITH_PROJECT_NAME = "feature/start-by-name"
 _BRANCH_WITH_PROJECT_PATH = "feature/start-by-path"
 
-# Flag name constants
+
 _FLAG_ALL = "--all"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) follow the same pattern
-# as in test_repo_overview_happy.py and test_repo_prune_happy.py.
-# Consolidating them into a shared module requires touching those files,
-# which is outside this task's Changes Manifest. This duplication is tracked
-# in proposal E1-F2-S12-T4 as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -213,11 +195,6 @@ def _setup_synced_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
     return checkout_dir, repo_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo start with default args exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStartHappyPathDefaultArgs:
     """AC-TEST-001 / AC-FUNC-001: 'kanon repo start' with default args exits 0.
@@ -285,11 +262,6 @@ class TestRepoStartHappyPathDefaultArgs:
             f"{project_dir!r} after 'kanon repo start {_BRANCH_DEFAULT} {_FLAG_ALL}'.\n"
             f"  git branch output: {branch_list!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo start has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -381,11 +353,6 @@ class TestRepoStartPositionalArgHappyPath:
             f"{project_dir!r} after 'kanon repo start {branch_name} {project_ref}'.\n"
             f"  git branch output: {branch_list!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

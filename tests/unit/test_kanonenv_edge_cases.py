@@ -14,10 +14,7 @@ import pytest
 
 from kanon_cli.core.kanonenv import parse_kanonenv
 
-# ---------------------------------------------------------------------------
-# Minimal valid .kanon content that satisfies source discovery requirements.
-# Reused across tests that need a valid file suffix to isolate the edge case.
-# ---------------------------------------------------------------------------
+
 _VALID_SOURCE_LINES = (
     "KANON_SOURCE_build_URL=https://example.com\n"
     "KANON_SOURCE_build_REF=main\n"

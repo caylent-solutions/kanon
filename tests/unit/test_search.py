@@ -22,10 +22,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.constants import MISSING_CATALOG_ERROR_TEMPLATE
 
 
-# ---------------------------------------------------------------------------
-# XML fixture helpers
-# ---------------------------------------------------------------------------
-
 _FULL_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -57,11 +53,6 @@ def _write_marketplace_xml(directory: Path, name: str) -> Path:
     xml_path = directory / f"{name}-marketplace.xml"
     xml_path.write_text(_FULL_XML_TEMPLATE.format(name=name))
     return xml_path
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_manifest_repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -170,11 +161,6 @@ class TestResolveManifestRepo:
         mock_rv.assert_called_once_with("https://example.com/repo.git", ">=1.0.0")
 
 
-# ---------------------------------------------------------------------------
-# Tests for _build_sorted_index
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildSortedIndex:
     """Tests for the _build_sorted_index() helper."""
@@ -207,11 +193,6 @@ class TestBuildSortedIndex:
         """Single entry catalog returns a single-element list."""
         _write_marketplace_xml(tmp_path / "repo-specs", "only-one")
         assert _build_sorted_index(tmp_path) == ["only-one"]
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_search: missing catalog source
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -266,11 +247,6 @@ class TestRunListMissingCatalogSource:
         assert "KANON_CATALOG_SOURCE" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Tests for run_search: empty catalog
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunListEmptyCatalog:
     """run_search() exits 0 with empty stdout and a stderr note for empty repos."""
@@ -303,11 +279,6 @@ class TestRunListEmptyCatalog:
             run_search(args)
         captured = capsys.readouterr()
         assert "manifest repo contains 0 entries" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_search: happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -348,15 +319,9 @@ class TestRunListHappyPath:
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
-        # stderr may contain recommended-field warnings from metadata parsing;
-        # what must NOT appear is the 0-entries note or any ERROR line
+
         assert "manifest repo contains 0 entries" not in captured.err
         assert "ERROR:" not in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Tests for register()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -446,7 +411,6 @@ class TestRegister:
 
         import io
 
-        # Capture help output for the search subcommand
         search_parser = subparsers.choices["search"]
         buf = io.StringIO()
         search_parser.print_help(file=buf)
@@ -498,11 +462,6 @@ class TestRegister:
         assert "list" not in subparsers.choices
 
 
-# ---------------------------------------------------------------------------
-# AC-16: the removed list subcommand -> argparse unknown-command exit 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestListUnknownCommand:
     """AC-16: invoking the removed list subcommand yields the argparse exit code 2."""
@@ -534,11 +493,6 @@ class TestListUnknownCommand:
         assert "search" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Tests for MISSING_CATALOG_ERROR_TEMPLATE constant
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMissingCatalogErrorTemplate:
     """The constant used in the canonical missing-catalog error is well-formed."""
@@ -561,11 +515,6 @@ class TestMissingCatalogErrorTemplate:
     def test_template_substitutes_command_name(self) -> None:
         rendered = MISSING_CATALOG_ERROR_TEMPLATE.format(command="search")
         assert "search" in rendered
-
-
-# ---------------------------------------------------------------------------
-# Source grouping (spec Section 4.1 / FR-10)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -599,7 +548,7 @@ class TestSourceGroupHeader:
 
         captured = capsys.readouterr()
         assert result == 0
-        # Header is on stderr (grouping label), not stdout (pipeable entry names).
+
         assert f"Source: {source}" in captured.err
         assert "Source:" not in captured.out
         assert captured.out.splitlines() == ["alpha", "beta"]
@@ -614,11 +563,6 @@ class TestSourceGroupHeader:
         captured = capsys.readouterr()
         assert "Source:" not in captured.err
         assert "Source:" not in captured.out
-
-
-# ---------------------------------------------------------------------------
-# -A/--all version-history flag dispatch (spec Section 4.1 / FR-10)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -655,7 +599,7 @@ class TestAllVersionsFlagDispatch:
         assert result == 0
         walk.assert_called_once()
         assert captured.out.splitlines() == ["alpha@2.0.0", "alpha@1.0.0"]
-        # Even in all-versions mode the per-source group header is emitted to stderr.
+
         assert f"Source: {source}" in captured.err
 
     def test_default_is_latest_only(self, tmp_path: Path) -> None:
@@ -674,12 +618,6 @@ class TestAllVersionsFlagDispatch:
         walk.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Concurrent, TTL-cached multi-source enumeration
-# (E3-F1-S4-T1, spec Section 4.1 / Section 6 / FR-25 / AC-17)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolveSearchSources:
     """_resolve_search_sources resolves the discovery set (flags replace env)."""
@@ -688,7 +626,7 @@ class TestResolveSearchSources:
         from kanon_cli.commands.search import _resolve_search_sources
 
         monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://h/env.git@main")
-        # Flags fully replace the env discovery set (not additive); dups collapse.
+
         result = _resolve_search_sources(["https://h/a.git@main", "https://h/b.git@main", "https://h/a.git@main"])
         assert result == ["https://h/a.git@main", "https://h/b.git@main"]
 
@@ -724,11 +662,8 @@ class TestListNamespacedVersionTags:
             "refs/tags/alpha/1.0.0",
             "refs/tags/alpha/1.2.0",
             "refs/tags/alpha/1.1.0",
-            # peeled deref line -- ignored
             "refs/tags/alpha/1.2.0^{}",
-            # different entry namespace -- excluded by the prefix filter
             "refs/tags/beta/9.9.9",
-            # non-PEP 440 suffix -- skipped
             "refs/tags/alpha/not-a-version",
         )
         result = type("R", (), {"returncode": 0, "stdout": output, "stderr": ""})()
@@ -782,7 +717,6 @@ class TestEnumerateEntryVersions:
         ):
             enumeration = _enumerate_entry_versions("https://h/a.git", "dev", "alpha")
 
-        # Non-main branch: NO release enumeration (the tag helper is never called).
         list_tags.assert_not_called()
         assert enumeration.versions == ()
         assert enumeration.has_latest is True
@@ -858,7 +792,6 @@ class TestEnumerateSourcesConcurrently:
                 max_workers=4,
             )
 
-        # The good source is still enumerated; the bad source is skipped + warned.
         assert "https://h/good.git@main" in results
         assert "https://h/bad.git@main" not in results
         assert warnings == [("https://h/bad.git@main", "repo not found")]
@@ -882,7 +815,6 @@ class TestEnumerateSourceTTLCache:
         ):
             result = _enumerate_source("https://h/a.git@main", ["alpha"], ttl_seconds=300, now=1_000_000)
 
-        # FRESH hit: no live enumeration and no cache write.
         enum_entry.assert_not_called()
         write_cache.assert_not_called()
         assert result["alpha"].versions == ("1.2.0", "1.1.0")
@@ -965,7 +897,7 @@ class TestRunSearchMultiSource:
         assert "Source: https://h/b.git@main" in captured.err
         assert "alpha (latest)" in captured.out
         assert "beta (latest)" in captured.out
-        # Latest-only default does not enumerate the full history.
+
         assert "alpha@1.0.0" not in captured.out
 
     def test_multi_source_all_versions_full_history(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

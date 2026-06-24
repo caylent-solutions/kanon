@@ -27,10 +27,6 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _DUMMY_SHA = "a" * 40
 
 
@@ -134,9 +130,7 @@ def _run_complete(
     """Invoke `kanon __complete_names_in_lockfile <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_LOCK_FILE"] = str(lock_path)
-    # The lockfile completer does not touch the catalog cache; KANON_HOME only
-    # isolates any cache resolution under <KANON_HOME>/cache. Every log path in
-    # these tests is set explicitly via KANON_COMPLETION_LOG.
+
     env["KANON_HOME"] = str(cache_dir)
     env["KANON_COMPLETION_ENABLED"] = "1"
     if extra_env:
@@ -153,11 +147,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-CYCLE-001
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -185,7 +174,7 @@ class TestCompleteLockfileNamesSubprocess:
             "zulu\n"
         )
         assert result.stdout == expected
-        # Completion-errors.log must be empty (no errors)
+
         assert not log_path.exists()
 
     def test_prefix_filter_source_names(self, tmp_path: Path) -> None:
@@ -253,7 +242,7 @@ class TestCompleteLockfileNamesSubprocess:
         )
         assert result.returncode == 0
         assert result.stdout == ""
-        # Log must not be written when disabled
+
         assert not log_path.exists()
 
     def test_hidden_subcommand_not_in_help(self, tmp_path: Path) -> None:

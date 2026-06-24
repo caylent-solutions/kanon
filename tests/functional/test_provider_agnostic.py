@@ -24,27 +24,20 @@ from typing import Iterable
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-# Repo root -- two parents up from this file (tests/functional/ -> tests/ -> repo root).
 _REPO_ROOT: pathlib.Path = pathlib.Path(__file__).parents[2]
 
-# Allowlist file path (relative to repo root).
+
 _ALLOWLIST_REL = "tests/integration/provider_allowlist.txt"
 
-# Always-allowlisted path prefixes (never scanned regardless of allowlist file).
-# Exactly 3 spec-mandated prefixes (AC-FUNC-005): docs files, test fixtures, and the
-# git internals directory.  Additional path-specific exemptions are declared in the
-# allowlist file (tests/integration/provider_allowlist.txt).
+
 _ALWAYS_ALLOWLISTED_PREFIXES: tuple[str, ...] = (
     "docs/",
     "tests/fixtures/",
     ".git/",
 )
 
-# Forbidden CLI tokens (regex patterns using word boundaries).
+
 FORBIDDEN_CLI_TOKENS: list[str] = [
     r"\bgh\b",
     r"\bglab\b",
@@ -54,7 +47,7 @@ FORBIDDEN_CLI_TOKENS: list[str] = [
     "az repos",
 ]
 
-# Forbidden hostname substrings (literal).
+
 FORBIDDEN_HOST_TOKENS: list[str] = [
     "api.github.com",
     "gitlab.com/api",
@@ -62,16 +55,11 @@ FORBIDDEN_HOST_TOKENS: list[str] = [
     "dev.azure.com/_apis",
 ]
 
-# Remediation message appended to every finding.
+
 _REMEDIATION = (
     "Remediation: remove the provider-specific reference, OR add an exemption"
     " line to tests/integration/provider_allowlist.txt with a justification comment."
 )
-
-
-# ---------------------------------------------------------------------------
-# Data class for scan findings
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -85,11 +73,6 @@ class Finding:
     def message(self) -> str:
         """Return a human-readable description of the finding."""
         return f"{self.path}:{self.line_number}: forbidden token '{self.token}'\n{_REMEDIATION}"
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _load_allowlist(repo_root: pathlib.Path) -> set[str]:
@@ -114,8 +97,7 @@ def _load_allowlist(repo_root: pathlib.Path) -> set[str]:
     """
     allowlist_path = repo_root / _ALLOWLIST_REL
     paths: set[str] = set()
-    # The allowlist file is always exempt from the scan -- it contains the
-    # forbidden tokens as part of its documented format.
+
     paths.add(_ALLOWLIST_REL)
     raw_lines = allowlist_path.read_text(encoding="utf-8").splitlines()
     for lineno, raw in enumerate(raw_lines, start=1):
@@ -205,11 +187,6 @@ def _enumerate_tracked_files(repo_root: pathlib.Path) -> list[str]:
     return [p for p in raw.decode("utf-8").split("\n") if p]
 
 
-# ---------------------------------------------------------------------------
-# Tests: _load_allowlist
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestLoadAllowlist:
     """Unit-shaped tests for the _load_allowlist helper."""
@@ -284,10 +261,6 @@ class TestLoadAllowlist:
             _load_allowlist(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# Tests: _scan_lines -- forbidden CLI tokens
-# ---------------------------------------------------------------------------
-
 _CLI_TOKEN_EXAMPLES: list[tuple[str, str]] = [
     (r"\bgh\b", "gh auth login"),
     (r"\bglab\b", "glab repo list"),
@@ -342,17 +315,13 @@ def test_scan_lines_clean_line_returns_no_findings() -> None:
 def test_scan_lines_multiline_correct_line_numbers() -> None:
     """_scan_lines reports the correct 1-based line number for each hit."""
     lines = [
-        "import subprocess",  # line 1 -- clean
-        "result = subprocess.run(['gh', 'auth', 'status'])",  # line 2 -- has gh
-        "pass",  # line 3 -- clean
+        "import subprocess",
+        "result = subprocess.run(['gh', 'auth', 'status'])",
+        "pass",
     ]
     findings = _scan_lines(lines, path="scripts/check.py")
     assert any(f.line_number == 2 for f in findings), f"Expected a finding on line 2, got: {findings}"
 
-
-# ---------------------------------------------------------------------------
-# Tests: word-boundary negative cases
-# ---------------------------------------------------------------------------
 
 _NEGATIVE_WORD_BOUNDARY_CASES: list[tuple[str, str]] = [
     (r"\bgh\b", "weight"),
@@ -373,10 +342,6 @@ def test_scan_lines_word_boundary_no_false_positive(token: str, word: str) -> No
     matching = [f for f in findings if f.token == token]
     assert matching == [], f"False positive: token {token!r} matched {word!r} unexpectedly"
 
-
-# ---------------------------------------------------------------------------
-# Tests: always-allowlisted prefixes
-# ---------------------------------------------------------------------------
 
 _ALWAYS_ALLOWLISTED_PREFIX_CASES: list[str] = [
     "docs/security-model.md",
@@ -400,11 +365,6 @@ def test_non_allowlisted_path_is_not_excluded() -> None:
     assert result is False
 
 
-# ---------------------------------------------------------------------------
-# Tests: allowlist file is self-exempt
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 def test_allowlist_file_is_self_exempt() -> None:
     """The allowlist file path itself is included in the returned set."""
@@ -421,11 +381,6 @@ def test_allowlist_file_not_scanned_for_forbidden_tokens() -> None:
     assert _is_allowlisted(_ALLOWLIST_REL, allowlisted), "The allowlist file must be excluded from scanning"
 
 
-# ---------------------------------------------------------------------------
-# Tests: finding message format
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 def test_finding_message_contains_path_lineno_token_and_remediation() -> None:
     """Finding.message() includes the file path, line number, token, and remediation."""
@@ -436,11 +391,6 @@ def test_finding_message_contains_path_lineno_token_and_remediation() -> None:
     assert "42" in msg
     assert token in msg
     assert _REMEDIATION in msg
-
-
-# ---------------------------------------------------------------------------
-# Tests: module source does not contain forbidden tokens outside constant defs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -455,7 +405,6 @@ def test_module_source_forbidden_tokens_only_in_constant_block() -> None:
     module_source = pathlib.Path(__file__).read_text(encoding="utf-8")
     lines = module_source.splitlines()
 
-    # The literal hostname tokens that appear in the source file.
     hostname_literals = [
         "api.github.com",
         "gitlab.com/api",
@@ -463,10 +412,6 @@ def test_module_source_forbidden_tokens_only_in_constant_block() -> None:
         "dev.azure.com/_apis",
     ]
 
-    # The CLI token strings as they appear literally in the source file.
-    # These are the raw pattern strings stored in FORBIDDEN_CLI_TOKENS; we
-    # check that they only appear inside string literals (lines that contain
-    # a quote character), never as bare identifiers or unquoted invocations.
     cli_token_literals = [
         r"\bgh\b",
         r"\bglab\b",
@@ -479,25 +424,16 @@ def test_module_source_forbidden_tokens_only_in_constant_block() -> None:
     violations: list[str] = []
     for lineno, line in enumerate(lines, start=1):
         stripped = line.strip()
-        # Skip comment lines.
+
         if stripped.startswith("#"):
             continue
         for token in hostname_literals + cli_token_literals:
             if token in line:
-                # Allowed only inside a list literal assignment or a string
-                # that is part of a tuple/list literal (_TOKEN_EXAMPLES).
-                # We recognise these by checking that the line contains a quote
-                # character (i.e., it is a string literal in Python source).
                 if '"' not in line and "'" not in line:
                     violations.append(f"Line {lineno}: non-literal use of {token!r}: {line!r}")
     assert not violations, "Forbidden tokens appear outside string literals in the module source:\n" + "\n".join(
         violations
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration test: full end-to-end scan of the current tracked tree
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

@@ -73,9 +73,7 @@ from typing import IO
 from kanon_cli import constants
 from kanon_cli.constants import INSTALL_LOCK_FILENAME
 
-# Lock paths currently held by THIS process, keyed on the resolved absolute
-# lock-file path. Used by the #67 re-entrance guard to fail fast on a nested
-# acquisition of an already-held workspace lock instead of deadlocking.
+
 _held_lock_paths: set[str] = set()
 
 
@@ -164,8 +162,6 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
     lock_path = kanon_data_dir / INSTALL_LOCK_FILENAME
     lock_key = str(lock_path.resolve())
 
-    # #67 re-entrance guard: fail fast on a nested acquisition of an already-held
-    # workspace lock instead of opening a second file-description and deadlocking.
     if lock_key in _held_lock_paths:
         raise WorkspaceLockReentranceError(
             f"ERROR: workspace lock for {workspace_root} is already held by this process.\n"
@@ -176,10 +172,7 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
         )
 
     timeout_seconds = _acquire_timeout_seconds()
-    # The lock file is opened in binary mode (not text) for the POSIX
-    # ``fcntl.flock`` backend, which is a whole-file lock and is mode-agnostic;
-    # binary mode avoids any ambiguity about the raw file descriptor's position
-    # or encoding when the kernel lock is acquired on its fileno.
+
     with open(lock_path, "wb") as lock_fd:
         with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
             _held_lock_paths.add(lock_key)

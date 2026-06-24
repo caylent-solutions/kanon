@@ -23,11 +23,6 @@ from kanon_cli.completions.midtoken import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 def _make_catalog_cache(
     tmp_path: Path,
     catalog_url: str,
@@ -60,11 +55,6 @@ def _make_catalog_cache(
     (sha_dir / "origin.txt").write_text(f"{catalog_url}@{catalog_ref}\n")
 
 
-# ---------------------------------------------------------------------------
-# KANON_COMPLETION_ENABLED=0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "entry_name",
@@ -87,16 +77,11 @@ def test_resolve_disabled_returns_empty(
     """
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "0")
     monkeypatch.setenv("KANON_HOME", str(tmp_path))
-    # Do NOT set KANON_CATALOG_SOURCES -- if the code reads it, it would fail.
+
     monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
     result = resolve_entry_to_repo_url(entry_name)
     assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# Known entry -> returns catalog URL
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -140,11 +125,6 @@ def test_resolve_each_known_entry_returns_same_catalog_url(
     assert result == catalog_url
 
 
-# ---------------------------------------------------------------------------
-# Unknown entry -> EntryNotFoundError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_resolve_unknown_entry_raises_entry_not_found(
     monkeypatch: pytest.MonkeyPatch,
@@ -180,11 +160,6 @@ def test_resolve_empty_name_raises_entry_not_found(
 
     with pytest.raises(EntryNotFoundError):
         resolve_entry_to_repo_url("")
-
-
-# ---------------------------------------------------------------------------
-# Malformed cache -> MidtokenCacheError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -241,18 +216,13 @@ def test_resolve_no_cache_dir_raises_midtoken_cache_error(
     """When catalogs/ dir does not exist, MidtokenCacheError is raised (no catalog cached)."""
     catalog_url = "https://example.com/catalog.git"
     catalog_ref = "main"
-    # Do NOT create any cache -- cache directory is empty.
+
     monkeypatch.setenv("KANON_COMPLETION_ENABLED", "1")
     monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_CATALOG_SOURCES", f"{catalog_url}@{catalog_ref}")
 
     with pytest.raises(MidtokenCacheError):
         resolve_entry_to_repo_url("foo")
-
-
-# ---------------------------------------------------------------------------
-# _handle: CLI entry point tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -329,11 +299,6 @@ def test_handle_disabled_returns_0_empty_stdout(
     assert captured.out == ""
 
 
-# ---------------------------------------------------------------------------
-# _write_stderr_diagnostic: tty path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_write_stderr_diagnostic_writes_to_tty(
     monkeypatch: pytest.MonkeyPatch,
@@ -344,7 +309,6 @@ def test_write_stderr_diagnostic_writes_to_tty(
 
     from kanon_cli.completions.midtoken import _write_stderr_diagnostic
 
-    # Replace stderr with a StringIO subclass that reports isatty() == True.
     class _TtyStringIO(io.StringIO):
         def isatty(self) -> bool:
             return True

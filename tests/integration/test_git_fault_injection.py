@@ -24,10 +24,6 @@ from kanon_cli.repo.error import ManifestInvalidRevisionError
 from kanon_cli.version import _list_tags, resolve_version
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
@@ -43,11 +39,6 @@ _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_test_NAME=test\n"
     "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon_subprocess(
@@ -101,11 +92,6 @@ def _write_kanonenv(directory: pathlib.Path, content: str = _MINIMAL_KANONENV_CO
     kanonenv = directory / ".kanon"
     kanonenv.write_text(content)
     return kanonenv
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: git binary missing exits 1 with actionable message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -188,8 +174,7 @@ class TestGitBinaryMissing:
         """
         kanonenv = _write_kanonenv(tmp_path)
         env = dict(os.environ)
-        # Remove git from PATH by setting a PATH that only contains a temp directory
-        # with no git binary.
+
         empty_bin_dir = tmp_path / "empty_bin"
         empty_bin_dir.mkdir()
         env["PATH"] = str(empty_bin_dir)
@@ -213,11 +198,6 @@ class TestGitBinaryMissing:
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         assert result.stderr.strip(), "Expected non-empty stderr when git binary is missing"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: bad URL produces error including URL in stderr
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -273,11 +253,6 @@ class TestBadUrl:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: bad revision produces error including revision name
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestBadRevision:
     """AC-TEST-003: when no tags match the revision constraint, the error message
@@ -330,15 +305,10 @@ class TestBadRevision:
             with pytest.raises(SystemExit):
                 resolve_version(_TEST_URL, bad_revision)
         captured = capsys.readouterr()
-        # The constraint portion of the revision must appear in the error message.
+
         assert "99.0.0" in captured.err, (
             f"Expected the version constraint to appear in stderr. Got stderr={captured.err!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: HTTPS auth failure does not trigger retries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

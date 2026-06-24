@@ -61,17 +61,8 @@ from tests.scenarios.conftest import (
     xml_escape,
 )
 
-# ---------------------------------------------------------------------------
-# MK-specific tag set -- every plugin repo gets these tags so all PEP 440
-# constraints in the doc resolve deterministically.
-# ---------------------------------------------------------------------------
+
 _MK_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a plugin fixture directory with one bare repo per name.
-# Uses a richer marketplace.json that satisfies the real claude CLI schema.
-# ---------------------------------------------------------------------------
 
 
 def _mk_plugin_repo_full(
@@ -135,10 +126,6 @@ def _mk_plugin_fix(parent: pathlib.Path, *names: str) -> pathlib.Path:
     return fix
 
 
-# ---------------------------------------------------------------------------
-# Helper: build a manifest bare repo with given XML files and semver tags.
-# ---------------------------------------------------------------------------
-
 _MFST_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
 
 
@@ -170,11 +157,6 @@ def _mk_manifest_repo(
     return clone_as_bare(work, bare)
 
 
-# ---------------------------------------------------------------------------
-# Helper: produce an MK-style manifest XML string.
-# ---------------------------------------------------------------------------
-
-
 def _mfst_xml_str(
     plugin_fix: pathlib.Path,
     plugin_name: str,
@@ -198,11 +180,6 @@ def _mfst_xml_str(
     )
 
 
-# ---------------------------------------------------------------------------
-# Helper: write .kanon and run kanon install; returns the CompletedProcess.
-# ---------------------------------------------------------------------------
-
-
 def _run_mk_scenario(
     work_dir: pathlib.Path,
     mfst_bare: pathlib.Path,
@@ -224,11 +201,6 @@ def _run_mk_scenario(
         work_dir,
         extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
     )
-
-
-# ---------------------------------------------------------------------------
-# Runtime skip guard for `claude plugin list` assertions.
-# ---------------------------------------------------------------------------
 
 
 def _check_claude_plugin_list(plugin_name: str, *, expect_present: bool) -> None:
@@ -258,17 +230,8 @@ def _check_claude_plugin_list(plugin_name: str, *, expect_present: bool) -> None
         )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestMK:
-    # ------------------------------------------------------------------
-    # MK-01..11, MK-18: happy-path parametrized suite
-    # ------------------------------------------------------------------
-
     @pytest.mark.parametrize(
         "scenario_id,plugin_name,xml_revision,kanon_revision",
         [
@@ -336,10 +299,6 @@ class TestMK:
         )
         assert not link_path.exists(), f"{scenario_id}: linkfile still present at {link_path} after clean"
 
-    # ------------------------------------------------------------------
-    # MK-12: invalid ==* constraint rejected; plugin not installed
-    # ------------------------------------------------------------------
-
     def test_mk_12_invalid_constraint_rejected(
         self,
         tmp_path: pathlib.Path,
@@ -374,10 +333,6 @@ class TestMK:
         )
         link_path = claude_marketplaces_dir / plugin_name
         assert not link_path.exists(), f"MK-12: linkfile unexpectedly present at {link_path} after failed install"
-
-    # ------------------------------------------------------------------
-    # MK-13: marketplace.json with multiple plugins
-    # ------------------------------------------------------------------
 
     def test_mk_13_multiple_plugins_in_marketplace_json(
         self,
@@ -443,10 +398,6 @@ class TestMK:
         clean_result = kanon_clean(work_dir)
         assert clean_result.returncode == 0, f"MK-13 clean exited {clean_result.returncode}"
         assert not link_path.exists(), "MK-13: linkfile still present after clean"
-
-    # ------------------------------------------------------------------
-    # MK-14: plugin.json minimal (no keywords field)
-    # ------------------------------------------------------------------
 
     def test_mk_14_plugin_json_minimal(
         self,
@@ -517,10 +468,6 @@ class TestMK:
         clean_result = kanon_clean(work_dir)
         assert clean_result.returncode == 0, f"MK-14 clean exited {clean_result.returncode}"
         assert not link_path.exists(), "MK-14: linkfile still present after clean"
-
-    # ------------------------------------------------------------------
-    # MK-15: plugin.json with full metadata
-    # ------------------------------------------------------------------
 
     def test_mk_15_plugin_json_full_metadata(
         self,
@@ -593,10 +540,6 @@ class TestMK:
         assert clean_result.returncode == 0, f"MK-15 clean exited {clean_result.returncode}"
         assert not link_path.exists(), "MK-15: linkfile still present after clean"
 
-    # ------------------------------------------------------------------
-    # MK-16: cascading <include> chain
-    # ------------------------------------------------------------------
-
     def test_mk_16_cascading_include_chain(
         self,
         tmp_path: pathlib.Path,
@@ -650,10 +593,6 @@ class TestMK:
         clean_result = kanon_clean(work_dir)
         assert clean_result.returncode == 0, f"MK-16 clean exited {clean_result.returncode}"
         assert not link_path.exists(), "MK-16: linkfile still present after clean"
-
-    # ------------------------------------------------------------------
-    # MK-17: XML with multiple <project> entries -- verify linkfile paths
-    # ------------------------------------------------------------------
 
     def test_mk_17_multiple_project_entries(
         self,
@@ -715,10 +654,6 @@ class TestMK:
         assert not link_a.exists(), f"MK-17: {link_a} still present after clean"
         assert not link_b.exists(), f"MK-17: {link_b} still present after clean"
 
-    # ------------------------------------------------------------------
-    # MK-19: dest= not starting with ${CLAUDE_MARKETPLACES_DIR}/ rejected
-    # ------------------------------------------------------------------
-
     def test_mk_19_invalid_dest_rejected(
         self,
         tmp_path: pathlib.Path,
@@ -744,7 +679,6 @@ class TestMK:
             "</manifest>\n"
         )
 
-        # validate marketplace expects the XML under repo-specs/
         repo_dir = tmp_path / "mk19-repo"
         repo_dir.mkdir()
         init_git_work_dir(repo_dir)
@@ -761,10 +695,6 @@ class TestMK:
         assert "mk19-marketplace.xml" in combined or re.search(
             r"dest|CLAUDE_MARKETPLACES_DIR", combined, re.IGNORECASE
         ), f"MK-19: expected filename or dest mention in error output: {combined!r}"
-
-    # ------------------------------------------------------------------
-    # MK-20: re-install after clean restores plugin
-    # ------------------------------------------------------------------
 
     def test_mk_20_reinstall_after_clean_restores_plugin(
         self,
@@ -817,10 +747,6 @@ class TestMK:
         second_clean = kanon_clean(work_dir)
         assert second_clean.returncode == 0, "MK-20 second clean failed"
         assert not link_path.exists(), "MK-20: linkfile still present after second clean"
-
-    # ------------------------------------------------------------------
-    # MK-21: multi-marketplace install (two distinct plugins in same .kanon)
-    # ------------------------------------------------------------------
 
     def test_mk_21_multi_marketplace_install(
         self,
@@ -879,10 +805,6 @@ class TestMK:
         assert clean_result.returncode == 0, f"MK-21 clean exited {clean_result.returncode}"
         assert not link_a.exists(), "MK-21: mk21a still present after clean"
         assert not link_b.exists(), "MK-21: mk21b still present after clean"
-
-    # ------------------------------------------------------------------
-    # MK-22: linkfile with cascading directory tree must not crash
-    # ------------------------------------------------------------------
 
     def test_mk_22_linkfile_cascading_dir_tree(
         self,

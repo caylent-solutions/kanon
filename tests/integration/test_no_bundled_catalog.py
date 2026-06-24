@@ -15,20 +15,12 @@ import tempfile
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 REPO_ROOT = pathlib.Path(__file__).parents[2]
 """Root of the kanon repository (2 levels up from tests/integration/)."""
 
 _KNOWN_PRESENT_SUBPATH = "commands"
 """A subpath that must exist under kanon_cli/ so the absence test has meaningful contrast."""
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_wheel(out_dir: pathlib.Path) -> pathlib.Path:
@@ -124,11 +116,6 @@ def _install_wheel(python: pathlib.Path, wheel_path: pathlib.Path) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Runtime absence tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_catalog_subpath_absent_at_runtime() -> None:
     """Catalog subpath must not exist under kanon_cli/ in the running environment.
@@ -187,11 +174,6 @@ def test_known_present_subpath_exists_at_runtime() -> None:
         f"Expected '{known_path}' to exist as a directory (negative-control check), "
         f"but it was not found. The package installation may be broken."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end wheel build + install + import + absence check
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -17,91 +17,70 @@ import pytest
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 to AC-FUNC-007 -- canonical-form tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "url, expected",
     [
-        # AC-FUNC-001: HTTPS with .git suffix stripped
         (
             "https://github.com/org/repo.git",
             "https://github.com/org/repo",
         ),
-        # HTTPS without .git -- unchanged
         (
             "https://github.com/org/repo",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-004: trailing slash stripped
         (
             "https://github.com/org/repo/",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-004: trailing .git AND trailing slash -- both stripped
         (
             "https://github.com/org/repo.git/",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-005: embedded user-info in HTTPS URL stripped
         (
             "https://user@github.com/org/repo",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-005: embedded user-info in HTTPS URL with .git suffix
         (
             "https://user@github.com/org/repo.git",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-006: host lowercased, path case preserved
         (
             "https://GitHub.com/Org/Repo",
             "https://github.com/Org/Repo",
         ),
-        # AC-FUNC-007: port preserved
         (
             "https://h:8443/r",
             "https://h:8443/r",
         ),
-        # Port with .git suffix
         (
             "https://h:8443/r.git",
             "https://h:8443/r",
         ),
-        # AC-FUNC-002: SCP shorthand canonicalises to HTTPS
         (
             "git@github.com:org/repo.git",
             "https://github.com/org/repo",
         ),
-        # SCP shorthand without .git suffix
         (
             "git@github.com:org/repo",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-005: SCP shorthand with user stripped (user@host:path)
         (
             "user@github.com:org/repo.git",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-003: explicit ssh:// scheme
         (
             "ssh://git@github.com/org/repo.git",
             "https://github.com/org/repo",
         ),
-        # ssh:// without user-info
         (
             "ssh://github.com/org/repo.git",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-005: ssh:// with user-info stripped
         (
             "ssh://user@github.com/org/repo",
             "https://github.com/org/repo",
         ),
-        # AC-FUNC-006: host lowercase in SCP form
         (
             "git@GitHub.com:Org/Repo",
             "https://github.com/Org/Repo",
@@ -111,11 +90,6 @@ from kanon_cli.core.url import canonicalize_repo_url
 def test_canonicalize_repo_url(url: str, expected: str) -> None:
     """Each URL form must produce the expected canonical HTTPS string."""
     assert canonicalize_repo_url(url) == expected
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008 -- query-string rejection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -135,11 +109,6 @@ def test_query_string_raises(url: str) -> None:
     assert url in msg
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-009 -- fragment rejection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "url",
@@ -155,11 +124,6 @@ def test_fragment_raises(url: str) -> None:
     msg = str(exc_info.value)
     assert msg.startswith("ERROR:")
     assert url in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-010 -- empty / whitespace-only input
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -179,18 +143,11 @@ def test_empty_or_whitespace_raises(url: str) -> None:
     assert "ERROR:" in msg
 
 
-# ---------------------------------------------------------------------------
-# Invalid SCP shorthand -- exercises _parse_scp error path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "url",
     [
-        # No colon and no recognised scheme -- fails SCP regex.
         "notavalidformat",
-        # Path-less colon-less string.
         "just-a-hostname",
     ],
 )
@@ -201,11 +158,6 @@ def test_invalid_scp_shorthand_raises(url: str) -> None:
     msg = str(exc_info.value)
     assert "ERROR:" in msg
 
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 / AC-TEST-002 -- equivalence-set test
-# Six real-world spellings must all canonicalise to the same string.
-# ---------------------------------------------------------------------------
 
 _EQUIVALENCE_SET = [
     "https://github.com/caylent-solutions/kanon",

@@ -19,11 +19,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_fixtures(base: pathlib.Path) -> pathlib.Path:
     """Build fixture repos needed by LF scenarios.
 
@@ -62,10 +57,7 @@ def _build_fixtures(base: pathlib.Path) -> pathlib.Path:
         '  <default remote="local" revision="main" sync-j="4" />\n'
         "</manifest>\n"
     )
-    # The <linkfile> dest paths are relative to the repo-tool sync root, which
-    # kanon places at .kanon-data/sources/<source-name>/.  The doc pass criteria
-    # says the symlinks appear inside .kanon-data/sources/linked/, so dest paths
-    # without a directory prefix land directly in that directory.
+
     linkfile_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<manifest>\n"
@@ -88,11 +80,6 @@ def _build_fixtures(base: pathlib.Path) -> pathlib.Path:
     )
 
     return manifest_linkfile_bare
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -122,16 +109,11 @@ class TestLF:
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
-        # Install artifacts (.packages/, .kanon-data/) now live under the shared
-        # store (<KANON_HOME>/store), not beside the project .kanon in work_dir.
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # .packages/pkg-linked must exist as a symlink into .kanon-data/sources/
         pkg_linked_link = store_base / ".packages" / "pkg-linked"
         assert pkg_linked_link.is_symlink(), ".packages/pkg-linked is not a symlink"
 
-        # The linkfile symlinks land inside the repo-tool sync root for this source,
-        # which is .kanon-data/sources/linked/
         sources_linked = store_base / ".kanon-data" / "sources" / "linked"
         assert sources_linked.is_dir(), ".kanon-data/sources/linked/ directory missing"
 

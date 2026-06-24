@@ -14,9 +14,6 @@ import zipfile
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 REPO_ROOT = pathlib.Path(__file__).parents[1]
 """Root of the kanon repository (1 level up from tests/)."""
@@ -32,7 +29,7 @@ _EXPECTED_CORE_FILES = [
 
 _GITIGNORE_CATALOG_PATTERN = "src/kanon_cli/catalog/"
 
-# Minimal guard script matching the CI workflow step logic
+
 _GUARD_SCRIPT = """\
 set -euo pipefail
 if [ -d "src/kanon_cli/catalog" ]; then
@@ -40,11 +37,6 @@ if [ -d "src/kanon_cli/catalog" ]; then
   exit 1
 fi
 """
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_wheel(out_dir: pathlib.Path) -> pathlib.Path:
@@ -100,11 +92,6 @@ def _wheel_names(wheel_path: pathlib.Path) -> list[str]:
             return zf.namelist()
     except zipfile.BadZipFile as exc:
         raise RuntimeError(f"Cannot open wheel {wheel_path} as a zip archive: {exc}") from exc
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Wheel layout -- no catalog, core files present, gitignore updated
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -168,11 +155,6 @@ def test_gitignore_contains_catalog_pattern() -> None:
         f"but it was not found. Add this line to prevent accidental re-addition of the "
         f"bundled catalog directory."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: CI guard script -- exits 1 when catalog exists, 0 when absent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

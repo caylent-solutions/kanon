@@ -1,16 +1,3 @@
-# Copyright (C) 2022 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Deep coverage boost unit tests for uncovered lines in subcmds/sync.py"""
 
 import os
@@ -34,12 +21,8 @@ class TestImportFallbacks:
 
     def test_rlimit_nofile_fallback_function(self):
         """Test _rlimit_nofile fallback returns default values."""
-        # When resource module is not available, the fallback function
-        # should return (256, 256) as default
-        # This tests lines 50-51
+
         with mock.patch.dict("sys.modules", {"resource": None}):
-            # We can't easily reimport to test the fallback,
-            # but we can test that the function exists and is callable
             assert callable(sync._rlimit_nofile)
 
 
@@ -64,7 +47,6 @@ class TestSmartSyncSetup:
         manifest.IsMirror = False
         manifest.IsArchive = False
 
-        # Mock netrc to return no authenticators for hostname
         mock_netrc = mock.MagicMock()
         mock_netrc.authenticators.return_value = None
 
@@ -79,7 +61,6 @@ class TestSmartSyncSetup:
 
                 with mock.patch.object(cmd, "_ReloadManifest"):
                     with mock.patch("builtins.open", mock.mock_open()):
-                        # This should hit line 1581-1586 (no credentials in netrc)
                         result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                         assert result is not None
 
@@ -102,7 +83,6 @@ class TestSmartSyncSetup:
         manifest.IsMirror = False
         manifest.IsArchive = False
 
-        # Mock netrc to raise NetrcParseError
         mock_netrc = mock.MagicMock()
         mock_netrc.authenticators.side_effect = netrc_module.NetrcParseError("Parse error")
 
@@ -117,7 +97,6 @@ class TestSmartSyncSetup:
 
                 with mock.patch.object(cmd, "_ReloadManifest"):
                     with mock.patch("builtins.open", mock.mock_open()):
-                        # This should hit line 1587-1588 (netrc parse error)
                         result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                         assert result is not None
 
@@ -157,7 +136,6 @@ class TestSmartSyncSetup:
                 with mock.patch.object(cmd, "_GetBranch", return_value="main"):
                     with mock.patch.object(cmd, "_ReloadManifest"):
                         with mock.patch("builtins.open", mock.mock_open()):
-                            # This should hit lines 1615-1622
                             result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                             assert result is not None
                             server_inst.GetApprovedManifest.assert_called_once_with(
@@ -199,7 +177,6 @@ class TestSmartSyncSetup:
                 with mock.patch.object(cmd, "_GetBranch", return_value="main"):
                     with mock.patch.object(cmd, "_ReloadManifest"):
                         with mock.patch("builtins.open", mock.mock_open()):
-                            # This should hit lines 1627-1633
                             result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                             assert result is not None
                             server_inst.GetApprovedManifest.assert_called_once_with("main", "product1-userdebug")
@@ -230,9 +207,7 @@ class TestSmartSyncSetup:
             ]
             mock_server.return_value = server_inst
 
-            # Mock open to raise OSError on write
             with mock.patch("builtins.open", side_effect=OSError("Write error")):
-                # This should hit lines 1645-1650
                 with pytest.raises(sync.SmartSyncError, match="cannot write manifest"):
                     cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
 
@@ -256,7 +231,6 @@ class TestSmartSyncSetup:
         protocol_error = xmlrpc.client.ProtocolError("http://example.com", 500, "Internal Server Error", {})
 
         with mock.patch("kanon_cli.repo.subcmds.sync.xmlrpc.client.Server", side_effect=protocol_error):
-            # This should hit lines 1662-1667
             with pytest.raises(sync.SmartSyncError, match="cannot connect to manifest server"):
                 cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
 
@@ -288,10 +262,9 @@ class TestSmartSyncSetup:
             with mock.patch.object(cmd, "_ReloadManifest"):
                 with mock.patch("builtins.open", mock.mock_open()):
                     with mock.patch("builtins.print") as mock_print:
-                        # This should hit line 1561 (print manifest server)
                         result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                         assert result is not None
-                        # Check that manifest server was printed
+
                         mock_print.assert_called()
 
 
@@ -334,9 +307,8 @@ class TestSuperprojectSetup:
                         return_value=True,
                     ):
                         with mock.patch("kanon_cli.repo.subcmds.sync.logger") as mock_logger:
-                            # This should hit lines 718-728 (IsMirror, no working tree)
                             cmd._UpdateProjectsRevisionId(opt, [], superproject_logging_data, manifest)
-                            # Verify warning was logged about no working tree
+
                             assert mock_logger.warning.called
 
     def test_superproject_update_failed_with_fatal(self):
@@ -379,7 +351,6 @@ class TestSuperprojectSetup:
                         "kanon_cli.repo.subcmds.sync.git_superproject.PrintMessages",
                         return_value=True,
                     ):
-                        # This should hit lines 755-756 (fatal error)
                         with pytest.raises(sync.SuperprojectError):
                             cmd._UpdateProjectsRevisionId(opt, [], superproject_logging_data, manifest)
 
@@ -423,7 +394,6 @@ class TestSuperprojectSetup:
                         "kanon_cli.repo.subcmds.sync.git_superproject.PrintMessages",
                         return_value=False,
                     ):
-                        # This should hit line 758 (unload manifest)
                         cmd._UpdateProjectsRevisionId(opt, [], superproject_logging_data, manifest)
                         manifest.outer_client.manifest.Unload.assert_called_once()
 
@@ -466,7 +436,6 @@ class TestExecute:
         args = []
 
         with mock.patch.object(cmd, "_ExecuteHelper", side_effect=RepoChangedException()):
-            # This should hit lines 1847-1848 (re-raise RepoChangedException)
             with pytest.raises(RepoChangedException):
                 cmd.Execute(opt, args)
 
@@ -479,7 +448,6 @@ class TestExecute:
         args = []
 
         with mock.patch.object(cmd, "_ExecuteHelper", side_effect=ValueError("Generic error")):
-            # This should hit lines 1849-1850 (wrap generic exception)
             with pytest.raises(RepoUnhandledExceptionError):
                 cmd.Execute(opt, args)
 
@@ -509,7 +477,6 @@ class TestUpdateManifestProject:
         mp.manifest.HasSubmodules = False
         mp.config = mock.MagicMock()
 
-        # Mock SyncBuffer to return failure
         with mock.patch("kanon_cli.repo.subcmds.sync.SyncBuffer") as mock_syncbuf:
             syncbuf_inst = mock.MagicMock()
             syncbuf_inst.Finish.return_value = False
@@ -517,7 +484,6 @@ class TestUpdateManifestProject:
 
             errors = []
 
-            # This should hit lines 1754-1755 (local sync failure)
             with pytest.raises(UpdateManifestError):
                 cmd._UpdateManifestProject(opt, mp, "manifest.xml", errors)
 
@@ -542,9 +508,8 @@ class TestSyncOneProject:
         project.name = "test-project"
         project.Sync_NetworkHalf.side_effect = KeyboardInterrupt()
 
-        # This should hit lines 2238-2241 (keyboard interrupt during fetch)
         result = cmd._SyncOneProject(opt, 0, project)
-        assert result.fetch_error is None  # KeyboardInterrupt doesn't set error
+        assert result.fetch_error is None
 
     def test_sync_one_project_keyboard_interrupt_checkout(self):
         """Test _SyncOneProject with keyboard interrupt during checkout."""
@@ -564,17 +529,14 @@ class TestSyncOneProject:
         project.manifest.manifestProject = mock.MagicMock()
         project.manifest.manifestProject.config = mock.MagicMock()
 
-        # Mock successful fetch
         network_result = mock.MagicMock()
         network_result.success = True
         project.Sync_NetworkHalf.return_value = network_result
 
-        # Mock checkout to raise KeyboardInterrupt
         project.Sync_LocalHalf.side_effect = KeyboardInterrupt()
 
-        # This should hit lines 2286-2289 (keyboard interrupt during checkout)
         result = cmd._SyncOneProject(opt, 0, project)
-        assert result.checkout_error is None  # KeyboardInterrupt doesn't set error
+        assert result.checkout_error is None
 
     def test_sync_one_project_git_error_checkout(self):
         """Test _SyncOneProject with GitError during checkout."""
@@ -594,16 +556,13 @@ class TestSyncOneProject:
         project.manifest.manifestProject = mock.MagicMock()
         project.manifest.manifestProject.config = mock.MagicMock()
 
-        # Mock successful fetch
         network_result = mock.MagicMock()
         network_result.success = True
         project.Sync_NetworkHalf.return_value = network_result
 
-        # Mock checkout to raise GitError
         git_err = GitError("Git checkout failed")
         project.Sync_LocalHalf.side_effect = git_err
 
-        # This should hit lines 2290-2294 (GitError during checkout)
         result = cmd._SyncOneProject(opt, 0, project)
         assert result.checkout_error == git_err
 
@@ -625,16 +584,13 @@ class TestSyncOneProject:
         project.manifest.manifestProject = mock.MagicMock()
         project.manifest.manifestProject.config = mock.MagicMock()
 
-        # Mock successful fetch
         network_result = mock.MagicMock()
         network_result.success = True
         project.Sync_NetworkHalf.return_value = network_result
 
-        # Mock checkout to raise generic exception
         error = RuntimeError("Checkout failed")
         project.Sync_LocalHalf.side_effect = error
 
-        # This should hit lines 2295-2297 (generic exception during checkout)
         result = cmd._SyncOneProject(opt, 0, project)
         assert result.checkout_error == error
 
@@ -656,12 +612,10 @@ class TestSyncOneProject:
         project.manifest.manifestProject = mock.MagicMock()
         project.manifest.manifestProject.config = mock.MagicMock()
 
-        # Mock successful fetch
         network_result = mock.MagicMock()
         network_result.success = True
         project.Sync_NetworkHalf.return_value = network_result
 
-        # Mock Sync_LocalHalf to populate errors list
         def mock_sync_local_half(syncbuf, **kwargs):
             errors = kwargs.get("errors", [])
             errors.append(Exception("Local half error"))
@@ -673,7 +627,6 @@ class TestSyncOneProject:
             syncbuf_inst.Finish.return_value = True
             mock_syncbuf.return_value = syncbuf_inst
 
-            # This should handle local half errors (lines 2282-2285)
             result = cmd._SyncOneProject(opt, 0, project)
             assert result.checkout_error is not None
             assert isinstance(result.checkout_error, SyncError)
@@ -715,7 +668,6 @@ class TestNetrcHandling:
         manifest.IsMirror = False
         manifest.IsArchive = False
 
-        # Mock netrc to raise OSError (file not found)
         with mock.patch("kanon_cli.repo.subcmds.sync.netrc.netrc", side_effect=OSError("File not found")):
             with mock.patch("kanon_cli.repo.subcmds.sync.xmlrpc.client.Server") as mock_server:
                 server_inst = mock.MagicMock()
@@ -727,7 +679,6 @@ class TestNetrcHandling:
 
                 with mock.patch.object(cmd, "_ReloadManifest"):
                     with mock.patch("builtins.open", mock.mock_open()):
-                        # This should handle OSError from netrc (lines 1570-1574)
                         result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                         assert result is not None
 
@@ -763,7 +714,6 @@ class TestSmartSyncEdgeCases:
 
             with mock.patch.object(cmd, "_ReloadManifest"):
                 with mock.patch("builtins.open", mock.mock_open()):
-                    # This should skip netrc logic (line 1563)
                     result = cmd._SmartSyncSetup(opt, "/tmp/manifest.xml", manifest)
                     assert result is not None
 
@@ -775,7 +725,7 @@ class TestAdditionalCoverage:
     def test_import_fallback_callable(self):
         """Test that _rlimit_nofile is callable."""
         assert callable(sync._rlimit_nofile)
-        # Call it to ensure it doesn't crash
+
         result = sync._rlimit_nofile()
         assert isinstance(result, tuple)
         assert len(result) == 2
@@ -945,7 +895,6 @@ class TestAdditionalCoverage:
         manifest.superproject = None
         manifest.all_children = []
 
-        # Should return early
         cmd._UpdateProjectsRevisionId(opt, [], {}, manifest)
 
     def test_superproject_local_only_with_manifest_path(self):
@@ -1116,7 +1065,7 @@ class TestAdditionalCoverage:
             mock_hook.FromSubcmd.return_value = None
             cmd = sync.Sync()
             cmd.manifest = manifest
-            # Just test it doesn't crash
+
             assert hasattr(sync, "RepoHook")
 
     def test_tee_string_io_instantiation(self):
@@ -1172,7 +1121,6 @@ class TestAdditionalCoverage:
         manifest.manifest_server = "http://manifest-server.example.com"
         manifest.manifest_branch = "main"
 
-        # Clear all target env vars
         env_vars = {}
 
         with mock.patch.dict(os.environ, env_vars, clear=True):

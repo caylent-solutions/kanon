@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for the subcmds/sync.py module to increase coverage."""
 
 import io
@@ -551,7 +537,7 @@ def test_print_manifest_notices_no_duplicates():
     manifest1.path_prefix = "a"
 
     manifest2 = mock.MagicMock()
-    manifest2.notice = "Notice 1"  # Duplicate
+    manifest2.notice = "Notice 1"
     manifest2.path_prefix = "b"
 
     manifest3 = mock.MagicMock()
@@ -691,7 +677,7 @@ def test_gc_projects_with_auto_gc_multiple_jobs():
     with mock.patch.object(cmd, "_SetPreciousObjectsState"):
         with mock.patch("os.cpu_count", return_value=8):
             cmd._GCProjects([project1, project2], opt, err_event)
-            # Verify gc was called
+
             assert project1.bare_git.gc.called or project1.bare_git.pack_refs.called
             assert project2.bare_git.gc.called or project2.bare_git.pack_refs.called
 
@@ -702,7 +688,7 @@ def test_gc_projects_handles_git_error():
     cmd = _make_sync_cmd()
     opt = mock.MagicMock()
     opt.auto_gc = True
-    opt.jobs = 2  # Use multiple jobs to trigger threading
+    opt.jobs = 2
     opt.quiet = True
     opt.fail_fast = False
     err_event = multiprocessing.Event()
@@ -728,7 +714,6 @@ def test_update_repo_project_skips_when_local_only():
     errors = []
 
     cmd._UpdateRepoProject(opt, manifest, errors)
-    # Should return immediately without doing anything
 
 
 @pytest.mark.unit
@@ -739,7 +724,7 @@ def test_update_repo_project_skips_recent_fetch():
     opt.local_only = False
     manifest = mock.MagicMock()
     manifest.repoProject = mock.MagicMock()
-    manifest.repoProject.LastFetch = time.time() - 100  # Less than a day
+    manifest.repoProject.LastFetch = time.time() - 100
     errors = []
 
     cmd._UpdateRepoProject(opt, manifest, errors)
@@ -766,7 +751,7 @@ def test_update_repo_project_fetches_when_needed():
 
     manifest = mock.MagicMock()
     manifest.repoProject = mock.MagicMock()
-    manifest.repoProject.LastFetch = time.time() - (24 * 60 * 60 * 2)  # 2 days ago
+    manifest.repoProject.LastFetch = time.time() - (24 * 60 * 60 * 2)
     manifest.repoProject.name = "repo"
     manifest.IsArchive = False
     manifest.CloneFilter = None
@@ -1189,13 +1174,10 @@ def test_chunksize_calculation():
     """Test _chunksize calculates appropriate chunk size."""
     from kanon_cli.repo.subcmds.sync import _chunksize, WORKER_BATCH_SIZE
 
-    # Small number of projects
     assert _chunksize(10, 5) == 2
 
-    # Large batch should be capped
     assert _chunksize(1000, 2) <= WORKER_BATCH_SIZE
 
-    # Minimum is 1
     assert _chunksize(5, 10) == 1
 
 
@@ -1239,11 +1221,11 @@ def test_safe_checkout_order_mixed_hierarchy():
     p3 = _make_project("parent/child", "parent/child")
 
     result = _SafeCheckoutOrder([p1, p2, p3])
-    # independent and parent should be in first layer
+
     first_layer_paths = [p.relpath for p in result[0]]
     assert "independent" in first_layer_paths
     assert "parent" in first_layer_paths
-    # parent/child should be in second layer
+
     assert len(result) == 2
     assert result[1][0].relpath == "parent/child"
 
@@ -1966,7 +1948,6 @@ def test_update_all_manifest_projects_with_submanifests():
     mp = mock.MagicMock()
     mp.standalone_manifest_url = None
 
-    # Create submanifest
     submanifest = mock.MagicMock()
     child_manifest = mock.MagicMock()
     child_manifest.manifestProject = mock.MagicMock()
@@ -2200,10 +2181,10 @@ def test_local_sync_state_prune_removed_projects():
     existing_data = json.dumps({"path1": {"last_fetch": 123.0}})
 
     def exists_side_effect(path):
-        # Return False for the gitdir check to trigger pruning
+
         if ".git" in path:
             return False
-        # True for the JSON file
+
         return True
 
     with mock.patch("os.path.exists", side_effect=exists_side_effect):
@@ -2294,7 +2275,7 @@ def test_persistent_transport_request():
 def test_persistent_transport_close():
     """Test PersistentTransport.close is a no-op."""
     transport = sync.PersistentTransport("https://example.com")
-    transport.close()  # Should not raise
+    transport.close()
 
 
 @pytest.mark.unit
@@ -2357,7 +2338,6 @@ def test_update_projects_revision_id_no_superproject():
     manifest.all_children = []
 
     cmd._UpdateProjectsRevisionId(opt, args, superproject_logging_data, manifest)
-    # Should return early without doing anything
 
 
 @pytest.mark.unit

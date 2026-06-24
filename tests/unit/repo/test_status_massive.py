@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/status.py coverage."""
 
 from unittest import mock
@@ -108,7 +94,6 @@ def test_find_orphans_recursive():
         with mock.patch("glob.glob", return_value=["subdir/file.txt"]):
             cmd._FindOrphans(["orphan"], set(), {"orphan"}, outstring)
 
-    # Should recursively search
     assert len(outstring) >= 1
 
 
@@ -141,7 +126,7 @@ def test_execute_no_projects():
 
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
-        # Should print "nothing to commit"
+
         mock_print.assert_called()
 
 
@@ -226,7 +211,7 @@ def test_execute_orphans_no_orphans_found():
             with mock.patch("glob.glob", return_value=[]):
                 with mock.patch("builtins.print") as mock_print:
                     cmd.Execute(opt, [])
-                    # Should print "No orphan files"
+
                     assert any("orphan" in str(call).lower() for call in mock_print.call_args_list)
 
 
@@ -257,7 +242,6 @@ def test_execute_restores_cwd():
                 with mock.patch("builtins.print"):
                     cmd.Execute(opt, [])
 
-                    # Should chdir to topdir and then back
                     calls = mock_chdir.call_args_list
                     assert len(calls) == 2
                     assert calls[0][0][0] == cmd.manifest.topdir

@@ -45,27 +45,14 @@ from tests.integration.test_add_core import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- per CLAUDE.md "ALL CODE MUST BE DYNAMIC AND
-# INPUT-DRIVEN"; output substrings live here, not inside the test body.
-# ---------------------------------------------------------------------------
 
-# Substrings that must appear in combined (stdout + stderr) output per the
-# E27 cache-action contract. `_print_finding` emits `INFO: {message}` to
-# stderr; we match the stable message prefix rather than the full message.
 EXPECTED_CACHE_ACTION_SUBSTRINGS: list[str] = [
     "Completion cache refreshed:",
     "Cache pruned:",
 ]
 
-# Number of days used to create "old" (expired) cache files. Must exceed
-# KANON_CACHE_PRUNE_AGE_DAYS (default 30) so the prune subcheck removes them.
+
 _OLD_DAYS: int = 35
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _set_atime_old(path: pathlib.Path) -> None:
@@ -78,11 +65,6 @@ def _set_atime_old(path: pathlib.Path) -> None:
     old_dt = now - datetime.timedelta(days=_OLD_DAYS)
     mtime = path.stat().st_mtime
     os.utime(str(path), (old_dt.timestamp(), mtime))
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -119,24 +101,21 @@ class TestDoctorCombinedFlags:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        # -- Step 1: create cache dir with expired content --
+
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
 
         completion_cache = cache_dir / "completion-cache"
         completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
-        # One expired file in completion-cache (refresh clears it).
         comp_file = completion_cache / "comp.json"
         comp_file.write_bytes(b"c" * 64)
         _set_atime_old(comp_file)
 
-        # One expired top-level file (prune removes it).
         old_top = cache_dir / "old.json"
         old_top.write_bytes(b"o" * 128)
         _set_atime_old(old_top)
 
-        # -- Step 2: kanon doctor --refresh-completion-cache --prune-cache --
         env_with_cache = dict(os.environ)
         env_with_cache["KANON_HOME"] = str(cache_dir.parent)
         env_with_cache.pop("KANON_CATALOG_SOURCES", None)
@@ -158,14 +137,12 @@ class TestDoctorCombinedFlags:
 
         combined_output = doctor_result.stdout + doctor_result.stderr
 
-        # -- Step 3: exit code must be 0 --
         assert doctor_result.returncode == 0, (
             f"kanon doctor combined-flags failed (expected exit 0, got "
             f"{doctor_result.returncode}).\n"
             f"stdout: {doctor_result.stdout!r}\nstderr: {doctor_result.stderr!r}"
         )
 
-        # -- Step 4: cache-action substrings in combined output (E27 contract) --
         for expected_substring in EXPECTED_CACHE_ACTION_SUBSTRINGS:
             assert expected_substring in combined_output, (
                 f"Expected cache-action output containing '{expected_substring}' "
@@ -233,7 +210,7 @@ class TestDoctorCombinedFlags:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        # Create a synthetic catalog repo and workspace.
+
         bare = _create_manifest_repo_with_tags(
             tmp_path / "catalog",
             entry_names=["widget"],
@@ -244,9 +221,6 @@ class TestDoctorCombinedFlags:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Isolate the shared KANON_HOME store + cache under tmp_path so install
-        # writes its artifacts to <KANON_HOME>/store (not the real ~/.kanon) and
-        # the doctor cache resolves to <KANON_HOME>/cache.
         kanon_home = tmp_path / "kanon_home"
         kanon_home.mkdir()
         home_env = {"KANON_HOME": str(kanon_home)}
@@ -277,8 +251,6 @@ class TestDoctorCombinedFlags:
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
 
-        # Seed an expired completion-cache file under the resolved cache dir
-        # (<KANON_HOME>/cache) so the refresh subcheck has something to clear.
         cache_dir = kanon_home / "cache"
         completion_cache = cache_dir / "completion-cache"
         completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE, parents=True)

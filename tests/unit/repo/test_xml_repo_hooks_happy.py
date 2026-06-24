@@ -27,10 +27,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -113,11 +109,6 @@ def _build_manifest_with_hooks(
         f'  <repo-hooks in-project="{in_project}" enabled-list="{enabled_list}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <repo-hooks> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -271,11 +262,6 @@ class TestRepoHooksMinimumAttributes:
         assert hook_name in manifest.repo_hooks_project.enabled_repo_hooks, (
             f"Expected '{hook_name}' in enabled_repo_hooks but got: {manifest.repo_hooks_project.enabled_repo_hooks!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <repo-hooks> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -435,11 +421,6 @@ class TestRepoHooksAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <repo-hooks> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksDefaultAttributeValues:
     """Verify that default attribute values on <repo-hooks> behave as documented.
@@ -596,11 +577,6 @@ class TestRepoHooksDefaultAttributeValues:
             _load_manifest(repodir, manifest_file)
 
         assert str(exc_info.value), "Expected a non-empty error message from ManifestParseError but got an empty string"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

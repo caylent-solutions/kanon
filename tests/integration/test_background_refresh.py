@@ -18,16 +18,8 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-_DEFAULT_READINESS_TIMEOUT = 15  # seconds
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+_DEFAULT_READINESS_TIMEOUT = 15
 
 
 def _make_xml(name: str) -> str:
@@ -111,14 +103,9 @@ def _poll_until_fetched_at_updated(
             else:
                 if value != stale_value:
                     return True
-        # Yield to OS scheduler without a hard sleep.
+
         os.sched_yield()
     return False
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-CYCLE-001: end-to-end stale -> background-refresh
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -136,25 +123,19 @@ class TestBackgroundRefreshEndToEnd:
         catalog_url = f"file://{fixture_manifest_repo}"
         catalog_ref = "main"
 
-        # Pre-seed the cache with stale data.
-        # index.txt has entries: foo, bar (one per line).
-        # fetched_at.txt = 1 (Unix epoch 1970-01-01, massively old -> STALE).
         entry_dir_real = _compute_entry_dir(cache_dir, catalog_url, catalog_ref)
         entry_dir_real.mkdir(parents=True, exist_ok=True)
         (entry_dir_real / "index.txt").write_text("foo\nbar\n")
         (entry_dir_real / "fetched_at.txt").write_text("1\n")
 
-        # The pre-seeded fetched_at value (massively old epoch -> always STALE).
         stale_value = 1
 
         env = {k: v for k, v in os.environ.items()}
         env["KANON_CATALOG_SOURCES"] = f"{catalog_url}@{catalog_ref}"
-        # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=tmp_path makes
-        # the resolved cache equal cache_dir (= tmp_path / "cache").
+
         env["KANON_HOME"] = str(tmp_path)
         env["KANON_COMPLETION_REFRESH_BG"] = "1"
-        # Use a generous TTL so no inline-fetch is triggered; the pre-seeded
-        # fetched_at=1 ensures STALE classification even with this TTL.
+
         env["KANON_COMPLETION_CACHE_TTL"] = "300"
 
         readiness_timeout = int(os.environ.get("KANON_TEST_READINESS_TIMEOUT", _DEFAULT_READINESS_TIMEOUT))
@@ -166,12 +147,10 @@ class TestBackgroundRefreshEndToEnd:
             env=env,
         )
 
-        # The completer must exit 0 and return the STALE entries immediately.
         assert result.returncode == 0, f"completer exited {result.returncode}; stderr: {result.stderr!r}"
         names = sorted(line for line in result.stdout.splitlines() if line)
         assert names == ["bar", "foo"], f"Expected stale entries ['bar', 'foo'], got {names!r}"
 
-        # Poll fetched_at.txt until the background refresh updates it.
         fetched_at_path = entry_dir_real / "fetched_at.txt"
         refreshed = _poll_until_fetched_at_updated(
             fetched_at_path,
@@ -183,14 +162,8 @@ class TestBackgroundRefreshEndToEnd:
             f"fetched_at.txt was not updated within {readiness_timeout}s. Current content: {current_content!r}"
         )
 
-        # The refreshed value must be greater than the pre-seeded stale value (1).
         refreshed_epoch = int(fetched_at_path.read_text().strip())
         assert refreshed_epoch > stale_value, f"refreshed_epoch={refreshed_epoch} must be > stale_value={stale_value}"
-
-
-# ---------------------------------------------------------------------------
-# Internal helper
-# ---------------------------------------------------------------------------
 
 
 def _compute_entry_dir(cache_dir: Path, catalog_url: str, ref: str) -> Path:

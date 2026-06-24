@@ -15,11 +15,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 def _make_xml(name: str) -> str:
     """Return minimal valid *-marketplace.xml content for catalog name *name*."""
     return (
@@ -51,8 +46,6 @@ def fixture_manifest_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "manifest-repo"
     repo.mkdir()
 
-    # Initialize git repo so git clone via file:// works. The explicit
-    # `-b main` pins the initial branch so the @main clone always resolves.
     subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(repo), "config", "user.email", "test@example.com"],
@@ -90,8 +83,7 @@ def _run_complete(
     """Invoke `kanon __complete_catalog_entries <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_CATALOG_SOURCES"] = f"file://{repo_path}@main"
-    # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=cache_dir.parent
-    # makes the resolved cache equal cache_dir.
+
     env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
@@ -102,11 +94,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -179,7 +166,7 @@ class TestCompleteCatalogEntriesSubprocess:
 
         assert result.returncode == 0, f"expected exit 0, got {result.returncode}"
         assert result.stdout.strip() == "", f"expected empty stdout, got {result.stdout!r}"
-        # A structured error log entry should appear
+
         log_path = cache_dir / "completion-errors.log"
         assert log_path.exists(), "completion-errors.log should be written on failure"
         log_content = log_path.read_text()
@@ -201,11 +188,9 @@ class TestCompleteCatalogEntriesSubprocess:
         """Second invocation uses cache (no new git clone needed) (AC-FUNC-003)."""
         cache_dir = tmp_path / "cache"
 
-        # First call -- populates cache
         result1 = _run_complete(fixture_manifest_repo, cache_dir)
         assert result1.returncode == 0
 
-        # Second call -- should use cache (we verify by checking same output)
         result2 = _run_complete(fixture_manifest_repo, cache_dir)
         assert result2.returncode == 0
 
@@ -219,7 +204,7 @@ class TestCompleteCatalogEntriesSubprocess:
         result = _run_complete(fixture_manifest_repo, cache_dir)
 
         assert result.returncode == 0
-        # Non-empty output must end with '\n'
+
         if result.stdout:
             assert result.stdout.endswith("\n"), f"stdout does not end with newline: {result.stdout!r}"
         lines = result.stdout.splitlines()

@@ -36,9 +36,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Diff Happy Test User"
 _GIT_USER_EMAIL = "repo-diff-happy@example.com"
@@ -46,25 +43,20 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "diff-happy-test-project"
 
-# CLI token constants -- every token that appears in subprocess argv
+
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_DIFF = "diff"
 _FLAG_ABSOLUTE = "-u"
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT = 0
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_diff_args(repo_dir: pathlib.Path, *extra: str) -> tuple:
@@ -81,11 +73,6 @@ def _build_diff_args(repo_dir: pathlib.Path, *extra: str) -> tuple:
         A tuple of string arguments suitable for passing to _run_kanon.
     """
     return (_CMD_REPO, _FLAG_REPO_DIR, str(repo_dir), _SUBCMD_DIFF) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo diff with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -183,14 +170,6 @@ class TestRepoDiffHappyPathDefaultArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo diff has a happy-path test
-#
-# Positional arguments for 'repo diff':
-#   [<project>...] -- optional project names or paths that restrict the diff scope
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -326,11 +305,6 @@ class TestRepoDiffPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

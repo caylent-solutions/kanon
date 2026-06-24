@@ -30,26 +30,14 @@ from kanon_cli.utils.concurrency import (
     kanon_workspace_lock,
 )
 
-# ---------------------------------------------------------------------------
-# Timeout constants (overridable via environment variables for slow CI)
-# ---------------------------------------------------------------------------
 
 import os
 
 _LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "10.0"))
 _LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "5.0"))
 
-# Multiprocessing start method: "fork" on POSIX (fast, inherits the parent's
-# state, no pickling required). The workspace lock is POSIX-only (the
-# ``fcntl.flock`` backend), so the cross-process contract is exercised on the
-# single Linux set. The cross-process helpers below remain module-level so they
-# are importable by reference if the context ever changes.
+
 _MP_CONTEXT = multiprocessing.get_context("fork")
-
-
-# ---------------------------------------------------------------------------
-# Helpers for cross-process tests
-# ---------------------------------------------------------------------------
 
 
 def _acquire_nonblocking_in_child(
@@ -98,11 +86,6 @@ def _hold_lock_then_signal(
         release_event.wait(timeout=_LOCK_EVENT_TIMEOUT)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEagerCreate:
     """AC-FUNC-001: .kanon-data/ is created before the lock is acquired."""
@@ -133,7 +116,7 @@ class TestEagerCreate:
             tmp_path: Pytest-provided temporary directory.
         """
         (tmp_path / ".kanon-data").mkdir(parents=True)
-        # Must not raise; exist_ok=True is required.
+
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data").is_dir()
 
@@ -163,7 +146,7 @@ class TestEagerCreate:
         with patch.object(pathlib.Path, "mkdir", side_effect=simulated_error):
             with pytest.raises(OSError, match=str(kanon_data)):
                 with kanon_workspace_lock(tmp_path):
-                    pass  # should not reach here
+                    pass
 
 
 @pytest.mark.unit
@@ -181,10 +164,8 @@ class TestNormalExitRelease:
             tmp_path: Pytest-provided temporary directory.
         """
         with kanon_workspace_lock(tmp_path):
-            pass  # Normal exit
+            pass
 
-        # After exiting, re-acquisition in the same process must succeed (the
-        # re-entrance guard is cleared on exit and the kernel lock is released).
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
 
@@ -196,7 +177,7 @@ class TestNormalExitRelease:
         Args:
             tmp_path: Pytest-provided temporary directory.
         """
-        # Build the expected path from the constant -- same derivation as the impl.
+
         expected = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
         with kanon_workspace_lock(tmp_path):
             assert expected.exists(), (
@@ -223,7 +204,6 @@ class TestExceptionExitRelease:
             with kanon_workspace_lock(tmp_path):
                 raise ValueError("test exception")
 
-        # Lock must be released even though an exception propagated out.
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
 
@@ -253,7 +233,6 @@ class TestExceptionExitRelease:
             with kanon_workspace_lock(tmp_path):
                 raise exc_type(exc_msg)
 
-        # Re-acquisition must succeed; the guard + kernel lock were released.
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
 
@@ -277,7 +256,7 @@ class TestReentranceGuard:
             with pytest.raises(WorkspaceLockReentranceError) as exc_info:
                 with kanon_workspace_lock(tmp_path):
                     pytest.fail("Nested acquisition must not enter the inner context body")
-            # The error message must be actionable and name the workspace.
+
             assert str(tmp_path) in str(exc_info.value), (
                 "Re-entrance error must name the workspace whose lock is already held"
             )
@@ -293,7 +272,7 @@ class TestReentranceGuard:
         """
         with kanon_workspace_lock(tmp_path):
             pass
-        # Sequential re-acquire (not nested) must succeed -- guard was cleared.
+
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
 
@@ -331,7 +310,7 @@ class TestReentranceGuard:
                     pass
             except WorkspaceLockReentranceError:
                 pass
-        # Outer released; re-acquire must succeed.
+
         with kanon_workspace_lock(tmp_path):
             assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
 
@@ -373,8 +352,7 @@ class TestFailFastTimeout:
                 with pytest.raises(WorkspaceLockTimeoutError) as exc_info:
                     with kanon_workspace_lock(tmp_path):
                         pytest.fail("Acquisition must not succeed while another process holds the lock")
-            # The timeout message must be actionable: name the workspace and the
-            # diagnostic fields for stale-lock recovery.
+
             message = str(exc_info.value)
             assert str(tmp_path) in message, "Timeout error must name the contended workspace"
             assert "pid" in message.lower(), "Timeout error must carry the pid for stale-lock recovery"

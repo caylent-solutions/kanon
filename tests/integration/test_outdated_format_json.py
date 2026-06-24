@@ -28,10 +28,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -50,11 +46,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -93,11 +84,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_project_repo_with_tags(
@@ -201,11 +187,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -233,11 +214,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -316,7 +292,7 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+
         assert isinstance(parsed, dict)
         assert set(parsed.keys()) == {"aliases", "sources"}
         assert isinstance(parsed["sources"], list)
@@ -350,19 +326,17 @@ class TestOutdatedFormatJson:
         Assert array has exactly 2 elements with matching upgrade-type values
         and correct SHA truncations for the branch-pinned source.
         """
-        # --- Tag-pinned source (FOO) ---
+
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
         foo_bare = _create_project_repo_with_tags(project_base, "foo", ["1.0.0", "1.0.1"])
         foo_url = f"file://{foo_bare}"
 
-        # --- Branch-pinned source (MYLIB) ---
         mylib_bare, sha_a, sha_b = _create_project_repo_with_two_commits(project_base, "mylib")
         mylib_url = f"file://{mylib_bare}"
         sha_a_12 = sha_a[:12]
         sha_b_12 = sha_b[:12]
 
-        # --- Manifest / catalog repo with both entries ---
         manifest_base = tmp_path / "manifest-repos"
         manifest_base.mkdir()
         manifest_bare = _create_manifest_repo(manifest_base, ["foo", "mylib"])
@@ -437,14 +411,13 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+
         assert isinstance(parsed, dict)
         assert set(parsed.keys()) == {"aliases", "sources"}
         sources = parsed["sources"]
         assert isinstance(sources, list)
         assert len(sources) == 2, f"Expected 2 sources, got {len(sources)}: {sources}"
 
-        # The aliases list carries one render string per source.
         assert isinstance(parsed["aliases"], list)
         assert len(parsed["aliases"]) == 2
         assert all(isinstance(render, str) and render for render in parsed["aliases"])
@@ -452,10 +425,8 @@ class TestOutdatedFormatJson:
         assert "FOO" in alias_text
         assert "MYLIB" in alias_text
 
-        # Build lookup by name for stable assertions regardless of order
         by_name = {obj["name"]: obj for obj in sources}
 
-        # --- Assert FOO (tag-pinned, patch upgrade) ---
         assert "FOO" in by_name, f"Expected 'FOO' in JSON output, got names: {list(by_name.keys())}"
         foo_obj = by_name["FOO"]
         assert set(foo_obj.keys()) == {
@@ -469,7 +440,6 @@ class TestOutdatedFormatJson:
         assert foo_obj["latest-matching-spec"] == "1.0.1"
         assert foo_obj["upgrade-type"] == "patch"
 
-        # --- Assert MYLIB (branch-pinned, drift) ---
         assert "MYLIB" in by_name, f"Expected 'MYLIB' in JSON output, got names: {list(by_name.keys())}"
         mylib_obj = by_name["MYLIB"]
         assert set(mylib_obj.keys()) == {
@@ -528,7 +498,7 @@ class TestOutdatedFormatJson:
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         parsed = json.loads(result.stdout)
-        # Output is an object {"aliases": [...], "sources": [...]}; rows live under "sources".
+
         assert isinstance(parsed, dict)
         assert set(parsed.keys()) == {"aliases", "sources"}
         assert isinstance(parsed["sources"], list)
@@ -617,7 +587,7 @@ class TestOutdatedFormatJson:
             f"got {result.returncode}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Output is still valid JSON: object {"aliases": [...], "sources": [...]}.
+
         parsed = json.loads(result.stdout)
         assert isinstance(parsed, dict)
         assert set(parsed.keys()) == {"aliases", "sources"}

@@ -154,8 +154,6 @@ def _prune_orphaned_marketplaces(lockfile: Lockfile | None, current_source_names
         print("kanon clean: no orphaned sources in .kanon.lock; nothing to prune.")
         return
 
-    # Marketplaces still provided by a source that remains in .kanon must not be
-    # pruned even if an orphaned source also registered them.
     referenced: set[str] = set()
     for source in lockfile.sources:
         if source.name in current:
@@ -219,40 +217,23 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     print(f"kanon clean: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
     base_dir = resolve_workspace_base_dir()
-    # The per-dependency marketplace flag replaces the removed global
-    # KANON_MARKETPLACE_INSTALL header (spec Section 0 item 8 / FR-17): a clean is
-    # marketplace-relevant when ANY declared dependency opted in via
-    # KANON_SOURCE_<alias>_MARKETPLACE=true.  This is only the fallback used when
-    # the lockfile carries no registration record (see below).
+
     kanon_flag_marketplace_install = any(bool(source[SOURCE_MARKETPLACE_KEY]) for source in config["sources"].values())
     globals_dict = config["globals"]
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
-    # Determine whether a marketplace was registered, preferring lockfile state
-    # over the .kanon flag so that env-override installs are cleaned up correctly.
-    # The committed .kanon.lock lives beside .kanon in the project directory (the
-    # shared KANON_HOME store holds only fetched artifacts, never the lockfile).
     lockfile_path = kanonenv_path.parent / ".kanon.lock"
     lockfile = _read_lockfile_if_present(lockfile_path)
 
     if orphans:
-        # Orphaned-source prune runs BEFORE the normal teardown and does not
-        # require .packages/.  It unregisters the marketplaces of sources that
-        # are recorded in .kanon.lock but no longer declared in the current
-        # .kanon.  Removal candidates come ONLY from the per-source ledgers in
-        # the lockfile (see _prune_orphaned_marketplaces).
         current_source_names = config["KANON_SOURCES"]
         _prune_orphaned_marketplaces(lockfile, current_source_names)
 
     if lockfile is not None and lockfile.marketplace_registered:
-        # Lockfile records a registration -- use its stored directory.
         effective_marketplace_install = True
         effective_marketplace_dir_str = lockfile.marketplace_dir
     else:
-        # No lockfile, or lockfile lacks a registration (old lockfile migrated to
-        # marketplace_registered=False, or fresh install with false).  Fall back to
-        # the per-dependency .kanon flags for back-compat (AC-8).
         effective_marketplace_install = kanon_flag_marketplace_install
         effective_marketplace_dir_str = marketplace_dir_str
 

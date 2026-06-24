@@ -52,11 +52,6 @@ from kanon_cli.core.install import _RefResolution, _run_install
 from kanon_cli.core.remote_url import InsecureRemoteUrlError
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_http_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     """Write a .kanon file with an HTTP source URL.
 
@@ -155,7 +150,6 @@ class TestInstallHttpRemoteRejectedByDefault:
                     lockfile_path=lockfile_path,
                 )
 
-        # The error must name the source so the operator can trace it
         assert exc_info.value.source_path is not None
         assert len(exc_info.value.source_path) > 0
 
@@ -214,7 +208,6 @@ class TestInstallHttpRemoteAllowedWithOverride:
         ):
             mock_walk.return_value = MagicMock(includes=[])
 
-            # Should NOT raise InsecureRemoteUrlError
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
@@ -275,7 +268,6 @@ class TestInstallHttpsUrlNoError:
         ):
             mock_walk.return_value = MagicMock(includes=[])
 
-            # Must not raise
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
@@ -294,7 +286,6 @@ class TestInstallReplayPathEnforcesPolicy:
         """HTTP URL baked into a lockfile is rejected on the replay path (AC-FUNC-010)."""
         monkeypatch.delenv("KANON_ALLOW_INSECURE_REMOTES", raising=False)
 
-        # Write a .kanon file pointing to HTTP URL
         kanonenv = _write_http_kanonenv(tmp_path)
         lockfile_path = tmp_path / ".kanon.lock"
 
@@ -308,10 +299,8 @@ class TestInstallReplayPathEnforcesPolicy:
             write_lockfile,
         )
 
-        # Compute the real kanon_hash so the lockfile is consistent
         kanon_hash_val = _kanon_hash(kanonenv)
 
-        # Build a consistent lockfile with the HTTP URL baked in
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2026-01-01T00:00:00Z",
@@ -341,11 +330,6 @@ class TestInstallReplayPathEnforcesPolicy:
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
                 )
-
-
-# ---------------------------------------------------------------------------
-# Subprocess CLI exit-code tests (AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -538,7 +522,6 @@ class TestInstallCliExitCodes:
         """
         kanon_file = tmp_path / ".kanon"
 
-        # Step 1: HTTP .kanon -- must be rejected by the URL policy.
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=http://example.com/repo.git\n"
@@ -568,7 +551,6 @@ class TestInstallCliExitCodes:
             f"Step 1: expected InsecureRemoteUrlError in stderr. stderr={result_http.stderr!r}"
         )
 
-        # Step 2: Overwrite .kanon to use HTTPS (operator remediation).
         kanon_file.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_mysource_URL=https://example.com/repo.git\n"
@@ -578,7 +560,6 @@ class TestInstallCliExitCodes:
             "KANON_SOURCE_mysource_GITBASE=https://example.com\n"
         )
 
-        # Step 3: Rerun without override -- policy check must now pass.
         result_https = subprocess.run(
             [
                 sys.executable,

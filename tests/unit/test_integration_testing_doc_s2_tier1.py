@@ -52,16 +52,11 @@ def _scenario_block(doc: str, heading: str) -> str:
     return match.group(0)
 
 
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T8: RP-abandon-01 -- drop conflicting --all + branchname combo
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestT8RPAbandon01:
     def test_abandon_command_does_not_use_all_with_branchname(self) -> None:
         block = _scenario_block(_load_doc(), "RP-abandon-01")
-        # The abandon line should be `kanon repo abandon tmp-a` (no --all).
+
         assert "kanon repo abandon tmp-a --all" not in block, (
             "RP-abandon-01 must not combine `--all` with the positional branch name"
         )
@@ -71,11 +66,6 @@ class TestT8RPAbandon01:
         """The repo-start setup line (separate from abandon) is allowed to use --all."""
         block = _scenario_block(_load_doc(), "RP-abandon-01")
         assert "kanon repo start tmp-a --all" in block
-
-
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T9: RP-cherry-pick-01 -- cd into repo-init'd workspace
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -92,11 +82,6 @@ class TestT9RPCherryPick01:
         cp_idx = block.find("kanon repo cherry-pick")
         assert cd_idx >= 0 and cp_idx >= 0
         assert cd_idx < cp_idx, "cd into workspace must precede the cherry-pick call"
-
-
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T10: RP-gc-02/03/04 -- replace nonexistent flags
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -137,7 +122,6 @@ class TestT10RPGc:
         for scenario in ("RP-gc-02", "RP-gc-03", "RP-gc-04"):
             block = _scenario_block(_load_doc(), scenario)
             for cmd in self._gc_command_lines(block):
-                # Detect bare `-a` token (avoid matching `-auto-stash` etc.).
                 tokens = cmd.split()
                 assert "-a" not in tokens, f"{scenario} command line uses forbidden flag `-a`: {cmd!r}"
 
@@ -155,7 +139,7 @@ class TestT10RPGc:
         block = _scenario_block(_load_doc(), scenario)
         cmd_lines = self._gc_command_lines(block)
         assert cmd_lines, f"{scenario} must contain at least one `kanon repo gc` command line"
-        # At least one of the real flags must appear in the gc invocation.
+
         real_flags = ("--dry-run", "-n", "--yes", "-y", "--repack")
         for line in cmd_lines:
             assert any(flag in line.split() for flag in real_flags), (
@@ -163,24 +147,18 @@ class TestT10RPGc:
             )
 
 
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T11: RP-init-06 standalone manifest -- no <include>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestT11RPInit06:
     def test_standalone_manifest_has_no_include(self) -> None:
         block = _scenario_block(_load_doc(), "RP-init-06")
-        # The block contains an inlined manifest heredoc; that heredoc must
-        # not contain a `<include>` directive.
+
         assert "<include " not in block and "<include\n" not in block, (
             "RP-init-06 standalone manifest must be self-contained (no <include>)"
         )
 
     def test_uses_inline_heredoc_not_external_include(self) -> None:
         block = _scenario_block(_load_doc(), "RP-init-06")
-        # The fix uses a here-doc-built standalone-manifest.xml.
+
         assert "STANDALONE" in block or "cat > /tmp/standalone-manifest.xml" in block, (
             "RP-init-06 must construct the standalone manifest inline via heredoc"
         )
@@ -190,11 +168,6 @@ class TestT11RPInit06:
         assert 'cp "${MANIFEST_PRIMARY_DIR}/default.xml"' not in block, (
             "RP-init-06 must not rely on cp of default.xml (file does not exist at MANIFEST_PRIMARY_DIR root)"
         )
-
-
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T12: RP-rebase-07 -- replace -s with --auto-stash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -208,11 +181,6 @@ class TestT12RPRebase07:
         assert "kanon repo rebase -s\n" not in block, "RP-rebase-07 must not use `-s` (no short alias exists)"
 
 
-# ---------------------------------------------------------------------------
-# E2-F3-S2-T13: TC-validate-02 -- use mk19-validate fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestT13TCValidate02:
     def test_repo_root_uses_mk19_validate_fixture(self) -> None:
@@ -223,7 +191,7 @@ class TestT13TCValidate02:
 
     def test_repo_root_does_not_use_mk_mfst(self) -> None:
         block = _scenario_block(_load_doc(), "TC-validate-02")
-        # MK_MFST stores XMLs at root (kanon-source layout), not in repo-specs/.
+
         assert '--repo-root "${MK_MFST}"' not in block, (
             "TC-validate-02 must not point --repo-root at MK_MFST (wrong layout for validate-marketplace)"
         )

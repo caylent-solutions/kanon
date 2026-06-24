@@ -1,17 +1,3 @@
-# Copyright 2019 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the ssh.py module."""
 
 import multiprocessing
@@ -62,7 +48,7 @@ class SshTests(unittest.TestCase):
                 ssh_proxy.add_client(client)
                 master = subprocess.Popen(["sleep", "964853321"])
                 ssh_proxy.add_master(master)
-        # If the process still exists, these will throw timeout errors.
+
         client.wait(0)
         master.wait(0)
 
@@ -71,12 +57,11 @@ class SshTests(unittest.TestCase):
         manager = multiprocessing.Manager()
         proxy = ssh.ProxyManager(manager)
         with mock.patch("tempfile.mkdtemp", return_value="/tmp/foo"):
-            # Old ssh version uses port.
             with mock.patch("kanon_cli.repo.ssh.version", return_value=(6, 6)):
                 self.assertTrue(proxy.sock().endswith("%p"))
 
             proxy._sock_path = None
-            # New ssh version uses hash.
+
             with mock.patch("kanon_cli.repo.ssh.version", return_value=(6, 7)):
                 self.assertTrue(proxy.sock().endswith("%C"))
 
@@ -187,7 +172,7 @@ class ProxyManagerTests(unittest.TestCase):
             proxy = ssh.ProxyManager(manager)
             mock_proc = mock.Mock()
             mock_proc.pid = 99999
-            # Should not raise ValueError
+
             proxy.remove_client(mock_proc)
 
     def test_add_master_adds_pid_to_list(self):
@@ -275,7 +260,7 @@ class ProxyManagerTests(unittest.TestCase):
             with mock.patch("os.kill", side_effect=OSError):
                 with mock.patch("os.waitpid"):
                     proxy._clients.append(999)
-                    # Should not raise
+
                     proxy.close()
 
     def test_context_manager_enter_returns_self(self):

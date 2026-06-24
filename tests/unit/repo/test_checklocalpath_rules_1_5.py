@@ -13,13 +13,7 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# Convenience alias -- keeps every call-site short.
 _check = manifest_xml.XmlManifest._CheckLocalPath
-
-
-# ---------------------------------------------------------------------------
-# PATH-001  empty path
-# ---------------------------------------------------------------------------
 
 
 class TestPath001EmptyPath:
@@ -41,11 +35,6 @@ class TestPath001EmptyPath:
         result = _check("", dir_ok=True, cwd_dot_ok=True, abs_ok=True)
         assert result is not None, "empty path must be rejected even with all flags enabled"
         assert result == "empty paths not allowed"
-
-
-# ---------------------------------------------------------------------------
-# PATH-002  tilde in path
-# ---------------------------------------------------------------------------
 
 
 _TILDE_CASES = [
@@ -83,12 +72,6 @@ class TestPath002TildeInPath:
         assert result is None, f"valid path 'foo/bar/baz' must not be rejected: {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# PATH-003  bad Unicode codepoint
-# ---------------------------------------------------------------------------
-
-
-# Each entry is (label, path) -- label is for test ID readability only.
 _BAD_CODEPOINT_CASES = [
     ("zero_width_non_joiner", "foo‌bar"),
     ("zero_width_joiner", "foo‍bar"),
@@ -131,11 +114,6 @@ class TestPath003BadUnicodeCodepoint:
         assert "Unicode" in result, f"error for {label!r} must mention 'Unicode', got {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# PATH-004  newline in path
-# ---------------------------------------------------------------------------
-
-
 _NEWLINE_CASES = [
     ("lf_embedded", "foo\nbar"),
     ("lf_leading", "\nfoo"),
@@ -171,11 +149,6 @@ class TestPath004NewlineInPath:
         """A path that contains neither LF nor CR does not trigger newline rejection."""
         result = _check("valid/path/segment")
         assert result is None, f"valid path must not be rejected: {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# PATH-005  dot component without cwd_dot_ok
-# ---------------------------------------------------------------------------
 
 
 _DOT_COMPONENT_CASES = [

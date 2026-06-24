@@ -30,19 +30,7 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper or repo-init setup is needed because all tests
-# here exercise argument-parsing and subcommand precondition failures that do
-# not require a fully initialized .repo directory.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
-
-# CLI token constants -- subcommand path used by every invocation.
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_FORALL = "forall"
@@ -50,87 +38,69 @@ _FLAG_HELP = "--help"
 _FLAG_COMMAND_SHORT = "-c"
 _ECHO_COMMAND = "echo"
 
-# Nonexistent repo-dir path used in argument-parser tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-forall-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-forall-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-forall-option-99"
 
-# Flag with unexpected inline value exercised in AC-TEST-003 (boolean path).
-# 'repo forall' defines --regex as a boolean store_true flag; the optparse
-# parser rejects '--regex=unexpected' because boolean flags cannot accept
-# an inline value, producing exit 2 with '--regex option does not take a value'.
+
 _BOOL_FLAG_WITH_VALUE = "--regex=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = "--abort-on-errors=badvalue"
 _BOOL_FLAG_WITH_VALUE_ALT_B = "--ignore-missing=nope"
 
-# Option name extracted from the bool-flag-with-value token, for use in
-# the assertion that the error message names the offending flag.
+
 _BOOL_FLAG_BASE_NAME = "--regex"
 
-# Phrase produced by optparse when a boolean flag is supplied with an
-# inline value (AC-TEST-003 boolean-flag variant).
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Flag and phrase for the "missing required argument" path (AC-TEST-003).
-# '-g' / '--groups' is a value-required flag; omitting its argument causes
-# optparse to emit '-g option requires 1 argument' and exit 2.
+
 _GROUPS_SHORT_FLAG = "-g"
 _GROUPS_LONG_FLAG = "--groups"
 _REQUIRES_ARGUMENT_PHRASE = "requires 1 argument"
 
-# Phrase expected in stderr when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo forall"
 
-# Flag documented in the --help output whose name is asserted (AC-TEST-001 detail).
-# '-c' / '--command' is the canonical flag documented in the usage line.
+
 _HELP_DOCUMENTED_FLAG = "--command"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" to stderr when the
-# .repo/manifest.xml file cannot be found.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename the embedded repo tool names in stderr for precondition
-# failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Parametrize tables -- all tuples reference constants.
 
-# AC-TEST-002: three distinct unknown flags, each must exit 2.
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b"),
 ]
 
-# AC-TEST-003 boolean-flag variant: three bool flags with inline values.
+
 _BOOL_FLAGS_WITH_INLINE_VALUE: list[tuple[str, str]] = [
     (_BOOL_FLAG_WITH_VALUE, "regex-with-value"),
     (_BOOL_FLAG_WITH_VALUE_ALT_A, "abort-on-errors-with-value"),
     (_BOOL_FLAG_WITH_VALUE_ALT_B, "ignore-missing-with-value"),
 ]
 
-# AC-TEST-003 missing-argument variant: short and long forms of '-g' / '--groups'.
+
 _GROUPS_FLAGS_WITHOUT_ARGUMENT: list[tuple[str, str]] = [
     (_GROUPS_SHORT_FLAG, "groups-short"),
     (_GROUPS_LONG_FLAG, "groups-long"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo forall --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -259,11 +229,6 @@ class TestRepoForallHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -436,11 +401,6 @@ class TestRepoForallUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Missing required argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -663,11 +623,6 @@ class TestRepoForallMissingRequiredArgument:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoForallPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -800,11 +755,6 @@ class TestRepoForallPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

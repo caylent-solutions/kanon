@@ -28,10 +28,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -118,11 +114,6 @@ def _build_superproject_manifest(
         f"  <superproject {sp_attrs} />\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <superproject> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -254,11 +245,6 @@ class TestSuperprojectMinimumAttributes:
         assert manifest.superproject.name == superproject_name, (
             f"Expected superproject.name='{superproject_name}' but got: {manifest.superproject.name!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <superproject> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -441,11 +427,6 @@ class TestSuperprojectAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <superproject> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectDefaultAttributeValues:
     """Verify that default attribute values on <superproject> behave as documented.
@@ -610,11 +591,6 @@ class TestSuperprojectDefaultAttributeValues:
             f"Expected superproject.revision='{expected_revision}' inherited from "
             f"<default revision='{default_revision}'> but got: {manifest.superproject.revision!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

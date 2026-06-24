@@ -15,11 +15,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build content repos + bare manifest repo, run init + sync, return checkout dir."""
     content_repos = base / "content-repos"
@@ -87,11 +82,6 @@ def _dump_manifest(checkout: pathlib.Path, out_file: pathlib.Path) -> None:
     result = run_kanon("repo", "manifest", f"--output={out_file}", cwd=checkout)
     assert result.returncode == 0, f"repo manifest --output failed: stdout={result.stdout!r} stderr={result.stderr!r}"
     assert out_file.exists(), f"Expected manifest at {out_file}"
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

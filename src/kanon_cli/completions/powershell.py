@@ -75,9 +75,6 @@ def generate(root_parser: argparse.ArgumentParser) -> str:
     program: str = root_parser.prog
     subcommands: list[str] = _public_subcommand_names(root_parser)
 
-    # PowerShell single-quoted strings escape a literal single quote by doubling
-    # it. Apply that escape so a subcommand or program name containing a quote
-    # cannot break out of the emitted string literal.
     def _ps_single_quote(value: str) -> str:
         return "'" + value.replace("'", "''") + "'"
 

@@ -30,11 +30,6 @@ from kanon_cli.commands.why import (
 from tests.conftest import _make_minimal_kanon_file, _write_lockfile
 
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_source_node(
     name: str,
     url: str = "https://github.com/org/catalog",
@@ -88,11 +83,6 @@ def _make_args(
     )
 
 
-# ---------------------------------------------------------------------------
-# _match_by_url unit tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMatchByUrl:
     """Tests for _match_by_url -- matches project nodes by canonicalized URL."""
@@ -139,16 +129,9 @@ class TestMatchByUrl:
         source.children = [project]
         tree = ResolvedTree(sources=[source])
 
-        # An XML path is not a valid canonicalized URL -- _match_by_url returns empty
-        # (canonicalize_repo_url raises ValueError for bare paths)
         matches = _match_by_url(tree, "repo-specs/foo.xml")
 
         assert matches == []
-
-
-# ---------------------------------------------------------------------------
-# _match_by_xml_path unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -186,7 +169,6 @@ class TestMatchByXmlPath:
         source.children = [include]
         tree = ResolvedTree(sources=[source])
 
-        # Partial path does NOT match
         matches = _match_by_xml_path(tree, "foo.xml")
 
         assert matches == []
@@ -212,11 +194,6 @@ class TestMatchByXmlPath:
         matches = _match_by_xml_path(tree, "FOO")
 
         assert matches == []
-
-
-# ---------------------------------------------------------------------------
-# _match_by_source_name unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -278,15 +255,9 @@ class TestMatchBySourceName:
         source.children = [include]
         tree = ResolvedTree(sources=[source])
 
-        # 'foo' is an include name, not a source name
         matches = _match_by_source_name(tree, "foo")
 
         assert matches == []
-
-
-# ---------------------------------------------------------------------------
-# Ambiguity detection -- parametrized cases
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -318,7 +289,7 @@ class TestAmbiguityDetection:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        # Output must contain the include path
+
         assert include_path in captured.out
 
     def test_source_name_only_match_calls_chain_walker(
@@ -344,7 +315,7 @@ class TestAmbiguityDetection:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        # Output must contain the source name
+
         assert "FOO" in captured.out
 
     def test_source_name_dash_normalization_match(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
@@ -392,7 +363,6 @@ class TestAmbiguityDetection:
             lock_file=str(lock_path),
         )
 
-        # Build nodes that the mock match functions will return
         url_node = _make_project_node("proj", "https://github.com/org/proj")
         source_node = _make_source_node("FOO")
 
@@ -406,7 +376,7 @@ class TestAmbiguityDetection:
 
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        # stderr must name both interpretation labels
+
         assert "project url" in captured.err.lower() or "url" in captured.err.lower()
         assert "source name" in captured.err.lower() or "source" in captured.err.lower()
 
@@ -447,7 +417,7 @@ class TestAmbiguityDetection:
 
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        # stderr must contain labels from all three categories
+
         stderr_lower = captured.err.lower()
         assert "url" in stderr_lower, "Expected 'url' label in ambiguity error output"
         assert "xml" in stderr_lower or "manifest" in stderr_lower, (
@@ -465,12 +435,9 @@ class TestAmbiguityDetection:
         Also an include node with path_in_repo = "Repo-Specs-Foo-Xml" (exact string match).
         """
         source_name = "REPO_SPECS_FOO_XML"
-        # The argument that will cause ambiguity:
-        # - derive_source_name("Repo-Specs-Foo-Xml") = "repo_specs_foo_xml"
-        # - derive_source_name("REPO_SPECS_FOO_XML") = "repo_specs_foo_xml"  -> MATCH on source
-        # - XML path exact match: include node has path_in_repo = "Repo-Specs-Foo-Xml"
+
         ambiguous_arg = "Repo-Specs-Foo-Xml"
-        include_path = ambiguous_arg  # exact string -- XML path matching is exact
+        include_path = ambiguous_arg
 
         project_url = "https://github.com/org/proj"
 
@@ -488,7 +455,7 @@ class TestAmbiguityDetection:
 
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        # Error message must list both interpretations
+
         assert "source" in captured.err.lower() or "xml" in captured.err.lower()
         assert ambiguous_arg in captured.err or source_name.lower() in captured.err.lower()
 
@@ -514,11 +481,6 @@ class TestAmbiguityDetection:
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "not found" in captured.err.lower()
-
-
-# ---------------------------------------------------------------------------
-# Parametrized derive_source_name normalization parity tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -550,11 +512,6 @@ class TestDeriveSourceNameNormalizationParity:
             assert len(matches) == 1, f"Expected source '{source_token}' to match argument '{argument}'"
         else:
             assert matches == [], f"Expected no match for source '{source_token}' with argument '{argument}'"
-
-
-# ---------------------------------------------------------------------------
-# Multi-category match resolution tests (internal helper level)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -618,7 +575,7 @@ class TestMultiCategoryResolution:
         arg = "Repo-Specs-Foo"
 
         source = _make_source_node(source_name)
-        include = _make_include_node("inc", arg)  # exact path match
+        include = _make_include_node("inc", arg)
         source.children = [include]
         tree = ResolvedTree(sources=[source])
 
@@ -635,31 +592,24 @@ class TestMultiCategoryResolution:
         This test verifies that _match_by_xml_path and _match_by_source_name are
         called even after _match_by_url returns a non-empty list (no early exit).
         """
-        # XML path happens to equal the normalized source name token
+
         source_name = "REPO_SPECS_BAR"
         arg = "Repo-Specs-Bar"
 
         source = _make_source_node(source_name)
-        include = _make_include_node("inc", arg)  # XML path exactly equals arg
+        include = _make_include_node("inc", arg)
         source.children = [include]
         tree = ResolvedTree(sources=[source])
 
-        # URL match: arg is not a valid URL -- _match_by_url returns []
         url_hits = _match_by_url(tree, arg)
-        # XML match: include path == arg -- returns 1 hit
+
         xml_hits = _match_by_xml_path(tree, arg)
-        # Source name: derive_source_name("Repo-Specs-Bar") == "repo_specs_bar"
-        #              derive_source_name("REPO_SPECS_BAR") == "repo_specs_bar" -- MATCH
+
         src_hits = _match_by_source_name(tree, arg)
 
         assert url_hits == []
         assert len(xml_hits) == 1
         assert len(src_hits) == 1
-
-
-# ---------------------------------------------------------------------------
-# Defensive path coverage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -681,14 +631,13 @@ class TestDefensivePaths:
 
         from kanon_cli.commands.why import _MatchHit
 
-        # Build a project node with no canonical_url (simulates internal invariant violation)
         broken_project = ChainNode(
             kind="project",
             name="broken",
             ref=None,
             sha="b" * 40,
             url="https://github.com/org/broken",
-            canonical_url=None,  # violates invariant
+            canonical_url=None,
         )
         source = _make_source_node("FOO")
         source.children = [broken_project]
@@ -710,8 +659,6 @@ class TestDefensivePaths:
             lock_file=str(lock_path),
         )
 
-        # Patch _resolve_match to return our broken hit and _build_tree_from_lockfile
-        # to return our broken tree so the defensive branch is reached
         with (
             patch("kanon_cli.commands.why._resolve_match", return_value=broken_hit),
             patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree),
@@ -735,7 +682,6 @@ class TestDefensivePaths:
 
         from kanon_cli.commands.why import _MatchHit
 
-        # Build an empty source node (no children -- no chains possible)
         empty_source = _make_source_node("MY_EMPTY_SOURCE")
         tree = ResolvedTree(sources=[empty_source])
 
@@ -755,7 +701,6 @@ class TestDefensivePaths:
             lock_file=str(lock_path),
         )
 
-        # Patch both _resolve_match and the tree builder so we control the empty-chains path
         with (
             patch("kanon_cli.commands.why._resolve_match", return_value=source_hit),
             patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree),

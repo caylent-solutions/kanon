@@ -33,10 +33,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _BRANCH = "main"
 _PROJECT_NAME = "pkg-alpha"
 _PROJECT_PATH = ".packages/pkg-alpha"
@@ -44,11 +40,6 @@ _MANIFEST_FILENAME = "default.xml"
 _ALT_MANIFEST_FILENAME = "alt.xml"
 _GIT_USER_NAME = "RP Init Scenario Test"
 _GIT_USER_EMAIL = "rp-init-scenario@kanon.example"
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _make_content_repo(parent: pathlib.Path) -> pathlib.Path:
@@ -70,7 +61,6 @@ def _make_manifest_repo(parent: pathlib.Path, content_fetch_base: str) -> pathli
     bare = parent / "manifest.git"
     work.mkdir(parents=True, exist_ok=True)
 
-    # init work dir
     subprocess.run(
         ["git", "init", "-b", _BRANCH],
         cwd=str(work),
@@ -158,11 +148,6 @@ def _repo_init(
     return run_kanon(*args, cwd=checkout_dir, extra_env=extra_env)
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPInit:
     def test_rp_init_01_bare_short_flags(self, tmp_path: pathlib.Path) -> None:
@@ -245,7 +230,7 @@ class TestRPInit:
         manifest_url, checkout_dir = _setup_manifest(tmp_path)
         result = _repo_init(checkout_dir, manifest_url, "--manifest-upstream-branch", _BRANCH)
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        # Verify the manifests.git has the tracked branch config
+
         manifests_git = checkout_dir / ".repo" / "manifests.git"
         assert manifests_git.is_dir(), ".repo/manifests.git not created"
         cfg_result = subprocess.run(
@@ -265,7 +250,6 @@ class TestRPInit:
         checkout_dir = tmp_path / "checkout"
         checkout_dir.mkdir()
 
-        # Write a standalone manifest as a plain file (no .git needed)
         standalone_dir = tmp_path / "standalone"
         standalone_dir.mkdir()
         standalone_xml = (
@@ -303,7 +287,7 @@ class TestRPInit:
     def test_rp_init_08_dissociate(self, tmp_path: pathlib.Path) -> None:
         """RP-init-08: --dissociate -- alternates file absent after dissociate."""
         manifest_url, checkout_dir = _setup_manifest(tmp_path)
-        # Build a mirror dir to satisfy --reference (minimal clone)
+
         mirror_dir = tmp_path / "mirror"
         mirror_dir.mkdir()
         repos_dir = tmp_path / "repos"
@@ -392,7 +376,7 @@ class TestRPInit:
         """RP-init-15: --use-superproject -- exits 0 or clear 'no superproject' error."""
         manifest_url, checkout_dir = _setup_manifest(tmp_path)
         result = _repo_init(checkout_dir, manifest_url, "--use-superproject")
-        # Pass criteria: exit 0 OR non-zero with superproject/error message
+
         combined = result.stdout + result.stderr
         if result.returncode != 0:
             assert any(kw in combined.lower() for kw in ("superproject", "error", "no superproject")), (

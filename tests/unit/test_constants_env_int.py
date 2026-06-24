@@ -12,11 +12,6 @@ import sys
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helper: reload constants module with a specific env-var set
-# ---------------------------------------------------------------------------
-
-
 def _reload_constants_with_env(monkeypatch, env_updates: dict) -> object:
     """Reload kanon_cli.constants in a subprocess-equivalent manner.
 
@@ -31,11 +26,6 @@ def _reload_constants_with_env(monkeypatch, env_updates: dict) -> object:
     if "kanon_cli.constants" in sys.modules:
         del sys.modules["kanon_cli.constants"]
     return importlib.import_module("kanon_cli.constants")
-
-
-# ---------------------------------------------------------------------------
-# AC-2: _env_int helper exists and is callable
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -91,11 +81,6 @@ class TestEnvIntHelperExists:
         assert "KANON_MY_SPECIAL_VAR" in str(exc_info.value.code)
 
 
-# ---------------------------------------------------------------------------
-# AC-2: the 3 previously-unguarded constants route through _env_int
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUnguardedConstantsUseEnvInt:
     def test_kanon_tree_no_filter_threshold_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,7 +94,7 @@ class TestUnguardedConstantsUseEnvInt:
     def test_kanon_tree_no_filter_threshold_malformed_exits_nonzero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(SystemExit) as exc_info:
             _reload_constants_with_env(monkeypatch, {"KANON_TREE_NO_FILTER_THRESHOLD": "bad"})
-        # non-zero exit (SystemExit message, not numeric code)
+
         assert exc_info.value.code is not None
         assert "KANON_TREE_NO_FILTER_THRESHOLD" in str(exc_info.value.code)
 

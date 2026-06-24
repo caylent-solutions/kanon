@@ -40,10 +40,6 @@ from tests.integration.test_add_core import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture variant identifiers
-# ---------------------------------------------------------------------------
-
 _VARIANT_PLACEHOLDER = "placeholder"
 _VARIANT_CONCRETE = "concrete"
 
@@ -51,11 +47,6 @@ _ENTRY_NAME = "myentry"
 _PROJECT_NAME = "myproject"
 _MANIFEST_PATH = f"repo-specs/{_ENTRY_NAME}-marketplace.xml"
 _UNKNOWN_URL = "https://github.com/unknown-org/no-such-project-x99"
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _run_why(
@@ -86,10 +77,6 @@ def _run_why(
     )
 
 
-# ---------------------------------------------------------------------------
-# XML template builders
-# ---------------------------------------------------------------------------
-
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -107,11 +94,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       <project remote="pkgs" name="{project_name}" path="{project_name}" />
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Fixture builder
-# ---------------------------------------------------------------------------
 
 
 def _build_placeholder_fixture(
@@ -150,7 +132,6 @@ def _build_placeholder_fixture(
     pkgs_dir = tmp_path / "pkgs"
     pkgs_dir.mkdir()
 
-    # Create a minimal bare project repo so the URL is syntactically valid.
     proj_work = pkgs_dir / f"{_PROJECT_NAME}.work"
     proj_work.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(proj_work)
@@ -159,16 +140,13 @@ def _build_placeholder_fixture(
     _git(["commit", "-m", "init project"], proj_work)
     _clone_as_bare(proj_work, pkgs_dir / f"{_PROJECT_NAME}.git")
 
-    # The concrete project URL for the remote+project combo.
     project_url = f"file://{pkgs_dir}/{_PROJECT_NAME}"
 
-    # Build the remote fetch value based on variant.
     if variant == _VARIANT_PLACEHOLDER:
         remote_fetch = "${GITBASE}"
     else:
         remote_fetch = str(pkgs_dir.as_uri())
 
-    # Create the catalog bare repo.
     catalog_work = tmp_path / "catalog.work"
     catalog_work.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(catalog_work)
@@ -187,7 +165,6 @@ def _build_placeholder_fixture(
     catalog_bare = _clone_as_bare(catalog_work, tmp_path / "catalog.git")
     catalog_source_url = f"file://{catalog_bare}@main"
 
-    # Create workspace and run kanon add.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     kanon_file = workspace / ".kanon"
@@ -217,15 +194,9 @@ def _build_placeholder_fixture(
         f"stderr: {add_result.stderr!r}"
     )
 
-    # For the PLACEHOLDER variant, `kanon add` derives GITBASE as
-    # file://<catalog-parent-dir> = file://<tmp_path>.  The remote XML uses
-    # "${GITBASE}" as the fetch URL, so the full project URL resolved at
-    # why-time is ${GITBASE}/<project-name>.  We need GITBASE to equal
-    # file://<pkgs_dir> so the URL matches `project_url` above.
-    # Override GITBASE in the .kanon file to point at pkgs_dir.
     if variant == _VARIANT_PLACEHOLDER:
         text = kanon_file.read_text()
-        # Replace the GITBASE line written by kanon add with our pkgs_dir value.
+
         new_gitbase_line = f"GITBASE={pkgs_dir.as_uri()}"
         lines = text.splitlines()
         replaced = False
@@ -240,7 +211,6 @@ def _build_placeholder_fixture(
             new_lines.insert(0, new_gitbase_line)
         kanon_file.write_text("\n".join(new_lines) + "\n")
 
-    # Verify no lockfile exists (live-resolve path).
     lock_file = workspace / ".kanon.lock"
     assert not lock_file.exists(), f"Expected no .kanon.lock after kanon add (no install), but found {lock_file}"
 
@@ -254,11 +224,6 @@ def _build_placeholder_fixture(
         "source_url": source_url,
         "manifest_path": _MANIFEST_PATH,
     }
-
-
-# ---------------------------------------------------------------------------
-# Parametrized operator-path tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

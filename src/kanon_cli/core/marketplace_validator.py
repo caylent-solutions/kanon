@@ -34,11 +34,7 @@ from kanon_cli.core.manifest import walk_includes_collecting_remotes
 from kanon_cli.core.metadata import find_catalog_entry_files
 from kanon_cli.version import is_pep440_version
 
-# Type of the injectable ls-remote runner used by the existence check. The
-# default implementation (:func:`_default_ls_remote`) shells the shared
-# ``run_git_ls_remote`` runner from E1; tests inject a stub so they never touch
-# the network. The callable receives (url, ref) and returns the git ls-remote
-# (returncode, stdout, stderr) tuple.
+
 LsRemoteRunner = Callable[[str, str], tuple[int, str, str]]
 
 
@@ -186,8 +182,7 @@ def _is_exact_tag_revision(revision: str) -> bool:
     if not revision.startswith(REVISION_REF_PREFIX_TAGS):
         return False
     remainder = revision[len(REVISION_REF_PREFIX_TAGS) :]
-    # Require a non-empty path before the trailing version component so the
-    # single trailing-component split is well-defined (refs/tags/<path>/<ver>).
+
     if "/" not in remainder:
         return False
     path_part, _, last_component = remainder.rpartition("/")
@@ -284,7 +279,7 @@ def _iter_project_revisions(
         if own_revision:
             triples.append((project_name, own_revision, False))
             continue
-        # Resolve the inherited <default revision> lazily and only once.
+
         if not default_resolved:
             default_revision = _resolve_default_revision(xml_file, repo_root)
             default_resolved = True
@@ -393,15 +388,12 @@ def _is_local_source(url: str) -> bool:
         return True
     if "://" in url:
         return False
-    # An SSH shorthand (git@host:org/repo or host:org/repo) is a network remote.
-    # A leading '/' or '.' (absolute or relative path) is local; a 'host:path'
-    # without a slash before the colon is SSH shorthand.
+
     if url.startswith(("/", ".", "~")):
         return True
     colon = url.find(":")
     slash = url.find("/")
     if colon != -1 and (slash == -1 or colon < slash):
-        # 'host:path' shorthand -- a network SSH remote.
         return False
     return True
 
@@ -507,11 +499,9 @@ def validate_revision_existence(
         remote_urls = _resolve_project_remote_urls(xml_file, repo_root, env)
         for project_name, revision, _inherited in _iter_project_revisions(xml_file, repo_root):
             if not _is_exact_tag_revision(revision):
-                # Format failure already reported by validate_tag_format.
                 continue
             url = remote_urls.get(project_name)
             if url is None:
-                # Unresolvable remote -- the remote-url check owns that error.
                 continue
 
             returncode, stdout, _stderr = ls_remote(url, revision)
@@ -520,7 +510,7 @@ def validate_revision_existence(
             if returncode == 0:
                 if revision in stdout:
                     continue
-                # Reachable remote/local repo, but the tag does not exist.
+
                 errors.append(
                     f"{xml_file}: project '{project_name}' pins revision='{revision}' "
                     f"which does not exist on remote {url!r} "
@@ -529,10 +519,6 @@ def validate_revision_existence(
                 )
                 continue
 
-            # Non-zero ls-remote: the remote is unreachable (or, for a local
-            # source, the path is unusable). A local source must always resolve,
-            # so a failure there is a hard error. A remote source degrades to
-            # format-only with a WARN unless the CI/gate flag is set.
             if local or require_existence:
                 errors.append(
                     f"{xml_file}: project '{project_name}' revision='{revision}' "

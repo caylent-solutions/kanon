@@ -26,11 +26,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_manifest_fixtures(base: pathlib.Path) -> pathlib.Path:
     """Build a minimal manifest+content fixture set and return the manifest bare repo.
 
@@ -73,7 +68,6 @@ def _build_manifest_fixtures(base: pathlib.Path) -> pathlib.Path:
     )
 
 
-# The single catalog entry published by the EV-03 custom-catalog fixture.
 _EV03_ENTRY = "my_template"
 
 
@@ -114,11 +108,6 @@ def _build_custom_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
 
     run_git(["clone", "--bare", str(work), str(bare)], parent)
     return bare.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -163,7 +152,6 @@ class TestEV:
         work_dir = tmp_path / "test-ev02"
         work_dir.mkdir()
 
-        # .kanon sets KANON_MARKETPLACE_INSTALL=true; env override sets it to false
         write_kanonenv(
             work_dir,
             sources=[("primary", manifest_url, "main", "repo-specs/alpha-only.xml")],
@@ -187,8 +175,7 @@ class TestEV:
             f"kanon install exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
-        # The env override disabled marketplace install, so no marketplace lifecycle
-        # actions should appear in stdout.
+
         for marketplace_action in (
             "kanon install: preparing marketplace directory",
             "kanon install: installing marketplace plugins",
@@ -210,7 +197,6 @@ class TestEV:
         """
         catalog_bare = _build_custom_catalog_repo(tmp_path / "fixtures")
 
-        # KANON_CATALOG_SOURCES format: <git_url>@<ref>
         catalog_source = f"{catalog_bare.as_uri()}@1.0.0"
 
         result = run_kanon(

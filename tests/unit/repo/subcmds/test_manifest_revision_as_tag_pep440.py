@@ -34,7 +34,7 @@ class _FakeWorkGit:
         self._tag_list_output = tag_list_output
 
     def tag(self, *args: str) -> str:
-        # `_resolve_pep440_revision` calls work_git.tag("--list").
+
         return self._tag_list_output
 
 
@@ -79,11 +79,9 @@ class TestResolvePep440Revision:
 
     def test_returns_none_for_non_constraint(self) -> None:
         proj = _FakeProject()
-        # Plain branch / SHA / unprefixed-tag -- not a constraint.
+
         assert _resolve_pep440_revision(proj, "main") is None
         assert _resolve_pep440_revision(proj, "refs/tags/1.0.0") is None
-        # Plain `refs/tags/1.0.0` is NOT recognised by is_version_constraint
-        # (the last component "1.0.0" has no operator and is not "*"/"latest").
 
     def test_returns_none_for_empty_revision(self) -> None:
         proj = _FakeProject()
@@ -95,7 +93,7 @@ class TestResolvePep440Revision:
 
     def test_returns_none_for_unmatchable_constraint(self) -> None:
         proj = _FakeProject()
-        # Tags only go up to 3.0.0; >=4.0 has no match.
+
         assert _resolve_pep440_revision(proj, "refs/tags/>=4.0") is None
 
 

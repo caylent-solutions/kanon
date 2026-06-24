@@ -34,11 +34,6 @@ from kanon_cli.commands.outdated import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Constants shape tests (AC-FUNC-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRevisionConstants:
     """REVISION_REF_PREFIXES, REVISION_CLASSIFICATION_VERSION, and
@@ -92,11 +87,6 @@ class TestRevisionConstants:
         assert REVISION_REF_PREFIX_REMOTES in REVISION_REF_PREFIXES
 
 
-# ---------------------------------------------------------------------------
-# _normalize_revision_for_constraint tests (AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNormalizeRevisionForConstraint:
     """_normalize_revision_for_constraint returns the documented contract."""
@@ -104,7 +94,6 @@ class TestNormalizeRevisionForConstraint:
     @pytest.mark.parametrize(
         "revision,expected_normalized",
         [
-            # refs/tags/ + valid PEP 440 version -> (bare_version, "version")
             ("refs/tags/1.0.0", ("1.0.0", REVISION_CLASSIFICATION_VERSION)),
             ("refs/tags/2.3.4", ("2.3.4", REVISION_CLASSIFICATION_VERSION)),
             ("refs/tags/1.0.0a1", ("1.0.0a1", REVISION_CLASSIFICATION_VERSION)),
@@ -158,8 +147,6 @@ class TestNormalizeRevisionForConstraint:
     @pytest.mark.parametrize(
         "revision",
         [
-            # refs/tags/ prefix but bare component is not a PEP 440 version
-            # and not a branch-shaped prefix -- should raise RevisionParseError.
             "refs/tags/not-a-version",
             "refs/tags/feature/some-name",
         ],
@@ -190,11 +177,6 @@ class TestNormalizeRevisionForConstraint:
         assert "refs/..." in str(exc_info.value)
 
 
-# ---------------------------------------------------------------------------
-# _normalize_tag_revision_to_constraint tests (AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNormalizeTagRevisionToConstraint:
     """_normalize_tag_revision_to_constraint converts refs/tags/<version> to
@@ -203,17 +185,13 @@ class TestNormalizeTagRevisionToConstraint:
     @pytest.mark.parametrize(
         "revision,expected",
         [
-            # Bare version in refs/tags/ -> exact-match constraint
             ("refs/tags/1.0.0", "refs/tags/==1.0.0"),
             ("refs/tags/2.3.4", "refs/tags/==2.3.4"),
             ("refs/tags/1.0.0a1", "refs/tags/==1.0.0a1"),
-            # Already a specifier -> unchanged
             ("refs/tags/~=1.0.0", "refs/tags/~=1.0.0"),
             ("refs/tags/>=1.0.0,<2.0.0", "refs/tags/>=1.0.0,<2.0.0"),
             ("refs/tags/==1.0.0", "refs/tags/==1.0.0"),
-            # Wildcard -> unchanged
             ("refs/tags/*", "refs/tags/*"),
-            # Plain constraint (no refs/tags/ prefix) -> unchanged
             ("~=1.0.0", "~=1.0.0"),
             (">=1.0.0", ">=1.0.0"),
         ],

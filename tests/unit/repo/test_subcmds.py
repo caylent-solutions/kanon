@@ -1,17 +1,3 @@
-# Copyright (C) 2020 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds module (mostly __init__.py than subcommands)."""
 
 import optparse
@@ -25,9 +11,7 @@ class AllCommands(unittest.TestCase):
 
     def test_required_basic(self):
         """Basic checking of registered commands."""
-        # NB: We don't test all subcommands as we want to avoid "change
-        # detection" tests, so we just look for the most common/important ones
-        # here that are unlikely to ever change.
+
         for cmd in {
             "cherry-pick",
             "help",
@@ -42,13 +26,10 @@ class AllCommands(unittest.TestCase):
     def test_naming(self):
         """Verify we don't add things that we shouldn't."""
         for cmd in subcmds.all_commands:
-            # Reject filename suffixes like "help.py".
             self.assertNotIn(".", cmd)
 
-            # Make sure all '_' were converted to '-'.
             self.assertNotIn("_", cmd)
 
-            # Reject internal python paths like "__init__".
             self.assertFalse(cmd.startswith("__"))
 
     def test_help_desc_style(self):
@@ -106,21 +87,18 @@ class AllCommands(unittest.TestCase):
 
             long = opt._long_opts[0]
             assert long.startswith("--")
-            # This matches optparse's behavior.
+
             implicit_dest = long[2:].replace("-", "_")
             if implicit_dest == opt.dest:
                 bad_opts.append((str(opt), opt.dest))
 
-        # Hook the option check list.
         optparse.Option.CHECK_METHODS.insert(0, _check_dest)
 
-        # Gather all the bad options up front so people can see all bad options
-        # instead of failing at the first one.
         all_bad_opts = {}
         for name, cls in subcmds.all_commands.items():
             bad_opts = all_bad_opts[name] = []
             cmd = cls()
-            # Trigger construction of parser.
+
             cmd.OptionParser
 
         errmsg = None
@@ -133,5 +111,4 @@ class AllCommands(unittest.TestCase):
         if errmsg:
             self.fail(errmsg)
 
-        # Make sure we aren't popping the wrong stuff.
         assert optparse.Option.CHECK_METHODS.pop(0) is _check_dest

@@ -49,10 +49,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -175,11 +171,6 @@ def _get_copyfile(manifest: manifest_xml.XmlManifest, project_name: str):
     return project.copyfiles[0]
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every documented attribute of <copyfile>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileSrcValidValues:
     """AC-TEST-001 -- valid values accepted for the src attribute.
@@ -275,11 +266,6 @@ class TestCopyfileDestValidValues:
         manifest = _write_and_load(tmp_path, xml_content)
         copyfile = _get_copyfile(manifest, "platform/core")
         assert copyfile.dest == dest, f"Expected copyfile.dest={dest!r} but got: {copyfile.dest!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests for every documented attribute of <copyfile>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -426,11 +412,6 @@ class TestCopyfileDestInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileRequiredAttributeOmission:
     """AC-TEST-003 -- omitting a required attribute raises ManifestParseError
@@ -506,11 +487,6 @@ class TestCopyfileRequiredAttributeOmission:
         assert str(exc_info.value), "Expected a non-empty error message from ManifestParseError for missing dest"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Every documented attribute is validated at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileParseTimeValidation:
     """AC-FUNC-001 -- every documented attribute is validated during manifest load.
@@ -576,11 +552,6 @@ class TestCopyfileParseTimeValidation:
         copyfile = _get_copyfile(manifest, "platform/core")
         assert copyfile.src == src, f"Expected src={src!r} but got: {copyfile.src!r}"
         assert copyfile.dest == dest, f"Expected dest={dest!r} but got: {copyfile.dest!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

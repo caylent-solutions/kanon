@@ -99,7 +99,6 @@ class TestRPRebase:
         ws = tmp_path / "ws"
         rp_ro_setup(ws, manifest_bare)
 
-        # Write a dirty change to the checked-out project to exercise the stash path.
         readme = ws / ".packages" / "pkg-alpha" / "README.md"
         if readme.exists():
             with readme.open("a") as fh:
@@ -129,7 +128,6 @@ class TestRPRebase:
         ws = tmp_path / "ws"
         rp_ro_setup(ws, manifest_bare)
 
-        # Start a topic branch so the project is on a named branch, not detached HEAD.
         start_result = run_kanon("repo", "start", "rebr-i", "--all", cwd=ws)
         assert start_result.returncode == 0, f"repo start rebr-i --all failed: {start_result.stderr!r}"
 
@@ -141,11 +139,6 @@ class TestRPRebase:
         }
         result = run_kanon("repo", "rebase", "-i", "pkg-alpha", cwd=ws, extra_env=no_tty_editor_env)
 
-        # Accept exit 0 (ran without tty interaction) or any exit code that
-        # indicates a tty/interactive skip.  The doc says "Exit code 0 OR
-        # skipped (no-tty)". "Terminal is dumb, but EDITOR unset" is git's
-        # canonical no-tty diagnostic emitted in headless CI runners
-        # (TERM=dumb, no $EDITOR), so it is also acceptable here.
         combined = result.stdout + result.stderr
         combined_lower = combined.lower()
         acceptable = (

@@ -32,10 +32,6 @@ from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
@@ -47,13 +43,8 @@ _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
 
-# Determine the current OS for platform-conditional behavior in docstrings.
-_CURRENT_PLATFORM = platform.system()  # "Linux", "Darwin", or "Windows"
 
-
-# ---------------------------------------------------------------------------
-# Subprocess helper (mirrors convention from test_fs_fault_injection.py)
-# ---------------------------------------------------------------------------
+_CURRENT_PLATFORM = platform.system()
 
 
 def _run_kanon_subprocess(
@@ -106,11 +97,6 @@ def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     kanonenv = directory / ".kanon"
     kanonenv.write_text(_MINIMAL_KANONENV_CONTENT)
     return kanonenv
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: filesystem case-sensitivity handled consistently
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -176,7 +162,7 @@ class TestCaseSensitivityParity:
 
         This test documents and asserts the case-sensitive behavior present on Linux.
         """
-        # Detect whether the filesystem is case-sensitive by probing the tmp_path.
+
         probe_lower = tmp_path / "probe_case_test_lower"
         probe_upper = tmp_path / "PROBE_CASE_TEST_LOWER"
         probe_lower.write_text("x")
@@ -189,7 +175,6 @@ class TestCaseSensitivityParity:
                 "case-sensitivity behavior is handled by the OS transparently."
             )
 
-        # On a case-sensitive filesystem, create ONLY '.KANON' (uppercase).
         uppercase_kanon = tmp_path / ".KANON"
         uppercase_kanon.write_text(_MINIMAL_KANONENV_CONTENT)
 
@@ -266,11 +251,6 @@ class TestCaseSensitivityParity:
             f".kanon-data/ must be created under the shared store for project dir '{dir_name}'. "
             f"Contents: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: /dev/null and tmpfs scenarios work
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -455,11 +435,6 @@ class TestDevNullAndTmpfsScenarios:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: symlink semantics match between Linux and macOS where possible
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSymlinkSemanticsParity:
     """AC-TEST-003: symlink semantics match between Linux and macOS where possible.
@@ -612,7 +587,7 @@ class TestSymlinkSemanticsParity:
 
         link_dir = tmp_path / "link_dir"
         link_dir.mkdir()
-        # Absolute symlink -- same behavior on Linux and macOS.
+
         abs_symlink = link_dir / ".kanon"
         abs_symlink.symlink_to(kanonenv.resolve())
 
@@ -654,7 +629,7 @@ class TestSymlinkSemanticsParity:
 
         link_dir = tmp_path / "link_dir"
         link_dir.mkdir()
-        # Relative symlink: from link_dir/.kanon -> ../real_project/.kanon
+
         rel_target = pathlib.Path("..") / "real_project" / ".kanon"
         rel_symlink = link_dir / ".kanon"
         rel_symlink.symlink_to(rel_target)
@@ -693,14 +668,11 @@ class TestSymlinkSemanticsParity:
         real_dir.mkdir()
         kanonenv = _write_kanonenv(real_dir)
 
-        # Create a directory symlink pointing to real_dir.
         link_to_real = tmp_path / "link_to_real"
         link_to_real.symlink_to(real_dir)
 
-        # Start discovery from the symlinked directory.
         discovered = find_kanonenv(link_to_real)
 
-        # The discovered path must be the real (resolved) .kanon path.
         assert discovered == kanonenv.resolve(), (
             f"find_kanonenv() must discover .kanon through a symlinked ancestor on {_CURRENT_PLATFORM}. "
             f"Expected {kanonenv.resolve()}, got {discovered}"
@@ -740,7 +712,7 @@ class TestSymlinkSemanticsParity:
         assert not (store_base / ".kanon-data").exists(), (
             ".kanon-data/ must be removed from the shared store when clean() is given a symlink"
         )
-        # Artifacts must NOT be created or touched in the symlink directory.
+
         assert not (link_dir / ".packages").exists(), (
             "clean() must not create or touch .packages/ in the symlink's directory"
         )

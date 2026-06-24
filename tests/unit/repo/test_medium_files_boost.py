@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests to boost coverage on medium-coverage files.
 
 Targets uncovered lines in:
@@ -41,14 +27,8 @@ from kanon_cli.repo import ssh
 from kanon_cli.repo.error import HookError
 
 
-# Helper for picklable function (used in multiprocessing tests)
 def _double(x):
     return x * 2
-
-
-# ---------------------------------------------------------------------------
-# git_command.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -60,7 +40,6 @@ class TestGitCallVersionTupleNone(unittest.TestCase):
         call = git_command._GitCall()
         call.version_tuple.cache_clear()
         try:
-            # Wrapper() returns a module; patch ParseGitVersion on that module
             mock_module = mock.MagicMock()
             mock_module.ParseGitVersion.return_value = None
             with mock.patch("kanon_cli.repo.git_command.Wrapper", return_value=mock_module):
@@ -546,11 +525,6 @@ class TestGitCommandBuildEnvHttpProxy(unittest.TestCase):
                     self.assertIn("http.proxy", env["GIT_CONFIG_PARAMETERS"])
 
 
-# ---------------------------------------------------------------------------
-# ssh.py
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProxyManagerOpenUnlocked(unittest.TestCase):
     """Cover lines 185-262: ProxyManager._open_unlocked method."""
@@ -600,7 +574,7 @@ class TestProxyManagerOpenUnlocked(unittest.TestCase):
 
             mock_check = mock.MagicMock()
             mock_check.communicate.return_value = ("", "")
-            mock_check.wait.return_value = 0  # master IS running
+            mock_check.wait.return_value = 0
 
             with mock.patch("subprocess.Popen", return_value=mock_check):
                 result = proxy._open_unlocked("newhost.com")
@@ -617,10 +591,10 @@ class TestProxyManagerOpenUnlocked(unittest.TestCase):
 
             mock_check = mock.MagicMock()
             mock_check.communicate.return_value = ("", "")
-            mock_check.wait.return_value = 1  # master NOT running
+            mock_check.wait.return_value = 1
 
             mock_master = mock.MagicMock()
-            mock_master.poll.return_value = None  # still alive
+            mock_master.poll.return_value = None
             mock_master.pid = 12345
 
             call_count = [0]
@@ -650,7 +624,7 @@ class TestProxyManagerOpenUnlocked(unittest.TestCase):
             mock_check.wait.return_value = 1
 
             mock_master = mock.MagicMock()
-            mock_master.poll.return_value = 1  # died
+            mock_master.poll.return_value = 1
 
             call_count = [0]
 
@@ -702,7 +676,7 @@ class TestProxyManagerOpenUnlocked(unittest.TestCase):
 
             mock_check = mock.MagicMock()
             mock_check.communicate.return_value = ("", "")
-            mock_check.wait.return_value = 0  # master IS running
+            mock_check.wait.return_value = 0
 
             with mock.patch("subprocess.Popen", return_value=mock_check) as mock_popen:
                 result = proxy._open_unlocked("host.com", port=2222)
@@ -768,11 +742,6 @@ class TestSshSockPath(unittest.TestCase):
                         with mock.patch("kanon_cli.repo.ssh.version", return_value=(7, 0)):
                             path = proxy.sock()
             self.assertIn("/var/tmp/ssh-test", path)
-
-
-# ---------------------------------------------------------------------------
-# hooks.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -962,7 +931,7 @@ class TestExecuteHook(unittest.TestCase):
             mock_project.worktree = tmpdir
             script_path = os.path.join(tmpdir, "pre-upload.py")
             with open(script_path, "w") as f:
-                f.write("def main(**kwargs\n")  # syntax error
+                f.write("def main(**kwargs\n")
             hook = hooks.RepoHook(
                 hook_type="pre-upload",
                 hooks_project=mock_project,
@@ -997,11 +966,6 @@ class TestRunHookFullFlow(unittest.TestCase):
             )
             result = hook.Run(project_list=[], worktree_list=[])
             self.assertTrue(result)
-
-
-# ---------------------------------------------------------------------------
-# subcmds/gc.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1265,11 +1229,6 @@ class TestGcGeneratePromisorFiles(unittest.TestCase):
             self.assertTrue(os.path.exists(promisor_file))
 
 
-# ---------------------------------------------------------------------------
-# git_trace2_event_log_base.py
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBaseEventLogUnicodeEncode(unittest.TestCase):
     """Cover lines 98-99: UnicodeEncodeError handling in __init__."""
@@ -1292,10 +1251,8 @@ class TestBaseEventLogUnicodeEncode(unittest.TestCase):
             if False
             else mock.patch("kanon_cli.repo.git_trace2_event_log_base.BaseEventLog.__init__")
         ):
-            # Test the actual code path by manually invoking with mock
             pass
 
-        # Simplified test: verify the object can be constructed and has sid
         event_log = git_trace2_event_log_base.BaseEventLog(env={})
         self.assertIsNotNone(event_log._full_sid)
 
@@ -1357,11 +1314,10 @@ class TestBaseEventLogWriteSocket(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             sock_path = os.path.join(tmpdir, "test.sock")
-            # Create a real dgram socket so the stream connect will fail
-            # with a non-EPROTOTYPE error. Use a non-existent path.
+
             with mock.patch("builtins.print"):
                 result = event_log.Write(path=f"af_unix:stream:{sock_path}")
-        # Socket doesn't exist, so connect fails -> None
+
         self.assertIsNone(result)
 
     def test_write_dgram_socket_oserror(self):
@@ -1373,7 +1329,7 @@ class TestBaseEventLogWriteSocket(unittest.TestCase):
             sock_path = os.path.join(tmpdir, "test.sock")
             with mock.patch("builtins.print"):
                 result = event_log.Write(path=f"af_unix:dgram:{sock_path}")
-        # Socket doesn't exist, so sendto fails -> None
+
         self.assertIsNone(result)
 
 
@@ -1393,11 +1349,6 @@ class TestBaseEventLogWriteFileExistsError(unittest.TestCase):
                 with mock.patch("builtins.print"):
                     result = event_log.Write(path=tmpdir)
         self.assertIsNone(result)
-
-
-# ---------------------------------------------------------------------------
-# command.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1513,8 +1464,7 @@ class TestCommandGetProjectsByPathDerived(unittest.TestCase):
 
         mock_project = mock.MagicMock()
         mock_project.Exists = True
-        # First call in list comprehension: True (so project is found)
-        # Second call in validation: False
+
         mock_project.MatchesGroups.side_effect = [True, False]
 
         mock_manifest.projects = []
@@ -1544,7 +1494,7 @@ class TestCommandManifestListNoOuter(unittest.TestCase):
 
         result = list(cmd.ManifestList(mock_opt))
         self.assertIn(mock_manifest, result)
-        self.assertEqual(len(result), 2)  # manifest + 1 child
+        self.assertEqual(len(result), 2)
 
 
 @pytest.mark.unit
@@ -1585,6 +1535,6 @@ class TestGitCommandRepackWithExistingPackDir(unittest.TestCase):
                                 return_value=mock_git_instance,
                             ):
                                 result = gc.repack_projects([project], opt)
-        # rmtree should be called for the existing dir, pack_old, and possibly others
+
         self.assertTrue(mock_rmtree.called)
         self.assertEqual(result, 0)

@@ -25,11 +25,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     """Build the minimal fixture repos needed by all IC scenarios.
 
@@ -47,15 +42,12 @@ def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     content_repos.mkdir(parents=True)
     manifest_repos.mkdir(parents=True)
 
-    # --- pkg-alpha content repo ---
     pkg_alpha_bare = make_plain_repo(
         content_repos,
         "pkg-alpha",
         {"README.md": "# pkg-alpha\n"},
     )
 
-    # The fetch URL for the manifest remote must point at the *directory*
-    # containing the bare repo (repo tool resolves `fetch + name + ".git"`).
     content_repos_url = content_repos.as_uri()
 
     remote_xml = (
@@ -74,7 +66,6 @@ def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
         "</manifest>\n"
     )
 
-    # --- manifest-primary bare repo ---
     manifest_primary_bare = make_plain_repo(
         manifest_repos,
         "manifest-primary",
@@ -146,11 +137,6 @@ def _assert_clean_pass_criteria(store_base: pathlib.Path, result) -> None:
     assert not (store_base / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestIC:
     def test_ic_01_single_source_install_and_clean(self, tmp_path: pathlib.Path) -> None:
@@ -194,7 +180,6 @@ class TestIC:
         kanon_file = work_dir / ".kanon"
         kanon_file.write_text(kanon_text)
 
-        # Verify the literal string is present in the file (not pre-expanded)
         assert "${HOME}" in kanon_file.read_text(), "The .kanon file should contain the literal string '${HOME}'"
 
         catalog_source = f"{manifest_url}@main"
@@ -280,12 +265,7 @@ class TestIC:
         assert "kanon install: done" in install_result.stdout, (
             f"'kanon install: done' not in stdout: {install_result.stdout!r}"
         )
-        # Verify no marketplace lifecycle actions were triggered.  The specific
-        # lines printed only when KANON_MARKETPLACE_INSTALL=true are:
-        #   "kanon install: preparing marketplace directory..."
-        #   "kanon install: installing marketplace plugins..."
-        # (The bare word "marketplace" can appear in file paths, so we check
-        #  for the action-prefixed strings instead.)
+
         for marketplace_action in (
             "kanon install: preparing marketplace directory",
             "kanon install: installing marketplace plugins",

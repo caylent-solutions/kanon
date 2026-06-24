@@ -24,11 +24,6 @@ from kanon_cli.completions.project_versions import (
 )
 
 
-# ---------------------------------------------------------------------------
-# _parse_ls_remote_output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestParseLsRemoteOutput:
     """_parse_ls_remote_output() splits git ls-remote output into (tags, branches)."""
@@ -86,11 +81,6 @@ class TestParseLsRemoteOutput:
         assert branches == []
 
 
-# ---------------------------------------------------------------------------
-# _run_ls_remote
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunLsRemote:
     """_run_ls_remote() shells out to git ls-remote and returns stdout."""
@@ -126,11 +116,6 @@ class TestRunLsRemote:
                 _run_ls_remote("https://example.com/repo.git", timeout=2)
 
 
-# ---------------------------------------------------------------------------
-# complete() -- PEP 440 filter (AC-FUNC-001, AC-FUNC-003, AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletePEP440Filter:
     """complete() applies PEP 440 filter to tags, passes branches through."""
@@ -145,11 +130,8 @@ class TestCompletePEP440Filter:
     @pytest.mark.parametrize(
         ("tags", "expected_in", "expected_not_in"),
         [
-            # PEP 440-valid tags accepted
             (["1.0.0", "2.0.0", "1.0.0a1"], ["1.0.0", "2.0.0", "1.0.0a1"], []),
-            # Non-PEP-440 tags excluded
             (["not-a-version", "1.0.0"], ["1.0.0"], ["not-a-version"]),
-            # "v3" is PEP 440-valid (packaging normalizes to "3")
             (["v3"], ["v3"], []),
         ],
         ids=["valid-pep440", "reject-non-pep440", "v-prefix-valid"],
@@ -215,11 +197,6 @@ class TestCompletePEP440Filter:
         assert filter_pep440_tags is ref_fn
 
 
-# ---------------------------------------------------------------------------
-# complete() -- URL canonicalization (AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteURLCanonicalization:
     """Two URL shapes that canonicalize to the same value share the same cache entry."""
@@ -248,18 +225,15 @@ class TestCompleteURLCanonicalization:
         with patch.object(pv, "_run_ls_remote", side_effect=counting_fetch):
             result_https = complete("https://example.com/proj.git", "")
 
-        # Seed a fresh TTL-valid cache entry manually
         from kanon_cli.completions import cache as cache_mod
         from kanon_cli.core.url import canonicalize_repo_url
 
         canonical_https = canonicalize_repo_url("https://example.com/proj.git")
         entry_dir = cache_mod.project_entry_dir(canonical_https)
-        # Verify the cache directory was created under the canonical hash
+
         assert entry_dir.exists(), f"cache dir not created: {entry_dir}"
 
-        # Now call with the SSH-shorthand URL -- it should hit the same cache dir
         with patch.object(pv, "_run_ls_remote", side_effect=counting_fetch):
-            # Force cache to be fresh so the second call does NOT fetch
             result_ssh = complete("https://example.com/proj.git", "")
 
         assert result_https == result_ssh, (
@@ -282,11 +256,6 @@ class TestCompleteURLCanonicalization:
             complete(raw_url, "")
 
         assert expected_dir.exists(), f"Expected cache dir at {expected_dir}"
-
-
-# ---------------------------------------------------------------------------
-# complete() -- malformed URL (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -347,11 +316,6 @@ class TestCompleteMalformedURL:
         content = log_path.read_text()
         assert "__complete_project_versions" in content
         assert "ValueError" in content
-
-
-# ---------------------------------------------------------------------------
-# complete() -- cache states (AC-FUNC-006)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -429,11 +393,6 @@ class TestCompleteCacheStates:
         assert "1.0.0" in result
 
 
-# ---------------------------------------------------------------------------
-# complete() -- prefix filter (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletePrefixFilter:
     """Prefix filter narrows the candidate list correctly."""
@@ -481,11 +440,6 @@ class TestCompletePrefixFilter:
         assert result == expected, f"prefix={prefix!r}: expected {expected}, got {result}"
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 returns [] without touching cache or log."""
@@ -502,11 +456,6 @@ class TestCompleteDisabled:
         assert result == []
         mock_fetch.assert_not_called()
         mock_log.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- network error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -543,11 +492,6 @@ class TestCompleteNetworkError:
         mock_log.assert_called()
 
 
-# ---------------------------------------------------------------------------
-# _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFetchAndCacheVersions:
     """_fetch_and_cache_versions() runs git ls-remote, writes tags.txt."""
@@ -573,11 +517,6 @@ class TestFetchAndCacheVersions:
         with patch.object(pv, "_run_ls_remote", side_effect=RuntimeError("ls-remote failed")):
             with pytest.raises(RuntimeError, match="ls-remote failed"):
                 _fetch_and_cache_versions("https://example.com/proj.git", entry_dir)
-
-
-# ---------------------------------------------------------------------------
-# _handle()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -622,11 +561,6 @@ class TestHandle:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert result == 0
-
-
-# ---------------------------------------------------------------------------
-# register() (AC-FUNC-004, AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -687,11 +621,6 @@ class TestRegister:
         )
 
 
-# ---------------------------------------------------------------------------
-# Coverage: _write_stderr_diagnostic when stderr is a tty
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWriteStderrDiagnostic:
     """_write_stderr_diagnostic() writes to stderr when stderr is a tty."""
@@ -745,11 +674,6 @@ class TestWriteStderrDiagnostic:
         assert err_lines == [], f"Expected no stderr output, got: {err_lines!r}"
 
 
-# ---------------------------------------------------------------------------
-# Coverage: _inline_fetch env restoration when KANON_COMPLETION_TIMEOUT was pre-set
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInlineFetchEnvRestore:
     """_inline_fetch() restores KANON_COMPLETION_TIMEOUT after fetch."""
@@ -776,11 +700,6 @@ class TestInlineFetchEnvRestore:
         assert result == ["1.0.0"]
         assert captured_env["during"] == "42"
         assert os.environ.get("KANON_COMPLETION_TIMEOUT") == "99"
-
-
-# ---------------------------------------------------------------------------
-# Coverage: background refresh callable binds _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -814,20 +733,18 @@ class TestBackgroundRefreshClosure:
         captured: list = []
 
         def _fake_fork(refresh_fn: object) -> None:
-            # Capture the callable and call it to verify it reaches
-            # _fetch_and_cache_versions with the right bound arguments.
+
             captured.append(refresh_fn)
 
         with patch.object(pv, "fork_background_refresh", side_effect=_fake_fork):
             with patch.object(pv, "_fetch_and_cache_versions", return_value=["2.0.0"]) as mock_fetch:
                 complete(self._REPO_URL, "")
-                # Invoke the captured callable to exercise the bound partial.
+
                 assert len(captured) == 1
                 captured[0]()
 
         mock_fetch.assert_called_once()
-        # The partial must bind the ORIGINAL repo_url (transport-preserving) as
-        # the first positional argument.
+
         call_args = mock_fetch.call_args[0]
         assert call_args[0] == self._REPO_URL, "background refresh must use the original repo_url"
 
@@ -856,8 +773,7 @@ class TestBackgroundRefreshClosure:
 
         assert len(captured) == 1, "complete() must call fork_background_refresh exactly once on stale+bg"
         passed_fn = captured[0]
-        # The critical assertion: pickle.dumps must not raise on the exact
-        # object the production callsite passes.
+
         try:
             pickle.dumps(passed_fn)
         except Exception as exc:
@@ -891,9 +807,6 @@ class TestBackgroundRefreshClosure:
         assert len(captured) == 1
         revived = pickle.loads(pickle.dumps(captured[0]))
 
-        # The revived callable is a functools.partial bound to the
-        # module-level _fetch_and_cache_versions with the original repo_url and
-        # the project entry directory.
         assert isinstance(revived, functools.partial)
         assert revived.func is pv._fetch_and_cache_versions
         assert revived.args[0] == self._REPO_URL

@@ -74,18 +74,14 @@ from tests.functional.conftest import (
     _setup_upload_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals extracted here.
-# No inline literals in test bodies, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "upload-flags-test-project"
 
-# Topic branch name for tests that require a reviewable branch.
+
 _TOPIC_BRANCH_FLAGS = "feature/upload-flags-coverage"
 
-# CLI token constants
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_UPLOAD = "upload"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
@@ -130,28 +126,26 @@ _CLI_FLAG_IGNORE_UNTRACKED = "--ignore-untracked-files"
 _CLI_FLAG_NO_IGNORE_UNTRACKED = "--no-ignore-untracked-files"
 _CLI_FLAG_NO_CERT_CHECKS = "--no-cert-checks"
 
-# Exit codes
+
 _EXPECTED_EXIT_CODE = 0
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Inline-value suffix for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value'.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Error message phrase emitted by optparse for store_true flags with inline values.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Nonexistent repo-dir name for pure argument-parser tests that do not need
-# a real initialized repository.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-upload-flags-repo-dir"
 
-# Valid example values for typed string flags.
+
 _TOPIC_VALUE = "my-topic"
 _HASHTAG_VALUE = "my-hashtag"
 _LABEL_VALUE = "Code-Review+1"
@@ -162,13 +156,7 @@ _BRANCH_VALUE = _TOPIC_BRANCH_FLAGS
 _PUSH_OPTION_VALUE = "wip"
 _DESTINATION_VALUE = "main"
 
-# ---------------------------------------------------------------------------
-# Parametrize tables -- all flags listed here for each category.
-# Tuples are (flag_token, test_id). Short-form flags are NOT tested with
-# inline '=value' syntax (only long-form flags support '--flag=value').
-# ---------------------------------------------------------------------------
 
-# All boolean store_true flags (short + long forms) -- for valid-value tests.
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_TOPIC_BRANCH_SHORT, "short-topic-branch"),
     (_CLI_FLAG_TOPIC_BRANCH, "long-topic-branch"),
@@ -190,7 +178,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_IGNORE_UNTRACKED, "long-ignore-untracked-files"),
 ]
 
-# All boolean store_false flags (long forms only for negative tests).
+
 _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_NO_CURRENT_BRANCH, "long-no-current-branch"),
     (_CLI_FLAG_NO_EMAILS_SHORT, "short-no-emails-ne"),
@@ -199,8 +187,7 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_NO_CERT_CHECKS, "long-no-cert-checks"),
 ]
 
-# Long-form boolean flags (both store_true and store_false) for negative tests.
-# Only long-form flags support '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_TOPIC_BRANCH, "topic-branch"),
     (_CLI_FLAG_HASHTAG_BRANCH, "hashtag-branch"),
@@ -217,8 +204,7 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_NO_CERT_CHECKS, "no-cert-checks"),
 ]
 
-# Typed string / append flags with valid values -- for valid-value tests.
-# Tuples of (flag_token, value, test_id).
+
 _TYPED_FLAGS_WITH_VALUES: list[tuple[str, str, str]] = [
     (_CLI_FLAG_TOPIC, _TOPIC_VALUE, "long-topic"),
     (_CLI_FLAG_HASHTAG, _HASHTAG_VALUE, "long-hashtag"),
@@ -238,11 +224,6 @@ _TYPED_FLAGS_WITH_VALUES: list[tuple[str, str, str]] = [
     (_CLI_FLAG_DESTINATION_SHORT, _DESTINATION_VALUE, "short-destination"),
     (_CLI_FLAG_DESTINATION_ALT, _DESTINATION_VALUE, "long-destination-alt"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -335,11 +316,6 @@ class TestRepoUploadFlagsValidValues:
             f"Flag {flag!r} with value {value!r} triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for boolean flags with inline values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -443,11 +419,6 @@ class TestRepoUploadFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoUploadFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -524,11 +495,6 @@ class TestRepoUploadFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -669,11 +635,6 @@ class TestRepoUploadFlagsDocumentedBehavior:
             f"'{_CLI_FLAG_NO_CERT_CHECKS}' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline for flag invocations
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

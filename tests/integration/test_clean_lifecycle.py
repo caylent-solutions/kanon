@@ -24,11 +24,6 @@ from kanon_cli.core.install import install
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _store_base() -> pathlib.Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
@@ -81,11 +76,6 @@ def _create_install_artifacts(base_dir: pathlib.Path, packages: list[str]) -> No
     (kanon_data / "metadata.txt").write_text("source=primary\n")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: kanon clean removes .packages/ and .kanon-data/
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanRemovesArtifacts:
     """AC-TEST-001: kanon clean removes .packages/ and .kanon-data/ via CLI."""
@@ -124,11 +114,6 @@ class TestCleanRemovesArtifacts:
         assert not (store_base / ".packages").exists(), "kanon clean must remove .packages/ including nested content"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: kanon clean with KANON_MARKETPLACE_INSTALL=true removes marketplace dir
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanWithMarketplace:
     """AC-TEST-002: kanon clean with marketplace enabled removes marketplace directory."""
@@ -142,10 +127,6 @@ class TestCleanWithMarketplace:
         marketplace_dir.mkdir()
         (marketplace_dir / "some-marketplace-plugin.txt").write_text("plugin data")
 
-        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
-        # the removed global KANON_MARKETPLACE_INSTALL header. A dependency that
-        # opts in makes the clean marketplace-relevant (the per-dep fallback used
-        # when no lockfile is present).
         kanonenv = _write_kanonenv(
             tmp_path,
             (
@@ -190,11 +171,6 @@ class TestCleanWithMarketplace:
         assert (other_dir / "keep.txt").exists(), "clean must not remove user files"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: kanon clean is idempotent
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanIdempotent:
     """AC-TEST-003: kanon clean is idempotent when run on an already-clean directory."""
@@ -233,11 +209,6 @@ class TestCleanIdempotent:
 
         assert not (store_base / ".packages").exists(), "second clean must not fail when .packages/ absent"
         assert not (store_base / ".kanon-data").exists(), "second clean must not fail when .kanon-data/ absent"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 and AC-CHANNEL-001: preservation of non-managed files and channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -284,11 +255,6 @@ class TestCleanPreservesNonManagedFiles:
             f"AC-CHANNEL-001: progress output expected on stdout during clean; stdout={captured.out!r}"
         )
 
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-FUNC-005: marketplace-true lifecycle -- install registers,
-# clean unregisters
-# ---------------------------------------------------------------------------
 
 _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -497,8 +463,6 @@ class TestCleanMarketplaceTrue:
 
         add_names_in_order: list[str] = []
         for argv in add_argvs:
-            # argv shape: (bin, "plugin", "marketplace", "add", <path>)
-            # the name comes from marketplace.json inside <path>
             entry_path = pathlib.Path(argv[4])
             json_path = entry_path / ".claude-plugin" / "marketplace.json"
             assert json_path.exists(), (

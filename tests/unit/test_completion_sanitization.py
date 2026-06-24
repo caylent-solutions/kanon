@@ -19,11 +19,6 @@ from kanon_cli.completions.sanitize import SanitizationError, sanitize_entries
 from kanon_cli.constants import SHELL_METACHARS
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- clean entries pass through unchanged
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_clean_entries_pass_through() -> None:
     """Clean entries are all kept; dropped is empty."""
@@ -31,11 +26,6 @@ def test_clean_entries_pass_through() -> None:
     result = sanitize_entries(entries, completer_name="__complete_test")
     assert result.kept == ["foo", "bar-baz", "1.0.0+local.build"]
     assert result.dropped == []
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 -- newline triggers drop with "newline" in reason
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -59,11 +49,6 @@ def test_carriage_return_entry_is_dropped() -> None:
     assert "newline" in reason
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 -- NUL triggers drop with "NUL" in reason
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_nul_entry_is_dropped() -> None:
     """Entry containing \\x00 is dropped; reason includes 'NUL'."""
@@ -72,11 +57,6 @@ def test_nul_entry_is_dropped() -> None:
     assert len(result.dropped) == 1
     _entry, reason = result.dropped[0]
     assert "NUL" in reason
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 -- shell metacharacters each trigger drop naming the character
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -92,19 +72,14 @@ def test_shell_metachar_entry_is_dropped(metachar: str) -> None:
     assert metachar in reason
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005 -- control character below 0x20 (other than newline) drops entry
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "ctrl_char",
     [
-        "\x07",  # bell
-        "\x01",  # SOH
-        "\x08",  # backspace
-        "\x1f",  # unit separator (highest control char below 0x20)
+        "\x07",
+        "\x01",
+        "\x08",
+        "\x1f",
     ],
 )
 def test_control_char_entry_is_dropped(ctrl_char: str) -> None:
@@ -115,14 +90,9 @@ def test_control_char_entry_is_dropped(ctrl_char: str) -> None:
     assert len(result.dropped) == 1
     dropped_entry, reason = result.dropped[0]
     assert dropped_entry == entry
-    # Reason must name the byte value (e.g. "0x07").
+
     expected_hex = f"0x{ord(ctrl_char):02x}"
     assert expected_hex in reason
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006 -- mixed list preserves order; dirty entries are collected
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -137,22 +107,12 @@ def test_mixed_list_preserves_order() -> None:
     assert "also\x00bad" in dropped_entries
 
 
-# ---------------------------------------------------------------------------
-# Empty input
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_empty_input_returns_empty_output() -> None:
     """Empty input produces empty kept and dropped lists."""
     result = sanitize_entries([], completer_name="__complete_test")
     assert result.kept == []
     assert result.dropped == []
-
-
-# ---------------------------------------------------------------------------
-# SanitizationError -- carries reason and original entry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -168,11 +128,6 @@ def test_sanitization_error_carries_reason() -> None:
 def test_sanitization_error_is_exception_subclass() -> None:
     """SanitizationError is an Exception subclass (fail-fast contract)."""
     assert issubclass(SanitizationError, Exception)
-
-
-# ---------------------------------------------------------------------------
-# SHELL_METACHARS is defined in constants (AC-FUNC-008)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

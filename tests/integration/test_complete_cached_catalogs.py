@@ -17,11 +17,6 @@ import pytest
 from kanon_cli.completions.cache import cache_dir
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _resolved_cache(home: Path) -> Path:
     """Return the cache directory resolved from KANON_HOME=*home*.
 
@@ -60,11 +55,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-CYCLE-001
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -129,12 +119,12 @@ class TestCompleteCachedCatalogsSubprocess:
         _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
         _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
         _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
-        # Fourth catalog with empty content (malformed)
+
         _make_catalog(tmp_path, "sha4_bad", "")
         log_path = tmp_path / "completion-errors.log"
         result = _run_complete(tmp_path, extra_env={"KANON_COMPLETION_LOG": str(log_path)})
         assert result.returncode == 0
-        # Only the three valid entries in sorted order
+
         assert result.stdout == (
             "git@c.example.com:org/m.git@develop\n"
             "https://a.example.com/m.git@main\n"
@@ -180,7 +170,6 @@ class TestCompleteCachedCatalogsSubprocess:
         _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
         log_path = tmp_path / "completion-errors.log"
 
-        # First invocation
         result1 = _run_complete(tmp_path, extra_env={"KANON_COMPLETION_LOG": str(log_path)})
         assert result1.returncode == 0
         assert result1.stdout == (
@@ -190,10 +179,8 @@ class TestCompleteCachedCatalogsSubprocess:
         )
         assert not log_path.exists()
 
-        # Add malformed fourth catalog
         _make_catalog(tmp_path, "sha4_bad", "")
 
-        # Second invocation
         result2 = _run_complete(tmp_path, extra_env={"KANON_COMPLETION_LOG": str(log_path)})
         assert result2.returncode == 0
         assert result2.stdout == (

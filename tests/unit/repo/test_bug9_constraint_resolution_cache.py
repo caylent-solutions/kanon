@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 9: constraint resolution called twice.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 9 -- _ResolveVersionConstraint()
@@ -28,11 +14,6 @@ from unittest import mock
 import pytest
 
 from kanon_cli.repo.project import Project
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(revision_expr="refs/tags/dev/mylib/~=1.0.0"):
@@ -77,11 +58,6 @@ def _make_success_result(tags=("refs/tags/dev/mylib/1.0.0", "refs/tags/dev/mylib
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Resolution called only once for repeated invocations
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_constraint_resolution_called_only_once(monkeypatch):
     """AC-TEST-001: _ResolveVersionConstraint runs ls-remote exactly once.
@@ -109,11 +85,6 @@ def test_constraint_resolution_called_only_once(monkeypatch):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Cached result returned on second call
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_cached_result_returned_on_second_call(monkeypatch):
     """AC-TEST-002: revisionExpr resolved on first call is preserved on second call.
@@ -137,7 +108,6 @@ def test_cached_result_returned_on_second_call(monkeypatch):
         project._ResolveVersionConstraint()
         resolved_expr = project.revisionExpr
 
-        # Call again -- must return immediately, revisionExpr unchanged.
         project._ResolveVersionConstraint()
         expr_after_second_call = project.revisionExpr
 
@@ -152,11 +122,6 @@ def test_cached_result_returned_on_second_call(monkeypatch):
         f"Expected subprocess.run called exactly once (second call cached), "
         f"but it was called {mock_run.call_count} times."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Flag resets when revisionExpr is changed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -193,18 +158,12 @@ def test_flag_resets_on_revision_expr_change(monkeypatch, new_expr):
         f"Pre-condition: expected _constraint_resolved=True after resolution, but got: {project._constraint_resolved!r}"
     )
 
-    # Changing revisionExpr via SetRevision must reset the flag.
     project.SetRevision(new_expr)
 
     assert project._constraint_resolved is False, (
         f"Expected _constraint_resolved=False after SetRevision('{new_expr}'), "
         f"but got: {project._constraint_resolved!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- _constraint_resolved initialised to False in __init__
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

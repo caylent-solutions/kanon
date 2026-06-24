@@ -18,9 +18,6 @@ from kanon_cli.core.install import (
     _detect_canonical_url_conflicts,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _CANONICAL = "https://gitserver/org/example-package"
 _SHA_A = "a" * 40
@@ -42,11 +39,6 @@ def _project(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: empty input -> empty list
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDetectCanonicalUrlConflictsEmpty:
     def test_empty_input_returns_empty_list(self) -> None:
@@ -64,11 +56,6 @@ class TestDetectCanonicalUrlConflictsEmpty:
         ]
         result = _detect_canonical_url_conflicts(projects)
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: benign diamond -- same canonical URL, same SHA -> allowed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -120,11 +107,6 @@ class TestDetectCanonicalUrlConflictsBenignDiamond:
         ]
         result = _detect_canonical_url_conflicts(projects)
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: two-row conflict -- same canonical URL, different SHAs -> error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -186,11 +168,6 @@ class TestDetectCanonicalUrlConflictsTwoRow:
         assert _SHA_B in shas
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: three-plus-row conflict
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDetectCanonicalUrlConflictsMultiRow:
     def test_three_rows_two_distinct_shas_is_single_conflict(self) -> None:
@@ -215,10 +192,8 @@ class TestDetectCanonicalUrlConflictsMultiRow:
     def test_two_canonical_groups_only_conflicting_group_reported(self) -> None:
         """Two canonical-URL groups: only the one with differing SHAs produces a report."""
         projects = [
-            # Group 1: same SHA (benign)
             _project("src-a/m.xml", "git@gitserver:org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
             _project("src-b/m.xml", "https://gitserver/org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
-            # Group 2: different SHAs (conflict)
             _project("src-c/m.xml", "git@gitserver:org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_A),
             _project("src-d/m.xml", "https://gitserver/org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_B),
         ]
@@ -239,11 +214,6 @@ class TestDetectCanonicalUrlConflictsMultiRow:
         reported_canonicals = {r.canonical_url for r in reports}
         assert "https://gitserver/org/pkg-a" in reported_canonicals
         assert "https://gitserver/org/pkg-b" in reported_canonicals
-
-
-# ---------------------------------------------------------------------------
-# CanonicalUrlConflictError rendering (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -349,11 +319,6 @@ class TestCanonicalUrlConflictError:
         assert "https://gitserver/org/pkg-b" in msg
 
 
-# ---------------------------------------------------------------------------
-# CanonicalUrlConflictReport NamedTuple shape
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCanonicalUrlConflictReport:
     def test_fields_accessible_by_name(self) -> None:
@@ -374,11 +339,6 @@ class TestCanonicalUrlConflictReport:
         report = CanonicalUrlConflictReport(canonical_url=_CANONICAL, entries=[entry])
         assert len(report.entries) == 1
         assert report.entries[0].source_path == "src/manifest.xml"
-
-
-# ---------------------------------------------------------------------------
-# ResolvedProject NamedTuple shape
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

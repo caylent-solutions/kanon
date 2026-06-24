@@ -27,10 +27,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo.main import run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Isolation Test User"
 _GIT_USER_EMAIL = "isolation-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
@@ -131,11 +127,6 @@ def _repo_init_workspace(workspace: pathlib.Path, manifest_url: str) -> str:
     return repo_dot_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: sys.argv is restored after repo API calls
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_sys_argv_not_modified_by_run_from_args(tmp_path: pathlib.Path) -> None:
     """run_from_args does not read or write sys.argv.
@@ -199,11 +190,6 @@ def test_sys_argv_not_modified_by_repo_run(tmp_path: pathlib.Path) -> None:
     assert sys.argv == argv_before, f"sys.argv was modified by repo_run. Before: {argv_before!r}, After: {sys.argv!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: sys.path is restored after repo API calls
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_sys_path_not_modified_by_run_from_args(tmp_path: pathlib.Path) -> None:
     """run_from_args does not modify sys.path.
@@ -232,11 +218,6 @@ def test_sys_path_not_modified_by_run_from_args(tmp_path: pathlib.Path) -> None:
     assert sys.path == path_before, (
         f"sys.path was modified by run_from_args. Before: {path_before!r}, After: {sys.path!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: os.environ is restored after repo API calls
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -268,9 +249,6 @@ def test_os_environ_restored_after_run_from_args(tmp_path: pathlib.Path) -> None
             repo_dir=repo_dot_dir,
         )
 
-        # After the call (but before cleanup), the sentinel must still be present.
-        # run_from_args restores os.environ from its own snapshot, which includes
-        # the sentinel because we set it before invoking run_from_args.
         assert sentinel_key in os.environ, (
             f"Sentinel environment variable {sentinel_key!r} was removed from os.environ by run_from_args. "
             f"run_from_args must restore os.environ to exactly the state it found on entry."
@@ -280,7 +258,6 @@ def test_os_environ_restored_after_run_from_args(tmp_path: pathlib.Path) -> None
             f"Expected {sentinel_value!r}, got {os.environ[sentinel_key]!r}"
         )
     finally:
-        # Clean up the sentinel regardless of test outcome.
         os.environ.pop(sentinel_key, None)
 
 
@@ -303,9 +280,8 @@ def test_os_environ_keys_added_by_repo_not_persistent(tmp_path: pathlib.Path) ->
     workspace.mkdir()
     repo_dot_dir = str(workspace / ".repo")
 
-    # Known key written by the repo trace2 subsystem.
     trace2_key = "GIT_TRACE2_PARENT_SID"
-    # Ensure the key is absent before the call so we can detect if it leaks.
+
     os.environ.pop(trace2_key, None)
     assert trace2_key not in os.environ, f"Test setup error: {trace2_key!r} is already set in os.environ."
 
@@ -319,11 +295,6 @@ def test_os_environ_keys_added_by_repo_not_persistent(tmp_path: pathlib.Path) ->
         f"Value: {os.environ.get(trace2_key)!r}. "
         f"run_from_args must restore os.environ in its finally block."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Current working directory is restored after repo API calls
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -392,11 +363,6 @@ def test_cwd_restored_after_repo_envsubst(tmp_path: pathlib.Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: os.execv is never called in embedded mode
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_os_execv_not_called_during_run_from_args(tmp_path: pathlib.Path) -> None:
     """os.execv is never called (and the original is restored) during run_from_args.
@@ -433,22 +399,15 @@ def test_os_execv_not_called_during_run_from_args(tmp_path: pathlib.Path) -> Non
             repo_dir=repo_dot_dir,
         )
     finally:
-        # run_from_args should have restored os.execv in its finally block.
-        # Restore to the true original in case it did not (so other tests are not broken).
         restored_execv = os.execv
         os.execv = original_execv
 
-    # os.execv must be restored to _tracking_execv after the call (run_from_args
-    # replaced it with its own sentinel during the call, but must restore whatever
-    # was there when it entered -- which was _tracking_execv).
     assert restored_execv is _tracking_execv, (
         "run_from_args did not restore os.execv to the value it found on entry. "
         f"Expected the tracking wrapper ({_tracking_execv!r}), "
         f"got {restored_execv!r}."
     )
 
-    # The repo command executed normally -- no RepoChangedException should have
-    # triggered the execv path.
     assert execv_call_count == 0, (
         f"os.execv (as seen by the tracking wrapper) was called {execv_call_count} time(s) "
         "during run_from_args. In embedded mode, os.execv must be intercepted and never "
@@ -486,24 +445,6 @@ def test_os_execv_restored_after_run_from_args_completes(tmp_path: pathlib.Path)
         "run_from_args did not restore os.execv to its original value after completing. "
         f"Expected the original os.execv ({original_execv!r}), got {os.execv!r}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Sequential back-to-back repo API calls do not interfere
-#
-# run_from_args and repo_run mutate process-global state (os.execv,
-# os.environ, _pager_module.EMBEDDED) under a snapshot/restore pattern.
-# This makes them safe for SEQUENTIAL reuse in the same process: each call
-# fully restores state on exit, so a subsequent call observes a clean
-# baseline. They are NOT safe for parallel invocation across threads in the
-# same process (a parallel caller's snapshot/restore races corrupt the
-# shared state). Process-level concurrency works because each process has
-# its own address space, but is out of scope here.
-#
-# These tests validate the real contract: back-to-back same-process calls
-# on different workspaces succeed and leave the process state identical to
-# what each call entered with.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -552,9 +493,6 @@ def test_sequential_run_from_args_calls_do_not_interfere(tmp_path: pathlib.Path)
 
     repo_dot_dirs: list[pathlib.Path] = []
     for idx, (workspace, manifest_bare) in enumerate(workspace_configs):
-        # Before the next call starts, os.environ must already be restored
-        # from the previous call's finally block. Any key present now that
-        # was not present at test entry means state leaked across calls.
         leaked_keys = {k: os.environ[k] for k in os.environ if k not in environ_before}
         assert not leaked_keys, (
             f"Before run_from_args call #{idx}, os.environ contains keys not present at test entry: "

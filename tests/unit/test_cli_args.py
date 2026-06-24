@@ -50,7 +50,7 @@ class TestAddCatalogSourceArgMetavar:
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
-        # Retrieve the action registered for --catalog-source.
+
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
         assert action.metavar == "<git-url>@<ref>"
 
@@ -95,7 +95,7 @@ class TestAddCatalogSourceArgDefault:
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
-        add_catalog_source_arg(parser)  # must not raise
+        add_catalog_source_arg(parser)
         args = parser.parse_args([])
         assert args.catalog_source is None
 
@@ -170,12 +170,10 @@ class TestAddCatalogSourceArgHelpText:
     def test_help_text_matches_canonical(self) -> None:
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
-        # The canonical help text lives in cli_args.py and is the single source
-        # of truth for every command that resolves a manifest repo.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
-        # The canonical help text defined in cli_args.py (the single source of truth):
+
         expected_help = (
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
             "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
@@ -225,11 +223,6 @@ class TestCycleEndToEnd:
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
         assert args.catalog_source is None
-
-
-# ---------------------------------------------------------------------------
-# Tests for add_global_flags (AC-FUNC-001 through AC-FUNC-004, AC-TEST-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -343,11 +336,6 @@ class TestAddGlobalFlagsSingleFlags:
         args = parser.parse_args(["--verbose", "--no-color"])
         assert args.verbose is True
         assert args.no_color is True
-
-
-# ---------------------------------------------------------------------------
-# Tests for _apply_global_flags (AC-FUNC-005 through AC-FUNC-008, AC-TEST-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -483,11 +471,6 @@ class TestApplyGlobalFlagsDefenceInDepth:
         assert "--verbose" in msg
 
 
-# ---------------------------------------------------------------------------
-# Tests for the --no-update-check global flag (spec Section 7.1 / FR-29 / AC-28)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoUpdateCheckGlobalFlag:
     """add_global_flags registers the --no-update-check global flag."""
@@ -531,7 +514,5 @@ class TestNoUpdateCheckGlobalFlag:
         """_apply_global_flags does not read no_update_check (consumed by the cli hook)."""
         from kanon_cli.core.cli_args import _apply_global_flags
 
-        # A namespace lacking no_update_check still applies cleanly: the flag is
-        # read by the update-check hook in cli.main, not by _apply_global_flags.
         args = argparse.Namespace(quiet=False, verbose=False, no_color=False)
-        _apply_global_flags(args)  # must not raise AttributeError
+        _apply_global_flags(args)

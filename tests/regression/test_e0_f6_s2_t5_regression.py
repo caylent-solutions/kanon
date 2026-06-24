@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T5: constraint resolution called twice.
 
 Bug reference: E0-F6-S2-T5 / Bug 9 -- when a Project has a PEP 440 version
@@ -58,11 +44,6 @@ from unittest import mock
 import pytest
 
 from kanon_cli.repo.project import Project
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(
@@ -124,11 +105,6 @@ def _make_success_result(
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- resolution is called only once when invoked from two call sites
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_ls_remote_called_once_across_two_call_sites(
     monkeypatch: pytest.MonkeyPatch,
@@ -159,9 +135,8 @@ def test_regression_ls_remote_called_once_across_two_call_sites(
     success = _make_success_result()
 
     with mock.patch("subprocess.run", return_value=success) as mock_run:
-        # First call -- simulates Sync_NetworkHalf() invoking resolution.
         project._ResolveVersionConstraint()
-        # Second call -- simulates GetRevisionId() invoking resolution.
+
         project._ResolveVersionConstraint()
 
     assert mock_run.call_count == 1, (
@@ -172,11 +147,6 @@ def test_regression_ls_remote_called_once_across_two_call_sites(
         "round-trips. If the flag is missing or not checked, Bug 9 has regressed and "
         "every constrained project will make an extra network call per sync cycle."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- exact bug condition: sequential calls from separate call sites
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -250,11 +220,6 @@ def test_regression_exact_bug_condition_double_resolution(
         f"{project._constraint_resolved!r} after successful resolution of {constraint!r}. "
         "Expected True -- the flag must be set after the first successful resolution."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- current fixed code prevents double resolution across call sites
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -345,11 +310,6 @@ def test_regression_fixed_code_single_resolution_per_project(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: _constraint_resolved flag present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_constraint_resolved_flag_present_in_source() -> None:
     """AC-FUNC-001: The _constraint_resolved flag is present and used in _ResolveVersionConstraint.
@@ -378,8 +338,6 @@ def test_regression_constraint_resolved_flag_present_in_source() -> None:
         "GetRevisionId() invoke the method on the same Project. Restore the flag check."
     )
 
-    # The guard check must appear as a conditional return -- verify the source
-    # contains the early-return pattern.
     assert "if self._constraint_resolved" in resolve_source or (
         "_constraint_resolved" in resolve_source and "return" in resolve_source
     ), (
@@ -409,11 +367,6 @@ def test_regression_constraint_resolved_flag_present_in_source() -> None:
         "_ResolveVersionConstraint(). Without the reset, changing revisionExpr after "
         "resolution leaves the flag True and the new constraint is never resolved."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- resolution produces no stdout output on success
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -37,11 +37,6 @@ from kanon_cli.commands.catalog import AuditFinding, _check_tag_format
 from tests.unit.conftest import _make_ls_remote_stub
 
 
-# ---------------------------------------------------------------------------
-# Fixture builder helpers
-# ---------------------------------------------------------------------------
-
-
 def _build_catalog_fixture(
     tmp_path: pathlib.Path,
     entry_name: str,
@@ -72,7 +67,6 @@ def _build_catalog_fixture(
     repo_specs_dir = tmp_path / "repo-specs"
     repo_specs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build the project elements for each revision
     project_elements = "\n".join(
         f'  <project name="tool-{i}" remote="{remote_name}" path="tools/tool-{i}" revision="{rev}" />'
         for i, rev in enumerate(project_revisions)
@@ -116,11 +110,6 @@ def _run_tag_format_check(
     """
     stub = _make_ls_remote_stub(tags)
     return _check_tag_format(target_path, stub)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Happy path -- <project> pinned to PEP-440 tag => zero warnings
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -186,11 +175,6 @@ class TestProjectTagFormatHappyPath:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Warning path -- <project> pinned to non-PEP-440 tag => warning
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectTagFormatWarningPath:
     """Warning path: when a <project revision="..."> pins a non-PEP-440 tag, a warning fires.
@@ -252,7 +236,7 @@ class TestProjectTagFormatWarningPath:
             expected_tag_in_warning: The tag string expected in the warning message.
         """
         target_path = _build_catalog_fixture(tmp_path, entry_name, [non_pep440_revision])
-        # Simulate the manifest repo containing the same non-PEP-440 tag
+
         findings = _run_tag_format_check(target_path, [non_pep440_revision])
 
         warn_findings = [f for f in findings if f.kind == "warn"]
@@ -317,11 +301,6 @@ class TestProjectTagFormatWarningPath:
         assert "unaddressable" in findings[0].message, (
             f"Expected 'unaddressable' in T001 warning message, got: {findings[0].message!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Verify existing check covers <project>-referenced tags
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -409,11 +388,11 @@ class TestExistingCheckCoversProjectReferencedTags:
         all_revisions = pep440_revisions + non_pep440_revisions
 
         target_path = _build_catalog_fixture(tmp_path, "mixed-tool", all_revisions)
-        # Simulate the manifest repo containing all tags (PEP-440 and non-PEP-440)
+
         findings = _run_tag_format_check(target_path, all_revisions)
 
         warn_findings = [f for f in findings if f.kind == "warn"]
-        # Expect exactly one warning per non-PEP-440 tag
+
         assert len(warn_findings) == len(non_pep440_revisions), (
             f"Expected {len(non_pep440_revisions)} warnings for non-PEP-440 revisions "
             f"{non_pep440_revisions!r}, got {len(warn_findings)}: {warn_findings}"
@@ -425,13 +404,9 @@ class TestExistingCheckCoversProjectReferencedTags:
                 f"Expected warning for non-PEP-440 revision '{non_pep440}', "
                 f"but no warning message contained it. Messages: {warned_messages}"
             )
-        # Verify the warned tags are exactly the non-PEP-440 revisions by
-        # checking the warned tag names directly from findings rather than
-        # doing a substring search (which could match '1.0.0' inside 'v1.0.0').
+
         warned_tags = set()
         for f in warn_findings:
-            # Extract the tag name from messages like "Tag 'X' is unaddressable..."
-            # by checking which of the all_revisions appears in the message.
             for rev in all_revisions:
                 if f"'{rev}'" in f.message:
                     warned_tags.add(rev)
@@ -440,11 +415,6 @@ class TestExistingCheckCoversProjectReferencedTags:
                 f"Expected no warning for PEP-440 revision '{pep440}', "
                 f"but it appeared as a warned tag. Warned tags: {warned_tags}"
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end demonstration
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -486,7 +456,6 @@ class TestAcCycle001EndToEnd:
         target_path = _build_catalog_fixture(tmp_path, "cycle-tool", [non_pep440_tag])
         findings = _run_tag_format_check(target_path, [non_pep440_tag])
 
-        # Assert the warning fires
         warn_findings = [f for f in findings if f.kind == "warn"]
         assert len(warn_findings) == 1, (
             f"AC-CYCLE-001: expected exactly 1 WARN for non-PEP-440 project revision "

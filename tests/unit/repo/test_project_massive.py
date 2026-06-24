@@ -28,16 +28,13 @@ def _proj(tmp_path, name="test"):
     gitdir = str(tmp_path / ".repo" / "projects" / f"{name}.git")
     objdir = str(tmp_path / ".repo" / "project-objects" / f"{name}.git")
 
-    # Create minimal directory structure
     os.makedirs(worktree, exist_ok=True)
     os.makedirs(gitdir, exist_ok=True)
     os.makedirs(objdir, exist_ok=True)
     os.makedirs(str(tmp_path / ".repo" / "manifests"), exist_ok=True)
 
-    # Create Project without calling __init__
     p = project.Project.__new__(project.Project)
 
-    # Mock manifest
     p.manifest = mock.MagicMock()
     p.manifest.topdir = topdir
     p.manifest.repodir = str(tmp_path / ".repo")
@@ -48,20 +45,17 @@ def _proj(tmp_path, name="test"):
     p.manifest.default = mock.MagicMock()
     p.manifest.default.sync_c = False
 
-    # Mock manifest project
     p.manifest.manifestProject = mock.MagicMock()
     p.manifest.manifestProject.worktree = str(tmp_path / ".repo" / "manifests")
     p.manifest.manifestProject.depth = None
     p.manifest.manifestProject.dissociate = False
 
-    # Basic project attributes
     p.name = name
     p.relpath = name
     p.gitdir = gitdir
     p.objdir = objdir
     p.worktree = worktree
 
-    # Remote configuration
     p.remote = mock.MagicMock()
     p.remote.name = "origin"
     p.remote.url = "https://example.com/test.git"
@@ -70,14 +64,12 @@ def _proj(tmp_path, name="test"):
     p.remote.review = None
     p.remote.revision = None
 
-    # Revision information
     p.revisionExpr = "refs/heads/main"
-    p.revisionId = "a" * 40  # 40-char SHA
+    p.revisionId = "a" * 40
     p.dest_branch = None
     p.upstream = None
     p.old_revision = None
 
-    # Project configuration
     p.parent = None
     p.use_git_worktrees = False
     p.has_subprojects = False
@@ -93,24 +85,19 @@ def _proj(tmp_path, name="test"):
     p.linkfiles = []
     p.rebase = True
 
-    # Config mock
     p.config = mock.MagicMock()
     p.config.GetBoolean.return_value = None
     p.config.GetString.return_value = None
 
-    # Git command mocks
     p.bare_git = mock.MagicMock()
     p.work_git = mock.MagicMock()
 
-    # Refs mock
     p.bare_ref = mock.MagicMock()
     p.bare_ref.all = {}
 
-    # User identity
     p._userident_name = None
     p._userident_email = None
 
-    # Caching flag for _ResolveVersionConstraint (mirrors __init__ default).
     p._constraint_resolved = False
 
     return p
@@ -277,7 +264,6 @@ class TestSyncNetworkHalf:
                                     partial_clone_exclude=[],
                                 )
 
-                                # Should call InitGitDir twice (once for False, once for error)
                                 assert init_mock.call_count == 1
 
     def test_check_dir_reference_failure_without_force_sync(self, tmp_path):
@@ -298,7 +284,7 @@ class TestSyncNetworkHalf:
     def test_use_alternates_creates_symlink(self, tmp_path):
         """UseAlternates should create alternates file."""
         p = _proj(tmp_path)
-        # Create a symlink at gitdir/objects
+
         os.makedirs(p.gitdir, exist_ok=True)
         temp_target = os.path.join(str(tmp_path), "temp")
         os.makedirs(temp_target, exist_ok=True)
@@ -447,7 +433,7 @@ class TestSyncNetworkHalf:
     def test_optimized_fetch_skips_remote(self, tmp_path):
         """Optimized fetch with immutable revision should skip remote fetch."""
         p = _proj(tmp_path)
-        p.revisionExpr = "a" * 40  # SHA
+        p.revisionExpr = "a" * 40
 
         with mock.patch.object(
             type(p),
@@ -466,7 +452,6 @@ class TestSyncNetworkHalf:
                                     partial_clone_exclude=[],
                                 )
 
-                                # Remote fetch should not be called
                                 fetch_mock.assert_not_called()
                                 assert result.success
                                 assert not result.remote_fetched
@@ -566,7 +551,7 @@ class TestSyncLocalHalf:
     def test_missing_gitdir_fails(self, tmp_path):
         """Missing gitdir should fail with LocalSyncFail."""
         p = _proj(tmp_path)
-        # Remove gitdir
+
         import shutil
 
         shutil.rmtree(p.gitdir)
@@ -813,8 +798,8 @@ class TestSyncLocalHalf:
                                     with mock.patch.object(p, "GetRemote"):
                                         with mock.patch.object(p, "_revlist") as revlist_mock:
                                             revlist_mock.side_effect = [
-                                                ["commit1"],  # upstream_gain
-                                                ["local_sha user@example.com"],  # local_changes
+                                                ["commit1"],
+                                                ["local_sha user@example.com"],
                                             ]
                                             with mock.patch.object(p.work_git, "merge_base"):
                                                 with mock.patch.object(
@@ -833,7 +818,6 @@ class TestSyncLocalHalf:
                                                             errors=errors,
                                                         )
 
-                                                        # Should queue rebase
                                                         assert syncbuf.later2.call_count >= 1
 
     def test_reset_hard_queued(self, tmp_path):
@@ -865,8 +849,8 @@ class TestSyncLocalHalf:
                                     with mock.patch.object(p, "GetRemote"):
                                         with mock.patch.object(p, "_revlist") as revlist_mock:
                                             revlist_mock.side_effect = [
-                                                ["commit1"],  # upstream_gain
-                                                ["local_sha other@example.com"],  # local_changes
+                                                ["commit1"],
+                                                ["local_sha other@example.com"],
                                             ]
                                             with mock.patch.object(p.work_git, "merge_base"):
                                                 with mock.patch.object(

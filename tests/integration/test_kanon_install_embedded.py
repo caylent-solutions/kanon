@@ -65,7 +65,7 @@ class TestInstallUsesEmbeddedPythonAPI:
         def capturing_run(cmd, *args, **kwargs):
             if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "repo":
                 subprocess_calls.append(list(cmd))
-            # Allow git ls-remote through (used by version resolution)
+
             return original_subprocess_run(cmd, *args, **kwargs)
 
         with (
@@ -257,18 +257,6 @@ class TestInstallMarketplaceDisabled:
         )
 
 
-# ---------------------------------------------------------------------------
-# Regression test for the relative .kanon path bug.
-#
-# `kanon install .kanon` (relative positional argument) previously crashed
-# with `ManifestParseError: manifest_file must be abspath` because the CLI
-# handler passed `pathlib.Path('.kanon')` straight through to the repo
-# manifest parser. This regression test exercises the full end-to-end CLI
-# path (subprocess, file:// manifest, real repo_init/envsubst/sync) with a
-# relative argument to confirm the CLI boundary normalizes the path.
-# ---------------------------------------------------------------------------
-
-
 def _git_relpath(args: list[str], cwd: Path) -> None:
     result = subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True, text=True)
     if result.returncode != 0:
@@ -281,7 +269,7 @@ def _build_file_url_manifest_fixture(base: Path) -> tuple[str, str]:
     Returns (manifest_url, fetch_base_url) suitable for a `.kanon` file's
     KANON_SOURCE_<name>_URL and a manifest's <remote fetch=...>.
     """
-    # Content repo: a single project with a README, then a bare clone.
+
     content_work = base / "content-work"
     content_work.mkdir(parents=True)
     _git_relpath(["init", "-b", "main"], cwd=content_work)
@@ -293,7 +281,6 @@ def _build_file_url_manifest_fixture(base: Path) -> tuple[str, str]:
     content_bare = base / "content-bare"
     _git_relpath(["clone", "--bare", str(content_work), str(content_bare)], cwd=base)
 
-    # Manifest repo referencing content-bare via a file:// fetch URL.
     manifest_work = base / "manifest-work"
     manifest_work.mkdir(parents=True)
     _git_relpath(["init", "-b", "main"], cwd=manifest_work)
@@ -355,14 +342,9 @@ class TestInstallRelativeKanonPath:
         )
 
         env = dict(os.environ)
-        # Use the manifest bare repo itself as the catalog source, so that
-        # _resolve_ref_to_sha (git ls-remote) can succeed without a network call.
-        # The manifest_url already has the file:// prefix; append @main to form
-        # the <git-url>@<ref> catalog source format.
+
         env["KANON_CATALOG_SOURCES"] = f"{manifest_url}@main"
-        # The manifest fixture uses file:// URLs for its <remote fetch=...> entries.
-        # KANON_ALLOW_INSECURE_REMOTES=1 disables the HTTPS-by-default security check
-        # so the install can proceed with the local file:// bare repos.
+
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
 
         result = subprocess.run(
@@ -383,8 +365,7 @@ class TestInstallRelativeKanonPath:
         assert "manifest_file must be abspath" not in result.stderr, (
             f"ManifestParseError must not appear in stderr; got: {result.stderr!r}"
         )
-        # The install lifecycle creates .kanon-data/sources/<name>/ with .repo/ inside,
-        # under the shared store (<KANON_HOME>/store) that the subprocess inherits via env.
+
         store_base = Path(env["KANON_HOME"]) / "store"
         source_dir = store_base / ".kanon-data" / "sources" / "primary" / ".repo"
         assert source_dir.is_dir(), (

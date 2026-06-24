@@ -29,10 +29,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Info Flags Test User"
 _GIT_USER_EMAIL = "repo-info-flags@example.com"
@@ -44,21 +40,16 @@ _PROJECT_PATH = "info-flags-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for invalid argument values or constraint violations.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-info-flags-repo-dir"
 
-# Inline-value tokens for negative tests (boolean flags reject inline values).
-# The optparse parser exits 2 with '--<flag> option does not take a value' when
-# a store_true flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Known flags from Info._Options() -- used to build parametrize lists.
-# All are boolean store_true or store_false flags; none accept a typed value.
-# Note: -b is a hidden deprecated flag (SUPPRESS_HELP) that maps to dest=current_branch;
-# it is registered in _Options() and must be covered by AC-TEST-001.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-d", "short-diff"),
     ("--diff", "long-diff"),
@@ -75,8 +66,7 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--no-current-branch", "no-current-branch"),
 ]
 
-# Long-form flags that accept inline values in optparse (tested in AC-TEST-002).
-# Only long-form flags can be supplied with '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--diff", "diff"),
     ("--overview", "overview"),
@@ -84,18 +74,6 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--no-current-branch", "no-current-branch"),
     ("--local-only", "local-only"),
 ]
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) follow the same pattern
-# as in test_repo_info_happy.py. Consolidating them into a shared module
-# requires touching files outside this task's Changes Manifest. This
-# duplication is tracked as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -222,11 +200,6 @@ def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     return checkout_dir, repo_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/info.py
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInfoFlagsValidValues:
     """AC-TEST-001: Every ``_Options()`` flag in subcmds/info.py has a valid-value test.
@@ -246,8 +219,6 @@ class TestRepoInfoFlagsValidValues:
     accepts the flag without an argument-parser error.
     """
 
-    # Short-form flags cannot be supplied with '--flag=value' and cannot be tested
-    # for inline-value rejection in AC-TEST-002, but they do have valid-value tests here.
     _ALL_BOOL_FLAGS: list[tuple[str, str]] = _BOOL_STORE_TRUE_FLAGS + _BOOL_STORE_FALSE_FLAGS
 
     @pytest.mark.parametrize(
@@ -362,11 +333,6 @@ class TestRepoInfoFlagsValidValues:
             f"'--no-current-branch' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with inline values (boolean flags)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -486,11 +452,6 @@ class TestRepoInfoFlagsInvalidValues:
         assert "does not take a value" in result.stderr, (
             f"Expected 'does not take a value' in stderr.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -657,11 +618,6 @@ class TestRepoInfoFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInfoFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -795,11 +751,6 @@ class TestRepoInfoFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

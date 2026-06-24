@@ -18,11 +18,6 @@ import pytest
 from kanon_cli.core.metadata import CatalogMetadata
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_metadata(
     name: str = "entry-a",
     url: str = "https://example.com/manifest-repo.git",
@@ -53,11 +48,6 @@ HEADER = (
     "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\n"
     "KANON_MARKETPLACE_INSTALL=<true|false>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# Tests for within-request collision detection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -130,7 +120,6 @@ class TestWithinRequestCollision:
         """Two entries with distinct normalised names pass without error."""
         from kanon_cli.commands.add import _check_within_request_collisions
 
-        # Should not raise
         _check_within_request_collisions(["entry-a", "entry-b"])
 
     def test_single_entry_no_error(self) -> None:
@@ -144,11 +133,6 @@ class TestWithinRequestCollision:
         from kanon_cli.commands.add import _check_within_request_collisions
 
         _check_within_request_collisions([])
-
-
-# ---------------------------------------------------------------------------
-# Tests for against-existing-blocks collision detection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -215,7 +199,7 @@ class TestSameNameGuardAndAutoSuffix:
         assert "refs/tags/1.0.0" in captured.err
         assert "refs/tags/2.0.0" in captured.err
         assert "repo-specs/foo-marketplace.xml" in captured.err
-        # Must reference --force or 'kanon remove'
+
         assert "--force" in captured.err or "kanon remove" in captured.err
 
     def test_cross_source_collision_is_not_an_error_but_auto_suffixes(self, tmp_path: pathlib.Path) -> None:
@@ -241,7 +225,7 @@ class TestSameNameGuardAndAutoSuffix:
             entry_ref="refs/tags/2.0.0",
             force=False,
         )
-        # Repo name "new" -> suffix; no SystemExit.
+
         assert mode == "new"
         assert alias == "entry_a_new"
 
@@ -286,11 +270,6 @@ class TestSameNameGuardAndAutoSuffix:
             force=True,
         )
         assert (alias, mode) == ("entry_a", "force_overwrite")
-
-
-# ---------------------------------------------------------------------------
-# Tests for --force overwrite
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -364,14 +343,14 @@ class TestForceOverwrite:
         )
 
         content = kanon_file.read_text()
-        # Surrounding content preserved
+
         assert "GITBASE=" in content
         assert "KANON_SOURCE_other_entry_URL=https://other.example.com/repo.git" in content
         assert "KANON_SOURCE_other_entry_REF=refs/tags/3.0.0" in content
-        # New triple present
+
         assert "KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git" in content
         assert "KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in content
-        # Old triple gone
+
         assert "https://old.example.com/repo.git" not in content
         assert "refs/tags/1.0.0" not in content
 
@@ -406,7 +385,7 @@ class TestForceOverwrite:
         )
 
         content = kanon_file.read_text()
-        # HEADER_LINE must appear before the new URL line
+
         pos_header = content.index("HEADER_LINE=")
         pos_url = content.index("KANON_SOURCE_entry_a_URL=https://new")
         pos_other = content.index("OTHER_VAR=")
@@ -440,11 +419,6 @@ class TestForceOverwrite:
         )
         captured = capsys.readouterr()
         assert "entry_a" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for --dry-run diff rendering
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -542,10 +516,10 @@ class TestDryRunDiff:
             force=True,
         )
         captured = capsys.readouterr()
-        # Old lines should appear with '-' prefix
+
         assert "-KANON_SOURCE_entry_a_URL=https://old.example.com/repo.git" in captured.out
         assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in captured.out
-        # New lines should appear with '+' prefix
+
         assert "+KANON_SOURCE_entry_a_URL=https://new.example.com/repo.git" in captured.out
         assert "+KANON_SOURCE_entry_a_REF=refs/tags/2.0.0" in captured.out
 
@@ -578,11 +552,6 @@ class TestDryRunDiff:
         )
 
         assert kanon_file.read_text() == original
-
-
-# ---------------------------------------------------------------------------
-# Tests for read_existing_triple_block helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -626,11 +595,6 @@ class TestReadExistingTripleBlock:
         kanon_file = tmp_path / ".kanon"
         result = _read_existing_source_block(kanon_file, "entry_a")
         assert result == (None, None, None)
-
-
-# ---------------------------------------------------------------------------
-# Tests for argparse flags registered by the add subcommand
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -714,17 +678,12 @@ class TestAddSubparserFlags:
                 buf = io.StringIO()
                 add_parser.print_help(file=buf)
                 help_text = buf.getvalue()
-                # Must mention either collision or overwrite in the context of these flags
+
                 assert (
                     "collision" in help_text.lower() or "overwrite" in help_text.lower() or "force" in help_text.lower()
                 )
                 return
         raise AssertionError("add subparser not found")
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_add --dry-run and --force paths (unit-level, mocked)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -819,9 +778,9 @@ class TestRunAddDryRunAndForcePaths:
             result = run_add(args)
 
         assert result == 0
-        # File must not be modified
+
         assert kanon_file.read_text() == original_content
-        # Dry-run output must show + prefixed lines
+
         captured = capsys.readouterr()
         assert "+KANON_SOURCE_entry_a_URL=" in captured.out
 
@@ -875,8 +834,7 @@ class TestRunAddDryRunAndForcePaths:
             result = run_add(args)
 
         assert result == 0
-        # The block is overwritten at the bare alias (no auto-suffix); the PATH
-        # is refreshed and no separate suffixed alias block is written.
+
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml" in content
         assert "repo-specs/stale-path.xml" not in content
@@ -919,6 +877,6 @@ class TestRunAddDryRunAndForcePaths:
             result = run_add(args)
 
         assert result == 0
-        # Triple appended (no existing block to overwrite)
+
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content

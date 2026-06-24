@@ -111,7 +111,6 @@ class TestInstallEnforcesHttpsPolicy:
                 lockfile_path=lockfile_path,
             )
 
-        # Verify all calls had allow_insecure=False
         for c in mock_policy.call_args_list:
             assert c.kwargs.get("allow_insecure") is False or (len(c.args) >= 2 and c.args[1] is False)
 
@@ -147,7 +146,6 @@ class TestInstallEnforcesHttpsPolicy:
                 lockfile_path=lockfile_path,
             )
 
-        # Verify at least one call had allow_insecure=True
         any_true = any(
             c.kwargs.get("allow_insecure") is True or (len(c.args) >= 2 and c.args[1] is True)
             for c in mock_policy.call_args_list
@@ -208,7 +206,6 @@ class TestInstallEnforcesHttpsPolicy:
             mock_resolve.return_value = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
             mock_walk.return_value = MagicMock(includes=[])
 
-            # Should not raise -- the override disables the security check
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
@@ -232,7 +229,6 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
         """
         monkeypatch.delenv("KANON_ALLOW_INSECURE_REMOTES", raising=False)
 
-        # Write a .kanon with one source
         kanonenv = _write_kanon(tmp_path, "https://example.com/repo.git")
         lockfile_path = tmp_path / ".kanon.lock"
 
@@ -243,15 +239,13 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
             write_lockfile,
         )
 
-        # Build a lockfile whose kanon_hash matches (so state == LOCKFILE_CONSISTENT)
-        # but whose sources list is EMPTY (no entry for 'mysource').
         kanon_hash_val = _kanon_hash(kanonenv)
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2026-01-01T00:00:00Z",
             generator="kanon-cli/test",
             kanon_hash=kanon_hash_val,
-            sources=[],  # deliberately empty -- 'mysource' is absent
+            sources=[],
         )
         write_lockfile(lf, lockfile_path)
 

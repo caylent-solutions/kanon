@@ -84,10 +84,10 @@ class TestWhyScopeConstantsNoInlineLiterals:
         Bare string literals are detected as quoted occurrences: 'top_level' or
         "top_level" that are NOT part of an import statement or comment.
         """
-        # Remove comment lines to avoid false negatives for documented constants.
+
         non_comment_lines = [line for line in why_py_source.splitlines() if not line.lstrip().startswith("#")]
         non_comment_source = "\n".join(non_comment_lines)
-        # Pattern: quoted 'top_level' or "top_level" outside import statements.
+
         literal_pattern = re.compile(r"""(?<!\w)['"](top_level)['"]\s*(?!.*\bimport\b)""")
         matches = literal_pattern.findall(non_comment_source)
         assert not matches, (

@@ -25,11 +25,6 @@ def _ls_remote_hit(_url: str, ref: str) -> tuple[int, str, str]:
     return (0, f"deadbeef\t{ref}\n", "")
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Validate marketplace integration tests (13 tests)
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: Path, content: str) -> Path:
     """Write XML to path (creating parent dirs) and return path."""
     path.parent.mkdir(parents=True, exist_ok=True)

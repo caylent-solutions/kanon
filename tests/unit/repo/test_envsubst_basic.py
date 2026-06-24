@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for envsubst basic semantics.
 
 Covers the three documented basic forms of environment variable substitution
@@ -37,11 +23,6 @@ from kanon_cli.repo.manifest_xml import XmlManifest
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd() -> Envsubst:
     """Return an Envsubst instance ready for direct method calls.
 
@@ -63,11 +44,6 @@ def _make_manifest_dir(base: pathlib.Path) -> pathlib.Path:
     manifests_dir = base / ".repo" / "manifests"
     manifests_dir.mkdir(parents=True, exist_ok=True)
     return manifests_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: $VAR and ${VAR} both substitute (ENVSUBST-001 + ENVSUBST-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -129,11 +105,6 @@ def test_dollar_var_and_brace_var_both_substitute(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: $$ produces a literal $ (ENVSUBST-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_double_dollar_preserved_as_literal_dollar_signs() -> None:
     """AC-TEST-002: A $$ sequence in an attribute value is preserved unchanged.
@@ -169,11 +140,6 @@ def test_double_dollar_preserved_as_literal_dollar_signs() -> None:
         f"Expected annotation attribute to be 'prefix$$suffix' after processing "
         f"($$  must not be corrupted), but got {actual_annotation!r}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: linkfile absolute dest after substitution is accepted (ENVSUBST-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -216,7 +182,7 @@ def test_linkfile_absolute_dest_after_substitution_is_accepted(
     manifest_path.write_text(manifest_content, encoding="utf-8")
 
     cmd = _make_cmd()
-    # Resolve: ${ENVSUBST_BASIC_ABS_DEST_DIR}/settings.yml => /opt/my-install-dir/settings.yml
+
     abs_dir_value = "/opt/my-install-dir"
 
     with mock.patch.dict(os.environ, {env_var_name: abs_dir_value}):
@@ -235,19 +201,11 @@ def test_linkfile_absolute_dest_after_substitution_is_accepted(
         f"Manifest content:\n{result_content}"
     )
 
-    # Verify that the resolved absolute path passes the same validation used at
-    # manifest parse time for linkfile dest attributes (abs_ok=True).
     validation_result = XmlManifest._CheckLocalPath(abs_dest_value, abs_ok=True)
     assert validation_result is None, (
         f"Expected _CheckLocalPath to accept the resolved absolute dest path "
         f"{abs_dest_value!r} (abs_ok=True), but it returned an error: {validation_result!r}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: envsubst handles the three documented basic forms
-# AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -293,7 +251,6 @@ def test_envsubst_handles_three_documented_basic_forms(
 
     result_content = manifest_path.read_text(encoding="utf-8")
 
-    # ENVSUBST-001: bare $VAR form resolved
     assert bare_value in result_content, (
         f"Expected bare $VAR resolved value {bare_value!r} in manifest, "
         f"but it was not found.\nManifest content:\n{result_content}"
@@ -303,7 +260,6 @@ def test_envsubst_handles_three_documented_basic_forms(
         f"but it is still present.\nManifest content:\n{result_content}"
     )
 
-    # ENVSUBST-002: ${VAR} form resolved
     assert brace_value in result_content, (
         f"Expected brace ${{VAR}} resolved value {brace_value!r} in manifest, "
         f"but it was not found.\nManifest content:\n{result_content}"
@@ -313,12 +269,10 @@ def test_envsubst_handles_three_documented_basic_forms(
         f"but it is still present.\nManifest content:\n{result_content}"
     )
 
-    # ENVSUBST-003: $$ sequence preserved
     assert "$$" in result_content, (
         f"Expected '$$' to be preserved in the annotation attribute, "
         f"but it was not found.\nManifest content:\n{result_content}"
     )
 
-    # AC-CHANNEL-001: nothing unexpected on stderr
     captured = capsys.readouterr()
     assert captured.err == "", f"Expected no output on stderr after EnvSubst(), but got:\n{captured.err!r}"

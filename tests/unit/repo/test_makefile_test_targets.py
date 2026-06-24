@@ -91,7 +91,7 @@ def test_make_validate_runs_check_and_test(repo_root):
         text=True,
     )
     assert result.returncode == 0, f"make -n validate failed: {result.stderr}"
-    # validate should run check (which includes lint + format-check) and test
+
     assert "ruff check" in result.stdout, f"validate must include lint (ruff check), got: {result.stdout}"
     assert "pytest" in result.stdout, f"validate must include test (pytest), got: {result.stdout}"
 
@@ -109,7 +109,6 @@ def test_pytest_markers_registered(repo_root):
     with open(pyproject_path) as f:
         content = f.read()
 
-    # Check for marker registrations in [tool.pytest.ini_options]
     assert "unit" in content, "pyproject.toml must register 'unit' marker"
     assert "functional" in content, "pyproject.toml must register 'functional' marker"
 
@@ -143,6 +142,5 @@ def test_pyproject_has_marker_comments(repo_root):
     with open(pyproject_path) as f:
         content = f.read()
 
-    # Markers should have descriptions (format: "name: description")
     assert re.search(r'"unit:\s+\S', content), "unit marker must have a description in pyproject.toml"
     assert re.search(r'"functional:\s+\S', content), "functional marker must have a description in pyproject.toml"

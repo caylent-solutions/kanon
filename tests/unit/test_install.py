@@ -222,11 +222,9 @@ class TestMarketplace:
 
 @pytest.mark.unit
 class TestInstallLifecycle:
-    # Catalog source used across all TestInstallLifecycle tests.
     _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
     _FAKE_SHA = "a" * 40
-    # _resolve_ref_to_sha now returns a _RefResolution named tuple; patch
-    # with a consistent fake result so tests do not require network access.
+
     _FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
     def test_create_source_dirs_oserror_causes_system_exit(
@@ -241,9 +239,7 @@ class TestInstallLifecycle:
             "KANON_SOURCE_build_NAME=build\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
-        # install is hermetic: a populated KANON_CATALOG_SOURCES is ignored, so its
-        # presence does not affect this test; this test exercises the OSError ->
-        # SystemExit path.
+
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         args = argparse.Namespace(
             kanonenv_path=kanonenv,
@@ -353,7 +349,7 @@ class TestInstallLifecycle:
         )
         call_args = mock_reg.call_args
         assert call_args is not None
-        # Third positional arg must be the marketplace_dir path.
+
         passed_marketplace_dir = call_args[0][2]
         assert str(passed_marketplace_dir) == str(mp_dir), (
             f"register_direct_checkout_marketplaces must be called with marketplace_dir={mp_dir!r}, "
@@ -445,11 +441,6 @@ class TestInstallLifecycle:
         assert "3.0.0" in all_args, (
             f"repo_init must be called with the resolved revision '3.0.0', but call args were: {mock_init.call_args!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests for workspace lock integration in install()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -550,11 +541,6 @@ class TestInstallWorkspaceLock:
         assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"
 
 
-# ---------------------------------------------------------------------------
-# Tests for add_help=True on the 'install' subparser
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInstallSubparserHelp:
     """The 'install' subparser has add_help=True and accepts '-h'."""
@@ -604,7 +590,7 @@ class TestResetManifestsWorkingTree:
         """
         source_dir = tmp_path / ".kanon-data" / "sources" / "SRC"
         source_dir.mkdir(parents=True)
-        # Should not raise even though .repo/manifests is absent.
+
         _reset_manifests_working_tree(source_dir)
 
     def test_restores_modified_tracked_file(self, tmp_path: pathlib.Path) -> None:
@@ -616,7 +602,6 @@ class TestResetManifestsWorkingTree:
         manifests_dir = tmp_path / ".repo" / "manifests"
         self._init_git_repo(manifests_dir)
 
-        # Simulate envsubst rewriting manifest.xml.
         (manifests_dir / "manifest.xml").write_text("<manifest><!-- envsubst was here --></manifest>\n")
         status_before = subprocess.run(
             ["git", "status", "--short"], cwd=manifests_dir, capture_output=True, text=True
@@ -626,7 +611,6 @@ class TestResetManifestsWorkingTree:
         source_dir = tmp_path
         _reset_manifests_working_tree(source_dir)
 
-        # manifest.xml should be restored to its committed content.
         restored = (manifests_dir / "manifest.xml").read_text()
         assert restored == "<manifest/>\n", (
             f"Expected manifest.xml to be restored to '<manifest/>\\n', got {restored!r}"
@@ -669,10 +653,9 @@ class TestResetManifestsWorkingTree:
         manifests_dir.mkdir(parents=True)
         sentinel = manifests_dir / "manifest.xml"
         sentinel.write_text("<manifest/>\n")
-        # No .git entry -- not a git working tree.
 
         source_dir = tmp_path
-        # Must not raise; directory contents must be unchanged.
+
         _reset_manifests_working_tree(source_dir)
 
         assert sentinel.exists(), "manifest.xml should be untouched when directory is not a git repo"
@@ -689,7 +672,6 @@ class TestResetManifestsWorkingTree:
         manifests_dir = tmp_path / ".repo" / "manifests"
         self._init_git_repo(manifests_dir)
 
-        # Simulate a failed git checkout on a valid git repo by patching subprocess.run.
         failed_result = MagicMock()
         failed_result.returncode = 1
         failed_result.stderr = "simulated git checkout failure"
@@ -744,11 +726,6 @@ class TestRefreshRepoInitError:
             "RefreshRepoInitError must be an InstallError subclass so the CLI "
             "catches it and prints a structured ERROR: message"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-7: install writes marketplace_registered to lockfile
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -837,11 +814,6 @@ class TestInstallMarketplaceLockfileState:
             "install with no KANON_SOURCE_<alias>_MARKETPLACE=true dependency must write marketplace_registered=false"
         )
         assert lf.marketplace_dir == "", "install must write empty marketplace_dir when no marketplace is registered"
-
-
-# ---------------------------------------------------------------------------
-# AC-23: install resolves the artifact base under the KANON_HOME store
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -973,11 +945,6 @@ class TestInstallKanonHomeStore:
             locked_parent.chmod(stat.S_IRWXU)
 
 
-# ---------------------------------------------------------------------------
-# E1-F1-S2-T1: install.py imports run_git_ls_remote from core.git_runner
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInstallImportsGitRunner:
     """install.py imports run_git_ls_remote from kanon_cli.core.git_runner (AC-4)."""
@@ -998,15 +965,10 @@ class TestInstallImportsGitRunner:
         assert "KANON_GIT_LS_REMOTE_TIMEOUT" in source, (
             "install.py must reference KANON_GIT_LS_REMOTE_TIMEOUT from constants"
         )
-        # The old inline literal must no longer appear
+
         assert 'os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT"' not in source, (
             "install.py must not contain inline os.environ.get KANON_GIT_LS_REMOTE_TIMEOUT literal"
         )
-
-
-# ---------------------------------------------------------------------------
-# E2-F1-S3-T1: aggregate_symlinks routes directory links through create_dirsymlink
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1024,7 +986,7 @@ class TestAggregateSymlinksUsesJunctionHelper:
 
         mock_helper.assert_called_once()
         call_args = mock_helper.call_args
-        # First arg is link_path (in .packages/), second is target (resolved pkg)
+
         assert call_args[0][0].name == "test-lint", (
             "create_dirsymlink must be called with link_path named after the package"
         )
@@ -1050,16 +1012,11 @@ class TestAggregateSymlinksUsesJunctionHelper:
         target.mkdir()
         link = tmp_path / "the-link"
 
-        # Create an unwritable directory to force symlink failure
-        link.mkdir()  # link is a directory -- symlink_to will fail since path exists and is not a symlink
+        link.mkdir()
 
         with pytest.raises(OSError):
             create_dirsymlink(link, target)
 
-
-# ---------------------------------------------------------------------------
-# utf-8 encoding sweep (AC-12)
-# ---------------------------------------------------------------------------
 
 _INSTALL_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
 
@@ -1085,11 +1042,6 @@ class TestInstallPyUtf8EncodingSweep:
             f"core/install.py has bare write_text() calls: {write_bare}. "
             "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
         )
-
-
-# ---------------------------------------------------------------------------
-# E5-F1-S2-T1: content-addressed store publish (atomic rename + per-entry lock)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1252,8 +1204,7 @@ class TestPublishStoreEntry:
         captured: dict[str, Exception] = {}
 
         def nested_materialize(dest: pathlib.Path) -> None:
-            # While THIS publish holds the per-entry lock, a nested publish of the
-            # same address must fail fast through the per-entry lock guard.
+
             try:
                 publish_store_entry(store, address, lambda d: None)
             except WorkspaceLockReentranceError as exc:

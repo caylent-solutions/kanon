@@ -54,60 +54,36 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Selfupdate Flags Test User"
 _GIT_USER_EMAIL = "repo-selfupdate-flags@example.com"
 _PROJECT_PATH = "selfupdate-flags-test-project"
 
-# CLI token for the selfupdate subcommand.
+
 _CLI_TOKEN_SELFUPDATE = "selfupdate"
 
-# Composed CLI command phrase for diagnostic messages (no inline literals).
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
 
-# Error exit code for invalid argument values (optparse argument-parsing error).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for all valid-flag invocations in embedded mode.
-# Updated per E2-F2-S2-T2, formally declared in E2-F2-S2-T3: selfupdate
-# exits 1 in embedded mode to signal that selfupdate is unavailable (disabled).
+
 _EXPECTED_EXIT_DISABLED = 1
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that do
-# not require a real initialized repository (negative tests that fail at parse
-# time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-selfupdate-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests (store_false / store_true
-# flags reject inline values). optparse exits 2 with '--<flag> option does not
-# take a value' when a boolean flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Canonical optparse phrase emitted when a boolean flag receives an inline value.
+
 _OPTPARSE_NO_VALUE_PHRASE = "does not take a value"
 
-# Expected stdout for all valid selfupdate invocations in embedded mode.
+
 _EXPECTED_STDOUT = ""
 
-# ---------------------------------------------------------------------------
-# Flag-list constants for parametrize lists.
-#
-# Flags from Selfupdate._Options():
-#   --no-repo-verify   (store_false, dest=repo_verify, default=True):
-#                      do not verify repo source code
-#   --repo-upgraded    (store_true, help=SUPPRESS):
-#                      internal flag; indicates repo is already upgraded
-#
-# Both flags are boolean. Short forms: none registered in _Options().
-# Only long-form flags can be supplied with '--flag=value' syntax in optparse;
-# they are also the only forms tested in negative tests.
-# ---------------------------------------------------------------------------
 
-# Individual flag constants to avoid inline literals outside the parametrize lists.
 _CLI_FLAG_NO_REPO_VERIFY = "--no-repo-verify"
 _CLI_FLAG_REPO_UPGRADED = "--repo-upgraded"
 
@@ -115,11 +91,6 @@ _BOOL_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_NO_REPO_VERIFY, "no-repo-verify"),
     (_CLI_FLAG_REPO_UPGRADED, "repo-upgraded"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -205,11 +176,6 @@ class TestRepoSelfupdateFlagsValidValues:
             f"Expected {SELFUPDATE_EMBEDDED_MESSAGE!r} in stderr of "
             f"'{_CLI_COMMAND_PHRASE} {flag}'.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with inline values (boolean flags)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -346,11 +312,6 @@ class TestRepoSelfupdateFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSelfupdateFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -450,11 +411,6 @@ class TestRepoSelfupdateFlagsAbsenceDefaults:
         assert result.stdout == _EXPECTED_STDOUT, (
             f"Expected empty stdout from '{_CLI_COMMAND_PHRASE}' with all flags omitted.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

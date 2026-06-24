@@ -32,9 +32,6 @@ from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Journey Test User"
 _GIT_USER_EMAIL = "journey-test@example.com"
@@ -46,14 +43,9 @@ _PLUGIN_NAME = "test-plugin"
 _MARKETPLACE_DIR_REL = ".claude-marketplaces"
 _GITIGNORE_PACKAGES = ".packages/"
 _GITIGNORE_KANON_DATA = ".kanon-data/"
-# Minimal well-formed manifest XML written by fake_repo_sync helpers so that
-# install()'s include-walker can parse the manifest path after sync.
+
+
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helper
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -74,11 +66,6 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
-
-
-# ---------------------------------------------------------------------------
-# Shared git repo creation helpers
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -277,11 +264,6 @@ def _write_empty_manifest(repo_dir: str, manifest_filename: str = _MANIFEST_FILE
     manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: test_full_journey_bootstrap_install_clean
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullJourneyBootstrapInstallClean:
     """AC-TEST-001: write .kanon directly -> install -> verify -> clean -> verify clean state."""
@@ -359,11 +341,6 @@ class TestFullJourneyBootstrapInstallClean:
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
         assert kanonenv_path.is_file(), ".kanon must survive clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: test_full_journey_bootstrap_install_marketplace_clean
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -470,11 +447,6 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
         assert len(remove_calls) >= 1, f"Expected at least one marketplace remove call, got: {remove_calls!r}"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: test_full_journey_bootstrap_install_validate_clean
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -599,11 +571,6 @@ class TestFullJourneyBootstrapInstallValidateClean:
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: test_full_journey_with_version_constraints
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullJourneyWithVersionConstraints:
     """AC-TEST-004: bootstrap with catalog tag constraints -> install -> verify -> clean."""
@@ -676,11 +643,6 @@ class TestFullJourneyWithVersionConstraints:
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: test_full_journey_auto_discover_from_subdirectory
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullJourneyAutoDiscoverFromSubdirectory:
     """AC-TEST-005: .kanon in project root, install from nested subdir, auto-discovery."""
@@ -747,11 +709,6 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006: test_full_journey_multi_source_with_marketplace
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -871,11 +828,6 @@ class TestFullJourneyMultiSourceWithMarketplace:
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-007: test_full_journey_env_var_overrides
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullJourneyEnvVarOverrides:
     """AC-TEST-007: GITBASE env var overrides .kanon value during install."""
@@ -939,11 +891,6 @@ class TestFullJourneyEnvVarOverrides:
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: test_full_journey_install_twice_then_clean
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -1020,11 +967,6 @@ class TestFullJourneyInstallTwiceThenClean:
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-009: test_full_journey_error_recovery
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

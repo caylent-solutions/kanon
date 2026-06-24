@@ -22,11 +22,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -43,11 +38,6 @@ def _run_kanon(
 def _file_sha256(path: pathlib.Path) -> str:
     """Return the SHA-256 hex digest of path's contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Helpers for fixture construction
-# ---------------------------------------------------------------------------
 
 
 _STANDARD_HEADER_LF = textwrap.dedent("""\
@@ -80,11 +70,6 @@ def _build_crlf_fixture(
     kanon_file = tmp_path / ".kanon"
     kanon_file.write_bytes(content.encode("utf-8"))
     return kanon_file
-
-
-# ---------------------------------------------------------------------------
-# Basic dry-run integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -174,11 +159,6 @@ class TestRemoveDryRunBasic:
         assert "-KANON_SOURCE_baz_qux_URL" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: CRLF fixture with three blank lines
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRemoveDryRunACCycle001:
     """AC-CYCLE-001 end-to-end evidence.
@@ -198,7 +178,7 @@ class TestRemoveDryRunACCycle001:
         result = _run_kanon(["remove", "foo_bar", "--dry-run", "--kanon-file", str(kanon_file)])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
-        # Five '-' lines in stdout
+
         minus_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("-")]
         assert len(minus_lines) == 5
         assert "-KANON_SOURCE_foo_bar_URL" in result.stdout
@@ -206,7 +186,7 @@ class TestRemoveDryRunACCycle001:
         assert "-KANON_SOURCE_foo_bar_PATH" in result.stdout
         assert "-KANON_SOURCE_foo_bar_NAME" in result.stdout
         assert "-KANON_SOURCE_foo_bar_GITBASE" in result.stdout
-        # File unchanged
+
         assert _file_sha256(kanon_file) == sha_before
 
     def test_normal_remove_preserves_crlf_line_endings(self, tmp_path: pathlib.Path) -> None:
@@ -217,9 +197,9 @@ class TestRemoveDryRunACCycle001:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         result_bytes = kanon_file.read_bytes()
-        # CRLF present
+
         assert b"\r\n" in result_bytes
-        # No bare LF
+
         bare_lf_count = result_bytes.count(b"\n") - result_bytes.count(b"\r\n")
         assert bare_lf_count == 0, "All LF should be CRLF after write"
 
@@ -242,10 +222,10 @@ class TestRemoveDryRunACCycle001:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         result_bytes = kanon_file.read_bytes()
-        # File ends with exactly one CRLF (trailing-newline rule: collapse all trailing)
+
         assert result_bytes.endswith(b"\r\n"), "File must end with CRLF"
         assert not result_bytes.endswith(b"\r\n\r\n"), "Must not end with double CRLF"
-        # Header lines are preserved
+
         result_text = result_bytes.decode("utf-8")
         assert "GITBASE=https://example.com" in result_text
         assert "OTHER_VAR=kept" in result_text
@@ -257,11 +237,11 @@ class TestRemoveDryRunACCycle001:
         non-blank blocks (not at the end), so the trailing-newline rule
         does not consume them.
         """
-        # Build a file where 3 blank lines appear between two kept blocks
+
         header_crlf = _STANDARD_HEADER_LF.replace("\n", "\r\n")
         foo_bar_block_crlf = _FOO_BAR_BLOCK_LF.replace("\n", "\r\n")
         other_block_crlf = "KEPT_BLOCK_VAR=kept\r\n"
-        # 3 blank CRLF lines between the two kept blocks
+
         blanks_crlf = "\r\n" * 3
         content = header_crlf + foo_bar_block_crlf + blanks_crlf + other_block_crlf
         kanon_file = tmp_path / ".kanon"
@@ -271,10 +251,9 @@ class TestRemoveDryRunACCycle001:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         result_text = kanon_file.read_bytes().decode("utf-8").replace("\r\n", "\n")
-        # The 3-blank run (which was between header and other block after removal)
-        # must collapse to 2
+
         assert "\n\n\n\n" not in result_text, "Three-blank run must collapse"
-        # Other block survived
+
         assert "KEPT_BLOCK_VAR=kept" in result_text
 
     def test_normal_remove_ends_with_exactly_one_trailing_crlf(self, tmp_path: pathlib.Path) -> None:
@@ -285,14 +264,9 @@ class TestRemoveDryRunACCycle001:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         result_bytes = kanon_file.read_bytes()
-        # File ends with exactly one CRLF
+
         assert result_bytes.endswith(b"\r\n"), "File must end with CRLF"
         assert not result_bytes.endswith(b"\r\n\r\n"), "File must not end with double CRLF"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: mixed line-endings fixture warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -306,18 +280,18 @@ class TestRemoveDryRunMixedLineEndings:
         _detect_dominant_line_ending returns None (tie), triggering the warning
         and LF normalisation.
         """
-        # 5 CRLF header lines, 5 LF block lines => count tie => warning + LF
+
         content = (
-            "GITBASE=https://example.com\r\n"  # CRLF
-            "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\r\n"  # CRLF
-            "OTHER_VAR=kept\r\n"  # CRLF
-            "EXTRA_VAR_A=a\r\n"  # CRLF
-            "EXTRA_VAR_B=b\r\n"  # CRLF
-            "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"  # LF
-            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"  # LF
-            "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"  # LF
-            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"  # LF
-            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"  # LF
+            "GITBASE=https://example.com\r\n"
+            "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\r\n"
+            "OTHER_VAR=kept\r\n"
+            "EXTRA_VAR_A=a\r\n"
+            "EXTRA_VAR_B=b\r\n"
+            "KANON_SOURCE_foo_bar_URL=https://example.com/foo.git\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -325,9 +299,9 @@ class TestRemoveDryRunMixedLineEndings:
         result = _run_kanon(["remove", "foo_bar", "--kanon-file", str(kanon_file)])
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
-        # Warning on stderr
+
         assert "mixed line endings" in result.stderr
         assert str(kanon_file) in result.stderr
-        # Output normalised to LF
+
         result_bytes = kanon_file.read_bytes()
         assert b"\r\n" not in result_bytes

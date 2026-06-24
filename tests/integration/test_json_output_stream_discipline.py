@@ -35,11 +35,6 @@ import pytest
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _resolve_kanon_project_path() -> pathlib.Path:
     """Return the repo root directory that contains pyproject.toml.
 
@@ -121,11 +116,6 @@ def _make_uv_env(extra: dict[str, str]) -> dict[str, str]:
     env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
     env.update(extra)
     return env
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -236,8 +226,6 @@ class TestJsonOutputStreamDiscipline:
 
         raw_stdout = result.stdout
 
-        # The merged output may start with uv's VIRTUAL_ENV-mismatch warning.
-        # Find the JSON sentinel ([) which marks the start of kanon's output.
         json_start = raw_stdout.find(b"[")
         if json_start == -1:
             json_start = raw_stdout.find(b"{")

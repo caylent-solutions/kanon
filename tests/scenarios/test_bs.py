@@ -26,7 +26,7 @@ import pytest
 
 from tests.scenarios.conftest import run_kanon
 
-# argparse exit code for an unrecognised command (the removed-bootstrap contract).
+
 _ARGPARSE_USAGE_EXIT = 2
 
 
@@ -44,7 +44,7 @@ def _assert_bootstrap_rejected(result) -> None:
 @pytest.mark.scenario
 class TestBS:
     def test_bs_01_list_bundled_packages(self) -> None:
-        # Formerly `bootstrap list`; the replacement is `kanon search`.
+
         _assert_bootstrap_rejected(run_kanon("bootstrap", "list"))
 
     def test_bs_02_bootstrap_kanon_default_output_dir(self, tmp_path: pathlib.Path) -> None:
@@ -67,7 +67,7 @@ class TestBS:
         (existing_dir / ".kanon").write_text("existing\n")
         result = run_kanon("bootstrap", "kanon", "--output-dir", str(existing_dir))
         _assert_bootstrap_rejected(result)
-        # The pre-existing .kanon is untouched (no work is performed).
+
         assert (existing_dir / ".kanon").read_text() == "existing\n"
 
     def test_bs_05_unknown_package_name(self) -> None:
@@ -78,7 +78,7 @@ class TestBS:
         blocker.write_text("")
         result = run_kanon("bootstrap", "kanon", "--output-dir", str(blocker))
         _assert_bootstrap_rejected(result)
-        # The blocker file is left as-is (a regular empty file, never a dir).
+
         assert blocker.is_file()
 
     def test_bs_07_missing_parent_directory(self, tmp_path: pathlib.Path) -> None:

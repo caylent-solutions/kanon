@@ -363,7 +363,7 @@ class TestUninstallMarketplacePlugins:
 
     def test_remove_uses_name_not_path(self, tmp_path: pathlib.Path) -> None:
         """Bug fix verification: uninstall orchestration passes marketplace name to remove."""
-        # Directory name differs from marketplace.json name to verify the name is used
+
         mp_dir = tmp_path / "marketplaces" / "dir-name-differs"
         mp_dir.mkdir(parents=True)
         claude_plugin = mp_dir / ".claude-plugin"
@@ -577,11 +577,10 @@ class TestRegisterDirectCheckoutMarketplaces:
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
 
-        # Project with linkfile -- should NOT be registered by this function.
         _create_project_with_marketplace_json(source_dir, "linked", "linked")
-        # Project without linkfile but with marketplace.json -- SHOULD be registered.
+
         _create_project_with_marketplace_json(source_dir, "direct", "direct")
-        # Project without linkfile and without marketplace.json -- NOT registered.
+
         plain_dir = source_dir / "plain"
         plain_dir.mkdir(parents=True)
 
@@ -612,7 +611,6 @@ class TestRegisterDirectCheckoutMarketplaces:
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
 
-        # Create a project with a marketplace.json that has NO 'name' field.
         project_dir = source_dir / "bad-plugin"
         claude_plugin_dir = project_dir / ".claude-plugin"
         claude_plugin_dir.mkdir(parents=True)
@@ -645,8 +643,6 @@ class TestDiscoverRegisteredMarketplaceNames:
         marketplace_dir.mkdir()
         _create_marketplace(marketplace_dir, "mp-current", plugins=["plug-a"])
 
-        # An entry that is a directory but has NO .claude-plugin/marketplace.json
-        # (e.g. a linkfile target that does not point at a marketplace root).
         no_json_entry = marketplace_dir / "not-a-marketplace"
         no_json_entry.mkdir()
         (no_json_entry / "some-file.txt").write_text("not a marketplace manifest")
@@ -662,8 +658,7 @@ class TestDiscoverRegisteredMarketplaceNames:
         """Multiple valid marketplaces are returned sorted (and de-duplicated)."""
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
-        # Create in non-sorted creation order; the manifest 'name' fields are the
-        # values that must come back sorted.
+
         _create_marketplace(marketplace_dir, "zeta-dir", plugins=[])
         _create_marketplace(marketplace_dir, "alpha-dir", plugins=[])
         _create_marketplace(marketplace_dir, "mike-dir", plugins=[])
@@ -677,11 +672,6 @@ class TestDiscoverRegisteredMarketplaceNames:
         """A non-existent marketplace_dir yields an empty list (tolerant, not an error)."""
         result = discover_registered_marketplace_names(tmp_path / "does-not-exist")
         assert result == [], f"Missing marketplace_dir must return []; got: {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# E2-F1-S3-T1: POSIX directory-symlink helper (AC-10)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -716,10 +706,6 @@ class TestCreateDirsymlink:
         target = tmp_path / "nonexistent-target"
         link = tmp_path / "the-link"
 
-        # os.symlink succeeds even for non-existent targets (dangling links are legal),
-        # so we only guarantee the link is created; the *real* fail-fast constraint
-        # is that an existing non-symlink at link_path is rejected (tested above).
-        # We assert here that the helper at least runs without swallowing exceptions.
         create_dirsymlink(link, target)
         assert link.is_symlink(), "create_dirsymlink must create the symlink even for a dangling target"
 
@@ -742,7 +728,7 @@ class TestRegisterDirectCheckoutMarketplacesUsesJunctionHelper:
 
         mock_helper.assert_called_once()
         call_args = mock_helper.call_args
-        # link_path (first arg) should be marketplace_dir / "mp-name"
+
         assert call_args[0][0] == marketplace_dir / "mp-name", (
             "create_dirsymlink must be called with link_path = marketplace_dir / name"
         )

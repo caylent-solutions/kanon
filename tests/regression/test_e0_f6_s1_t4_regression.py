@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S1-T4: symlink overwrite without warning.
 
 Bug reference: E0-F6-S1-T4 -- project.py _LinkFile.__linkIt removed and
@@ -49,11 +35,6 @@ import pytest
 from kanon_cli.repo.project import _LinkFile
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths.
 
@@ -80,11 +61,6 @@ def _create_symlink_at(dest_path, target):
     """
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     os.symlink(target, str(dest_path))
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Regression: foreign symlink overwrite emits a warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -179,11 +155,6 @@ def test_foreign_symlink_overwrite_emits_warning_for_any_foreign_target(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Regression: exact E0-F6-S1-T4 bug condition triggered
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_exact_bug_condition_warning_includes_old_target(tmp_path):
     """AC-TEST-002: Exact bug condition -- warning message must include the old foreign target.
@@ -271,11 +242,6 @@ def test_exact_bug_condition_symlink_overwritten_not_blocked(tmp_path):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Guard: fixed code passes for current correct behavior
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_repo_managed_symlink_replaced_without_warning(tmp_path):
     """AC-TEST-003: Repo-managed symlink replacement must NOT produce a warning.
@@ -301,7 +267,6 @@ def test_repo_managed_symlink_replaced_without_warning(tmp_path):
     src_file = worktree / "managed.txt"
     src_file.write_text("managed content", encoding="utf-8")
 
-    # Compute the exact relSrc that _Link() will use so the symlink looks repo-managed.
     expected_rel = os.path.relpath(str(src_file), str(topdir))
     dest_path = topdir / "managed.txt"
     _create_symlink_at(dest_path, expected_rel)
@@ -333,7 +298,7 @@ def test_warning_logic_structurally_present_in_linkit_source() -> None:
 
     If any check fails, the structural guard against Bug 4 has been removed.
     """
-    # _LinkFile.__linkIt is name-mangled to _LinkFile__linkIt.
+
     method = getattr(_LinkFile, "_LinkFile__linkIt", None)
     assert method is not None, (
         "E0-F6-S1-T4 regression guard: _LinkFile.__linkIt is not accessible as "
@@ -363,11 +328,6 @@ def test_warning_logic_structurally_present_in_linkit_source() -> None:
         "reading its target has been removed. Restore the islink() gate in "
         "project.py _LinkFile.__linkIt."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Guard: full lifecycle reproduces the E0-F6-S1-T4 scenario
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -400,19 +360,16 @@ def test_full_lifecycle_foreign_symlink_warned_and_replaced(tmp_path):
     with mock.patch("kanon_cli.repo.project.logger") as mock_logger:
         lf._Link()
 
-    # Warning must have been emitted.
     assert mock_logger.warning.called, (
         "E0-F6-S1-T4 regression: logger.warning was not called when foreign symlink "
         f"{foreign_target!r} was replaced during sync. The user must be notified."
     )
 
-    # Warning args must include the old foreign target.
     all_warning_text = " ".join(str(arg) for call in mock_logger.warning.call_args_list for arg in call.args)
     assert foreign_target in all_warning_text, (
         f"E0-F6-S1-T4 regression: old foreign target {foreign_target!r} not in warning. Got: {all_warning_text!r}"
     )
 
-    # Symlink must now point to the repo-managed target.
     expected_rel = os.path.relpath(str(worktree / repo_managed_rel), str(topdir))
     assert os.path.islink(str(dest_path)), (
         "E0-F6-S1-T4 regression: dest is not a symlink after _Link(). Sync was blocked."
@@ -421,11 +378,6 @@ def test_full_lifecycle_foreign_symlink_warned_and_replaced(tmp_path):
         f"E0-F6-S1-T4 regression: symlink target after _Link() is "
         f"{os.readlink(str(dest_path))!r}, expected {expected_rel!r}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

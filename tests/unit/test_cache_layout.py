@@ -27,18 +27,8 @@ from kanon_cli.constants import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _sha256(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -58,11 +48,6 @@ def tmp_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """
     monkeypatch.setenv("KANON_HOME", str(tmp_path))
     return cache_dir()
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: cache_dir() env-var precedence
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -99,11 +84,6 @@ class TestCacheDirPrecedence:
         assert cache_dir() == expected
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: catalog_entry_dir SHA determinism
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCatalogEntryDir:
     def test_returns_path_under_catalogs(self, tmp_cache: Path) -> None:
@@ -134,11 +114,6 @@ class TestCatalogEntryDir:
         assert d1 != d2
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: project_entry_dir SHA determinism
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectEntryDir:
     def test_returns_path_under_projects(self, tmp_cache: Path) -> None:
@@ -161,11 +136,6 @@ class TestProjectEntryDir:
         d1 = project_entry_dir("https://a.git")
         d2 = project_entry_dir("https://b.git")
         assert d1 != d2
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-FUNC-005: directory 0700, file 0600
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -199,7 +169,7 @@ class TestFileModes:
         """All directories created by write_entries have mode 0700."""
         target = catalog_entry_dir("https://deep.git", "main") / "index.txt"
         write_entries(target, ["x"])
-        # Walk from tmp_cache down to target.parent
+
         path = target.parent
         while path != tmp_cache.parent:
             if path == tmp_cache:
@@ -207,11 +177,6 @@ class TestFileModes:
             stat = os.stat(path)
             assert stat.st_mode & 0o777 == 0o700, f"{path} has mode {oct(stat.st_mode & 0o777)}"
             path = path.parent
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: read_entries round-trip and missing-file -> []
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -235,7 +200,7 @@ class TestReadWriteEntries:
 
     def test_skips_blank_lines(self, tmp_cache: Path) -> None:
         target = catalog_entry_dir("https://x.git", "main") / "index.txt"
-        # Write raw content with blank lines
+
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("a\n\nb\n\n")
         os.chmod(target, 0o600)
@@ -252,11 +217,6 @@ class TestReadWriteEntries:
         assert not target.parent.exists()
         write_entries(target, ["1.0.0"])
         assert target.parent.exists()
-
-
-# ---------------------------------------------------------------------------
-# read_epoch / write_epoch
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -282,11 +242,6 @@ class TestReadWriteEpoch:
         assert read_epoch(target) == epoch
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: log_completion_error line format
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLogCompletionError:
     def test_writes_one_line(self, tmp_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -301,7 +256,7 @@ class TestLogCompletionError:
         monkeypatch.setenv("KANON_COMPLETION_LOG", str(log_path))
         log_completion_error("__complete_catalog_entries", RuntimeError("boom"))
         line = log_path.read_text().strip()
-        # Expected: <ISO-8601-UTC> __complete_catalog_entries RuntimeError: boom
+
         pattern = re.compile(
             r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z "
             r"__complete_catalog_entries RuntimeError: boom$"
@@ -336,11 +291,6 @@ class TestLogCompletionError:
         line = log_path.read_text().strip()
         assert "KeyError" in line
         assert "missing_key" in line
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: constants exported from constants.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -381,12 +331,6 @@ class TestCacheConstants:
         from kanon_cli.constants import KANON_ACCESSED_AT_COALESCE_SEC
 
         assert KANON_ACCESSED_AT_COALESCE_SEC == 60
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: origin.txt is a sibling of index.txt / tags.txt
-# (write_entries can write origin.txt alongside index.txt)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

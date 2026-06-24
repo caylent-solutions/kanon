@@ -22,11 +22,6 @@ from kanon_cli.core.install import install
 from tests.conftest import write_manifest_for_sync
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _store_base() -> pathlib.Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
@@ -144,11 +139,6 @@ def _install_with_synced_packages(
         install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: install creates .packages/ and .kanon-data/ directories
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestInstallCreatesDirectories:
     """AC-TEST-001: install creates .packages/ and .kanon-data/ directories.
@@ -239,11 +229,6 @@ class TestInstallCreatesDirectories:
         assert alpha_dir.is_dir(), ".kanon-data/sources/alpha/ must exist"
         assert bravo_dir.is_dir(), ".kanon-data/sources/bravo/ must exist"
         assert alpha_dir != bravo_dir, "Source workspace directories must be distinct"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: install writes .gitignore entries idempotently
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -363,11 +348,6 @@ class TestInstallGitignoreIdempotency:
             assert entry in lines, (
                 f"{entry!r} must be a standalone line in .gitignore, not embedded in another line; lines: {lines!r}"
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: install performs repo init + envsubst + sync in the correct order
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -584,7 +564,6 @@ class TestInstallRepoOperationOrder:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        # Extract operations per source, preserving their global positions
         alpha_ops = [op for op, src in call_sequence if src == "alpha"]
         bravo_ops = [op for op, src in call_sequence if src == "bravo"]
 
@@ -594,11 +573,6 @@ class TestInstallRepoOperationOrder:
         assert bravo_ops == ["init", "envsubst", "sync"], (
             f"Source 'bravo' must be processed in order init->envsubst->sync; got {bravo_ops!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: install aggregates multiple sources without collision (MS-01 class)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -732,11 +706,6 @@ class TestInstallMultiSourceAggregation:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Lifecycle order is init -> envsubst -> sync -> aggregate -> gitignore-update
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestInstallLifecycleOrder:
     """AC-FUNC-001: Full lifecycle order: init -> envsubst -> sync -> aggregate -> gitignore.
@@ -853,11 +822,6 @@ class TestInstallLifecycleOrder:
         assert envsubst_pos < sync_pos, f"envsubst must precede sync; stage_log={stage_log!r}"
         assert sync_pos < aggregate_pos, f"sync must precede aggregate; stage_log={stage_log!r}"
         assert aggregate_pos < gitignore_pos, f"aggregate must precede gitignore-update; stage_log={stage_log!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

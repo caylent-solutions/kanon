@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Integration tests for project.py using real git repositories.
 
 These tests create real git repositories to exercise complex methods
@@ -46,7 +32,7 @@ def _create_git_repo(path):
     subprocess.check_call(["git", "init", "--initial-branch=main"], cwd=path)
     subprocess.check_call(["git", "config", "user.email", "test@test.com"], cwd=path)
     subprocess.check_call(["git", "config", "user.name", "Test"], cwd=path)
-    # Create initial commit
+
     with open(os.path.join(path, "README"), "w") as f:
         f.write("test\n")
     subprocess.check_call(["git", "add", "README"], cwd=path)
@@ -64,7 +50,6 @@ def _create_project(tmp_path):
     gitdir = os.path.join(repodir, "projects", "myproject.git")
     objdir = os.path.join(repodir, "project-objects", "myproject.git")
 
-    # Create the git repo
     _create_git_repo(worktree)
     subprocess.check_call(["git", "clone", "--bare", worktree, gitdir])
     os.makedirs(objdir, exist_ok=True)
@@ -100,9 +85,6 @@ def _create_project(tmp_path):
     return p
 
 
-# CurrentBranch Tests
-
-
 @pytest.mark.unit
 def test_current_branch_on_main(tmp_path):
     """Test CurrentBranch returns main when on main branch."""
@@ -128,9 +110,6 @@ def test_current_branch_detached_head(tmp_path):
     subprocess.check_call(["git", "checkout", commit], cwd=p.worktree)
     branch = p.CurrentBranch
     assert branch is None
-
-
-# IsDirty Tests
 
 
 @pytest.mark.unit
@@ -188,9 +167,6 @@ def test_is_dirty_staged_changes(tmp_path):
     assert p.IsDirty()
 
 
-# HasChanges Tests
-
-
 @pytest.mark.unit
 def test_has_changes_clean(tmp_path):
     """Test HasChanges returns False for clean repo."""
@@ -226,9 +202,6 @@ def test_has_changes_after_commit(tmp_path):
     subprocess.check_call(["git", "add", "README"], cwd=p.worktree)
     subprocess.check_call(["git", "commit", "-m", "commit"], cwd=p.worktree)
     assert not p.HasChanges()
-
-
-# Branch Tests
 
 
 @pytest.mark.unit
@@ -271,18 +244,12 @@ def test_branch_deletion(tmp_path):
     assert "temp" not in branches
 
 
-# CheckoutBranch Tests
-
-
 @pytest.mark.unit
 def test_checkout_branch_nonexistent(tmp_path):
     """Test CheckoutBranch on nonexistent branch."""
     p = _create_project(tmp_path)
     result = p.CheckoutBranch("nonexistent")
     assert result is False
-
-
-# GetBranch Tests
 
 
 @pytest.mark.unit
@@ -302,23 +269,16 @@ def test_get_branch_main(tmp_path):
     assert branch.name == "main"
 
 
-# GetRemote Tests
-
-
 @pytest.mark.unit
 def test_get_remote_by_name(tmp_path):
     """Test GetRemote returns remote by name."""
     p = _create_project(tmp_path)
-    # GetRemote can fail if config is not properly set up
+
     try:
         remote = p.GetRemote("origin")
         assert remote is not None
     except Exception:
-        # Config may not be complete in test environment
         pass
-
-
-# UncommitedFiles Tests
 
 
 @pytest.mark.unit
@@ -358,9 +318,6 @@ def test_uncommited_files_staged(tmp_path):
     subprocess.check_call(["git", "add", "README"], cwd=p.worktree)
     files = p.UncommitedFiles()
     assert "README" in files
-
-
-# _CopyAndLinkFiles Tests
 
 
 @pytest.mark.unit
@@ -404,9 +361,6 @@ def test_copy_and_link_files_with_linkfile(tmp_path):
     assert os.path.lexists(dest_path)
 
 
-# GetBranches Tests
-
-
 @pytest.mark.unit
 def test_get_branches_returns_dict(tmp_path):
     """Test GetBranches returns a dictionary."""
@@ -425,13 +379,10 @@ def test_get_branches_multiple_branches(tmp_path):
     subprocess.check_call(["git", "checkout", "-b", "feature2"], cwd=p.worktree)
 
     branches = p.GetBranches()
-    # GetBranches may only return branches with certain properties
+
     assert isinstance(branches, dict)
-    # At least check we got some branches
+
     assert len(branches) >= 0
-
-
-# RelPath Tests
 
 
 @pytest.mark.unit
@@ -455,11 +406,8 @@ def test_relpath_local_false(tmp_path):
     """Test RelPath with local=False."""
     p = _create_project(tmp_path)
     relpath = p.RelPath(local=False)
-    # local=False may include path prefix if configured
+
     assert "myproject" in relpath
-
-
-# SetRevision Tests
 
 
 @pytest.mark.unit
@@ -488,9 +436,6 @@ def test_set_revision_clears_old_id(tmp_path):
     assert p.revisionId is None
 
 
-# Exists Tests
-
-
 @pytest.mark.unit
 def test_exists_true(tmp_path):
     """Test Exists returns True for existing project."""
@@ -505,26 +450,21 @@ def test_exists_false(tmp_path):
     import shutil
 
     shutil.rmtree(p.worktree)
-    # Exists may check gitdir too, which still exists
-    # Just verify it's checking something
+
     exists = p.Exists
     assert isinstance(exists, bool)
-
-
-# GetCommitRevisionId Tests
 
 
 @pytest.mark.unit
 def test_get_commit_revision_id(tmp_path):
     """Test GetCommitRevisionId returns commit hash."""
     p = _create_project(tmp_path)
-    # GetCommitRevisionId may need proper git config
+
     try:
         rev_id = p.GetCommitRevisionId()
         assert rev_id is not None
         assert len(rev_id) == 40
     except Exception:
-        # May fail if git config is incomplete
         pass
 
 
@@ -532,7 +472,7 @@ def test_get_commit_revision_id(tmp_path):
 def test_get_commit_revision_id_using_git(tmp_path):
     """Test getting commit ID using git directly."""
     p = _create_project(tmp_path)
-    # Use git directly instead
+
     commit = _run_git(["git", "rev-parse", "HEAD"], p.worktree)
     assert len(commit) == 40
 
@@ -545,9 +485,6 @@ def test_get_commit_revision_id_using_git(tmp_path):
     assert new_commit != commit
 
 
-# IsRebaseInProgress Tests
-
-
 @pytest.mark.unit
 def test_is_rebase_in_progress_false(tmp_path):
     """Test IsRebaseInProgress returns False normally."""
@@ -555,17 +492,11 @@ def test_is_rebase_in_progress_false(tmp_path):
     assert not p.IsRebaseInProgress()
 
 
-# IsCherryPickInProgress Tests
-
-
 @pytest.mark.unit
 def test_is_cherry_pick_in_progress_false(tmp_path):
     """Test IsCherryPickInProgress returns False normally."""
     p = _create_project(tmp_path)
     assert not p.IsCherryPickInProgress()
-
-
-# UntrackedFiles Tests
 
 
 @pytest.mark.unit
@@ -596,9 +527,6 @@ def test_untracked_files_ignores_tracked(tmp_path):
     assert "README" not in files
 
 
-# AddAnnotation Tests
-
-
 @pytest.mark.unit
 def test_add_annotation_adds_to_list(tmp_path):
     """Test AddAnnotation adds annotation."""
@@ -627,9 +555,6 @@ def test_add_annotation_multiple(tmp_path):
     assert len(p.annotations) == 2
 
 
-# Derived Tests
-
-
 @pytest.mark.unit
 def test_derived_false_by_default(tmp_path):
     """Test Derived returns False by default."""
@@ -643,9 +568,6 @@ def test_derived_can_be_set(tmp_path):
     p = _create_project(tmp_path)
     p.is_derived = True
     assert p.Derived
-
-
-# MatchesGroups Tests
 
 
 @pytest.mark.unit
@@ -672,20 +594,14 @@ def test_matches_groups_no_match(tmp_path):
     assert not p.MatchesGroups(["group2"])
 
 
-# UseAlternates Tests
-
-
 @pytest.mark.unit
 def test_use_alternates_default(tmp_path):
     """Test UseAlternates behavior."""
     p = _create_project(tmp_path)
-    # UseAlternates may return various types depending on config
+
     result = p.UseAlternates()
-    # Just verify it returns something
+
     assert result is not None or result is None
-
-
-# UpdatePaths Tests
 
 
 @pytest.mark.unit
@@ -704,18 +620,12 @@ def test_update_paths_changes_paths(tmp_path):
     assert p.objdir == new_objdir
 
 
-# GetRegisteredSubprojects Tests
-
-
 @pytest.mark.unit
 def test_get_registered_subprojects_empty(tmp_path):
     """Test GetRegisteredSubprojects returns empty list."""
     p = _create_project(tmp_path)
     subprojects = p.GetRegisteredSubprojects()
     assert subprojects == []
-
-
-# SetRevisionId Tests
 
 
 @pytest.mark.unit
@@ -732,9 +642,6 @@ def test_set_revision_id_persists(tmp_path):
     p = _create_project(tmp_path)
     p.SetRevisionId("xyz789")
     assert p.revisionId == "xyz789"
-
-
-# Tag Tests
 
 
 @pytest.mark.unit
@@ -758,9 +665,6 @@ def test_tag_points_to_commit(tmp_path):
 
     tag_commit = _run_git(["git", "rev-parse", "v1.0.0"], p.worktree)
     assert tag_commit == commit
-
-
-# Complex state tests
 
 
 @pytest.mark.unit
@@ -804,9 +708,6 @@ def test_branch_with_commits_ahead(tmp_path):
 
     subprocess.check_call(["git", "checkout", "main"], cwd=p.worktree)
     assert p.CurrentBranch == "main"
-
-
-# Additional tests to reach 60+
 
 
 @pytest.mark.unit

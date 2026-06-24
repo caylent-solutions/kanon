@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 2: linkfile errors silently swallowed.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 2 -- project.py __linkIt bare
@@ -36,19 +22,9 @@ from kanon_cli.repo import platform_utils
 from kanon_cli.repo import project
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths."""
     return project._LinkFile(worktree, src_rel, topdir, dest_rel)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Linkfile failure raises an exception with context
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -78,11 +54,6 @@ def test_linkfile_oserror_raises_instead_of_being_swallowed(tmp_path):
             lf._Link()
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Error message includes both source and destination paths
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_linkfile_error_message_includes_source_and_dest_paths(tmp_path):
     """AC-TEST-002: The raised OSError must reference both src and dest paths.
@@ -110,7 +81,7 @@ def test_linkfile_error_message_includes_source_and_dest_paths(tmp_path):
             lf._Link()
 
     raised = exc_info.value
-    # Collect all text from the exception chain.
+
     parts = []
     ex = raised
     while ex is not None:
@@ -124,11 +95,6 @@ def test_linkfile_error_message_includes_source_and_dest_paths(tmp_path):
     assert "linked-config.yaml" in combined or str(topdir) in combined, (
         f"Expected destination path in error message chain, got: {combined!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- PermissionError propagates with correct context
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -157,16 +123,10 @@ def test_permission_error_propagates_from_linkfile(tmp_path):
         with pytest.raises(OSError) as exc_info:
             lf._Link()
 
-    # The raised exception must be an OSError whose cause is the original PermissionError.
     raised = exc_info.value
     assert isinstance(raised.__cause__, PermissionError), (
         f"Expected raised.__cause__ to be PermissionError, got: {type(raised.__cause__)!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 -- Integration: real read-only destination raises OSError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -188,7 +148,6 @@ def test_linkfile_read_only_dest_directory_raises_oserror(tmp_path):
     src_file = worktree / "data.txt"
     src_file.write_text("data", encoding="utf-8")
 
-    # Make topdir read-only so the symlink creation fails.
     topdir.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
     lf = _make_link_file(str(worktree), "data.txt", str(topdir), "linked-data.txt")
@@ -197,7 +156,6 @@ def test_linkfile_read_only_dest_directory_raises_oserror(tmp_path):
         with pytest.raises(OSError) as exc_info:
             lf._Link()
     finally:
-        # Restore write permission so tmp_path cleanup succeeds.
         topdir.chmod(stat.S_IRWXU)
 
     raised = exc_info.value
@@ -213,11 +171,6 @@ def test_linkfile_read_only_dest_directory_raises_oserror(tmp_path):
     assert "data.txt" in combined or str(topdir) in combined, (
         f"Expected source or destination path in error chain, got: {combined!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Parametrized -- multiple OSError variants all propagate
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

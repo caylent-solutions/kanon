@@ -66,29 +66,15 @@ from kanon_cli.constants import (
 )
 from kanon_cli.utils.spawn import spawn_detached
 
-# ---------------------------------------------------------------------------
-# Permission constants
-# ---------------------------------------------------------------------------
 
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
 
-# Default entries filename for a cache entry directory. The catalog/project
-# completers store their name index in ``index.txt``; the ``search``
-# version-enumeration path stores its enumerated version list under the same
-# layout in ``versions.txt`` (see SEARCH_VERSIONS_FILENAME).
+
 _DEFAULT_ENTRIES_FILENAME = "index.txt"
 
-# Entries filename used by the ``search`` version-enumeration cache extension.
-# One enumerated version string (a PEP 440 tag suffix or a branch-tip "latest"
-# marker) per line, written under ``cache_dir()/search/<sha>/`` (spec
-# Section 4.1 / FR-25 -- reuse the completions/cache.py TTL pattern).
+
 SEARCH_VERSIONS_FILENAME = "versions.txt"
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _chmod_secure(path: Path, mode: int) -> None:
@@ -103,9 +89,7 @@ def _chmod_secure(path: Path, mode: int) -> None:
 def _mkdir_secure(path: Path) -> None:
     """Create *path* (including parents) with mode 0700 on every new dir."""
     path.mkdir(parents=True, exist_ok=True)
-    # Chmod the full chain from *path* up to (and including) cache_dir() so
-    # that intermediate directories (e.g. catalogs/, projects/) also carry
-    # 0700 even when created by a recursive mkdir.
+
     root = cache_dir()
     segment = path
     while segment != root.parent:
@@ -113,11 +97,6 @@ def _mkdir_secure(path: Path) -> None:
         if segment == root:
             break
         segment = segment.parent
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def cache_dir() -> Path:
@@ -302,7 +281,6 @@ def classify(fetched_at_path: Path, ttl_seconds: int, now: int) -> Freshness:
     if fetched_at < 0:
         return Freshness.MISSING
 
-    # Clock-skew rule: future timestamp is treated as fresh.
     if fetched_at > now:
         return Freshness.FRESH
 
@@ -446,25 +424,20 @@ def maybe_update_accessed_at(
     try:
         prior_value = read_epoch(accessed_at_path)
     except ValueError:
-        # Non-integer / corrupt content: treat as missing (spec Section 11.4).
         write_epoch(accessed_at_path, now)
         return True
 
     if prior_value is None:
-        # File is absent -- first-touch write.
         write_epoch(accessed_at_path, now)
         return True
 
-    # Clock-skew: prior timestamp is in the future -- force-forward to now.
     if prior_value > now:
         write_epoch(accessed_at_path, now)
         return True
 
-    # Within coalesce window: suppress the write.
     if now - prior_value < coalesce_window_seconds:
         return False
 
-    # At or past the window boundary: write and report.
     write_epoch(accessed_at_path, now)
     return True
 
@@ -555,10 +528,6 @@ def fork_background_refresh(refresh_fn: Callable[[], None]) -> None:
     else:
         log_path = cache_dir() / KANON_COMPLETION_ERRORS_LOG_FILENAME
 
-    # Build a picklable callable by binding refresh_fn to the module-level
-    # _run_refresh_with_logging helper via functools.partial.  A nested closure
-    # would not be picklable, which would break the Windows spawn path that
-    # serialises the callable via pickle to pass it to the child interpreter.
     refresh_with_logging = functools.partial(_run_refresh_with_logging, refresh_fn, _FORK_COMPLETER_NAME)
 
     spawn_detached(refresh_with_logging, log_path=log_path)
@@ -586,7 +555,6 @@ def log_completion_error(completer_name: str, exc: Exception) -> None:
     error_class = type(exc).__name__
     line = f"{ts} {completer_name} {error_class}: {exc}\n"
 
-    # Ensure the parent directory exists and has mode 0700.
     _mkdir_secure(log_path.parent)
     with log_path.open("a") as fh:
         fh.write(line)

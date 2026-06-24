@@ -31,11 +31,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -113,11 +108,6 @@ def _create_bare_repo(base: pathlib.Path, name: str) -> tuple[pathlib.Path, str]
     return bare_dir.resolve(), sha
 
 
-# ---------------------------------------------------------------------------
-# CLI runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -144,11 +134,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Workspace builder
-# ---------------------------------------------------------------------------
 
 
 def _build_workspace(
@@ -205,11 +190,6 @@ def _build_workspace(
     return kanon_path, lock_path
 
 
-# ---------------------------------------------------------------------------
-# Tests: AC-TEST-002 / AC-CYCLE-001 -- full CLI against real fixture git server
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorRemoteReachabilityFullCli:
     """Full-CLI tests for subcheck 11 against real fixture git servers.
@@ -264,7 +244,7 @@ class TestDoctorRemoteReachabilityFullCli:
 
         assert result.returncode == 0
         assert "REMOTE_UNREACHABLE" not in result.stderr
-        # No WARN for reachability
+
         assert not any("WARN:" in line and "unreachable" in line.lower() for line in result.stderr.splitlines())
 
     def test_one_unreachable_remote_exits_zero(self, tmp_path: pathlib.Path) -> None:
@@ -276,7 +256,7 @@ class TestDoctorRemoteReachabilityFullCli:
         base.mkdir()
         bare_path, sha = _create_bare_repo(base, "repo-a")
         reachable_url = f"file://{bare_path}"
-        # A non-existent path to simulate a removed remote.
+
         removed_url = f"file://{base}/removed-bare.git"
 
         kanon_path, lock_path = _build_workspace(
@@ -314,7 +294,7 @@ class TestDoctorRemoteReachabilityFullCli:
         )
 
         assert "WARN:" in result.stderr
-        # Must NOT be an error-level finding for this URL
+
         warn_lines = [line for line in result.stderr.splitlines() if "WARN:" in line and "unreachable" in line.lower()]
         assert len(warn_lines) >= 1
 
@@ -391,8 +371,6 @@ class TestDoctorRemoteReachabilityFullCli:
         base.mkdir()
         bare_path, sha = _create_bare_repo(base, "repo-base")
 
-        # Two source entries pointing at the same removed repo in different URL forms.
-        # Both file:// URLs are distinct strings but canonicalize to the same path.
         removed_path = base / "nonexistent-bare.git"
         url_a = f"file://{removed_path}"
         url_b = f"file://{removed_path}/"
@@ -415,5 +393,5 @@ class TestDoctorRemoteReachabilityFullCli:
         warn_unreachable_lines = [
             line for line in result.stderr.splitlines() if "WARN:" in line and "unreachable" in line.lower()
         ]
-        # Exactly one warning for the same canonicalized URL (deduplication).
+
         assert len(warn_unreachable_lines) == 1

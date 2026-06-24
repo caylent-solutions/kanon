@@ -97,14 +97,11 @@ class TestRcReconcile:
         url_b = _build_source(fixtures, "beta")
         lock_path = project / ".kanon.lock"
 
-        # Install A only -> lock = {ALPHA}.  install is hermetic: the .kanon is
-        # written directly and install needs no catalog source.
         _write_kanon_two_optional(project, [("ALPHA", url_a, "==1.0.0")])
         r1 = _run_install(project)
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         assert sorted(e.name for e in read_lockfile(lock_path).sources) == ["ALPHA"]
 
-        # Remove A, add B (orphan + addition).
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
         r2 = _run_install(project)
         assert r2.returncode == 0, (
@@ -119,7 +116,6 @@ class TestRcReconcile:
         )
         lock_after_reconcile = lock_path.read_bytes()
 
-        # Second plain install: CONSISTENT, byte-stable lockfile.
         r3 = _run_install(project)
         assert r3.returncode == 0, f"second install failed:\nstdout={r3.stdout!r}\nstderr={r3.stderr!r}"
         assert lock_path.read_bytes() == lock_after_reconcile, (
@@ -148,7 +144,6 @@ class TestRcReconcile:
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         lock_before = lock_path.read_bytes()
 
-        # Drift: remove ALPHA, add BETA.
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
 
         r2 = _run_install(project, strict_lock=True)

@@ -39,10 +39,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -120,11 +116,6 @@ def _build_remote_xml(
         f'  <default revision="{default_revision}" remote="{remote_name}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented <remote> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -350,11 +341,6 @@ class TestRemoteValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- raise ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoteInvalidValues:
     """AC-TEST-002: Every attribute has invalid-value tests that raise ManifestParseError.
@@ -527,11 +513,6 @@ class TestRemoteInvalidValues:
         assert str(exc_info.value), (
             f"AC-TEST-002: expected non-empty error message for duplicate remote with conflicting {different_attr}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -738,11 +719,6 @@ class TestRemoteRequiredAttributeOmission:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Attribute validation happens at parse time (during m.Load())
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoteAttributeValidatedAtParseTime:
     """AC-FUNC-001: Every documented attribute of <remote> is validated at parse time.
@@ -773,7 +749,6 @@ class TestRemoteAttributeValidatedAtParseTime:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
 
@@ -798,7 +773,6 @@ class TestRemoteAttributeValidatedAtParseTime:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
 
@@ -824,7 +798,6 @@ class TestRemoteAttributeValidatedAtParseTime:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
 
@@ -855,11 +828,6 @@ class TestRemoteAttributeValidatedAtParseTime:
         assert remote.revision == "refs/heads/main", (
             f"AC-FUNC-001: expected remote.revision='refs/heads/main' after m.Load() but got: {remote.revision!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

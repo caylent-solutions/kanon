@@ -31,8 +31,7 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
-# The suite shells out to a real zsh, a POSIX-only shell. The skipif lets the
-# suite self-skip on any host that lacks zsh.
+
 pytestmark = pytest.mark.skipif(
     shutil.which("zsh") is None,
     reason="zsh is not installed; zsh completion is validated on POSIX runners",
@@ -145,11 +144,6 @@ def _write_stub_kanon(
     return str(stub_dir), str(call_log)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: no-@ routes to _kanon_complete_catalog_entries
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_zsh_no_at_routes_to_catalog_entries(tmp_path: Path) -> None:
     """AC-FUNC-001 (zsh): 'foo' (no @) routes to _kanon_complete_catalog_entries."""
@@ -184,11 +178,6 @@ def test_zsh_no_at_routes_to_catalog_entries(tmp_path: Path) -> None:
     assert "__resolve_entry_to_repo_url" not in call_log_content, (
         "Must not call __resolve_entry_to_repo_url for no-@ token"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: foo@ routes to project versions with empty spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -232,11 +221,6 @@ def test_zsh_at_empty_spec_routes_to_project_versions(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: foo@1 routes to project versions with spec = "1"
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_zsh_at_spec_routes_to_project_versions_with_spec(tmp_path: Path) -> None:
     """AC-FUNC-003 (zsh): 'foo@1' routes to _kanon_complete_project_versions."""
@@ -275,11 +259,6 @@ def test_zsh_at_spec_routes_to_project_versions_with_spec(tmp_path: Path) -> Non
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: multiple @ -- LAST-@ split
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_zsh_multiple_at_splits_on_last(tmp_path: Path) -> None:
     """AC-FUNC-004 (zsh): 'foo@bar@baz' splits on LAST @: name='foo@bar'."""
@@ -311,11 +290,6 @@ def test_zsh_multiple_at_splits_on_last(tmp_path: Path) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: leading @ -- empty name -> empty output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_zsh_leading_at_empty_name_produces_no_completions(tmp_path: Path) -> None:
     """AC-FUNC-005 (zsh): '@1.0.0' (leading @, empty name) produces no completions."""
@@ -341,11 +315,6 @@ def test_zsh_leading_at_empty_name_produces_no_completions(tmp_path: Path) -> No
     result = _run_zsh(script)
     assert result.returncode == 0, f"Script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     assert "CAPTURED_COUNT=0" in result.stdout, f"Expected empty completions for '@1.0.0', got: {result.stdout!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: KANON_COMPLETION_ENABLED=0 -- no subprocess call
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -379,11 +348,6 @@ def test_zsh_disabled_skips_subprocess(tmp_path: Path) -> None:
     if call_log_path.exists():
         calls = call_log_path.read_text(encoding="utf-8").strip()
         assert calls == "", f"Expected no kanon subprocess calls when KANON_COMPLETION_ENABLED=0, got: {calls!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 (zsh): end-to-end cycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

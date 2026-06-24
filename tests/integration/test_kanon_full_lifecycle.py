@@ -21,11 +21,6 @@ from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
 
 
-# ---------------------------------------------------------------------------
-# Shared lifecycle helpers
-# ---------------------------------------------------------------------------
-
-
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
@@ -82,7 +77,7 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
     def fake_repo_sync(repo_dir: str, **kwargs) -> None:
         repo_path = Path(repo_dir)
         pkg_dir = repo_path / ".packages"
-        # Determine source name from repo_dir path: .kanon-data/sources/<name>
+
         source_name = repo_path.name
         for pkg_name in packages_by_source.get(source_name, []):
             tool_dir = pkg_dir / pkg_name
@@ -95,11 +90,6 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
         install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: Install -> clean roundtrip (clean state after full cycle)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -119,7 +109,6 @@ class TestInstallCleanRoundtripLifecycle:
 
         _install_with_synced_packages(kanonenv, {"primary": ["tool-x"]})
 
-        # After install: managed artifacts exist
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
         assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             ".kanon-data/sources/primary/ must exist after install"
@@ -127,7 +116,6 @@ class TestInstallCleanRoundtripLifecycle:
 
         clean(kanonenv)
 
-        # After clean: all managed artifacts removed, config preserved
         assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
         assert kanonenv.is_file(), ".kanon config file must survive the full roundtrip"
@@ -155,11 +143,6 @@ class TestInstallCleanRoundtripLifecycle:
         gitignore_content = (store_base / ".gitignore").read_text()
         assert ".packages/" in gitignore_content
         assert ".kanon-data/" in gitignore_content
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Multi-source installation (repo + marketplace sources)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -227,11 +210,6 @@ class TestMultiSourceInstallLifecycle:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Source collision detection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSourceCollisionDetection:
     """Verify that install propagates ValueError when two sources produce the same package name."""
@@ -243,7 +221,6 @@ class TestSourceCollisionDetection:
         """
         kanonenv = _write_kanonenv(tmp_path, _two_source_content())
 
-        # Both sources produce a package named "shared-tool" -- this is a collision
         def fake_repo_sync_collision(repo_dir: str, **kwargs) -> None:
             pkg_dir = Path(repo_dir) / ".packages" / "shared-tool"
             pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -256,11 +233,6 @@ class TestSourceCollisionDetection:
         ):
             with pytest.raises(ValueError, match="Package collision"):
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Auto-discovery workflow
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -303,11 +275,6 @@ class TestAutoDiscoveryWorkflow:
         assert (store_base / ".gitignore").is_file(), "install() must create .gitignore under the shared store"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Recovery from partial failure (failed sync mid-install)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestPartialFailureRecovery:
     """Verify that a failed sync mid-install propagates the error and clean is re-runnable."""
@@ -348,23 +315,17 @@ class TestPartialFailureRecovery:
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
-        # Source dir was created by create_source_dirs before sync failed
+
         assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             "Source dir must exist after partial install (created before failed sync)"
         )
 
-        # clean() must succeed even on partial artifacts
         clean(kanonenv)
 
         assert not (store_base / ".kanon-data").exists(), (
             "clean() must remove .kanon-data/ even after a partial install"
         )
         assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a partial install"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Re-install over existing installation (idempotency)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -413,11 +374,6 @@ class TestReinstallIdempotency:
         assert gitignore_content.count(".kanon-data/") == 1, (
             ".kanon-data/ must appear exactly once in .gitignore after two installs"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: Filesystem state at each lifecycle stage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Coverage boost tests for main.py, subcmds/init.py, subcmds/download.py."""
 
 import os
@@ -35,9 +21,6 @@ from kanon_cli.repo.subcmds.download import Download, DownloadCommandError
 from kanon_cli.repo.subcmds.init import Init
 
 
-# ---------------------------------------------------------------------------
-# main.py: _BasicAuthHandler.http_error_auth_reqed  (lines 641-660)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBasicAuthHandlerAuthReqed:
     """Tests for _BasicAuthHandler.http_error_auth_reqed."""
@@ -79,7 +62,7 @@ class TestBasicAuthHandlerAuthReqed:
         handler = main._BasicAuthHandler()
         handler.passwd = urllib.request.HTTPPasswordMgrWithDefaultRealm()
         handler.retried = 5
-        # Remove reset_retry_count if present
+
         if hasattr(handler, "reset_retry_count"):
             delattr(handler, "reset_retry_count")
 
@@ -99,7 +82,6 @@ class TestBasicAuthHandlerAuthReqed:
         handler = main._BasicAuthHandler()
         handler.passwd = urllib.request.HTTPPasswordMgrWithDefaultRealm()
 
-        # Ensure no reset mechanism exists
         for attr in ("reset_retry_count", "retried"):
             if hasattr(handler, attr):
                 delattr(handler, attr)
@@ -115,9 +97,6 @@ class TestBasicAuthHandlerAuthReqed:
                 handler.http_error_auth_reqed("www-authenticate", "host", req, {})
 
 
-# ---------------------------------------------------------------------------
-# main.py: _DigestAuthHandler.http_error_auth_reqed  (lines 671-690)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDigestAuthHandlerAuthReqed:
     """Tests for _DigestAuthHandler.http_error_auth_reqed."""
@@ -159,7 +138,7 @@ class TestDigestAuthHandlerAuthReqed:
         """Test exception path calls reset_retry_count on digest handler."""
         handler = main._DigestAuthHandler()
         handler.passwd = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-        # Track that reset_retry_count gets called via the getattr path
+
         original_reset = handler.reset_retry_count
         call_tracker = mock.Mock(side_effect=original_reset)
         handler.reset_retry_count = call_tracker
@@ -176,9 +155,6 @@ class TestDigestAuthHandlerAuthReqed:
         call_tracker.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# main.py: _KerberosAuthHandler (lines 700-778)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestKerberosAuthHandlerMethods:
     """Tests for _KerberosAuthHandler methods."""
@@ -412,9 +388,6 @@ class TestKerberosAuthHandlerMethods:
             mock_kerberos.authGSSClientClean.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# main.py: _RunLong submanifest_path (line 306)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestRunLongSubmanifestPath:
     """Tests for _RunLong with submanifest_path set."""
@@ -431,17 +404,13 @@ class TestRunLongSubmanifestPath:
         mock_gopts.submanifest_path = "sub/manifest"
 
         mock_git_log = mock.MagicMock()
-        # Unknown command so it returns 1 early
+
         result = repo._RunLong("unknowncmd", mock_gopts, [], mock_git_log)
         assert result == 1
 
-        # Check RepoClient was called with submanifest_path
         assert mock_client.call_count >= 2
 
 
-# ---------------------------------------------------------------------------
-# main.py: _RunLong pager logic (lines 344-352)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestRunLongPagerLogic:
     """Tests for _RunLong pager handling."""
@@ -481,7 +450,7 @@ class TestRunLongPagerLogic:
     ):
         """Test pager runs when gopts.pager is True."""
         repo, mock_cmd, copts = self._setup_cmd_and_repo()
-        # Override isinstance to return False for InteractiveCommand
+
         mock_cmd.__class__ = type("NonInteractive", (), {})
 
         mock_gopts = mock.MagicMock()
@@ -518,9 +487,6 @@ class TestRunLongPagerLogic:
         repo._RunLong("testcmd", mock_gopts, [], mock_git_log)
 
 
-# ---------------------------------------------------------------------------
-# main.py: execute_command_helper branches (lines 372-398)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestRunLongMultiManifest:
     """Tests for _RunLong execute_command_helper multi-manifest."""
@@ -584,7 +550,7 @@ class TestRunLongMultiManifest:
         mock_time.time.return_value = 0.0
 
         mock_git_log = mock.MagicMock()
-        # This will call self._Run which we mock
+
         with mock.patch.object(repo, "_Run", return_value=0) as mock_run:
             repo._RunLong("testcmd", mock_gopts, [], mock_git_log)
             mock_run.assert_called_once()
@@ -596,7 +562,7 @@ class TestRunLongMultiManifest:
     def test_non_multi_with_submanifests(self, mock_time, mock_editor, mock_color, mock_client):
         """Test non-multi-manifest command iterates submanifests."""
         repo, mock_cmd, copts = self._make_repo_with_cmd(multi_manifest=False)
-        # Add hasattr mocking so code thinks copts has manifest_url etc
+
         copts.manifest_url = "http://example.com"
         copts.manifest_name = "default.xml"
         copts.manifest_branch = "main"
@@ -609,8 +575,6 @@ class TestRunLongMultiManifest:
         )
         mock_sub.repo_client.path_prefix = "sub/path"
 
-        # The _RunLong code uses repo_client.manifest.submanifests
-        # repo_client is the RepoClient instance (mock_client.return_value)
         mock_client.return_value.manifest.submanifests = {"sub1": mock_sub}
 
         mock_gopts = mock.MagicMock()
@@ -628,9 +592,6 @@ class TestRunLongMultiManifest:
             mock_run.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# main.py: execute_command exception logging (lines 414-429)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestRunLongExceptionLogging:
     """Tests for execute_command exception logging in _RunLong."""
@@ -696,7 +657,6 @@ class TestRunLongExceptionLogging:
         with pytest.raises(RepoExitError):
             repo._RunLong("testcmd", mock_gopts, [], mock_git_log)
 
-        # Verify ErrorEvent was called for aggregate errors
         assert mock_git_log.ErrorEvent.call_count >= 2
 
     @mock.patch("kanon_cli.repo.main.RepoClient")
@@ -930,7 +890,7 @@ class TestRunLongExceptionLogging:
         repo = main._Repo("/test/repodir")
         mock_cmd = mock.MagicMock()
         mock_cmd.manifest.IsMirror = True
-        # Make isinstance return False for MirrorSafeCommand
+
         mock_cmd.__class__ = type("NonMirrorSafe", (), {})
         repo.commands = {"testcmd": lambda **kwargs: mock_cmd}
 
@@ -944,9 +904,6 @@ class TestRunLongExceptionLogging:
         assert result == 1
 
 
-# ---------------------------------------------------------------------------
-# subcmds/download.py: _ParseChangeIds (lines 75-128)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestParseChangeIds:
     """Tests for Download._ParseChangeIds method."""
@@ -1001,7 +958,7 @@ class TestParseChangeIds:
         assert len(result) == 1
         _, chg_id, ps_id = result[0]
         assert chg_id == 12345
-        assert ps_id == 5  # Should pick the max patchset
+        assert ps_id == 5
 
     def test_parse_change_ids_no_ls_remote_output(self):
         """Test _ParseChangeIds defaults to patchset 1 when ls-remote empty."""
@@ -1050,8 +1007,6 @@ class TestParseChangeIds:
         proj2 = mock.MagicMock()
         proj2.name = "proj2"
 
-        # First call returns two projects for the ambiguous arg
-        # GetProjects(".") raises NoSuchProjectError
         def get_projects_side_effect(arg, **kwargs):
             if arg == ".":
                 raise NoSuchProjectError()
@@ -1080,7 +1035,6 @@ class TestParseChangeIds:
 
         cmd.GetProjects = mock.Mock(side_effect=get_projects_side_effect)
 
-        # proj1 is in the list so it's accepted
         result = cmd._ParseChangeIds(opt, ["ambiguous"])
         assert result == []
 
@@ -1098,9 +1052,6 @@ class TestParseChangeIds:
         assert result == []
 
 
-# ---------------------------------------------------------------------------
-# subcmds/download.py: Execute & _ExecuteHelper (lines 143-212)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDownloadExecute:
     """Tests for Download.Execute and _ExecuteHelper."""
@@ -1144,7 +1095,7 @@ class TestDownloadExecute:
         opt.branch = None
 
         cmd._ExecuteHelper(opt, ["100/1"])
-        # Should not call any checkout/cherrypick methods
+
         mock_project._CherryPick.assert_not_called()
         mock_project._Checkout.assert_not_called()
 
@@ -1364,9 +1315,6 @@ class TestDownloadExecute:
         mock_project._FastForward.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# subcmds/init.py: ValidateOptions (lines 298-341)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestInitValidateOptionsDetailed:
     """Tests for Init.ValidateOptions on specific branches."""
@@ -1544,9 +1492,6 @@ class TestInitValidateOptionsDetailed:
             cmd.ValidateOptions(opt, ["url1", "url2"])
 
 
-# ---------------------------------------------------------------------------
-# subcmds/init.py: Execute (lines 344-410)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestInitExecuteMethod:
     """Tests for Init.Execute method."""
@@ -1736,7 +1681,6 @@ class TestInitExecuteMethod:
 
         cmd.Execute(opt, [])
 
-        # Check git_require was called with (2, 15, 0)
         calls = mock_git_require.call_args_list
         worktree_call = [c for c in calls if len(c[0]) > 0 and c[0][0] == (2, 15, 0)]
         assert len(worktree_call) == 1
@@ -1779,7 +1723,6 @@ class TestInitExecuteMethod:
         """Test Execute warns when git version is below soft minimum."""
         cmd = self._make_init_cmd()
 
-        # First call (hard check): True, second call (soft check): False
         mock_git_require.side_effect = [True, False, True]
         mock_wrapper.return_value.Requirements.from_dir.return_value = mock.MagicMock()
         cmd.manifest.manifestProject.Exists = False
@@ -1861,9 +1804,6 @@ class TestInitExecuteMethod:
         cmd._ConfigureColor.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# download.py: ValidateOptions (lines 131-140)
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDownloadValidateOptionsDetailed:
     """Tests for Download.ValidateOptions edge cases."""
@@ -1898,5 +1838,4 @@ class TestDownloadValidateOptionsDetailed:
         opt.cherrypick = True
         opt.ffonly = False
 
-        # Should not raise
         cmd.ValidateOptions(opt, [])

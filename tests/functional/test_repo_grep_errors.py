@@ -25,86 +25,62 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# CLI structural tokens -- extracted so no inline literals appear in test bodies.
 _CMD_REPO = "repo"
 _CMD_GREP = "grep"
 _OPT_REPO_DIR = "--repo-dir"
 _FLAG_HELP = "--help"
 
-# Composed command description used in f-string diagnostics.
+
 _CMD_PREFIX = f"kanon {_CMD_REPO} {_CMD_GREP}"
 
-# Nonexistent repo-dir name used in argument-parser and precondition tests.
-# Does not exist on disk so argparse tests confirm flag parsing without a real .repo.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-grep-errors-repo-dir"
 
-# A minimal pattern string used as a sentinel for tests that require a
-# positional argument but do not need meaningful match results.
+
 _SENTINEL_PATTERN = "xyzzy-no-match-sentinel"
 
-# Unknown flag names exercised in AC-TEST-002 parametrized tests.
-# These are guaranteed not to be real grep flags.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-grep-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-grep-option"
 _UNKNOWN_FLAG_ALT_B = "--bogus-grep-flag-99"
 
-# Phrase produced by the embedded repo option parser when an unknown flag
-# is supplied (AC-TEST-002). The message format is "no such option: <flag>".
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase in the --help stdout identifying the specific subcommand (AC-TEST-001).
-# The help output begins with "Usage: repo grep {pattern | -e pattern} [<project>...]".
+
 _HELP_USAGE_PHRASE = "repo grep"
 
-# Phrase expected in the --help stdout confirming the -e option is documented.
-# This is a grep-specific option present in the help text.
+
 _HELP_OPTION_PHRASE = "-e PATTERN"
 
-# Phrase in the --help stdout confirming the --invert-match option is documented.
+
 _HELP_INVERT_MATCH_PHRASE = "--invert-match"
 
-# Phrase produced on stderr when the required pattern positional is omitted
-# (AC-TEST-003). 'repo grep' raises UsageError when no -e flag and no positional
-# pattern is provided. The kanon layer emits "UsageError" on stderr and exits 1.
-# NOTE: The AC wording says "exit 2"; the actual tool exits 1. Tests assert
-# the real behavior (exit 1) and document this deviation in the class docstring.
+
 _MISSING_POSITIONAL_PHRASE = "UsageError"
 
-# Phrase produced on stdout when the required pattern positional is omitted.
-# The embedded repo tool also emits a usage summary line on stdout.
+
 _MISSING_POSITIONAL_STDOUT_PHRASE = "Usage: repo grep"
 
-# Phrase produced on stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool emits "error parsing manifest" followed by the
-# path to the missing manifest.xml file.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename expected in stderr when the .repo directory is absent.
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 _EXIT_MISSING_POSITIONAL = 1
 
-# Parametrize data for AC-TEST-002 -- unknown flags and their test IDs.
-# Each tuple is (flag_string, test_id).
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary-unknown-flag"),
     (_UNKNOWN_FLAG_ALT_A, "alt-unknown-flag-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-unknown-flag-b"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo grep --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -277,11 +253,6 @@ class TestRepoGrepHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -463,11 +434,6 @@ class TestRepoGrepUnknownFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Missing required positional produces a usage error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGrepMissingPositional:
     """AC-TEST-003: Missing required positional produces a usage error.
@@ -569,11 +535,6 @@ class TestRepoGrepMissingPositional:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -719,11 +680,6 @@ class TestRepoGrepPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

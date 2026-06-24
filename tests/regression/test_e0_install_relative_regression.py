@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-INSTALL-RELATIVE: kanon install .kanon relative path.
 
 Bug reference: E0-INSTALL-RELATIVE -- when the user runs 'kanon install .kanon'
@@ -60,11 +46,6 @@ from kanon_cli.commands.install import _run
 from tests.conftest import write_kanonenv
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(kanonenv_path: pathlib.Path) -> object:
     """Return a minimal args namespace with kanonenv_path set."""
     from unittest.mock import MagicMock
@@ -72,11 +53,6 @@ def _make_args(kanonenv_path: pathlib.Path) -> object:
     args = MagicMock()
     args.kanonenv_path = kanonenv_path
     return args
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-002 -- exact bug condition: relative .kanon resolves
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -235,7 +211,6 @@ def test_regression_install_receives_absolute_path_for_relative_inputs(
     rel_path = pathlib.Path(rel_kanon_str)
     assert not rel_path.is_absolute(), f"Test setup error: {rel_kanon_str!r} must be relative."
 
-    # Create the .kanon file at the location the relative path points to.
     kanon_file = (tmp_path / rel_path).resolve()
     kanon_file.parent.mkdir(parents=True, exist_ok=True)
     kanon_file.write_text(
@@ -265,11 +240,6 @@ def test_regression_install_receives_absolute_path_for_relative_inputs(
         f"E0-INSTALL-RELATIVE regression [{rel_kanon_str!r}]: install() received "
         f"non-absolute path {received!r}. The .resolve() call is missing."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- current fixed code passes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -314,11 +284,6 @@ def test_regression_current_code_passes_absolute_path_to_install(
         "AC-TEST-003: The resolved path does not match the expected .kanon location. "
         f"Expected {kanonenv.resolve()!r}, got {received!r}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: resolve() is present in install._run source
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -378,8 +343,7 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
 
     resolve_pos = source.find("args.kanonenv_path.resolve()")
     parse_pos = source.find("parse_kanonenv(")
-    # The install() call in _run is formatted as a multi-line call; locate it
-    # via a keyword argument unique to the install() invocation.
+
     install_pos = source.find("refresh_lock=args.refresh_lock")
 
     assert resolve_pos != -1, (
@@ -409,11 +373,6 @@ def test_regression_resolve_precedes_parse_and_install_in_source() -> None:
         "The path must be resolved before install() is invoked. "
         f"resolve() position: {resolve_pos}, install() position: {install_pos}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -491,11 +450,6 @@ def test_regression_missing_relative_path_error_goes_to_stderr(
     assert ".kanon file not found" not in captured.out, (
         f"AC-CHANNEL-001: '.kanon file not found' error must NOT appear on stdout. stdout content: {captured.out!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Additional structural guard: install_module exports _run
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

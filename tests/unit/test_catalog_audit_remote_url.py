@@ -27,11 +27,6 @@ from kanon_cli.commands.catalog import AUDIT_CHECK_REGISTRY, AuditFinding
 from kanon_cli.core.manifest import RawFinding, collect_remote_url_findings
 
 
-# ---------------------------------------------------------------------------
-# Fixture-writing helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_repo_specs(tmp_path: pathlib.Path) -> pathlib.Path:
     """Create and return the repo-specs/ directory under tmp_path."""
     repo_specs = tmp_path / "repo-specs"
@@ -105,11 +100,6 @@ def _marketplace_no_projects(entry_name: str = "test-tool") -> str:
     """)
 
 
-# ---------------------------------------------------------------------------
-# Helper to call the check function with an injected env
-# ---------------------------------------------------------------------------
-
-
 def _run_check(tmp_path: pathlib.Path, env: dict[str, str] | None = None) -> list[RawFinding]:
     """Call collect_remote_url_findings directly with env injection."""
     return collect_remote_url_findings(tmp_path, env=env or {})
@@ -119,11 +109,6 @@ def _run_registered_check(tmp_path: pathlib.Path) -> list[AuditFinding]:
     """Call the check registered under 'remote-url' in AUDIT_CHECK_REGISTRY."""
     check_fn = AUDIT_CHECK_REGISTRY["remote-url"]
     return check_fn(tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# Registry registration (AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -163,11 +148,6 @@ class TestRemoteUrlCheckRegistered:
         assert finding.code == "R001"
 
 
-# ---------------------------------------------------------------------------
-# Resolvable HTTPS remote: zero findings (AC-FUNC-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolvableHttpsRemoteZeroFindings:
     """A <project> whose <remote> fetches via HTTPS produces zero findings (AC-FUNC-001)."""
@@ -190,11 +170,6 @@ class TestResolvableHttpsRemoteZeroFindings:
         )
         findings = _run_check(tmp_path)
         assert findings == [], f"Expected zero findings for HTTPS URL {fetch_url!r}, got: {findings}"
-
-
-# ---------------------------------------------------------------------------
-# Resolvable SSH remote: zero findings (AC-FUNC-006)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -220,11 +195,6 @@ class TestResolvableSshRemoteZeroFindings:
         )
         findings = _run_check(tmp_path)
         assert findings == [], f"Expected zero findings for SSH URL {fetch_url!r}, got: {findings}"
-
-
-# ---------------------------------------------------------------------------
-# Unresolvable remote: one R001 ERROR (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -301,11 +271,6 @@ class TestUnresolvableRemoteOneError:
         assert error_findings[0].code == "R001"
 
 
-# ---------------------------------------------------------------------------
-# file:// URL without env var: one R002 ERROR (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInsecureUrlWithoutEnvOneError:
     """A file:// URL produces one R002 ERROR when KANON_ALLOW_INSECURE_REMOTES is unset (AC-FUNC-003)."""
@@ -346,11 +311,6 @@ class TestInsecureUrlWithoutEnvOneError:
         assert len(error_findings) == 1, f"Expected one R002 ERROR when env=0, got: {error_findings}"
 
 
-# ---------------------------------------------------------------------------
-# file:// URL with KANON_ALLOW_INSECURE_REMOTES=1: zero findings (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInsecureUrlWithEnvZeroFindings:
     """A file:// URL produces zero findings when KANON_ALLOW_INSECURE_REMOTES=1 (AC-FUNC-004)."""
@@ -374,11 +334,6 @@ class TestInsecureUrlWithEnvZeroFindings:
         assert findings == [], (
             f"Expected zero findings with KANON_ALLOW_INSECURE_REMOTES=1 for {fetch_url!r}, got: {findings}"
         )
-
-
-# ---------------------------------------------------------------------------
-# URL with query string or fragment: one R003 ERROR (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -410,11 +365,6 @@ class TestQueryStringOrFragmentOneError:
         assert error_findings[0].code == "R003", f"Expected code R003, got: {error_findings[0].code}"
 
 
-# ---------------------------------------------------------------------------
-# env parameter injection (AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEnvParameterInjection:
     """_check_remote_url accepts env as a parameter; tests inject without mutating process env (AC-FUNC-008)."""
@@ -433,11 +383,6 @@ class TestEnvParameterInjection:
         assert findings_with_env == [], "Expected zero findings with env override"
 
 
-# ---------------------------------------------------------------------------
-# Include-chain resolution (AC-FUNC-001 / AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeChainResolution:
     """Remote definitions in included XML files are found via the include chain."""
@@ -446,7 +391,6 @@ class TestIncludeChainResolution:
         """A <remote> defined in a parent-included XML file is found and accepted when HTTPS."""
         repo_specs = _make_repo_specs(tmp_path)
 
-        # Write a helper XML that defines the remote.
         helper_content = textwrap.dedent("""\
             <?xml version="1.0"?>
             <manifest>
@@ -456,7 +400,6 @@ class TestIncludeChainResolution:
         helper_path = repo_specs / "helpers.xml"
         helper_path.write_text(helper_content, encoding="utf-8")
 
-        # Write the marketplace XML that includes helpers.xml and has a project.
         marketplace_content = textwrap.dedent("""\
             <?xml version="1.0"?>
             <manifest>
@@ -479,7 +422,6 @@ class TestIncludeChainResolution:
         """A <project> whose remote is not in any reachable include file produces R001."""
         repo_specs = _make_repo_specs(tmp_path)
 
-        # Write a helper XML that does NOT define the remote the project needs.
         helper_content = textwrap.dedent("""\
             <?xml version="1.0"?>
             <manifest>
@@ -489,7 +431,6 @@ class TestIncludeChainResolution:
         helper_path = repo_specs / "helpers.xml"
         helper_path.write_text(helper_content, encoding="utf-8")
 
-        # The marketplace XML includes helpers.xml but references "missing" remote.
         marketplace_content = textwrap.dedent("""\
             <?xml version="1.0"?>
             <manifest>
@@ -526,11 +467,6 @@ class TestIncludeChainResolution:
         _make_repo_specs(tmp_path)
         findings = _run_check(tmp_path)
         assert findings == []
-
-
-# ---------------------------------------------------------------------------
-# Finding attributes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

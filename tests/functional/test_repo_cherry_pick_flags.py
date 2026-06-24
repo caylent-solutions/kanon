@@ -54,35 +54,22 @@ from tests.functional.test_repo_cherry_pick_happy import (
     _setup_started_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Error exit code for argument-parsing errors.
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-cherry-pick-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Placeholder SHA1 used in argument-parser tests that do not require a real
-# initialized repository. The SHA1 is intentionally fake -- the command will
-# fail at git invocation (exit 1) rather than at option parsing (exit 2),
-# which proves the flag was accepted by optparse.
+
 _FAKE_SHA1 = "0000000000000000000000000000000000000001"
 
-# Branch names for individual flag behavior tests -- each test uses a unique name
-# to avoid cross-test interference.
+
 _BRANCH_ABSENCE_DEFAULT = "feature/cherry-pick-absence-default"
 _BRANCH_FUNC_VERBOSE = "feature/cherry-pick-func-verbose"
 _BRANCH_FUNC_QUIET = "feature/cherry-pick-func-quiet"
@@ -91,14 +78,13 @@ _BRANCH_FUNC_NO_OUTER_MANIFEST = "feature/cherry-pick-func-no-outer-manifest"
 _BRANCH_FUNC_THIS_MANIFEST = "feature/cherry-pick-func-this-manifest"
 _BRANCH_CHANNEL_VALID = "feature/cherry-pick-channel-valid"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Boolean store_true flags from _CommonOptions() that cherry-pick inherits.
-# These accept no value; negative test uses inline-value syntax.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -106,7 +92,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Boolean store_false flags from _CommonOptions() that cherry-pick inherits.
+
 _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -115,11 +101,10 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# All boolean flags combined -- used for valid-value parametrize set.
+
 _ALL_BOOL_FLAGS: list[tuple[str, str]] = _BOOL_STORE_TRUE_FLAGS + _BOOL_STORE_FALSE_FLAGS
 
-# Long-form boolean flags (store_true and store_false) used in AC-TEST-002
-# negative tests. Short-form flags cannot use '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--verbose", "verbose"),
     ("--outer-manifest", "outer-manifest"),
@@ -130,18 +115,14 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Absence-default parametrize data: (branch_suffix, test_id, flag_description)
-# Each tuple drives one case verifying that omitting a specific flag defaults
-# correctly and cherry-pick exits 0.
+
 _ABSENCE_DEFAULT_CASES: list[tuple[str, str, str]] = [
     ("-verbose", "verbose-omitted", "--verbose"),
     ("-outer", "outer-manifest-omitted", "--outer-manifest"),
     ("-this", "this-manifest-only-omitted", "--this-manifest-only"),
 ]
 
-# Documented-behavior parametrize data: (flag, branch_constant, test_id)
-# Each tuple drives one case verifying that passing a specific flag with a
-# real started repo produces exit 0.
+
 _DOCUMENTED_BEHAVIOR_CASES: list[tuple[str, str, str]] = [
     ("--verbose", _BRANCH_FUNC_VERBOSE, "verbose"),
     ("--quiet", _BRANCH_FUNC_QUIET, "quiet"),
@@ -149,12 +130,6 @@ _DOCUMENTED_BEHAVIOR_CASES: list[tuple[str, str, str]] = [
     ("--no-outer-manifest", _BRANCH_FUNC_NO_OUTER_MANIFEST, "no-outer-manifest"),
     ("--this-manifest-only", _BRANCH_FUNC_THIS_MANIFEST, "this-manifest-only"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every flag available to cherry-pick
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -229,11 +204,6 @@ class TestRepoCherryPickFlagsValidValues:
             f"'--this-manifest-only --all-manifests' triggered an argument-parsing "
             f"error (exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with typed or inline values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -367,11 +337,6 @@ class TestRepoCherryPickFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCherryPickFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -451,11 +416,6 @@ class TestRepoCherryPickFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCherryPickFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -502,11 +462,6 @@ class TestRepoCherryPickFlagsDocumentedBehavior:
             f"expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

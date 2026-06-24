@@ -51,11 +51,6 @@ from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_so
 _COMPLETER_NAME = "__resolve_entry_to_repo_url"
 
 
-# ---------------------------------------------------------------------------
-# Domain exceptions
-# ---------------------------------------------------------------------------
-
-
 class EntryNotFoundError(LookupError):
     """Raised when entry_name is not found in the cached catalog index.
 
@@ -89,11 +84,6 @@ class MidtokenCacheError(RuntimeError):
     """
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_stderr_diagnostic(exc: BaseException) -> None:
     """Write a one-line diagnostic to stderr when stderr is a tty.
 
@@ -106,11 +96,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
     """
     if sys.stderr.isatty():
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def resolve_entry_to_repo_url(entry_name: str) -> str:
@@ -141,12 +126,11 @@ def resolve_entry_to_repo_url(entry_name: str) -> str:
             the catalog cache entry does not exist.
         EntryNotFoundError: When entry_name is not found in the cached index.
     """
-    # Step 1: completion disabled guard.
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return ""
 
-    # Step 2: resolve catalog source from the single KANON_CATALOG_SOURCES entry.
     try:
         source = resolve_env_catalog_source()
     except ValueError as exc:
@@ -159,7 +143,6 @@ def resolve_entry_to_repo_url(entry_name: str) -> str:
     except ValueError as exc:
         raise MidtokenCacheError(f"malformed {CATALOG_SOURCES_ENV_VAR}={source!r}: {exc}") from exc
 
-    # Step 3: locate the catalog cache directory.
     entry_dir = catalog_entry_dir(url, ref)
     index_path = entry_dir / "index.txt"
 
@@ -169,17 +152,11 @@ def resolve_entry_to_repo_url(entry_name: str) -> str:
             f" run 'kanon __complete_catalog_entries' to populate the cache"
         )
 
-    # Step 4+5: search the cached index for entry_name.
     names = read_entries(index_path)
     if entry_name in names:
         return url
 
     raise EntryNotFoundError(entry_name, source)
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

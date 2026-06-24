@@ -21,30 +21,20 @@ import pytest
 from kanon_cli.repo import repo_trace
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
-# Size limit for trace file enforcement tests (in bytes).
-# 10 MiB expressed in bytes for clear, auditable threshold comparisons.
+
 _TEN_MIB_BYTES = 10 * 1024 * 1024
 
-# Recognized REPO_TRACE enabling values.
+
 _TRACE_ENABLED_VALUE = "1"
 
-# REPO_TRACE disabled value.
+
 _TRACE_DISABLED_VALUE = "0"
 
-# Example of an invalid (unrecognized) REPO_TRACE value.
+
 _TRACE_INVALID_VALUE = "invalid"
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _build_trace_env(repo_trace_value: str) -> dict:
@@ -104,11 +94,6 @@ def _run_trace_script(repo_trace_value: str, cwd: pathlib.Path) -> subprocess.Co
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: REPO_TRACE=0 produces no trace output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRepoTraceDisabled:
     """AC-TEST-001: REPO_TRACE=0 disables tracing -- no trace output produced.
@@ -145,7 +130,6 @@ class TestRepoTraceDisabled:
 
         assert result.returncode == 0, f"Script failed: stderr={result.stderr!r}"
 
-        # With REPO_TRACE=0, no output should be written to the trace file.
         if trace_file.exists():
             content = trace_file.read_text(encoding="utf-8", errors="replace")
             assert content == "", (
@@ -201,11 +185,6 @@ class TestRepoTraceDisabled:
             "IsTrace() must return False when REPO_TRACE=0. "
             f"Got returncode {result.returncode}. stderr={result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: REPO_TRACE=1 produces trace output on stderr
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -291,11 +270,6 @@ class TestRepoTraceEnabled:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: REPO_TRACE=invalid is treated as disabled
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRepoTraceInvalid:
     """AC-TEST-003: REPO_TRACE=invalid is treated as disabled.
@@ -379,11 +353,6 @@ class TestRepoTraceInvalid:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: trace-file size enforcement (>10MB rotation or truncation)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestTraceFileSizeEnforcement:
     """AC-TEST-004: Trace-file size enforcement -- large files are rotated or truncated.
@@ -406,16 +375,10 @@ class TestTraceFileSizeEnforcement:
         """
         trace_file = tmp_path / "TRACE_FILE"
 
-        # Build trace content larger than 10 MiB using the separator pattern
-        # that _ClearOldTraces uses to find command boundaries.
         separator = repo_trace._NEW_COMMAND_SEP
-        # Each chunk is a complete command trace segment.
-        chunk = (
-            f"PID: 100 END: 999 :{separator} cmd-old\n"
-            + ("x" * (512 * 1024))  # 512 KiB of padding per chunk
-            + "\nPID: 200 START: 001 :cmd-new\n"
-        )
-        # Write enough chunks to exceed 10 MiB.
+
+        chunk = f"PID: 100 END: 999 :{separator} cmd-old\n" + ("x" * (512 * 1024)) + "\nPID: 200 START: 001 :cmd-new\n"
+
         chunks_needed = (_TEN_MIB_BYTES // len(chunk.encode("utf-8"))) + 3
         content = chunk * chunks_needed
         trace_file.write_text(content, encoding="utf-8")
@@ -425,13 +388,11 @@ class TestTraceFileSizeEnforcement:
             f"Test pre-condition: trace file must exceed 10 MiB before rotation. File size: {initial_size} bytes"
         )
 
-        # Set _TRACE_FILE and limit, then call _ClearOldTraces.
         ten_mib_in_mib = _TEN_MIB_BYTES / (1024 * 1024)
         with mock.patch.object(repo_trace, "_TRACE_FILE", str(trace_file)):
             with mock.patch.object(repo_trace, "_MAX_SIZE", ten_mib_in_mib):
                 repo_trace._ClearOldTraces()
 
-        # After rotation, the file must exist and be smaller than before.
         assert trace_file.exists(), "Trace file must still exist after rotation"
         final_size = trace_file.stat().st_size
         assert final_size < initial_size, (
@@ -475,7 +436,6 @@ class TestTraceFileSizeEnforcement:
 
         with mock.patch.object(repo_trace, "_TRACE_FILE", str(absent_trace_file)):
             with mock.patch.object(repo_trace, "_MAX_SIZE", 10.0):
-                # Must not raise FileNotFoundError or any other exception.
                 repo_trace._ClearOldTraces()
 
     def test_trace_file_rotation_is_bounded(self, tmp_path: pathlib.Path) -> None:
@@ -489,11 +449,9 @@ class TestTraceFileSizeEnforcement:
         trace_file = tmp_path / "TRACE_FILE"
         separator = repo_trace._NEW_COMMAND_SEP
 
-        # Build well-formed command blocks that _ClearOldTraces can split at.
-        # Each block: one END line with separator, then body lines.
         one_kib = "y" * 1024
         block = f"PID: 1 END: 1 :{separator} cmd\n{one_kib}\n"
-        # Write 12 MiB worth of blocks to exceed the 10 MiB limit.
+
         target_bytes = 12 * 1024 * 1024
         block_bytes = len(block.encode("utf-8"))
         repeat = (target_bytes // block_bytes) + 1
@@ -509,7 +467,7 @@ class TestTraceFileSizeEnforcement:
 
         if trace_file.exists():
             final_size = trace_file.stat().st_size
-            # The resulting file must be strictly smaller than the initial size.
+
             assert final_size < initial_size, (
                 f"Rotation must reduce file size. Initial: {initial_size} bytes, Final: {final_size} bytes"
             )

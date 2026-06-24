@@ -47,10 +47,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_superproject_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -115,11 +111,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <superproject>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -317,11 +308,6 @@ class TestSuperprojectCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <superproject> surface clear errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <superproject> surface clear errors.
@@ -488,11 +474,6 @@ class TestSuperprojectDuplicateElementRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <superproject> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectUnexpectedParent:
     """AC-TEST-003: <superproject> in an unexpected parent raises or is ignored per spec.
@@ -644,11 +625,6 @@ class TestSuperprojectUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -743,11 +719,6 @@ class TestSuperprojectCrossRefParseTimeEnforcement:
             f"AC-FUNC-001: expected superproject.revision='refs/heads/main' after Load() "
             f"but got: {manifest.superproject.revision!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

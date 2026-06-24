@@ -32,21 +32,12 @@ from tests.integration.test_add_core import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- per CLAUDE.md "ALL CODE MUST BE DYNAMIC AND
-# INPUT-DRIVEN"; subcheck names live here, not inside the test body.
-# ---------------------------------------------------------------------------
 
 EXPECTED_DOCTOR_SUBCHECK_NAMES: list[str] = [
     "kanon_hash consistency",
     "no orphaned lock entries",
     "no branch drift",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -83,7 +74,6 @@ class TestDoctorDefaultSubcheckOutput:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Step 2: kanon add foo --catalog-source <url>
         add_result = _run_kanon(
             ["add", "foo", "--catalog-source", catalog_source],
             cwd=workspace,
@@ -93,9 +83,6 @@ class TestDoctorDefaultSubcheckOutput:
             f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
         )
 
-        # Step 3: kanon install is hermetic -- it installs exactly the sources
-        # declared in .kanon and never resolves a catalog source. Strip
-        # KANON_CATALOG_SOURCES so install's hermetic guard does not reject the run.
         env_without_catalog = dict(os.environ)
         env_without_catalog.pop("KANON_CATALOG_SOURCES", None)
 
@@ -111,7 +98,6 @@ class TestDoctorDefaultSubcheckOutput:
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
 
-        # Step 4 + 5: kanon doctor (no flags) must exit 0
         doctor_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "doctor"],
             capture_output=True,
@@ -126,7 +112,6 @@ class TestDoctorDefaultSubcheckOutput:
 
         stdout_lines = doctor_result.stdout.splitlines()
 
-        # Step 6: each expected subcheck name must appear as `[ok] <name>`
         for subcheck_name in EXPECTED_DOCTOR_SUBCHECK_NAMES:
             pattern = re.compile(r"^\[ok\] " + re.escape(subcheck_name) + r"$")
             matching_lines = [line for line in stdout_lines if pattern.match(line)]

@@ -29,10 +29,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _DUMMY_SHA = "a" * 40
 _DUMMY_SHA2 = "b" * 40
 _DUMMY_SHA3 = "c" * 40
@@ -100,11 +96,6 @@ def _make_project(
     )
 
 
-# ---------------------------------------------------------------------------
-# derive_lock_file_path (via utils.lock_file_path -- completer reuses this)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolveLockfilePath:
     """derive_lock_file_path() implements the three-level precedence chain used by the completer."""
@@ -148,11 +139,6 @@ class TestResolveLockfilePath:
             env_lock_file=explicit,
         )
         assert result == Path(explicit)
-
-
-# ---------------------------------------------------------------------------
-# _extract_names
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -222,7 +208,7 @@ class TestExtractNames:
         )
         result = _extract_names(lockfile)
         assert "https://github.com/org/repo.git" in result
-        # The project name attribute should NOT appear (only URL)
+
         assert "myname" not in result
 
     def test_include_path_in_repo_extracted(self) -> None:
@@ -237,12 +223,12 @@ class TestExtractNames:
         )
         result = _extract_names(lockfile)
         assert "repo-specs/foo.xml" in result
-        # The include name attribute should NOT appear (only path_in_repo)
+
         assert "human_name" not in result
 
     def test_deep_recursion_depth_3(self) -> None:
         """AC-FUNC-008: nested includes at depth 3 are extracted (recursion exercised)."""
-        # Depth-3 chain: source -> include_L1 -> include_L2 -> include_L3
+
         include_l3 = _make_include("name_l3", "deep/path/level3.xml")
         include_l2 = _make_include("name_l2", "deep/path/level2.xml", includes=[include_l3])
         include_l1 = _make_include("name_l1", "deep/path/level1.xml", includes=[include_l2])
@@ -266,11 +252,6 @@ class TestExtractNames:
         assert result == sorted(result)
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 short-circuit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 causes complete() to return [] without reading lockfile."""
@@ -278,7 +259,7 @@ class TestCompleteDisabled:
     def test_disabled_returns_empty(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 -> empty list, no file read attempted."""
         lock_path = tmp_path / ".kanon.lock"
-        # Do NOT create the file -- if code reads it, FileNotFoundError would surface.
+
         with patch.dict(
             os.environ,
             {
@@ -304,11 +285,6 @@ class TestCompleteDisabled:
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -438,11 +414,6 @@ class TestCompleteHappyPath:
         assert result == expected
 
 
-# ---------------------------------------------------------------------------
-# complete() -- missing lockfile
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteMissingLockfile:
     """complete() returns empty and logs when the lockfile does not exist."""
@@ -482,11 +453,6 @@ class TestCompleteMissingLockfile:
         assert str(lock_path) in content
 
 
-# ---------------------------------------------------------------------------
-# complete() -- malformed TOML
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteMalformedLockfile:
     """complete() returns empty and logs when the lockfile contains malformed TOML."""
@@ -524,13 +490,13 @@ class TestCompleteMalformedLockfile:
         assert log_path.exists()
         content = log_path.read_text()
         assert "__complete_names_in_lockfile" in content
-        # TOMLDecodeError or LockfileValidationError should appear
+
         assert "Error" in content or "error" in content
 
     def test_valid_toml_invalid_lockfile_schema_returns_empty(self, tmp_path: Path) -> None:
         """Valid TOML that fails lockfile schema validation -> empty + log entry."""
         lock_path = tmp_path / ".kanon.lock"
-        # Valid TOML, current schema_version, but missing required lockfile fields
+
         lock_path.write_text("schema_version = 4\nfoo = 'bar'\n")
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
@@ -545,11 +511,6 @@ class TestCompleteMalformedLockfile:
             result = complete("")
         assert result == []
         assert log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- deep recursion
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -577,11 +538,6 @@ class TestCompleteDeepRecursion:
         assert "deep/level1/spec.xml" in result
         assert "deep/level2/spec.xml" in result
         assert "deep/level3/spec.xml" in result
-
-
-# ---------------------------------------------------------------------------
-# complete() -- lockfile path resolution (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -617,11 +573,6 @@ class TestCompleteLockfilePathResolution:
         with patch.dict(os.environ, env, clear=True):
             result = complete("")
         assert result == ["derived_source"]
-
-
-# ---------------------------------------------------------------------------
-# _handle() -- argparse entry point
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

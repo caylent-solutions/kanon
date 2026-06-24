@@ -31,16 +31,12 @@ from typing import Sequence
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants and helpers
-# ---------------------------------------------------------------------------
-
 _SRC_DIR = pathlib.Path(__file__).resolve().parents[2] / "src"
 
-# How long to wait for a subprocess to complete (generous for CI).
+
 _SUBPROCESS_TIMEOUT = int(os.environ.get("KANON_TEST_SUBPROCESS_TIMEOUT", "60"))
 
-# SHA-1 pattern (40 lowercase hex chars).
+
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -248,11 +244,6 @@ def _run_procs_wait(
     return results
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 (variant 1): two concurrent kanon install subprocesses serialise
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestConcurrentInstallSerialization:
     """AC-TEST-002: two concurrent kanon install subprocesses serialise."""
@@ -332,7 +323,6 @@ class TestConcurrentInstallSerialization:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         lock_path = store_base / ".kanon-data" / INSTALL_LOCK_FILENAME
 
-        # First subprocess: creates and acquires lock, then exits (releases).
         subprocess.run(
             list(_install_cmd(kanonenv)),
             capture_output=True,
@@ -348,7 +338,6 @@ class TestConcurrentInstallSerialization:
         )
         mtime_after_first = os.stat(lock_path).st_mtime_ns
 
-        # Second subprocess: re-opens and re-acquires the SAME lock file.
         subprocess.run(
             list(_install_cmd(kanonenv)),
             capture_output=True,
@@ -366,11 +355,6 @@ class TestConcurrentInstallSerialization:
             "A decreasing mtime would indicate the lock file was recreated in a way that "
             "bypassed serialisation."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 (variant 2): kanon install + kanon add concurrent serialisation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -427,11 +411,6 @@ class TestInstallPlusAddSerialization:
         assert lock_path.exists(), (
             f"Workspace lock file must exist at {lock_path} after concurrent kanon install and kanon add completed"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: pairwise serialisation between every cross-command pair
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -592,11 +571,6 @@ class TestPairwiseSerialization:
             assert r.returncode is not None, f"Process {i} did not produce an exit code"
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: end-to-end cycle -- lock file existence and no corruption
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestConcurrentInstallCycle:
     """AC-CYCLE-001: end-to-end concurrent install cycle test."""
@@ -679,8 +653,6 @@ class TestConcurrentInstallCycle:
             timeout=_SUBPROCESS_TIMEOUT,
         )
 
-        # Whether install succeeded or failed (likely failed -- no real remote),
-        # the lock file must have been created.
         assert lock_path.exists(), (
             f"Lock file {lock_path} must exist after kanon install runs (even if install fails). "
             f"Exit code: {proc.returncode}. stderr: {proc.stderr[:200]!r}"
@@ -711,12 +683,8 @@ class TestConcurrentInstallCycle:
 
         env = _build_env()
 
-        # Run two concurrent installs; both enter LOCKFILE_CONSISTENT path.
-        # They may fail at the sha-reachability check (no real remote), but the
-        # lockfile is never partially overwritten -- the lock prevents interleaving.
         _run_procs_wait([_install_cmd(kanonenv), _install_cmd(kanonenv)], env, str(tmp_path))
 
-        # The pre-seeded lockfile must still exist and contain coherent SHAs.
         assert lock_file_path.exists(), (
             f".kanon.lock must still exist at {lock_file_path} after concurrent installs. "
             "If it is missing the workspace lock did not prevent a destructive concurrent write."
@@ -724,7 +692,6 @@ class TestConcurrentInstallCycle:
 
         lock_content = lock_file_path.read_text(encoding="utf-8")
 
-        # Every resolved_sha line in the lockfile must be a 40-char hex SHA-1.
         sha_lines = [
             line.split("=", 1)[1].strip().strip('"') for line in lock_content.splitlines() if "resolved_sha" in line
         ]

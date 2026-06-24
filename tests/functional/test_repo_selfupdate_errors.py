@@ -37,75 +37,58 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals extracted here;
-# no inline literals in test bodies, f-string diagnostics, or parametrize
-# tuples.
-# ---------------------------------------------------------------------------
 
-# CLI token for the selfupdate subcommand.
 _CLI_TOKEN_SELFUPDATE = "selfupdate"
 
-# Composed CLI command phrase for diagnostic messages (no inline literals).
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
 
-# CLI flag for --help.
+
 _CLI_FLAG_HELP = "--help"
 
-# Nonexistent repo-dir path used in tests that do not require a real .repo
-# directory (argument-parsing tests fire before .repo is consulted).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-selfupdate-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-selfupdate-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-selfupdate-option-99"
 
-# Boolean flag supplied with an unexpected inline value (AC-TEST-003).
-# 'repo selfupdate' defines --no-repo-verify as store_false; the optparse
-# parser rejects '--no-repo-verify=unexpected' with exit 2.
+
 _CLI_FLAG_NO_REPO_VERIFY = "--no-repo-verify"
 _CLI_FLAG_REPO_UPGRADED = "--repo-upgraded"
 _BOOL_FLAG_WITH_VALUE = _CLI_FLAG_NO_REPO_VERIFY + "=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = _CLI_FLAG_REPO_UPGRADED + "=badval"
 _BOOL_FLAG_BASE_NAME = _CLI_FLAG_NO_REPO_VERIFY
 
-# Phrase produced by optparse when a boolean flag is supplied with an
-# inline value (AC-TEST-003 / AC-TEST-002 negative tests).
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo selfupdate"
 
-# A subcommand-specific option that appears in the --help output, used to
-# verify the help text is specific to selfupdate (not a generic fallback).
+
 _HELP_OPTION_PHRASE = _CLI_FLAG_NO_REPO_VERIFY
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 
-# Parametrize tuples for unknown-flag multi-variant tests.
-# Tuples are (flag, test_id); no inline literals appear in test bodies.
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b"),
 ]
 
-# Parametrize tuples for bool-flag-with-value multi-variant tests.
+
 _BOOL_FLAGS_WITH_VALUES: list[tuple[str, str]] = [
     (_BOOL_FLAG_WITH_VALUE, "no-repo-verify"),
     (_BOOL_FLAG_WITH_VALUE_ALT_A, "repo-upgraded"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo selfupdate --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -259,11 +242,6 @@ class TestRepoSelfupdateHelp:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSelfupdateUnknownFlag:
     """AC-TEST-002: Unknown flag to 'repo selfupdate' exits 2 with the flag name in stderr.
@@ -391,11 +369,6 @@ class TestRepoSelfupdateUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -532,11 +505,6 @@ class TestRepoSelfupdateBoolFlagWithValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSelfupdatePreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failure behavior.
@@ -637,11 +605,6 @@ class TestRepoSelfupdatePreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

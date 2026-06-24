@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests to boost coverage of small files to near 100%."""
 
 import errno
@@ -20,12 +6,6 @@ import sys
 from unittest import mock
 
 import pytest
-
-
-# ---------------------------------------------------------------------------
-# subcmds/forall.py  (uncovered: 225, 233, 243, 259-276, 337, 350-351,
-#                      380, 406)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -424,11 +404,6 @@ class TestForallDoWorkSpecialCases:
             assert exc_info.value.code == 42
 
 
-# ---------------------------------------------------------------------------
-# subcmds/branches.py  (uncovered: 166, 188-197, 204-212)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBranchesExecuteDeepCoverage:
     """Cover lines 166 (published='p'), 188-197 (not-in-project), 204-212."""
@@ -452,7 +427,6 @@ class TestBranchesExecuteDeepCoverage:
         mock_project = mock.MagicMock()
         mock_project.RelPath.return_value = "proj"
 
-        # branch is published but revision != published
         mock_branch = mock.MagicMock()
         mock_branch.current = False
         mock_branch.published = "pub_rev"
@@ -489,7 +463,6 @@ class TestBranchesExecuteDeepCoverage:
             p.RelPath.return_value = name
             projects.append(p)
 
-        # Branch is in p1 and p2 (majority), so "not in p3"
         b1 = mock.MagicMock()
         b1.current = False
         b1.published = None
@@ -612,12 +585,6 @@ class TestBranchesExecuteDeepCoverage:
             cmd.Execute(opt, [])
 
 
-# ---------------------------------------------------------------------------
-# platform_utils.py  (uncovered: 44, 77-79, 92-98, 136, 185-188, 192-195,
-#                      200-202, 206)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestPlatformUtilsWindows:
     """Cover Windows-specific branches in platform_utils.py."""
@@ -641,7 +608,6 @@ class TestPlatformUtilsWindows:
         from kanon_cli.repo import platform_utils
 
         with mock.patch.object(platform_utils, "isWindows", return_value=True):
-            # Relative path like "foo\\bar" should be valid (tail[0] != os.sep)
             with (
                 mock.patch("os.path.normpath", return_value="foo\\bar"),
                 mock.patch("os.path.splitdrive", return_value=("", "foo\\bar")),
@@ -653,7 +619,6 @@ class TestPlatformUtilsWindows:
         from kanon_cli.repo import platform_utils
 
         with mock.patch.object(platform_utils, "isWindows", return_value=True):
-            # On Linux os.sep is '/' so we simulate the Windows case
             with (
                 mock.patch("os.path.normpath", return_value="C:\\foo"),
                 mock.patch("os.path.splitdrive", return_value=("C:", "\\foo")),
@@ -739,7 +704,7 @@ class TestPlatformUtilsWindows:
             mock.patch.object(platform_utils, "islink", return_value=False),
         ):
             results = list(platform_utils._walk_windows_impl("/top", False, None, False))
-            # Should yield sub-dir first, then top
+
             paths = [r[0] for r in results]
             assert paths[-1] == "/top"
 
@@ -762,16 +727,9 @@ class TestPlatformUtilsWindows:
             mock.patch.object(platform_utils, "isdir", return_value=True),
             mock.patch.object(platform_utils, "islink", return_value=True),
         ):
-            # followlinks=True: should recurse into symlinked dirs
             with mock.patch.object(platform_utils, "listdir", side_effect=[["lnk"], []]):
                 results = list(platform_utils._walk_windows_impl("/top", True, None, True))
                 assert len(results) >= 1
-
-
-# ---------------------------------------------------------------------------
-# git_superproject.py  (uncovered: 190-193, 197, 203, 207, 218, 369,
-#                        419-422, 430-432, 474, 525, 558, 594)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -864,7 +822,7 @@ class TestSuperprojectLogAndSync:
             result = sp.Sync(mock.Mock())
             assert result.success is True
             assert result.fatal is False
-            # Check completion message printed
+
             assert any("completed" in str(c) for c in mock_print.call_args_list)
 
 
@@ -959,12 +917,10 @@ class TestSuperprojectUpdateProjects:
         """Line 474: project with revisionId is skipped via continue."""
         sp = self._make_superproject()
 
-        # Project that should be skipped (has revisionId)
         skipped_project = mock.Mock()
         skipped_project.relpath = "proj_with_id"
         skipped_project.revisionId = "already_set"
 
-        # Project that will be updated
         updated_project = mock.Mock()
         updated_project.relpath = "proj_to_update"
         updated_project.revisionId = None
@@ -992,7 +948,6 @@ class TestUseSuperprojectFromConfiguration:
         from kanon_cli.repo.git_superproject import _UseSuperprojectFromConfiguration
         import time
 
-        # Clear the lru_cache
         _UseSuperprojectFromConfiguration.cache_clear()
 
         mock_user_cfg = mock.Mock()
@@ -1061,20 +1016,13 @@ class TestUseSuperproject:
         from kanon_cli.repo.git_superproject import UseSuperproject
 
         manifest = mock.Mock()
-        # First check on line 582 needs superproject truthy
-        # but the elif on line 591 needs it falsy.
-        # We use a side_effect to return truthy first, then falsy.
+
         sp_mock = mock.PropertyMock(side_effect=[True, False])
         type(manifest).superproject = sp_mock
         manifest.manifestProject.use_superproject = None
 
         result = UseSuperproject(None, manifest)
         assert result is False
-
-
-# ---------------------------------------------------------------------------
-# subcmds/smartsync.py  (uncovered: 32-33)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1094,11 +1042,6 @@ class TestSmartsyncExecute:
             smartsync.Execute(opt, ["arg1"])
             assert opt.smart_sync is True
             mock_exec.assert_called_once_with(smartsync, opt, ["arg1"])
-
-
-# ---------------------------------------------------------------------------
-# git_trace2_event_log.py  (uncovered: 27-29, 32)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1145,11 +1088,6 @@ class TestEventLog:
             result = log._GetEventTargetPath()
             assert result == "/target/path"
             mock_gtp.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# subcmds/diff.py  (uncovered: 56-59, 69-72)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1266,12 +1204,6 @@ class TestDiffExecute:
             assert result == 0
 
 
-# ---------------------------------------------------------------------------
-# subcmds/upload.py  (uncovered: 433, 451, 457, 496, 500-507, 512-515,
-#                      677, 743-758, 773, 779-820)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUploadSingleBranch:
     """Cover _SingleBranch line 433 (verify pending abort)."""
@@ -1294,7 +1226,7 @@ class TestUploadSingleBranch:
         branch.name = "feature"
         branch.project = mock.Mock()
         branch.project.GetBranch.return_value.remote.review = "https://review"
-        branch.project.config.GetBoolean.return_value = True  # autoupload
+        branch.project.config.GetBoolean.return_value = True
 
         opt = mock.Mock()
         opt.yes = False
@@ -1336,7 +1268,6 @@ class TestUploadMultipleBranches:
         opt.this_manifest_only = False
         opt.yes = True
 
-        # Editor returns uncommented branch line
         edited = "# project proj1/:\n branch feat ( 1 commit, 2024-01-01) to remote branch main:\n"
 
         with (

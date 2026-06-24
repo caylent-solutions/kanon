@@ -35,15 +35,6 @@ from kanon_cli.core.install import (
 from kanon_cli.core.lockfile import read_lockfile
 
 
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures
-# ---------------------------------------------------------------------------
-# This module uses real local git repos and custom _resolve_ref_to_sha
-# patching (catalog URL only). The autouse fixtures in
-# tests/integration/conftest.py would intercept the real function calls
-# that these tests depend on. Override them to be no-ops.
-
-
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
     """Override: let the test's own patch handle _resolve_ref_to_sha."""
@@ -54,11 +45,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: let the test's own subprocess.run patches handle reachability."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture: minimal git repo with tagged releases
-# ---------------------------------------------------------------------------
 
 
 def _git(*args: str, cwd: pathlib.Path) -> str:
@@ -176,11 +162,6 @@ def _run_install_mocked(
         )
 
 
-# ===========================================================================
-# AC-TEST-002: lockfile-consistent replay ignores newer remote tag
-# ===========================================================================
-
-
 @pytest.mark.integration
 class TestLockfileReplay:
     """AC-TEST-002: end-to-end lockfile replay through install()."""
@@ -212,16 +193,13 @@ class TestLockfileReplay:
         project_dir.mkdir()
         kanon_path = _write_kanon(project_dir, str(repo_path))
 
-        # First install -- writes the lockfile.
         _run_install_mocked(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
         lockfile_after_first = lock_path.read_text()
 
-        # Add a newer tag on remote to prove replay ignores it.
         _add_tag(repo_path, "2.0.0")
 
-        # Second install -- must use the lockfile, NOT re-resolve.
         _run_install_mocked(kanon_path)
 
         lockfile_after_second = lock_path.read_text()
@@ -239,10 +217,8 @@ class TestLockfileReplay:
         project_dir.mkdir()
         kanon_path = _write_kanon(project_dir, str(repo_path))
 
-        # First install writes lockfile with sha_v1 for tag 1.0.0.
         _run_install_mocked(kanon_path)
 
-        # Add newer tag 2.0.0 on remote.
         sha_v2 = _add_tag(repo_path, "2.0.0")
         assert sha_v1 != sha_v2
 
@@ -250,11 +226,9 @@ class TestLockfileReplay:
         lf = read_lockfile(lock_path)
         pinned_sha = lf.sources[0].resolved_sha
 
-        # The pinned SHA must be the 1.0.0 SHA, not 2.0.0.
         assert pinned_sha == sha_v1
         assert pinned_sha != sha_v2
 
-        # Capture the resolve_version calls during second install.
         resolve_calls: list[str] = []
 
         original_resolve = __import__("kanon_cli.version", fromlist=["resolve_version"]).resolve_version
@@ -271,7 +245,6 @@ class TestLockfileReplay:
         ):
             install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock")
 
-        # In the LOCKFILE_CONSISTENT state, resolve_version must NOT be called.
         assert resolve_calls == [], (
             f"install() must not call resolve_version() in LOCKFILE_CONSISTENT state; got calls for: {resolve_calls!r}"
         )
@@ -323,29 +296,15 @@ class TestLockfileReplay:
             ):
                 install(kanon_path, lock_file_path=lock_path)
 
-        # Install succeeded and wrote the lockfile from the committed .kanon.
         assert lock_path.exists(), "install() must write .kanon.lock despite KANON_CATALOG_SOURCES being set"
 
         lf = read_lockfile(lock_path)
-        # The single source comes from .kanon (the fixture repo), pinned to 1.0.0.
+
         assert [e.name for e in lf.sources] == ["alpha"]
         assert lf.sources[0].resolved_sha == sha_v1
 
-        # The bogus catalog URL from the env var must NOT appear anywhere in the lock.
         lock_text = lock_path.read_text()
         assert "catalog.example.com" not in lock_text
-
-
-# ===========================================================================
-# Hash-mismatch end-to-end cycle through install()
-#
-# Contract (npm-like model):
-#   - plain `kanon install` RECONCILES on a hash mismatch (changed spec is
-#     re-resolved to the new pin; nothing errors).
-#   - `kanon install --strict-lock` is the `npm ci` analogue: it errors cleanly
-#     on the drift (KanonHashMismatchError, naming both hashes) and NEVER mutates
-#     the lockfile.
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -370,7 +329,6 @@ class TestHashMismatchCycle:
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        # Write .kanon at revision ==1.0.0 and run first install.
         kanon_path = _write_kanon(project_dir, str(repo_path), revision="==1.0.0")
         _run_install_mocked(kanon_path)
 
@@ -378,10 +336,8 @@ class TestHashMismatchCycle:
         assert lock_path.exists()
         assert read_lockfile(lock_path).sources[0].resolved_sha == sha_v1
 
-        # Modify .kanon to bump revision to ==2.0.0 -- changes kanon_hash.
         _write_kanon(project_dir, str(repo_path), revision="==2.0.0")
 
-        # Plain install reconciles: re-resolves alpha to the 2.0.0 pin, no error.
         _run_install_mocked(kanon_path)
 
         lf_after = read_lockfile(lock_path)
@@ -401,7 +357,6 @@ class TestHashMismatchCycle:
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        # First install at ==1.0.0.
         kanon_path = _write_kanon(project_dir, str(repo_path), revision="==1.0.0")
         _run_install_mocked(kanon_path)
 
@@ -410,13 +365,10 @@ class TestHashMismatchCycle:
         lockfile_hash = lf.kanon_hash
         lock_before = lock_path.read_bytes()
 
-        # Modify .kanon to bump revision -- changes kanon_hash.
         _write_kanon(project_dir, str(repo_path), revision="==2.0.0")
         fresh_hash = compute_hash(kanon_path)
         assert fresh_hash != lockfile_hash
 
-        # --strict-lock must raise with both hashes in the message and the
-        # remediation, and must NOT mutate the lockfile.
         with pytest.raises(KanonHashMismatchError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
 

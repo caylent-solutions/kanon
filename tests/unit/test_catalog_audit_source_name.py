@@ -21,11 +21,6 @@ import pytest
 from kanon_cli.commands.catalog import AUDIT_CHECK_REGISTRY, AuditFinding
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(tmp_path: pathlib.Path, filename: str, entry_name: str) -> pathlib.Path:
     """Write a minimal *-marketplace.xml with the given entry name under repo-specs/."""
     repo_specs = tmp_path / "repo-specs"
@@ -52,11 +47,6 @@ def _run_check(tmp_path: pathlib.Path) -> list[AuditFinding]:
     return check_fn(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# Registry registration (AC-FUNC-005)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSourceNameDerivationCheckRegistered:
     """'source-name-derivation' is registered in AUDIT_CHECK_REGISTRY."""
@@ -66,11 +56,6 @@ class TestSourceNameDerivationCheckRegistered:
 
     def test_source_name_derivation_value_is_callable(self) -> None:
         assert callable(AUDIT_CHECK_REGISTRY["source-name-derivation"])
-
-
-# ---------------------------------------------------------------------------
-# Already-normalised entry name produces zero findings (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -95,11 +80,6 @@ class TestNormalisedEntryNameNoFindings:
             f"Expected zero findings for normalised entry name {entry_name!r}, "
             f"got: {[(f.kind, f.code, f.message) for f in findings]}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Normalisation drift => WARN (AC-FUNC-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -151,7 +131,7 @@ class TestNormalisationDriftWarning:
             f"Expected WARN naming derived form {expected_derived!r} for entry {entry_name!r}, "
             f"got warn messages: {[f.message for f in findings if f.kind == 'warn']}"
         )
-        # The entry name must also be named in the message
+
         assert any(entry_name in f.message for f in drift_warnings), (
             f"Expected WARN message to include entry name {entry_name!r}"
         )
@@ -183,11 +163,6 @@ class TestNormalisationDriftWarning:
             f"Expected no ERROR for drift, only WARN. Got: {[(f.kind, f.message) for f in findings]}"
         )
         assert any(f.kind == "warn" for f in findings), "Expected at least one WARN for drift"
-
-
-# ---------------------------------------------------------------------------
-# Out-of-charset entry name => WARN (AC-FUNC-003, AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -254,11 +229,6 @@ class TestOutOfCharsetWarning:
         )
 
 
-# ---------------------------------------------------------------------------
-# Both warnings can fire simultaneously (AC-FUNC-003 combined case)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBothWarningsIndependent:
     """An entry name can produce both drift and charset warnings simultaneously."""
@@ -291,7 +261,7 @@ class TestBothWarningsIndependent:
         findings = _run_check(tmp_path)
 
         warn_findings = [f for f in findings if f.kind == "warn"]
-        # Exactly one WARN: the charset one. No drift because 'foo.bar' -> 'foo.bar'.
+
         assert len(warn_findings) == 1, (
             f"Expected exactly 1 WARN for 'foo.bar' (charset only, no drift), "
             f"got {len(warn_findings)}: {[f.message for f in warn_findings]}"
@@ -304,13 +274,8 @@ class TestBothWarningsIndependent:
 
         warn_findings = [f for f in findings if f.kind == "warn"]
         assert warn_findings, "Expected at least one WARN for 'foo.bar'"
-        # Each finding must have a non-empty code
+
         assert all(f.code for f in warn_findings), "All findings must have a non-empty code"
-
-
-# ---------------------------------------------------------------------------
-# Exit code behaviour: only WARNs => exit 0 (AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -336,11 +301,6 @@ class TestExitCodeSignal:
         assert findings == []
 
 
-# ---------------------------------------------------------------------------
-# Multiple XML files
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMultipleXmlFiles:
     """_check_source_name_derivation walks all *-marketplace.xml files."""
@@ -362,7 +322,7 @@ class TestMultipleXmlFiles:
 
         warn_findings = [f for f in findings if f.kind == "warn"]
         assert len(warn_findings) >= 1, "Expected at least one WARN for the drifted file"
-        # No findings should reference the clean file (clean has no warnings)
+
         clean_warnings = [f for f in warn_findings if "clean-marketplace" in f.message]
         assert not clean_warnings, f"Clean file should produce no warnings, got: {[f.message for f in clean_warnings]}"
 
@@ -383,11 +343,6 @@ class TestMultipleXmlFiles:
         )
         findings = _run_check(tmp_path)
         assert findings == []
-
-
-# ---------------------------------------------------------------------------
-# Finding code uniqueness
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -417,11 +372,6 @@ class TestFindingCodes:
         assert len(warn_findings) >= 2, "Expected at least 2 WARNs for 'Foo.Bar'"
         codes = {f.code for f in warn_findings}
         assert len(codes) >= 2, f"Expected at least 2 distinct codes for drift+charset, got: {codes}"
-
-
-# ---------------------------------------------------------------------------
-# Edge case: malformed XML is silently skipped (metadata check's job)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

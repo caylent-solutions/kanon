@@ -40,11 +40,6 @@ def _make_opt(repo_upgraded: bool = False, repo_verify: bool = True) -> MagicMoc
     return opt
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-TEST-001: embedded mode prints informational message to stderr
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_selfupdate_embedded_prints_message_to_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-FUNC-001, AC-TEST-001: Execute must print the informational message to stderr in embedded mode."""
@@ -72,11 +67,6 @@ def test_selfupdate_embedded_message_exact_text(monkeypatch: pytest.MonkeyPatch)
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-TEST-002: embedded mode returns exit code 1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_selfupdate_embedded_returns_one(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-FUNC-003, AC-TEST-002: Execute must return exit code 1 in embedded mode.
@@ -95,11 +85,6 @@ def test_selfupdate_embedded_returns_one(monkeypatch: pytest.MonkeyPatch) -> Non
         result = instance.Execute(opt, [])
 
     assert result == 1, f"Execute must return 1 in embedded mode, got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-TEST-003: embedded mode does not call sync or download ops
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -188,11 +173,6 @@ def test_selfupdate_embedded_does_not_call_post_repo_upgrade(monkeypatch: pytest
     assert post_upgrade_calls == [], (
         f"_PostRepoUpgrade was called {len(post_upgrade_calls)} time(s) in embedded mode -- should not be called"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Normal (non-embedded) selfupdate behavior is not affected
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

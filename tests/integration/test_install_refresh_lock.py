@@ -32,11 +32,6 @@ from kanon_cli.core.install import (
 from kanon_cli.core.lockfile import read_lockfile
 
 
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures: this module uses real local git repos
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
     """Override: let the test's own patch handle _resolve_ref_to_sha."""
@@ -47,11 +42,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: let the test's own subprocess.run patches handle reachability."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(*args: str, cwd: pathlib.Path) -> str:
@@ -137,9 +127,8 @@ def _write_kanon(
     return kanon_path
 
 
-# Catalog source used across all tests -- a synthetic url@ref value.
 _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
-# Fake catalog SHA returned when the catalog URL is not a real git repo.
+
 _FAKE_CATALOG_SHA = "c" * 40
 
 
@@ -181,11 +170,6 @@ def _run_install_mocked(
         )
 
 
-# ===========================================================================
-# AC-TEST-002: refresh_lock rewrites lockfile with stale SHA
-# ===========================================================================
-
-
 @pytest.mark.integration
 class TestRefreshLockRebuildsLockfile:
     """AC-TEST-002: --refresh-lock against fixture repo with a stale lockfile."""
@@ -201,7 +185,6 @@ class TestRefreshLockRebuildsLockfile:
         project_dir.mkdir()
         kanon_path = _write_kanon(project_dir, str(repo_path))
 
-        # First install -- writes the lockfile with the correct 1.0.0 SHA.
         _run_install_mocked(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
@@ -209,7 +192,6 @@ class TestRefreshLockRebuildsLockfile:
         lf_before = read_lockfile(lock_path)
         assert lf_before.sources[0].resolved_sha == sha_v1
 
-        # Hand-edit the lockfile to record a wrong (stale) SHA.
         stale_sha = "d" * 40
         original_text = lock_path.read_text()
         corrupted = original_text.replace(sha_v1, stale_sha)
@@ -218,8 +200,6 @@ class TestRefreshLockRebuildsLockfile:
         lf_stale = read_lockfile(lock_path)
         assert lf_stale.sources[0].resolved_sha == stale_sha
 
-        # Run install with refresh_lock=True -- must ignore the stale lockfile
-        # and re-resolve the SHA from the fixture repo.
         _run_install_mocked(kanon_path, refresh_lock=True)
 
         lf_after = read_lockfile(lock_path)
@@ -241,12 +221,10 @@ class TestRefreshLockRebuildsLockfile:
         project_dir.mkdir()
         kanon_path = _write_kanon(project_dir, str(repo_path))
 
-        # Write baseline lockfile first.
         _run_install_mocked(kanon_path)
-        # Clear captured output from first install.
+
         capsys.readouterr()
 
-        # Now run with --refresh-lock and check the info-line.
         _run_install_mocked(kanon_path, refresh_lock=True)
 
         captured = capsys.readouterr()
@@ -266,11 +244,6 @@ class TestRefreshLockRebuildsLockfile:
         _run_install_mocked(kanon_path, refresh_lock=True)
 
         assert kanon_path.read_text() == original_kanon, "--refresh-lock must not modify the .kanon file"
-
-
-# ===========================================================================
-# AC-CYCLE-001: Full cycle: 1.0.0 -> hash mismatch -> refresh-lock -> 1.1.0
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -299,7 +272,6 @@ class TestRefreshLockCycle:
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        # Step 2: install at ==1.0.0 to write lockfile.
         kanon_path = _write_kanon(project_dir, str(repo_path), revision="==1.0.0")
         _run_install_mocked(kanon_path)
 
@@ -308,10 +280,8 @@ class TestRefreshLockCycle:
         lf_v1 = read_lockfile(lock_path)
         assert lf_v1.sources[0].resolved_sha == sha_v1
 
-        # Step 3: modify .kanon to bump revision to ==1.1.0.
         _write_kanon(project_dir, str(repo_path), revision="==1.1.0")
 
-        # Step 4: plain kanon install reconciles to the new pin.
         _run_install_mocked(kanon_path)
 
         lf_v2 = read_lockfile(lock_path)
@@ -345,16 +315,13 @@ class TestRefreshLockCycle:
         assert read_lockfile(lock_path).sources[0].resolved_sha == sha_v1
         lock_before = lock_path.read_bytes()
 
-        # Step 3: bump revision -> hash mismatch (no orphan).
         _write_kanon(project_dir, str(repo_path), revision="==1.1.0")
 
-        # Step 4: --strict-lock must fail and leave the lock byte-for-byte unchanged.
         with pytest.raises(KanonHashMismatchError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
         assert "--refresh-lock" in str(exc_info.value)
         assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile"
 
-        # Step 5: --refresh-lock must succeed and update the lockfile.
         _run_install_mocked(kanon_path, refresh_lock=True)
 
         lf_v2 = read_lockfile(lock_path)

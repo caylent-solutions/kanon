@@ -381,11 +381,6 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
         msg = f"Empty URL in catalog source: '{source}'"
         raise ValueError(msg)
 
-    # Guard: if the URL portion contains neither '://' (scheme separator) nor '@'
-    # (user-info separator), the rfind hit a user-info '@' that is part of the URL
-    # itself (e.g. 'git@host:org/repo.git' with no ref), not a ref delimiter.
-    # Spec Section 4.0: the ref separator is always the LAST '@'; if no unambiguous
-    # ref delimiter exists, the source is malformed.
     if "://" not in url and "@" not in url:
         msg = (
             f"Invalid catalog source format: '{source}'. "

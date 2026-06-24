@@ -30,10 +30,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.constants import KANON_TREE_NO_FILTER_THRESHOLD
 
 
-# ---------------------------------------------------------------------------
-# Shared tree-node fixtures
-# ---------------------------------------------------------------------------
-
 _FULL_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -101,11 +97,6 @@ def _write_marketplace_xml_with_include(
     return xml_path
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: KANON_TREE_NO_FILTER_THRESHOLD constant
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonTreeNoFilterThresholdConstant:
     """KANON_TREE_NO_FILTER_THRESHOLD constant exists and has correct default."""
@@ -147,14 +138,9 @@ class TestKanonTreeNoFilterThresholdConstant:
         monkeypatch.setenv("KANON_TREE_NO_FILTER_THRESHOLD", "not-a-number")
         with pytest.raises((ValueError, SystemExit)):
             importlib.reload(constants)
-        # Always restore to a clean state so subsequent tests are not affected
+
         monkeypatch.delenv("KANON_TREE_NO_FILTER_THRESHOLD", raising=False)
         importlib.reload(constants)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-FUNC-007 / AC-FUNC-008: tree renderer format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -167,7 +153,7 @@ class TestRenderTreeFormat:
         _write_marketplace_xml(repo_specs, "alpha", "2.0.0")
 
         lines = _render_tree(tmp_path, entry_name="alpha", max_depth=None)
-        # Root line should start with 'entry alpha@'
+
         root_line = lines[0]
         assert root_line.startswith("entry alpha@"), f"Root node must start with 'entry alpha@'; got: {root_line!r}"
 
@@ -212,7 +198,7 @@ class TestRenderTreeFormat:
         )
 
         lines = _render_tree(tmp_path, entry_name="pkg", max_depth=None)
-        # At least one line after the root should use +-- or \--
+
         child_lines = lines[1:]
         assert any("+--" in ln or "\\--" in ln for ln in child_lines), (
             f"Expected '+--' or '\\--' in child lines; got: {child_lines!r}"
@@ -309,7 +295,7 @@ class TestRenderTreeFormat:
         )
 
         lines = _render_tree(tmp_path, entry_name="mypkg", max_depth=1)
-        # XML nodes at depth 1 should appear; project nodes at depth 2 should not
+
         assert any("xml" in ln for ln in lines), f"max_depth=1 should show xml nodes; got lines: {lines!r}"
         assert not any("project" in ln for ln in lines), (
             f"max_depth=1 should suppress project nodes; got lines: {lines!r}"
@@ -324,11 +310,6 @@ class TestRenderTreeFormat:
         assert isinstance(lines, list)
         assert len(lines) >= 1
         assert all(isinstance(ln, str) for ln in lines)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Threshold guardrail error message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -409,7 +390,7 @@ class TestThresholdGuardrail:
             run_search(args)
 
         captured = capsys.readouterr()
-        # The error should mention some form of positional/substring filtering
+
         assert "substring" in captured.err.lower() or "<name>" in captured.err, (
             f"Guardrail message must suggest positional substring filter; got: {captured.err!r}"
         )
@@ -471,7 +452,7 @@ class TestThresholdGuardrail:
 
     def test_guardrail_does_not_fire_at_threshold(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """Guardrail does NOT fire when entry count equals threshold exactly."""
-        count = KANON_TREE_NO_FILTER_THRESHOLD  # Equal, not over
+        count = KANON_TREE_NO_FILTER_THRESHOLD
         self._make_large_catalog(tmp_path, count)
         args = self._make_args()
 
@@ -485,7 +466,7 @@ class TestThresholdGuardrail:
         """Guardrail fires only with --tree; non-tree mode ignores entry count."""
         count = KANON_TREE_NO_FILTER_THRESHOLD + 10
         self._make_large_catalog(tmp_path, count)
-        # No --tree flag
+
         args = argparse.Namespace(
             catalog_source="unused",
             tree=False,
@@ -532,11 +513,6 @@ class TestThresholdGuardrail:
         assert result == 0, "--max-depth 0 should bypass the guardrail as a valid filter"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: --tree --all-versions mutual exclusion
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestTreeAllVersionsMutualExclusion:
     """--tree --all-versions is a hard error detected before catalog is resolved."""
@@ -553,7 +529,6 @@ class TestTreeAllVersionsMutualExclusion:
             no_color=False,
         )
 
-        # The conflict must be detected before any catalog resolution
         resolve_called = []
 
         def _record_resolve(src: str) -> None:
@@ -624,11 +599,6 @@ class TestTreeAllVersionsMutualExclusion:
             result = run_search(args)
 
         assert result == 0, "--tree alone must not be an error"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: flags registered on the list subparser
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -707,15 +677,9 @@ class TestListFlagsRegistered:
         list_parser.print_help(file=buf)
         help_text = buf.getvalue()
 
-        # The four paths: positional substring, --regex, --max-depth 0, --no-filter-required
         assert "--regex" in help_text, f"Help must mention --regex; got: {help_text!r}"
         assert "--max-depth" in help_text, f"Help must mention --max-depth; got: {help_text!r}"
         assert "--no-filter-required" in help_text, f"Help must mention --no-filter-required; got: {help_text!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: tree renders without filter when at or below threshold
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -725,13 +689,13 @@ class TestTreeRendersWithoutFilterBelowThreshold:
     def test_below_threshold_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search with --tree exits 0 when catalog has fewer entries than threshold."""
         repo_specs = tmp_path / "repo-specs"
-        for i in range(3):  # well below threshold of 20
+        for i in range(3):
             _write_marketplace_xml(repo_specs, f"entry-{i}", "1.0.0")
 
         args = argparse.Namespace(
             catalog_source="unused",
             tree=True,
-            max_depth=0,  # use max_depth=0 to avoid needing XML parsing for this check
+            max_depth=0,
             no_filter_required=False,
             all_versions=False,
             detail=False,
@@ -767,12 +731,6 @@ class TestTreeRendersWithoutFilterBelowThreshold:
         )
 
 
-# ---------------------------------------------------------------------------
-# Coverage gap tests: edge paths in _parse_xml_includes_and_projects,
-# _resolve_include_path, _render_tree, and run_search tree mode.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestParseXmlIncludesAndProjectsEdgePaths:
     """Edge paths in _parse_xml_includes_and_projects (coverage AC-FINAL-014)."""
@@ -791,7 +749,6 @@ class TestParseXmlIncludesAndProjectsEdgePaths:
         valid_xml = tmp_path / "valid.xml"
         valid_xml.write_text("<manifest/>")
 
-        # Mock the parsed tree to return None for getroot() -- defensive guard coverage.
         mock_tree = type("MockTree", (), {"getroot": lambda self: None})()
         with patch("kanon_cli.commands.search.ET.parse", return_value=mock_tree):
             includes, projects = _parse_xml_includes_and_projects(valid_xml)
@@ -856,7 +813,7 @@ class TestResolveIncludePath:
         xml_dir.mkdir()
         xml_path = xml_dir / "parent.xml"
         xml_path.write_text("<manifest/>")
-        # Target exists at manifest_root level, not in xml_dir
+
         target = tmp_path / "common.xml"
         target.write_text("<manifest/>")
 
@@ -879,7 +836,7 @@ class TestRenderTreeEdgePaths:
     def test_missing_include_target_renders_placeholder(self, tmp_path: Path) -> None:
         """When an <include> target cannot be resolved, a placeholder node is rendered."""
         repo_specs = tmp_path / "repo-specs"
-        # Root XML references an include that doesn't exist
+
         repo_specs.mkdir(parents=True, exist_ok=True)
         xml_path = repo_specs / "pkg-marketplace.xml"
         xml_path.write_text(
@@ -910,7 +867,6 @@ class TestRenderTreeEdgePaths:
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir(parents=True, exist_ok=True)
 
-        # Create an included XML that has a project
         included = tmp_path / "child.xml"
         included.write_text(
             textwrap.dedent("""\
@@ -991,13 +947,12 @@ class TestRenderTreeEdgePaths:
         """
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir(parents=True, exist_ok=True)
-        # Write a valid marketplace XML for the target entry
+
         _write_marketplace_xml(repo_specs, "valid-entry", "1.0.0")
-        # Write a malformed XML that will cause _parse_catalog_metadata to raise
+
         bad_xml = repo_specs / "bad-marketplace.xml"
         bad_xml.write_text("not xml at all <<<")
 
-        # _render_tree must still find and render "valid-entry" despite the bad XML
         lines = _render_tree(tmp_path, entry_name="valid-entry", max_depth=0)
         assert lines[0].startswith("entry valid-entry@"), (
             f"Expected 'entry valid-entry@...' as root line; got: {lines[0]!r}"
@@ -1030,7 +985,7 @@ class TestRenderTreeEdgePaths:
         )
 
         lines = _render_tree(tmp_path, entry_name="ph", max_depth=None)
-        # Should have placeholder for missing.xml and a project line
+
         placeholder_lines = [ln for ln in lines if "missing.xml" in ln and "unknown" in ln]
         assert len(placeholder_lines) == 1, f"Expected placeholder for missing.xml; got: {lines!r}"
         project_lines = [ln for ln in lines if "project" in ln and "direct-proj" in ln]
@@ -1068,10 +1023,10 @@ class TestRenderTreeEdgePaths:
         )
 
         lines = _render_tree(tmp_path, entry_name="multi", max_depth=None)
-        # First include should use +--
+
         first_include_line = lines[1]
         assert first_include_line.startswith("+--"), f"First include should use '+--'; got: {first_include_line!r}"
-        # Last include should use \\--
+
         last_include_line = lines[2]
         assert last_include_line.startswith("\\--"), f"Last include should use '\\--'; got: {last_include_line!r}"
 
@@ -1120,14 +1075,6 @@ class TestRunListTreeEmptyCatalog:
         assert "manifest repo contains 0 entries" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# E24: Sibling-continuation connector assertions (DEFECT-005)
-# ---------------------------------------------------------------------------
-
-# Tree shapes parametrised for AC-FUNC-003.
-# Each entry is a tuple of:
-#   (shape_id, entry_name, sibling_configs)
-# where sibling_configs is a list of (xml_stem, project_names) pairs.
 _SIBLING_TREE_SHAPES = [
     (
         "two_siblings_two_children_each",
@@ -1237,8 +1184,6 @@ class TestTreeRendererSiblingContinuation:
         _build_sibling_tree_fixture(tmp_path, entry_name, sibling_configs)
         lines = _render_tree(tmp_path, entry_name=entry_name, max_depth=None)
 
-        # AC-FUNC-005: individual assert statements, each diagnosable independently.
-        # Locate the first sibling include line.
         first_sibling_line = next(
             (ln for ln in lines if ln.startswith("+--") and "xml" in ln),
             None,
@@ -1247,21 +1192,15 @@ class TestTreeRendererSiblingContinuation:
             f"[shape={shape_id}] Expected a '+--' xml line for first sibling include; lines={lines!r}"
         )
 
-        # AC-FUNC-002 assertion 1: non-last sibling uses '+--', not '\\--'.
         assert first_sibling_line.startswith("+--"), (
             f"[shape={shape_id}] First sibling include must use '+--' connector; got: {first_sibling_line!r}"
         )
 
-        # Locate lines that are children of the first (non-last) sibling.
-        # They must start with '|   ' (pipe + three spaces) continuation column.
         first_sibling_child_lines = [ln for ln in lines if ln.startswith("|   ")]
         assert len(first_sibling_child_lines) >= 1, (
             f"[shape={shape_id}] Expected child lines starting with '|   ' under first sibling include; lines={lines!r}"
         )
 
-        # AC-FUNC-002 assertion 2: non-last child of non-last sibling uses '|   +--'.
-        # Only applicable when the first sibling has more than one child; a single-child
-        # sibling has no non-last child so only assertion 3 applies.
         first_sibling_child_count = len(sibling_configs[0][1])
         if first_sibling_child_count > 1:
             first_child = first_sibling_child_lines[0]
@@ -1269,14 +1208,12 @@ class TestTreeRendererSiblingContinuation:
                 f"[shape={shape_id}] First child of first sibling must contain '|   +--'; got: {first_child!r}"
             )
 
-        # AC-FUNC-002 assertion 3: last child of non-last sibling uses '|   \\--'.
         last_child_of_first_sibling = first_sibling_child_lines[first_sibling_child_count - 1]
         assert "|   \\--" in last_child_of_first_sibling, (
             f"[shape={shape_id}] Last child of first sibling must contain '|   \\--'; "
             f"got: {last_child_of_first_sibling!r}"
         )
 
-        # Locate the last sibling include line (uses '\\--').
         last_sibling_line = next(
             (ln for ln in lines if ln.startswith("\\--") and "xml" in ln),
             None,
@@ -1285,21 +1222,15 @@ class TestTreeRendererSiblingContinuation:
             f"[shape={shape_id}] Expected a '\\--' xml line for last sibling include; lines={lines!r}"
         )
 
-        # AC-FUNC-002 assertion 4: last sibling uses '\\--'.
         assert last_sibling_line.startswith("\\--"), (
             f"[shape={shape_id}] Last sibling include must use '\\--' connector; got: {last_sibling_line!r}"
         )
 
-        # Locate child lines of the last sibling.
-        # They must start with '    ' (four spaces, no pipe).
         last_sibling_child_lines = [ln for ln in lines if ln.startswith("    ") and "project" in ln]
         assert len(last_sibling_child_lines) >= 1, (
             f"[shape={shape_id}] Expected child lines starting with '    ' under last sibling include; lines={lines!r}"
         )
 
-        # AC-FUNC-002 assertion 5: non-last child of last sibling uses '    +--'.
-        # Only applicable when the last sibling has more than one child; a single-child
-        # sibling has no non-last child so only assertion 6 applies.
         last_sibling_child_count = len(sibling_configs[-1][1])
         if last_sibling_child_count > 1:
             first_child_of_last = last_sibling_child_lines[0]
@@ -1307,7 +1238,6 @@ class TestTreeRendererSiblingContinuation:
                 f"[shape={shape_id}] First child of last sibling must contain '    +--'; got: {first_child_of_last!r}"
             )
 
-        # AC-FUNC-002 assertion 6: last child of last sibling uses '    \\--'.
         last_child_of_last = last_sibling_child_lines[last_sibling_child_count - 1]
         assert "    \\--" in last_child_of_last, (
             f"[shape={shape_id}] Last child of last sibling must contain '    \\--'; got: {last_child_of_last!r}"

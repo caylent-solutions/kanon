@@ -40,10 +40,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in test_xml_repo_hooks_attributes.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -116,11 +112,6 @@ def _minimal_valid_superproject(
         f"  <superproject {sp_attrs} />\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: valid-value tests -- one per documented <superproject> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -287,11 +278,6 @@ class TestSuperprojectAttributeValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: invalid-value tests -- each attribute's invalid value raises
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectAttributeInvalidValues:
     """AC-TEST-002: every documented <superproject> attribute raises on invalid values.
@@ -418,11 +404,6 @@ class TestSuperprojectAttributeInvalidValues:
         assert error_text, "Expected non-empty ManifestParseError when no revision is resolvable but got empty string"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectRequiredAttributeOmission:
     """AC-TEST-003: omitting the required name attribute raises ManifestParseError
@@ -524,11 +505,6 @@ class TestSuperprojectRequiredAttributeOmission:
         assert expected_attr_in_message in error_text, (
             f"Expected '{expected_attr_in_message}' in error message but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (parser raises, never prints)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

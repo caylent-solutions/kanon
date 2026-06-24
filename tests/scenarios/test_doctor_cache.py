@@ -21,10 +21,6 @@ import pytest
 from tests.scenarios.conftest import run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Parametrize constants
-# ---------------------------------------------------------------------------
-
 _CACHE_FLAG_PARAMS = [
     pytest.param(
         "--refresh-completion-cache",
@@ -37,11 +33,6 @@ _CACHE_FLAG_PARAMS = [
         id="prune_cache",
     ),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def _run_doctor_cache_flag(
@@ -66,8 +57,6 @@ def _run_doctor_cache_flag(
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(mode=0o700)
 
-    # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
-    # makes the resolved cache equal cache_dir (= tmp_path / "cache").
     extra_env: dict[str, str] = {"KANON_HOME": str(cache_dir.parent)}
 
     result = run_kanon(
@@ -92,11 +81,6 @@ def _run_doctor_cache_flag(
     assert "no kanon workspace" not in result.stderr, (
         f"Expected no workspace-not-found error in stderr; got:\nstderr: {result.stderr!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

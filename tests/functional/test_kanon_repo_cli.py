@@ -16,9 +16,6 @@ import pytest
 from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo CLI Test User"
 _GIT_USER_EMAIL = "repo-cli-test@example.com"
@@ -26,10 +23,6 @@ _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from repo-cli test content"
 _ENVSUBST_VAR = "KANON_CLI_TEST_FETCH_URL"
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -227,11 +220,6 @@ def _run_repo_init(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: kanon repo --help lists subcommands
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoHelpOutput:
     """AC-FUNC-003: 'kanon repo --help' output lists all subcommands."""
@@ -262,11 +250,6 @@ class TestRepoHelpOutput:
         result = _run_kanon("repo", "--help")
         assert result.returncode == 0
         assert len(result.stdout) > 0, f"'kanon repo --help' produced empty stdout.\n  stderr: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: kanon repo init via subprocess
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -322,11 +305,6 @@ class TestRepoInitSubprocess:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: kanon repo sync via subprocess
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -399,11 +377,6 @@ class TestRepoSyncSubprocess:
         assert project_dir.is_dir(), f"Project directory {project_dir!r} was not created after 'kanon repo sync'."
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: kanon repo envsubst via subprocess
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstSubprocess:
     """AC-FUNC-006: 'kanon repo envsubst' via subprocess."""
@@ -453,11 +426,6 @@ class TestRepoEnvsubstSubprocess:
         assert real_fetch_base in manifest_text, (
             f"Expected {real_fetch_base!r} in manifest after envsubst.\n  manifest: {manifest_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: kanon repo selfupdate prints embedded mode message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -513,11 +481,6 @@ class TestRepoSelfupdateEmbeddedMode:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: invalid subcommand error handling
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInvalidSubcommandHandling:
     """AC-FUNC-008: invalid subcommand exits non-zero with an error message."""
@@ -557,11 +520,6 @@ class TestRepoInvalidSubcommandHandling:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: argument passthrough to repo subcommands
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

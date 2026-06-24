@@ -15,10 +15,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -60,11 +56,6 @@ _KANON_TWO_SOURCES_TEMPLATE = textwrap.dedent("""\
 """)
 
 
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-
-
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising RuntimeError on non-zero exit."""
     result = subprocess.run(
@@ -101,11 +92,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_project_repo_with_tags(
@@ -167,11 +153,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -198,11 +179,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Lockfile builder helper
-# ---------------------------------------------------------------------------
 
 
 def _write_lockfile(
@@ -238,11 +214,6 @@ def _write_lockfile(
     lock_file.write_text("\n".join(lines) + "\n")
 
 
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestOutdatedFailOnUpgradeFlag:
     """End-to-end tests for 'kanon outdated --fail-on-upgrade'.
@@ -275,7 +246,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Lockfile pins to 1.0.0 so there is a patch upgrade available (1.0.1)
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
@@ -312,7 +282,7 @@ class TestOutdatedFailOnUpgradeFlag:
             f"Expected exit 0 without --fail-on-upgrade even with upgrade available.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Verify the upgrade IS present in the output (patch upgrade exists)
+
         assert "patch" in result.stdout, f"Expected 'patch' upgrade-type in output:\n{result.stdout}"
 
     def test_with_flag_exits_one_when_upgrade_available(self, tmp_path: pathlib.Path) -> None:
@@ -403,7 +373,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Pin to 1.0.1 which IS the latest-matching-spec -> no upgrade -> exit 0
         sha_101 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.1"],
             cwd=workspace,
@@ -448,11 +417,9 @@ class TestOutdatedFailOnUpgradeFlag:
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
 
-        # Source A: at latest (no upgrade)
         bare_a = _create_project_repo_with_tags(project_base, "srcA", ["1.0.0", "1.0.1"])
         url_a = f"file://{bare_a}"
 
-        # Source B: upgradable (locked to 2.0.0, latest is 2.1.0)
         bare_b = _create_project_repo_with_tags(project_base, "srcB", ["2.0.0", "2.1.0"])
         url_b = f"file://{bare_b}"
 
@@ -504,7 +471,6 @@ class TestOutdatedFailOnUpgradeFlag:
             ],
         )
 
-        # Without --fail-on-upgrade: exit 0
         result_no_flag = _run_kanon(
             [
                 "outdated",
@@ -521,7 +487,6 @@ class TestOutdatedFailOnUpgradeFlag:
             f"Expected exit 0 without flag.\nstdout: {result_no_flag.stdout!r}\nstderr: {result_no_flag.stderr!r}"
         )
 
-        # With --fail-on-upgrade: exit 1 because SRCB has a minor upgrade
         result_with_flag = _run_kanon(
             [
                 "outdated",
@@ -549,7 +514,7 @@ class TestOutdatedFailOnUpgradeFlag:
         """
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
-        # 3-tag fixture: 1.0.0, 1.0.1, 1.0.2
+
         project_bare = _create_project_repo_with_tags(project_base, "delta", ["1.0.0", "1.0.1", "1.0.2"])
         project_url = f"file://{project_bare}"
 
@@ -571,7 +536,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Pin to oldest tag so a patch upgrade is available
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
@@ -696,11 +660,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# FAIL-path class: 3-tag fixture pinned to oldest tag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFailOnUpgradeFail:
     """Tests that --fail-on-upgrade exits 1 when upgrades are available.
@@ -721,7 +680,7 @@ class TestFailOnUpgradeFail:
         """
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
-        # 3-tag fixture: 1.0.0 (oldest, pinned), 1.1.0, 1.2.0 (two upgrades available)
+
         project_bare = _create_project_repo_with_tags(project_base, "epsilon", ["1.0.0", "1.1.0", "1.2.0"])
         project_url = f"file://{project_bare}"
 
@@ -743,7 +702,6 @@ class TestFailOnUpgradeFail:
         )
         kanon_file.chmod(0o644)
 
-        # Pin lockfile to oldest tag (1.0.0) so two upgrades (1.1.0, 1.2.0) are available
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,

@@ -54,11 +54,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals must appear here only.
-# No inline literals in test bodies, f-string diagnostics, or parametrize
-# tuples.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Diffmanifests Flags Test User"
 _GIT_USER_EMAIL = "repo-diffmanifests-flags@example.com"
@@ -66,72 +61,57 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "diffmanifests-flags-test-project"
 
-# CLI token constants -- every token referenced in test logic.
+
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_DIFFMANIFESTS = "diffmanifests"
 
-# Flag tokens from Diffmanifests._Options()
+
 _CLI_FLAG_RAW = "--raw"
 _CLI_FLAG_NO_COLOR = "--no-color"
 _CLI_FLAG_PRETTY_FORMAT = "--pretty-format"
 
-# A valid git pretty-format string used in valid-value tests.
+
 _PRETTY_FORMAT_VALUE = "%h"
 
-# Inline-value suffix used in negative tests for boolean flags.
-# optparse exits 2 with '--<flag> option does not take a value'.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Exit codes
+
 _EXPECTED_EXIT_CODE = 0
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Phrases verified in channel-discipline and negative-test assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 _ERROR_PREFIX = "Error:"
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 _REQUIRES_ARGUMENT_PHRASE = "requires 1 argument"
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
-# The command exits 2 for argument-parsing errors regardless of repo state.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-diffmanifests-flags-repo-dir"
 
-# Sentinel for empty combined output (no diff emitted for identical manifests).
+
 _EMPTY_OUTPUT = ""
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables -- all tuples use flag constants.
-#
-# AC-TEST-001 valid-value parametrize: one entry per flag.
-# Each entry: (flag_token_or_compound, test_id).
-# ---------------------------------------------------------------------------
 
-# Boolean flags: accepted standalone (no argument).
 _BOOL_FLAGS_VALID: list[tuple[str, str]] = [
     (_CLI_FLAG_RAW, "raw"),
     (_CLI_FLAG_NO_COLOR, "no-color"),
 ]
 
-# String flag with a required argument: compound token '--flag=value'.
+
 _STRING_FLAGS_VALID: list[tuple[str, str]] = [
     (f"{_CLI_FLAG_PRETTY_FORMAT}={_PRETTY_FORMAT_VALUE}", "pretty-format"),
 ]
 
-# Combined valid-flag list for AC-TEST-001 parametrize.
+
 _ALL_FLAGS_VALID: list[tuple[str, str]] = _BOOL_FLAGS_VALID + _STRING_FLAGS_VALID
 
-# AC-TEST-002 negative-value parametrize for boolean flags.
-# Each entry: (long_flag_token, test_id).
+
 _BOOL_FLAGS_FOR_INLINE_VALUE_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_RAW, "raw"),
     (_CLI_FLAG_NO_COLOR, "no-color"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -293,11 +273,6 @@ class TestRepoDiffmanifestsFlagsValidValues:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for invalid flag values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -485,11 +460,6 @@ class TestRepoDiffmanifestsFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffmanifestsFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -545,11 +515,6 @@ class TestRepoDiffmanifestsFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -669,11 +634,6 @@ class TestRepoDiffmanifestsFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

@@ -37,11 +37,6 @@ from kanon_cli.completions.cache import Freshness
 from kanon_cli.core import update_check
 
 
-# ---------------------------------------------------------------------------
-# Helpers / fixtures
-# ---------------------------------------------------------------------------
-
-
 def _args(**overrides: object) -> argparse.Namespace:
     """Build an argparse namespace with a default no_update_check=False."""
     ns = argparse.Namespace(no_update_check=False)
@@ -55,14 +50,9 @@ def _isolated_kanon_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     """Point KANON_HOME at a tmp dir so the cache never touches the real store."""
     home = tmp_path / "kanon-home"
     monkeypatch.setenv(constants.KANON_HOME_ENV_VAR, str(home))
-    # Ensure color state is deterministic for alert-rendering tests.
+
     monkeypatch.setattr(constants, "_NO_COLOR_ACTIVE", False, raising=False)
     return home
-
-
-# ---------------------------------------------------------------------------
-# Skip conditions (must short-circuit before any network / cache access)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -175,11 +165,6 @@ def test_maybe_alert_skip_makes_no_network_or_cache_call() -> None:
     assert stream.getvalue() == ""
 
 
-# ---------------------------------------------------------------------------
-# Editable-install probe
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_is_editable_install_true_when_distribution_missing() -> None:
     """A running-from-source checkout (no distribution) is treated as editable."""
@@ -226,11 +211,6 @@ def test_is_editable_install_false_when_direct_url_not_editable() -> None:
         assert update_check.is_editable_install() is False
 
 
-# ---------------------------------------------------------------------------
-# PyPI lookup hardening (timeouts, size cap, User-Agent, HTTPS, graceful-fail)
-# ---------------------------------------------------------------------------
-
-
 class _FakeResponse:
     """Minimal context-manager stand-in for urllib's response object."""
 
@@ -271,7 +251,7 @@ def test_fetch_latest_version_sets_user_agent_and_timeout() -> None:
 
     assert captured["user_agent"] is not None
     assert constants.KANON_PYPI_PROJECT_NAME in str(captured["user_agent"])
-    # urllib uses one combined socket timeout: the larger of connect/read.
+
     assert captured["timeout"] == 3
 
 
@@ -288,7 +268,7 @@ def test_fetch_latest_version_rejects_non_https_url() -> None:
 def test_fetch_latest_version_oversized_body_returns_none() -> None:
     """A response body exceeding the cap is abandoned (no version)."""
     cap = 16
-    # body strictly larger than the cap (cap+1 bytes are read; len > cap -> abandon)
+
     oversized = b"x" * (cap + 1)
     with patch.object(update_check.urllib.request, "urlopen", return_value=_FakeResponse(oversized)):
         assert update_check.fetch_latest_version(body_size_cap=cap) is None
@@ -324,11 +304,6 @@ def test_fetch_latest_version_missing_info_returns_none() -> None:
         assert update_check.fetch_latest_version() is None
 
 
-# ---------------------------------------------------------------------------
-# Cache round-trip (reuses completions/cache.py primitives under tmp KANON_HOME)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_cache_round_trip_fresh() -> None:
     """A freshly written version reads back FRESH within the TTL."""
@@ -353,11 +328,6 @@ def test_cache_read_missing_when_never_written() -> None:
     version, freshness = update_check.read_cached_version(now=1000, ttl_seconds=86400)
     assert version is None
     assert freshness is Freshness.MISSING
-
-
-# ---------------------------------------------------------------------------
-# maybe_alert_update -- silent-when-current, alert-when-stale, graceful-fail
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -415,7 +385,7 @@ def test_missing_cache_triggers_inline_fetch_and_writes() -> None:
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=2000)
     fetch.assert_called_once()
     assert "5.5.5" in stream.getvalue()
-    # The fetched version is persisted for the next invocation.
+
     version, freshness = update_check.read_cached_version(now=2000, ttl_seconds=86400)
     assert version == "5.5.5"
     assert freshness is Freshness.FRESH
@@ -462,11 +432,6 @@ def test_unparseable_latest_version_is_not_treated_as_upgrade() -> None:
     ):
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=1000 + 5)
     assert stream.getvalue() == ""
-
-
-# ---------------------------------------------------------------------------
-# Alert rendering -- stderr-only, color only on TTY with NO_COLOR unset
-# ---------------------------------------------------------------------------
 
 
 class _TTYStream(io.StringIO):
@@ -517,7 +482,7 @@ def test_alert_not_colored_when_no_color_env_set() -> None:
 def test_alert_not_colored_on_non_tty_stream() -> None:
     """A non-TTY stream (pipe) gets a plain-text alert (protects piped output)."""
     update_check.write_cached_version("99.0.0", now=1000)
-    stream = io.StringIO()  # isatty() -> False
+    stream = io.StringIO()
     with (
         patch.object(update_check, "installed_version", return_value="1.0.0"),
         patch.object(update_check, "is_editable_install", return_value=False),
@@ -540,11 +505,6 @@ def test_alert_not_colored_when_no_color_active_flag(monkeypatch: pytest.MonkeyP
     ):
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=1000 + 5)
     assert constants.ANSI_BRIGHT_CYAN not in stream.getvalue()
-
-
-# ---------------------------------------------------------------------------
-# Constants knobs are env-driven via _env_int (no hard-coded literal in module)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -588,9 +548,6 @@ def test_module_routes_endpoint_and_command_through_constants() -> None:
     ):
         assert required in referenced, f"update_check.py must reference constants.{required}"
 
-    # The bare endpoint literal must not appear in any executable string constant
-    # (only the module docstring may mention it as prose). Strip the leading
-    # docstring, then assert no remaining string Constant node holds the URL.
     body = tree.body
     docstring_text = ""
     if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):

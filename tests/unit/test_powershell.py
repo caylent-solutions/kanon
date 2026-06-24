@@ -112,5 +112,4 @@ def test_generate_escapes_single_quotes_in_subcommand_names() -> None:
 
     script = generate(parser)
 
-    # PowerShell escapes an embedded single quote by doubling it.
     assert "'o''clock'" in script

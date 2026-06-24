@@ -22,11 +22,6 @@ from kanon_cli.commands.remove import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     names: list[str],
     kanon_file: str,
@@ -47,11 +42,6 @@ def _make_args(
 def _file_sha256(path: pathlib.Path) -> str:
     """Return the SHA-256 hex digest of path's contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# _render_remove_dry_run_diff helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -110,9 +100,7 @@ class TestRenderRemoveDryRunDiff:
         _render_remove_dry_run_diff(lines, removal_indices)
 
         out = capsys.readouterr().out
-        # The standalone header (GITBASE=x) and OTHER=y are not in the removal set
-        # and must not be printed. Note: the removed KANON_SOURCE_foo_bar_GITBASE
-        # line is printed, so we assert on the full non-removed line content here.
+
         assert "GITBASE=x" not in out
         assert "OTHER=y" not in out
 
@@ -139,13 +127,13 @@ class TestRenderRemoveDryRunDiff:
             f"KANON_SOURCE_{source_name}_NAME={source_name}\n",
             f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
             "GITBASE2=y\n",
-            f"KANON_SOURCE_{source_name}_URL=dup\n",  # extra line to test index selection
+            f"KANON_SOURCE_{source_name}_URL=dup\n",
             f"KANON_SOURCE_{source_name}_REF=dup\n",
             f"KANON_SOURCE_{source_name}_PATH=dup\n",
             f"KANON_SOURCE_{source_name}_NAME=dup\n",
             f"KANON_SOURCE_{source_name}_GITBASE=dup\n",
         ]
-        # Only render the first block
+
         first_indices = {1, 2, 3, 4, 5}
         _render_remove_dry_run_diff(lines, first_indices)
 
@@ -188,13 +176,8 @@ class TestRenderRemoveDryRunDiff:
         _render_remove_dry_run_diff(lines, {0})
 
         out = capsys.readouterr().out
-        # Should not have double newline from the original line's \n
+
         assert out == "-KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-
-
-# ---------------------------------------------------------------------------
-# run_remove with --dry-run
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -316,7 +299,7 @@ class TestRunRemoveDryRun:
         result = run_remove(args)
 
         assert result == 0
-        # File must be unchanged
+
         assert _file_sha256(kanon_file) == sha_before
 
     @pytest.mark.parametrize(

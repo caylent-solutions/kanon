@@ -35,22 +35,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper is used in this file because git operations
-# are not needed for the exit-code-matrix scenarios.
-#
-# The helpers _write_kanonenv and _make_repo_root below are local to this
-# file because they serve the specific fixture shapes needed for this task.
-# Consolidating all helpers across functional test files into a shared module
-# requires touching multiple files outside this task's Changes Manifest; that
-# DRY cleanup is tracked as a follow-up.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Shared constants and helpers
-# ---------------------------------------------------------------------------
 
 _VALID_KANONENV_CONTENT = (
     "KANON_SOURCE_primary_URL=https://example.com/primary.git\n"
@@ -60,10 +44,7 @@ _VALID_KANONENV_CONTENT = (
     "KANON_SOURCE_primary_GITBASE=https://example.com\n"
 )
 
-_INVALID_KANONENV_CONTENT = (
-    "KANON_MARKETPLACE_INSTALL=false\n"
-    # No KANON_SOURCE_* variables -- parser raises ValueError('No sources found')
-)
+_INVALID_KANONENV_CONTENT = "KANON_MARKETPLACE_INSTALL=false\n"
 
 
 def _write_kanonenv(
@@ -112,11 +93,6 @@ def _make_repo_root_with_xml(
 
     (repo_root / "repo-specs" / "manifest.xml").write_text(xml_content, encoding="utf-8")
     return repo_root
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: install success exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -209,11 +185,6 @@ class TestInstallSuccessExitsZero:
         assert captured.err == "", f"install success must produce no output on stderr; got stderr={captured.err!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: install fs error exits 1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestInstallFsErrorExitsOne:
     """AC-TEST-002: install fs error exits 1.
@@ -301,11 +272,6 @@ class TestInstallFsErrorExitsOne:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: install manifest parse error exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -416,11 +382,6 @@ class TestInstallManifestParseErrorExitsOne:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: repo sync network error exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -562,11 +523,6 @@ class TestRepoSyncNetworkErrorExitsOne:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: validate xml schema error exits 1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestValidateXmlSchemaErrorExitsOne:
     """AC-TEST-005: validate xml schema error exits 1.
@@ -697,11 +653,6 @@ class TestValidateXmlSchemaErrorExitsOne:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-006: --help exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestHelpExitsZero:
     """AC-TEST-006: --help exits 0 for all core commands.
@@ -784,11 +735,6 @@ class TestHelpExitsZero:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-007: --version exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestVersionExitsZero:
     """AC-TEST-007: --version exits 0.
@@ -842,11 +788,6 @@ class TestVersionExitsZero:
         assert "Error:" not in result.stderr, (
             f"'kanon --version' must not produce 'Error:' on stderr.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: argparse error exits 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -934,11 +875,6 @@ class TestArgparseErrorExitsTwo:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: POSIX exit code convention across all core commands
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestPosixExitCodeConvention:
     """AC-FUNC-001: Exit codes follow POSIX convention: 0 success, 1 application error, 2 argparse error.
@@ -998,11 +934,6 @@ class TestPosixExitCodeConvention:
         assert parse_error_result.returncode == 2, (
             f"Expected exit 2 for unknown flag; got {parse_error_result.returncode}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (consolidated cross-command)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

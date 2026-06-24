@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for project.py to increase code coverage of uncovered blocks."""
 
 import errno
@@ -51,7 +37,6 @@ def _make_project(**kwargs):
     with mock.patch("kanon_cli.repo.project.Project._LoadUserIdentity"):
         proj = project.Project(**defaults)
 
-    # Mock UserEmail as it's a property
     type(proj).UserEmail = mock.PropertyMock(return_value="user@example.com")
 
     return proj
@@ -63,7 +48,7 @@ class TestUploadForReviewBlock1:
 
     def test_upload_with_dest_branch_from_param(self):
         """Test upload with dest_branch parameter."""
-        # Use MagicMock for simpler setup when testing UploadForReview internals
+
         proj = mock.MagicMock(spec=project.Project)
         proj.name = "test/project"
         proj.UserEmail = "user@example.com"
@@ -80,7 +65,6 @@ class TestUploadForReviewBlock1:
         with mock.patch("kanon_cli.repo.project.GitCommand") as mock_cmd:
             mock_cmd.return_value.Wait.return_value = 0
 
-            # Call the real method
             project.Project.UploadForReview(
                 proj,
                 branch=branch,
@@ -89,7 +73,6 @@ class TestUploadForReviewBlock1:
                 dest_branch="refs/heads/custom",
             )
 
-            # Verify the command includes custom dest_branch
             assert mock_cmd.called
 
 
@@ -192,7 +175,6 @@ class TestSubmodulesBlock5:
 
         with mock.patch.object(proj, "GetRevisionId", return_value="abc123"):
             with mock.patch("kanon_cli.repo.project.GitCommand") as mock_cmd:
-                # First call succeeds (cat-file), second fails (config)
                 mock_proc1 = mock.MagicMock()
                 mock_proc1.Wait.return_value = 0
                 mock_proc1.stdout = '[submodule "test"]\n\tpath = test\n'
@@ -317,7 +299,7 @@ submodule.test.url=https://example.com/test.git
 
                 mock_proc3 = mock.MagicMock()
                 mock_proc3.Wait.return_value = 0
-                mock_proc3.stdout = ""  # Empty ls-tree output
+                mock_proc3.stdout = ""
 
                 mock_cmd.side_effect = [mock_proc1, mock_proc2, mock_proc3]
 
@@ -354,7 +336,6 @@ class TestGitOperationsBlock6:
         with mock.patch.object(proj, "GetRemote") as mock_remote:
             mock_remote.return_value.PreConnectFetch.return_value = True
             with mock.patch("kanon_cli.repo.project.IsId", side_effect=lambda x: x == "abc123"):
-                # Test the logic path
                 pass
 
     def test_sync_network_half_initial_with_alt_dir(self):
@@ -373,7 +354,6 @@ class TestGitOperationsBlock6:
                                 "refs/tags/v1.0": "tag123",
                             }
                             with mock.patch("kanon_cli.repo.project._lwrite"):
-                                # Test the alt_dir logic path
                                 pass
 
     def test_sync_network_half_alt_dir_writes_packed_refs(self):
@@ -388,7 +368,7 @@ class TestGitOperationsBlock6:
             }
             with mock.patch.object(proj, "GetRemote") as mock_remote:
                 mock_remote.return_value.WritesTo.return_value = True
-                # Test writes packed-refs
+
                 pass
 
 
@@ -466,7 +446,6 @@ class TestInitGitDirBlock7:
                                 with mock.patch("kanon_cli.repo.platform_utils.symlink") as mock_symlink:
                                     proj._InitHooks()
 
-                                    # Should not create symlink
                                     assert not mock_symlink.called
 
     def test_init_hooks_warns_on_modified_hook(self):
@@ -778,7 +757,6 @@ class TestInitWorktreeBlock8:
                             with mock.patch("kanon_cli.repo.platform_utils.symlink") as mock_symlink:
                                 proj._ReferenceGitDir("/tmp/src", "/tmp/dst", copy_all=False)
 
-                                # Should create symlinks for shareable dirs
                                 assert mock_symlink.called
 
     def test_reference_git_dir_raises_on_permission_error(self):

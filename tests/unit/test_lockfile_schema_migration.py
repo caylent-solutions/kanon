@@ -29,29 +29,16 @@ from kanon_cli.core.lockfile import (
 )
 from tests.unit.test_lockfile import _minimal_toml
 
-# ---------------------------------------------------------------------------
-# Module-level constant re-exported for test readability
-# ---------------------------------------------------------------------------
 
 _VALID_SHA40 = "a" * 40
-# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+
 _VALID_KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# CURRENT_SCHEMA_VERSION exported and equals 4
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 def test_current_schema_version_exported_and_equals_4():
     """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 4."""
     assert CURRENT_SCHEMA_VERSION == 4
-
-
-# ---------------------------------------------------------------------------
-# Forward-incompatible read (schema_version > current)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -66,11 +53,6 @@ def test_forward_incompatible_raises_schema_error_exact_message(future_version, 
     with pytest.raises(LockfileSchemaError) as exc_info:
         read_lockfile(p)
     assert str(exc_info.value) == (f"lockfile schema v{future_version} written by newer kanon; upgrade kanon-cli.")
-
-
-# ---------------------------------------------------------------------------
-# Older-schema read is a hard fail-fast regenerate (FLAG-C)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -90,8 +72,7 @@ def test_older_schema_hard_fails_regenerate(old_version, tmp_path):
     assert f"v{old_version}" in err
     assert "kanon add" in err
     assert "kanon install" in err
-    # Distinguish the regenerate policy from the generic missing-upgrader message:
-    # read_lockfile never reaches _dispatch_migration for an older schema.
+
     assert "kanon bug" not in err
 
 
@@ -114,11 +95,6 @@ def test_v3_read_does_not_dispatch_migration(tmp_path, monkeypatch):
     assert called == [], "an older schema must fail fast before the migration walker is reached"
 
 
-# ---------------------------------------------------------------------------
-# _dispatch_migration walks a registered upgrader chain to the current version
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDispatchMigrationChain:
     """_dispatch_migration advances a raw dict through registered (N, N+1) upgraders."""
@@ -134,7 +110,6 @@ class TestDispatchMigrationChain:
 
             return _step
 
-        # Register the full v0 -> ... -> CURRENT chain.
         for from_ver in range(0, CURRENT_SCHEMA_VERSION):
             _register_upgrader(from_ver, from_ver + 1, _make_step(from_ver + 1))
 
@@ -150,11 +125,6 @@ class TestDispatchMigrationChain:
         assert result["schema_version"] == CURRENT_SCHEMA_VERSION
 
 
-# ---------------------------------------------------------------------------
-# _dispatch_migration raises when no upgrader exists for a required step
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_dispatch_missing_upgrader_raises_schema_error():
     """_dispatch_migration raises LockfileSchemaError when a required (N, N+1) step is unregistered.
@@ -168,11 +138,6 @@ def test_dispatch_missing_upgrader_raises_schema_error():
     assert str(exc_info.value) == (
         f"no upgrade path from lockfile schema v0 to v{CURRENT_SCHEMA_VERSION}; this is a kanon bug; please report."
     )
-
-
-# ---------------------------------------------------------------------------
-# _register_upgrader rejects duplicate registrations
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -196,11 +161,6 @@ class TestRegisterUpgraderDuplicateRejection:
         assert "1" in err
 
 
-# ---------------------------------------------------------------------------
-# FAIL-FAST: non-advancing upgrader detection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNonAdvancingUpgraderDetected:
     """_dispatch_migration raises LockfileSchemaError when an upgrader does not advance schema_version."""
@@ -209,7 +169,7 @@ class TestNonAdvancingUpgraderDetected:
         """Register a broken upgrader for (0, 1) that does not change schema_version."""
 
         def _non_advancing(data: dict) -> dict:
-            # Intentionally returns the data unmodified -- schema_version stays at 0.
+
             return dict(data)
 
         _register_upgrader(0, 1, _non_advancing)
@@ -230,11 +190,6 @@ class TestNonAdvancingUpgraderDetected:
         assert "please report" in err
 
 
-# ---------------------------------------------------------------------------
-# Current-schema read is unchanged
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_current_schema_read_unchanged(tmp_path):
     """read_lockfile with schema_version == CURRENT_SCHEMA_VERSION works as expected."""
@@ -245,11 +200,6 @@ def test_current_schema_read_unchanged(tmp_path):
     assert lf.generated_at == "2026-01-01T00:00:00Z"
     assert lf.generator == "kanon-cli/2.0.0"
     assert lf.kanon_hash == _VALID_KANON_HASH
-
-
-# ---------------------------------------------------------------------------
-# FAIL-FAST: _unregister_upgrader raises KeyError for missing registrations
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -276,5 +226,5 @@ class TestUnregisterUpgraderFailFast:
     def test_unregister_registered_pair_does_not_raise(self):
         """_unregister_upgrader succeeds for a previously registered (from, to) pair."""
         _register_upgrader(88, 89, lambda d: d)
-        # Must not raise
+
         _unregister_upgrader(88, 89)

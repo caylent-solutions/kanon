@@ -29,14 +29,10 @@ from kanon_cli.commands.marketplace import (
 )
 from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
 
-# A complete alias-keyed source block carries the five required suffixes. The
-# tests assemble .kanon content from these so no on-disk schema literal is
-# duplicated across cases (DRY).
+
 _BLOCK_SUFFIXES = ("_URL", "_REF", "_PATH", "_NAME", "_GITBASE")
 
-# Sentinel values used to populate the required block fields. Their exact content
-# is irrelevant to the marketplace command (it never resolves them); they exist
-# only so the alias is discoverable via its _URL line.
+
 _FIELD_VALUES = {
     "_URL": "https://example.com/org/repo.git",
     "_REF": "1.0.0",
@@ -79,7 +75,7 @@ def _write_kanon(tmp_path: pathlib.Path, *blocks: list[str]) -> pathlib.Path:
     body: list[str] = []
     for block in blocks:
         body.extend(block)
-        body.append("")  # blank separator between blocks
+        body.append("")
     kanon_file.write_text("\n".join(body) + "\n", encoding="utf-8")
     return kanon_file
 
@@ -157,7 +153,7 @@ class TestEnable:
         assert text.count("KANON_SOURCE_foo_MARKETPLACE=true") == 1
 
     def test_enable_accepts_original_entry_name(self, tmp_path: pathlib.Path) -> None:
-        # Foo-Bar normalises to foo_bar via derive_source_name.
+
         kanon_file = _write_kanon(tmp_path, _source_block("foo_bar", marketplace="false"))
         rc = run_enable(_namespace("Foo-Bar", kanon_file))
         assert rc == 0
@@ -171,11 +167,11 @@ class TestEnable:
         err = capsys.readouterr().err
         assert "unknown source alias" in err
         assert "nope" in err
-        # The unrelated alias's flag must be untouched.
+
         assert "KANON_SOURCE_foo_MARKETPLACE=true" in kanon_file.read_text(encoding="utf-8")
 
     def test_enable_non_marketplace_type_errors(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
-        # A dependency without any _MARKETPLACE line is not a marketplace type.
+
         kanon_file = _write_kanon(tmp_path, _source_block("plain", marketplace=None))
         with pytest.raises(SystemExit) as exc_info:
             run_enable(_namespace("plain", kanon_file))
@@ -183,7 +179,7 @@ class TestEnable:
         err = capsys.readouterr().err
         assert "not a" in err
         assert CATALOG_TYPE_CLAUDE_MARKETPLACE in err
-        # No _MARKETPLACE line was created.
+
         assert "KANON_SOURCE_plain_MARKETPLACE" not in kanon_file.read_text(encoding="utf-8")
 
     def test_enable_missing_kanon_file_errors(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
@@ -204,7 +200,7 @@ class TestDisable:
         assert rc == 0
         text = kanon_file.read_text(encoding="utf-8")
         assert "KANON_SOURCE_foo_MARKETPLACE" not in text
-        # The rest of the block survives.
+
         assert "KANON_SOURCE_foo_URL=" in text
 
     def test_disable_never_writes_false(self, tmp_path: pathlib.Path) -> None:
@@ -250,7 +246,7 @@ class TestStatus:
         out = capsys.readouterr().out
         explicit_line = next(line for line in out.splitlines() if line.startswith("explicit_false"))
         absent_line = next(line for line in out.splitlines() if line.startswith("absent"))
-        # Both render the disabled setting token.
+
         assert explicit_line.split()[-1] == "disabled"
         assert absent_line.split()[-1] == "disabled"
 
@@ -287,7 +283,7 @@ class TestStatus:
         assert rc == 0
         out = capsys.readouterr().out
         plain_row = next(line for line in out.splitlines() if line.startswith("plain"))
-        # The non-marketplace dep renders the unknown-type placeholder and disabled.
+
         assert "--" in plain_row
         assert plain_row.split()[-1] == "disabled"
 
@@ -297,7 +293,7 @@ class TestStatus:
         rc = run_status(_namespace(None, kanon_file, show_all=True))
         assert rc == 0
         out_lines = capsys.readouterr().out.splitlines()
-        # Only the header line is printed -- no data rows.
+
         assert len(out_lines) == 1
         assert out_lines[0].startswith("ALIAS")
 

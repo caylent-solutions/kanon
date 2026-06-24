@@ -24,44 +24,29 @@ import sys
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
-# Directory that holds completion fixture files.  Resolved relative to this
-# source file so the harness works regardless of the invocation cwd.
 _FIXTURES_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "fixtures" / "completion"
 
-# Makefile command that regenerates both fixture files.
+
 _REFRESH_COMMAND: str = "make update-completion-snapshots"
 
-# Parametrized cases: (shell, fixture_filename). Every supported completion
-# shell has a byte-for-byte golden under tests/fixtures/completion/.
+
 _COMPLETION_CASES: list[tuple[str, str]] = [
     ("bash", "expected-bash.sh"),
     ("zsh", "expected-zsh.sh"),
     ("powershell", "expected-powershell.ps1"),
 ]
 
-# Shell binary used for the ``-n`` syntax check, keyed by shell name. Only the
-# shells whose checker is invokable as ``<binary> -n`` on this host are listed;
-# PowerShell has no equivalent ``-n`` syntax-only check, so it is covered by the
-# byte-for-byte snapshot assertion alone (never skipped).
+
 _SYNTAX_CHECK_SHELL: dict[str, str] = {
     "bash": "bash",
     "zsh": "zsh",
 }
 
-# Cases that have a ``<shell> -n`` syntax checker available for the pre-flight
-# check (a subset of _COMPLETION_CASES).
+
 _SYNTAX_CHECK_CASES: list[tuple[str, str]] = [
     (shell, fixture) for shell, fixture in _COMPLETION_CASES if shell in _SYNTAX_CHECK_SHELL
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon_completion(shell: str) -> subprocess.CompletedProcess[bytes]:
@@ -78,11 +63,6 @@ def _run_kanon_completion(shell: str) -> subprocess.CompletedProcess[bytes]:
         capture_output=True,
         check=False,
     )
-
-
-# ---------------------------------------------------------------------------
-# Snapshot tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

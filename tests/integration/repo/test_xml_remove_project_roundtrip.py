@@ -21,10 +21,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_manifest_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -81,10 +77,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     return m
 
 
-# ---------------------------------------------------------------------------
-# Fixture XML content for remove-project round-trip tests
-# ---------------------------------------------------------------------------
-
 _REMOVE_PROJECT_FIXTURE_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -97,11 +89,6 @@ _REMOVE_PROJECT_FIXTURE_XML = (
     '  <remove-project name="platform/tools" />\n'
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Real parse + model verification
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -199,11 +186,6 @@ def test_remove_project_non_removed_project_attributes_preserved(tmp_path: pathl
     assert "pdk" in build.groups, (
         f"Expected 'pdk' group preserved on platform/build after removing sibling but got: {build.groups!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: parse + ToXml preserves structural elements of remaining projects
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S1-T1: envsubst malformed XML crash.
 
 Bug reference: E0-F6-S1-T1 -- envsubst crashed with an unhandled ExpatError
@@ -40,9 +26,6 @@ import pytest
 from kanon_cli.repo.subcmds import envsubst as envsubst_module
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-# ---------------------------------------------------------------------------
-# Constants -- malformed XML inputs that trigger the original bug
-# ---------------------------------------------------------------------------
 
 _MALFORMED_XML_UNCLOSED_TAG = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -54,21 +37,12 @@ _MALFORMED_XML_UNCLOSED_TAG = """\
 
 _MALFORMED_XML_MISMATCHED = "<?xml version='1.0'?><root><child></root>"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cmd():
     """Return an Envsubst instance without invoking __init__ parent chain."""
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Regression: ExpatError is caught; no exception propagates
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -97,11 +71,6 @@ def test_envsubst_malformed_xml_does_not_raise(tmp_path):
         )
 
     assert result == set(), f"EnvSubst() must return an empty set when parsing fails, got: {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Regression: exact E0-F6-S1-T1 bug condition
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -148,11 +117,6 @@ def test_exact_bug_condition_all_malformed_inputs(tmp_path, malformed_xml, test_
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Guard: try-except for ExpatError is present in source code
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_expat_error_handler_present_in_source():
     """AC-TEST-003: The ExpatError try-except guard is present in envsubst.py source.
@@ -172,11 +136,6 @@ def test_expat_error_handler_present_in_source():
         "malformed XML has been removed. Restore the handler in "
         "src/kanon_cli/repo/subcmds/envsubst.py."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Guard: malformed file skipped; processing continues
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -215,11 +174,6 @@ def test_malformed_xml_skipped_processing_continues(tmp_path):
         f"processed when preceded by a malformed XML file. "
         f"Processed files: {processed_files!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- Error is logged to the correct channel
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Additional unit tests for project.py to increase code coverage.
 
 This test file focuses on:
@@ -258,7 +244,6 @@ class TestSyncBuffer:
         with mock.patch.object(buf, "_RunQueue", side_effect=[False, True]) as mock_run:
             buf._RunLater()
 
-        # Should only call once because first returned False
         assert mock_run.call_count == 1
 
     @pytest.mark.unit
@@ -269,8 +254,6 @@ class TestSyncBuffer:
 
         with mock.patch("os.isatty", return_value=False):
             buf._PrintMessages()
-
-        # Should not crash with empty messages
 
     @pytest.mark.unit
     def test_syncbuffer_printmessages_with_messages(self):
@@ -293,7 +276,6 @@ class TestSyncBuffer:
                     buf._PrintMessages()
 
         assert buf._messages == []
-        # Note: _failures is NOT cleared in _PrintMessages
 
 
 @pytest.mark.unit
@@ -453,7 +435,6 @@ class TestMetaProjectProperties:
             ):
                 meta.PreSync()
 
-        # Should not change revisionExpr
         assert meta.revisionExpr == "refs/heads/master"
 
     @pytest.mark.unit
@@ -479,7 +460,6 @@ class TestMetaProjectProperties:
                 with mock.patch.object(meta, "GetBranch", return_value=branch):
                     meta.PreSync()
 
-        # Should not change revisionExpr
         assert meta.revisionExpr == "refs/heads/master"
 
     @pytest.mark.unit
@@ -664,7 +644,7 @@ class TestMetaProjectSyncMethod:
 
         assert result is True
         outer_mp.Sync.assert_called_once()
-        # Verify outer_manifest=False is passed to avoid infinite recursion
+
         assert outer_mp.Sync.call_args[1]["outer_manifest"] is False
 
     @pytest.mark.unit
@@ -707,7 +687,6 @@ class TestMetaProjectSyncMethod:
         """Test Sync() removes existing dirs for standalone manifest."""
         mp = self._create_manifest_project(tmp_path)
 
-        # Create directories
         os.makedirs(mp.gitdir, exist_ok=True)
         os.makedirs(mp.worktree, exist_ok=True)
 
@@ -1341,7 +1320,6 @@ class TestProjectGetLogs:
         """Test _getLogs falls back to bare_git when worktree missing."""
         project = self._create_project(tmp_path)
 
-        # Remove worktree
         os.rmdir(project.worktree)
 
         with mock.patch("kanon_cli.repo.project.GitCommand", side_effect=GitError("error")):

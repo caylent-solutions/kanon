@@ -20,22 +20,16 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
 _README = _REPO_ROOT / "README.md"
 _CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
 
-# All markdown documentation files (docs/ tree plus top-level README and CHANGELOG).
+
 _ALL_DOC_FILES: list[Path] = sorted(list(_DOCS_DIR.glob("**/*.md")) + [_README, _CHANGELOG])
 
-# Onboarding doc files: these are the user-facing guides that should only
-# show the auto-discovery form of kanon install/clean (no ".kanon" positional
-# argument). Integration testing docs and pipeline docs are excluded because
-# they intentionally show all invocation forms including explicit paths.
+
 _ONBOARDING_DOC_FILES: list[Path] = [
     _DOCS_DIR / "setup-guide.md",
     _DOCS_DIR / "lifecycle.md",
@@ -44,7 +38,7 @@ _ONBOARDING_DOC_FILES: list[Path] = [
     _DOCS_DIR / "multi-source-guide.md",
 ]
 
-# Regex to extract the body of any fenced code block (any language label).
+
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
 
@@ -87,11 +81,6 @@ def _extract_code_block_lines(file_path: Path) -> list[str]:
     return lines
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: No stale "pipx install rpm-git-repo" references
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNoStalePipxReferences:
     """AC-TEST-001: All doc files must have zero occurrences of
@@ -132,11 +121,6 @@ class TestNoStalePipxReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: No standalone "repo" commands in code blocks
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNoStandaloneRepoReferences:
     """AC-TEST-002: No doc file code blocks reference "repo" as a standalone
@@ -147,8 +131,7 @@ class TestNoStandaloneRepoReferences:
 
     def test_no_standalone_repo_references(self) -> None:
         """Code blocks across all doc files must not contain bare 'repo <cmd>' invocations."""
-        # Pattern: a line in a code block that begins with 'repo' followed by a space
-        # or a repo subcommand.  Lines starting with 'kanon repo' are fine.
+
         standalone_repo_re = re.compile(r"^repo\s")
         violations: list[str] = []
         for doc_path in _ALL_DOC_FILES:
@@ -180,11 +163,6 @@ class TestNoStandaloneRepoReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Onboarding docs use auto-discovery form for kanon install/clean
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDocsUseAutoDiscover:
     """AC-TEST-004: Primary onboarding doc files that contain 'kanon install'
@@ -204,8 +182,6 @@ class TestDocsUseAutoDiscover:
         assert doc_path.is_file(), f"Expected onboarding doc to exist: {doc_path}"
         violations: list[str] = []
         for line in _extract_code_block_lines(doc_path):
-            # A line with 'kanon install' or 'kanon clean' that also ends with (or contains)
-            # '.kanon' as a positional argument -- not as an env var value or comment.
             if ("kanon install" in line or "kanon clean" in line) and re.search(
                 r"\bkanon\s+(?:install|clean)\b.*\B\.kanon\b", line
             ):
@@ -215,11 +191,3 @@ class TestDocsUseAutoDiscover:
             "Onboarding docs should use the auto-discovery form ('kanon install' with no path).\n"
             "Found:\n" + "\n".join(f"  {v!r}" for v in violations)
         )
-
-
-# AC-TEST-005 (bundled-catalog REPO_URL/REPO_REV guard) was retired by
-# E6-F2-S1-T1, which deleted src/kanon_cli/catalog/ from the wheel and added
-# the .gitignore + CI guards enforcing its absence. The previous
-# TestCatalogNoRepoUrl class asserted on a path that no longer exists in the
-# repo; the CI check "Verify bundled catalog removed (E6-F2-S1-T1)" plus the
-# unit assertions in tests/test_wheel_layout.py now cover the invariant.

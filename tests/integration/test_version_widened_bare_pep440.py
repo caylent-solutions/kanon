@@ -66,7 +66,6 @@ def _init_fixture_repo(path: pathlib.Path, tags: list[str]) -> str:
 
 
 _PEP440_TAG_CASES = [
-    # (spec, description)
     ("1.0.0a1", "prerelease alpha"),
     ("1.0.0+local.build", "local version"),
     ("2026.4.1", "calendar version"),
@@ -117,7 +116,6 @@ def test_all_non_pep440_tags_raises_loud_error(tmp_path: pathlib.Path) -> None:
     url = _init_fixture_repo(tmp_path / "repo", non_pep440_tags)
 
     with pytest.raises(SystemExit):
-        # resolve_version catches ValueError and calls sys.exit(1)
         resolve_version(url, "refs/tags/==1.0.0")
 
 
@@ -133,7 +131,6 @@ def test_all_non_pep440_tags_loud_error_content(tmp_path: pathlib.Path) -> None:
     non_pep440_tags = ["release-2024", "snapshot-abc", "nightly-build"]
     url = _init_fixture_repo(tmp_path / "repo", non_pep440_tags)
 
-    # Build full refs as git ls-remote would return them
     result = subprocess.run(
         ["git", "ls-remote", "--tags", url],
         capture_output=True,

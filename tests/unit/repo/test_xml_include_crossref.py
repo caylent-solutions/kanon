@@ -34,10 +34,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_include_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -126,11 +122,6 @@ def _setup_include_scenario(
     _write_included_manifest(repodir, included_filename, included_xml)
     manifest_file = _write_manifest(repodir, primary_xml)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <include>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -274,9 +265,7 @@ class TestIncludeCrossElementReferences:
 
         AC-TEST-001, AC-FUNC-001
         """
-        # The included manifest declares a new remote "partner" but does not
-        # re-declare <default> to avoid a "duplicate default" error. The
-        # included project names its remote explicitly so no default is needed.
+
         included_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -377,11 +366,6 @@ class TestIncludeCrossElementReferences:
         assert "included-remote" in build.remote.name, (
             f"AC-TEST-001: expected 'included-remote' in project.remote.name but got: {build.remote.name!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <include> surface clear errors
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -508,8 +492,7 @@ class TestIncludeDuplicateRules:
 
         AC-TEST-002, AC-FUNC-001
         """
-        # Use a manifest with no projects to avoid duplicate path errors.
-        # The remote and default are still present so the manifest is valid.
+
         included_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -639,11 +622,6 @@ class TestIncludeDuplicateRules:
         assert duplicate_path in error_message, (
             f"AC-TEST-002: expected duplicate path '{duplicate_path}' named in error but got: {error_message!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <include> in an unexpected parent raises or is ignored per spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -855,11 +833,6 @@ class TestIncludeUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces all cross-element and uniqueness rules
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -984,9 +957,7 @@ class TestIncludeCrossRefParseTimeEnforcement:
 
         AC-FUNC-001
         """
-        # Each included manifest adds a new remote and a project that explicitly
-        # references that remote -- no <default> in included manifests to avoid
-        # a "duplicate default" error when the two defaults have different remotes.
+
         included_a_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -1028,11 +999,6 @@ class TestIncludeCrossRefParseTimeEnforcement:
         assert "remote-b" in manifest.remotes, (
             f"AC-FUNC-001: expected 'remote-b' in manifest.remotes but got: {list(manifest.remotes.keys())!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1155,8 +1121,7 @@ class TestIncludeCrossRefChannelDiscipline:
 
         AC-CHANNEL-001 (positive case: valid manifests must not raise)
         """
-        # Projects explicitly name their remote so no <default> is needed in
-        # the included files -- avoiding "duplicate default" errors on merge.
+
         included_a_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"

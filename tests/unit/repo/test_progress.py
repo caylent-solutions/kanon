@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the progress.py module."""
 
 import unittest
@@ -269,7 +255,7 @@ class TestProgressEnd(unittest.TestCase):
         p = progress.Progress("Test", total=5, quiet=True)
         p.end()
         self.assertTrue(p._ended)
-        # Calling end() again should not raise.
+
         p.end()
         self.assertTrue(p._ended)
 
@@ -316,7 +302,7 @@ class TestProgressStartAndFinish(unittest.TestCase):
         p = progress.Progress("Test", total=5, quiet=True)
         initial_done = p._done
         p.start("task_a")
-        # start calls update(inc=0), so done should not change.
+
         self.assertEqual(p._done, initial_done)
 
     @mock.patch.object(progress, "_TTY", False)
@@ -324,7 +310,7 @@ class TestProgressStartAndFinish(unittest.TestCase):
         p = progress.Progress("Test", total=5, quiet=True)
         p.start("task_a")
         p.finish("task_a")
-        # finish calls update(inc=1 by default), so done increments.
+
         self.assertEqual(p._done, 1)
 
 
@@ -353,7 +339,7 @@ class TestProgressShowJobsWhenParallel(unittest.TestCase):
         self.assertTrue(p._show_jobs)
         p.finish("task_a")
         p.finish("task_b")
-        # Once set, _show_jobs should remain True.
+
         self.assertTrue(p._show_jobs)
 
     @mock.patch.object(progress, "_TTY", False)
@@ -373,7 +359,7 @@ class TestProgressDisplayMessage(unittest.TestCase):
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
             p = progress.Progress("Test", total=5, delay=False, quiet=False)
             p.display_message("test message")
-            # Should write the message
+
             calls = [str(call) for call in mock_stderr.write.call_args_list]
             self.assertTrue(any("test message" in call for call in calls))
 
@@ -383,7 +369,7 @@ class TestProgressDisplayMessage(unittest.TestCase):
         """display_message should return early when not TTY."""
         p = progress.Progress("Test", total=5, delay=False, quiet=False)
         p.display_message("test message")
-        # Should not write when not TTY
+
         mock_stderr.write.assert_not_called()
 
     @mock.patch.object(progress, "_TTY", True)
@@ -422,7 +408,7 @@ class TestProgressWrite(unittest.TestCase):
                 p = progress.Progress("Test", total=5, delay=False, quiet=False, elide=True)
                 p._write("x" * 100)
                 call_args = mock_stderr.write.call_args[0][0]
-                self.assertTrue(len(call_args) <= 21)  # 20 + newline
+                self.assertTrue(len(call_args) <= 21)
                 self.assertTrue(call_args.endswith(".."))
 
     @mock.patch.object(progress, "_TTY", True)
@@ -459,7 +445,6 @@ class TestProgressUpdateWithTotal(unittest.TestCase):
             mock_size = mock.Mock()
             mock_size.columns = 100
             with mock.patch("os.get_terminal_size", return_value=mock_size):
-                # Provide enough time values for init and update
                 with mock.patch("time.time", side_effect=[0, 0, 10]):
                     p = progress.Progress(
                         "Test",
@@ -471,7 +456,7 @@ class TestProgressUpdateWithTotal(unittest.TestCase):
                     )
                     p.update(inc=5)
                     call_args = mock_stderr.write.call_args[0][0]
-                    # Should contain time format
+
                     self.assertIn("0:", call_args)
 
     @mock.patch.object(progress, "_TTY", True)
@@ -541,8 +526,8 @@ class TestProgressUpdateLoop(unittest.TestCase):
         """_update_loop should exit when _update_event is set."""
         p = progress.Progress("Test", total=5, delay=False, quiet=True)
         p._update_event.set()
-        # The loop should exit immediately
+
         with mock.patch.object(p, "update") as mock_update:
             p._update_loop()
-            # Should call update at least once before checking event
+
             self.assertGreaterEqual(mock_update.call_count, 1)

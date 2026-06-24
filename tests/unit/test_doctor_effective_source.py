@@ -29,11 +29,6 @@ from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
 from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
-# ---------------------------------------------------------------------------
-# Helper factory
-# ---------------------------------------------------------------------------
-
-
 def _make_args(catalog_source: str | None) -> argparse.Namespace:
     """Return an argparse Namespace with catalog_source set to the sentinel when None.
 
@@ -74,16 +69,10 @@ def _make_lockfile() -> Lockfile:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests: _check_effective_catalog_source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckEffectiveCatalogSource:
     """Unit tests for _check_effective_catalog_source covering all precedence rules."""
 
-    # AC-FUNC-001: CLI flag wins when BOTH CLI and env var are set.
     def test_cli_flag_wins_over_env_var(self) -> None:
         """CLI flag takes precedence over KANON_CATALOG_SOURCES env var."""
         cli_value = "https://cli.example.com/repo.git@main"
@@ -99,7 +88,6 @@ class TestCheckEffectiveCatalogSource:
         assert "(from --catalog-source CLI flag)" in finding.message
         assert env_value not in finding.message
 
-    # AC-FUNC-001: CLI flag wins even when a v4 lockfile is present.
     def test_cli_flag_used_when_lockfile_present(self) -> None:
         """CLI flag is reported even when a v4 lockfile (which carries no catalog) is present."""
         cli_value = "https://cli.example.com/repo.git@main"
@@ -114,7 +102,6 @@ class TestCheckEffectiveCatalogSource:
         assert cli_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
 
-    # AC-FUNC-002: env var wins when CLI is absent.
     def test_env_var_wins_when_cli_absent(self) -> None:
         """KANON_CATALOG_SOURCES env var is used when CLI flag is not set."""
         env_value = "https://env.example.com/repo.git@main"
@@ -128,7 +115,6 @@ class TestCheckEffectiveCatalogSource:
         assert env_value in finding.message
         assert "(from KANON_CATALOG_SOURCES env var)" in finding.message
 
-    # FR-7: the v4 lockfile no longer supplies a catalog source.
     def test_lockfile_present_no_cli_no_env_yields_none_configured(self) -> None:
         """A v4 lockfile present with no CLI flag and no env var yields "(none configured)".
 
@@ -147,7 +133,6 @@ class TestCheckEffectiveCatalogSource:
         assert "(none configured)" in finding.message
         assert "commands requiring" in finding.message
 
-    # AC-FUNC-004: none configured when no CLI, no env, and no lockfile.
     def test_none_configured_when_no_source(self) -> None:
         """Returns 'none configured' message when no source is available."""
         args = _make_args(catalog_source=None)
@@ -160,7 +145,6 @@ class TestCheckEffectiveCatalogSource:
         assert "(none configured)" in finding.message
         assert "commands requiring" in finding.message
 
-    # AC-FUNC-005: return type is always DoctorFinding.
     @pytest.mark.parametrize(
         "catalog_source,env,has_lockfile",
         [
@@ -185,7 +169,6 @@ class TestCheckEffectiveCatalogSource:
         assert isinstance(finding, DoctorFinding)
         assert finding.kind == "info"
 
-    # AC-FUNC-006: provenance suffix present in all paths.
     @pytest.mark.parametrize(
         "catalog_source,env,has_lockfile,expected_suffix",
         [
@@ -230,7 +213,6 @@ class TestCheckEffectiveCatalogSource:
 
         assert expected_suffix in finding.message
 
-    # AC-CYCLE-001: leaked env var scenario.
     def test_leaked_env_var_is_surfaced(self) -> None:
         """KANON_CATALOG_SOURCES leakage from a shell profile is detected.
 
@@ -248,7 +230,6 @@ class TestCheckEffectiveCatalogSource:
         assert leaked_value in finding.message
         assert "(from KANON_CATALOG_SOURCES env var)" in finding.message
 
-    # Additional: CLI-only (no env, no lockfile).
     def test_cli_only_no_env_no_lockfile(self) -> None:
         """CLI flag is used when neither env var nor lockfile is present."""
         cli_value = "https://cli.example.com/repo.git@release"
@@ -260,7 +241,6 @@ class TestCheckEffectiveCatalogSource:
         assert cli_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
 
-    # Additional: CLI wins over both env and a present lockfile.
     def test_cli_wins_over_env_and_lockfile(self) -> None:
         """CLI flag overrides env var AND is reported even when a lockfile is present."""
         cli_value = "https://cli.example.com/repo.git@main"
@@ -274,7 +254,6 @@ class TestCheckEffectiveCatalogSource:
         assert cli_value in finding.message
         assert "(from --catalog-source CLI flag)" in finding.message
 
-    # AC-FUNC-001 edge case: CLI value equals env var value -- must still attribute to CLI.
     def test_cli_wins_when_cli_value_equals_env_value(self) -> None:
         """CLI flag is attributed to CLI even when its value matches KANON_CATALOG_SOURCES.
 
@@ -285,7 +264,7 @@ class TestCheckEffectiveCatalogSource:
         user typed the flag.
         """
         shared_value = "https://shared.example.com/repo.git@main"
-        # Both CLI flag and env var carry the same URL.
+
         args = _make_args(catalog_source=shared_value)
         env = {CATALOG_SOURCES_ENV_VAR: shared_value}
 

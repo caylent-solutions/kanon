@@ -20,11 +20,6 @@ import pytest
 from kanon_cli.repo.manifest_xml import XmlBool
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _node(attr_value: str):
     """Return a real DOM element with ``attr`` set to *attr_value*."""
     doc = xml.dom.minidom.parseString(f'<item attr="{attr_value}"/>'.encode())
@@ -35,11 +30,6 @@ def _node_no_attr():
     """Return a real DOM element that has no ``attr`` attribute at all."""
     doc = xml.dom.minidom.parseString(b"<item/>")
     return doc.documentElement
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: truthy canonical values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -54,11 +44,6 @@ def test_xmlbool_truthy_values(raw):
     assert result is True, f"expected True for {raw!r}, got {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: falsy canonical values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "raw",
@@ -69,11 +54,6 @@ def test_xmlbool_falsy_values(raw):
     node = _node(raw)
     result = XmlBool(node, "attr")
     assert result is False, f"expected False for {raw!r}, got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: empty attribute / missing attribute uses default
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -94,11 +74,6 @@ def test_xmlbool_missing_attr_uses_default():
     node = _node_no_attr()
     result = XmlBool(node, "attr", default=False)
     assert result is False
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: invalid value warns to stderr and uses default
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -128,12 +103,6 @@ def test_xmlbool_invalid_value_default_variants(capsys, default):
     assert captured.out == ""
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: only documented truthy/falsy values are accepted; all others
-# trigger the warning-and-default path
-# ---------------------------------------------------------------------------
-
-
 DOCUMENTED_TRUE = {"yes", "true", "1"}
 DOCUMENTED_FALSE = {"no", "false", "0"}
 
@@ -156,11 +125,6 @@ def test_xmlbool_falsy_set_is_exactly_documented():
         node = _node(val)
         result = XmlBool(node, "attr", default=None)
         assert result is not False, f"XmlBool unexpectedly returned False for undocumented value {val!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

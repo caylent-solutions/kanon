@@ -23,11 +23,6 @@ import pytest
 from kanon_cli.commands.outdated import run
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     catalog_source: str | None = "file:///fake/catalog@HEAD",
     kanon_file: str = "/fake/.kanon",
@@ -66,11 +61,6 @@ def _write_kanon_file(path: pathlib.Path, sources: list[dict[str, str]]) -> None
     path.chmod(0o644)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: --fail-on-upgrade is a registered argparse flag, default False
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFailOnUpgradeFlagRegistration:
     """AC-FUNC-001: --fail-on-upgrade is a boolean store-true flag, default False."""
@@ -83,7 +73,6 @@ class TestFailOnUpgradeFlagRegistration:
         subparsers = root_parser.add_subparsers(dest="command")
         register(subparsers)
 
-        # Without the flag, fail_on_upgrade defaults to False
         args = root_parser.parse_args(["outdated", "--catalog-source", "file:///x@HEAD"])
         assert args.fail_on_upgrade is False
 
@@ -99,31 +88,17 @@ class TestFailOnUpgradeFlagRegistration:
         assert args.fail_on_upgrade is True
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 / AC-FUNC-003 / AC-FUNC-004 / AC-FUNC-005 / AC-FUNC-006
-# run() exit-code logic via patched _list_tags
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "upgrade_type,fail_on_upgrade,expected_exit_code",
     [
-        # AC-FUNC-003: all-none + flag set -> exit 0
         ("none", True, 0),
-        # AC-FUNC-002: patch + flag set -> exit 1
         ("patch", True, 1),
-        # AC-FUNC-002: minor + flag set -> exit 1
         ("minor", True, 1),
-        # AC-FUNC-002: major + flag set -> exit 1
         ("major", True, 1),
-        # AC-FUNC-002: prerelease + flag set -> exit 1
         ("prerelease", True, 1),
-        # AC-FUNC-004: patch + flag NOT set -> exit 0
         ("patch", False, 0),
-        # AC-FUNC-004: major + flag NOT set -> exit 0
         ("major", False, 0),
-        # AC-FUNC-004: none + flag NOT set -> exit 0
         ("none", False, 0),
     ],
 )
@@ -142,8 +117,6 @@ class TestRunExitCodeWithUpgradeTypes:
 
         kanon_file = tmp_path / ".kanon"
 
-        # Map upgrade-type to a (revision, available_tags, lock_ref) triple that
-        # will produce the desired upgrade-type from _build_row.
         if upgrade_type == "none":
             revision = ">=1.0.0,<1.1"
             available_tags = ["refs/tags/1.0.0", "refs/tags/1.0.1"]
@@ -161,7 +134,6 @@ class TestRunExitCodeWithUpgradeTypes:
             available_tags = ["refs/tags/1.0.0", "refs/tags/2.0.0"]
             lock_ref = "refs/tags/1.0.0"
         else:
-            # prerelease
             revision = ">=1.0.0"
             available_tags = ["refs/tags/1.0.0", "refs/tags/1.0.1a1"]
             lock_ref = "refs/tags/1.0.0"
@@ -171,7 +143,6 @@ class TestRunExitCodeWithUpgradeTypes:
             [{"name": "FOO", "url": "file:///some/repo", "ref": revision, "path": "./foo"}],
         )
 
-        # Write a lockfile so _resolve_lock_ref returns the desired lock_ref
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
@@ -206,11 +177,6 @@ class TestRunExitCodeWithUpgradeTypes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: drift upgrade-type with --fail-on-upgrade -> exit 1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDriftUpgradeTypeWithFlag:
     """AC-FUNC-002: drift (branch-pinned) counts as available upgrade."""
@@ -228,7 +194,6 @@ class TestDriftUpgradeTypeWithFlag:
             [{"name": "DRIFT", "url": "file:///some/repo", "ref": "main", "path": "./drift"}],
         )
 
-        # Write a lockfile with resolved_sha = old_sha; HEAD will return new_sha -> drift
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
             "schema_version = 4\n"
@@ -253,7 +218,6 @@ class TestDriftUpgradeTypeWithFlag:
             fail_on_upgrade=True,
         )
 
-        # Patch _list_branch_head to return new_sha -> locked sha differs -> drift
         with patch("kanon_cli.commands.outdated._list_branch_head", return_value=new_sha):
             result = run(args)
 
@@ -300,11 +264,6 @@ class TestDriftUpgradeTypeWithFlag:
             result = run(args)
 
         assert result == 0, f"Expected exit 0 for drift without flag, got {result}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: row content unchanged regardless of flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -371,11 +330,6 @@ class TestRowContentUnchangedByFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: zero sources (empty rows) + flag set -> exit 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestZeroSourcesWithFlag:
     """AC-FUNC-006: zero rows iterated with --fail-on-upgrade -> exit 0.
@@ -391,7 +345,7 @@ class TestZeroSourcesWithFlag:
         from unittest.mock import patch
 
         kanon_file = tmp_path / ".kanon"
-        # A valid .kanon file (content does not matter; parse_kanonenv is patched)
+
         kanon_file.write_text(
             "GITBASE=file:///unused\n"
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
@@ -404,8 +358,6 @@ class TestZeroSourcesWithFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Patch parse_kanonenv to return a zero-sources structure, and
-        # _parse_catalog_source to accept the catalog arg without network I/O.
         empty_kanonenv: dict = {"KANON_SOURCES": [], "sources": {}}
 
         args = _make_args(

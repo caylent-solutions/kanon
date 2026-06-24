@@ -49,7 +49,6 @@ def test_synthetic_drift_repo_fixture_returns_repo_init_acceptable_bare(
     assert synthetic_drift_repo.exists(), f"synthetic_drift_repo path must exist: {synthetic_drift_repo!r}"
     assert synthetic_drift_repo.is_dir(), f"synthetic_drift_repo path must be a directory: {synthetic_drift_repo!r}"
 
-    # Verify the manifest structural correctness before repo init
     manifest_text = _read_manifest_text_from_bare(synthetic_drift_repo)
     remote_pos = manifest_text.find("<remote ")
     default_pos = manifest_text.find("<default ")
@@ -68,8 +67,6 @@ def test_synthetic_drift_repo_fixture_returns_repo_init_acceptable_bare(
     client_dir.mkdir(parents=True, exist_ok=True)
     repo_dot_dir = str(client_dir / ".repo")
 
-    # run_from_args raises RepoCommandError on non-zero exit; returning normally
-    # confirms the manifest schema was accepted (exit code 0).
     run_from_args(
         [
             "init",
@@ -114,7 +111,6 @@ def test_synthetic_upgrade_versioned_repo_fixture_returns_tagged_bare(
         f"synthetic_upgrade_versioned_repo path must be a directory: {synthetic_upgrade_versioned_repo!r}"
     )
 
-    # Assert all documented annotated tags are present
     actual_tags = _list_git_tags(synthetic_upgrade_versioned_repo)
     for expected_tag in _REQUIRED_TAGS:
         assert expected_tag in actual_tags, (
@@ -126,8 +122,6 @@ def test_synthetic_upgrade_versioned_repo_fixture_returns_tagged_bare(
     client_dir.mkdir(parents=True, exist_ok=True)
     repo_dot_dir = str(client_dir / ".repo")
 
-    # run_from_args raises RepoCommandError on non-zero exit; returning normally
-    # confirms the manifest schema was accepted (exit code 0).
     run_from_args(
         [
             "init",

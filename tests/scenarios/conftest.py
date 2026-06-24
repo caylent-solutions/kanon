@@ -28,20 +28,12 @@ from typing import Iterable
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
 
 _DEFAULT_GIT_USER_NAME = "Kanon Scenario Test"
 _DEFAULT_GIT_USER_EMAIL = "scenario-test@kanon.example"
 _DEFAULT_GIT_BRANCH = "main"
 
-
-# ---------------------------------------------------------------------------
-# Doc parsing helpers
-# ---------------------------------------------------------------------------
 
 _HEADING_RE = re.compile(r"^### ([A-Z][A-Za-z-]*-\d+):\s*(.+)$", re.MULTILINE)
 
@@ -59,11 +51,6 @@ def scenario_block(scenario_id: str) -> str:
     if not m:
         raise LookupError(f"Scenario {scenario_id!r} not found in {INTEGRATION_DOC}")
     return m.group(0)
-
-
-# ---------------------------------------------------------------------------
-# Subprocess wrappers
-# ---------------------------------------------------------------------------
 
 
 def run_kanon(
@@ -130,11 +117,6 @@ def clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pat
     """Clone work_dir into bare_dir; return resolved bare_dir."""
     run_git(["clone", "--bare", str(work_dir), str(bare_dir)], work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Synthetic git fixture builders
-# ---------------------------------------------------------------------------
 
 
 def make_bare_repo_with_tags(parent: pathlib.Path, name: str, tags: Iterable[str]) -> pathlib.Path:
@@ -206,11 +188,6 @@ def cs_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
     return make_bare_repo_with_tags(parent, "cs-catalog", _CS_CATALOG_TAGS)
 
 
-# ---------------------------------------------------------------------------
-# XML manifest builders (escape `<`/`>`/`&` per E2-F3-S2-T5)
-# ---------------------------------------------------------------------------
-
-
 def xml_escape(value: str) -> str:
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -280,11 +257,6 @@ def pk_xml(
     return mk_rx_xml(parent, fetch_url, project_name, revision, filename=filename)
 
 
-# ---------------------------------------------------------------------------
-# Kanonenv builder
-# ---------------------------------------------------------------------------
-
-
 def write_kanonenv(
     target_dir: pathlib.Path,
     sources: Iterable[tuple[str, str, str, str]],
@@ -340,11 +312,6 @@ def write_kanonenv(
     return target
 
 
-# ---------------------------------------------------------------------------
-# Lifecycle wrappers
-# ---------------------------------------------------------------------------
-
-
 def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:
     """Run `kanon install` from `working_dir`."""
     return run_kanon("install", cwd=working_dir, **kwargs)
@@ -353,11 +320,6 @@ def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedPr
 def kanon_clean(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:
     """Run `kanon clean` from `working_dir`."""
     return run_kanon("clean", cwd=working_dir, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# Shared pytest fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)

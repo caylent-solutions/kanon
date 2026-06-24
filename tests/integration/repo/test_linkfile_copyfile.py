@@ -27,11 +27,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.project import _CopyFile, _LinkFile
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising RuntimeError on non-zero exit."""
     result = subprocess.run(
@@ -123,11 +118,6 @@ def _repo_init_and_sync(
         repo_dir=repo_dot_dir,
     )
     repo_sync(str(workspace))
-
-
-# ---------------------------------------------------------------------------
-# Tests: <linkfile> symlink creation (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -279,11 +269,6 @@ def test_linkfile_absolute_dest_with_dotdot_raises(tmp_path: pathlib.Path) -> No
         link._Link()
 
 
-# ---------------------------------------------------------------------------
-# Tests: <copyfile> file copying (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_copyfile_copies_file_content(tmp_path: pathlib.Path) -> None:
     """_CopyFile._Copy() copies source file content to destination path.
@@ -411,17 +396,11 @@ def test_copyfile_missing_source_does_not_create_dest(tmp_path: pathlib.Path) ->
     topdir = tmp_path / "topdir"
     topdir.mkdir()
 
-    # Source file intentionally absent.
     copy = _CopyFile(str(git_worktree), "nonexistent.txt", str(topdir), "output.txt")
     copy._Copy()
 
     dest = topdir / "output.txt"
     assert not dest.exists(), f"Expected {dest} to NOT exist when source is missing, but it was created."
-
-
-# ---------------------------------------------------------------------------
-# End-to-end pipeline test (AC-TEST-001 combined with AC-FUNC-003, AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

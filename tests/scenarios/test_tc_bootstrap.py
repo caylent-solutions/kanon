@@ -27,7 +27,7 @@ from tests.scenarios.conftest import (
     run_kanon,
 )
 
-# argparse exit code for an unrecognised command (the removed-bootstrap contract).
+
 _ARGPARSE_USAGE_EXIT = 2
 
 
@@ -44,10 +44,6 @@ def _assert_bootstrap_rejected(result) -> None:
 
 @pytest.mark.scenario
 class TestTCBootstrap:
-    # ------------------------------------------------------------------
-    # TC-bootstrap-01: --output-dir=<path> (no filesystem mutation)
-    # ------------------------------------------------------------------
-
     def test_tc_bootstrap_01_output_dir(self, tmp_path: pathlib.Path) -> None:
         """TC-bootstrap-01: kanon bootstrap kanon --output-dir exits 2 and creates no files."""
         output_dir = tmp_path / "tc-bs-01"
@@ -58,10 +54,6 @@ class TestTCBootstrap:
         assert not output_dir.exists(), (
             f"Expected --output-dir '{output_dir}' to NOT be created (bootstrap is rejected before any work)"
         )
-
-    # ------------------------------------------------------------------
-    # TC-bootstrap-02: --catalog-source flag never resolves the catalog
-    # ------------------------------------------------------------------
 
     def test_tc_bootstrap_02_catalog_source_flag(self, tmp_path: pathlib.Path) -> None:
         """TC-bootstrap-02: bootstrap list --catalog-source exits 2 (rejected, no clone)."""
@@ -75,10 +67,6 @@ class TestTCBootstrap:
         _assert_bootstrap_rejected(result)
         assert "Cloning" not in result.stderr, f"Unexpected clone attempt in stderr: {result.stderr!r}"
 
-    # ------------------------------------------------------------------
-    # TC-bootstrap-03: KANON_CATALOG_SOURCES env never resolves the catalog
-    # ------------------------------------------------------------------
-
     def test_tc_bootstrap_03_catalog_source_env(self, tmp_path: pathlib.Path) -> None:
         """TC-bootstrap-03: bootstrap list with KANON_CATALOG_SOURCES env exits 2 (rejected)."""
         env = dict(os.environ)
@@ -88,10 +76,6 @@ class TestTCBootstrap:
 
         _assert_bootstrap_rejected(result)
         assert "Cloning" not in result.stderr, f"Unexpected clone attempt in stderr: {result.stderr!r}"
-
-    # ------------------------------------------------------------------
-    # TC-bootstrap-04: flag and env both ignored (rejected before reading either)
-    # ------------------------------------------------------------------
 
     def test_tc_bootstrap_04_flag_overrides_env(self, tmp_path: pathlib.Path) -> None:
         """TC-bootstrap-04: --catalog-source flag and KANON_CATALOG_SOURCES env both ignored (rejected)."""
@@ -108,10 +92,6 @@ class TestTCBootstrap:
 
         _assert_bootstrap_rejected(result)
         assert result.stdout == "", f"Expected empty stdout (no package listing), got: {result.stdout!r}"
-
-    # ------------------------------------------------------------------
-    # TC-bootstrap-05: missing parent exits 2 (rejected, not a filesystem error)
-    # ------------------------------------------------------------------
 
     def test_tc_bootstrap_05_nonexistent_parent_errors(self, tmp_path: pathlib.Path) -> None:
         """TC-bootstrap-05: bootstrap with --output-dir whose parent does not exist exits 2."""

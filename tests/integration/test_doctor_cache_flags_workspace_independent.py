@@ -35,10 +35,6 @@ from kanon_cli.commands.doctor import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Parametrized fixture data
-# ---------------------------------------------------------------------------
-
 _CACHE_FLAG_PARAMS = [
     pytest.param(
         "--refresh-completion-cache",
@@ -51,11 +47,6 @@ _CACHE_FLAG_PARAMS = [
         id="prune_cache",
     ),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def _parse_doctor_args(*cli_args: str) -> argparse.Namespace:
@@ -84,11 +75,6 @@ def _parse_doctor_args(*cli_args: str) -> argparse.Namespace:
     subparsers = top_parser.add_subparsers(dest="subcommand")
     register(subparsers)
     return top_parser.parse_args(["doctor", *cli_args])
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -132,8 +118,7 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         cache_dir.mkdir(mode=0o700)
 
         monkeypatch.chdir(tmp_path)
-        # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
-        # makes the resolved cache equal cache_dir (= tmp_path / "cache").
+
         monkeypatch.setenv("KANON_HOME", str(cache_dir.parent))
 
         args = _parse_doctor_args(flag)
@@ -184,8 +169,7 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         cache_dir.mkdir(mode=0o700)
 
         monkeypatch.chdir(tmp_path)
-        # The cache always resolves under <KANON_HOME>/cache; KANON_HOME=tmp_path
-        # makes the resolved cache equal cache_dir (= tmp_path / "cache").
+
         monkeypatch.setenv("KANON_HOME", str(cache_dir.parent))
 
         args = _parse_doctor_args(flag)
@@ -205,11 +189,6 @@ class TestDoctorCacheFlagsWorkspaceIndependent:
         assert "no kanon workspace" not in captured.err, (
             f"Expected no workspace-not-found diagnostic in stderr; got:\nstderr: {captured.err!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# DoctorArgsTypeError contract
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -46,10 +46,6 @@ from kanon_cli.core.include_walker import InstallError
 from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
-# ---------------------------------------------------------------------------
-# JSON output contract (spec Section 13 D3)
-# ---------------------------------------------------------------------------
-
 
 def _emit_json_payload(
     payload: object,
@@ -92,10 +88,6 @@ def _emit_json_payload(
     sys.stdout.write(output)
     sys.stdout.flush()
 
-
-# ---------------------------------------------------------------------------
-# Top-level help text (spec Section 14)
-# ---------------------------------------------------------------------------
 
 _TOP_LEVEL_HELP: str = """\
 kanon -- declarative dependency manager for git-hosted assets
@@ -284,43 +276,17 @@ def main(argv: list[str] | None = None) -> None:
 
     _apply_global_flags(args)
 
-    # Best-effort "update available" alert (spec Section 7.1 / FR-29), emitted on
-    # stderr before subcommand dispatch. It honours every skip condition
-    # (completion invocations, dev/editable installs, --no-update-check,
-    # KANON_SKIP_UPDATE_CHECK=1) internally and is graceful-fail: a network or
-    # cache problem prints no alert and never disturbs the chosen command. It runs
-    # for the no-command case too (bare `kanon`) since that still resolves a real
-    # invocation; only the completer subcommands and the explicit skips suppress it.
     maybe_alert_update(args, args.command, environ=os.environ)
 
     if args.command is None:
         parser.print_help()
         sys.exit(2)
 
-    # Inject the root parser so subcommands that need to introspect the full
-    # argument tree (e.g., the completion subcommand) can access it without
-    # a circular import.
     args.parser = parser
 
-    # Top-level user-error boundary. Per-command handlers already convert the
-    # kanon user-error types below into a clean stderr message + non-zero exit
-    # (see commands/install.py::_run and commands/clean.py::_run). This wrapper
-    # is the defence-in-depth backstop for any code path that reaches one of
-    # these errors WITHOUT an enclosing per-command try/except -- e.g. a
-    # zero-source .kanon raising ValueError from parse_kanonenv via doctor's
-    # kanon_hash recompute, outdated's top-level parse, or why's live-resolve.
-    # Without this, such an error leaks a raw Python traceback (fail-ugly).
-    #
-    # Only the spec-canonical user-error types are caught. SystemExit (raised
-    # by per-command sys.exit() calls), KeyboardInterrupt, and bare Exception
-    # are deliberately NOT caught: SystemExit must pass through with its own
-    # code, and masking arbitrary exceptions would hide programming bugs behind
-    # a generic clean error.
     try:
         exit_code = args.func(args)
     except InstallError as exc:
-        # InstallError subclasses already render str(exc) with an "ERROR:"
-        # prefix per the spec-canonical error shape; print it verbatim.
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:

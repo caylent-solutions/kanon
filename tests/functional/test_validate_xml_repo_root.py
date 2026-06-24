@@ -16,9 +16,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_EMAIL = "validate-xml-test@example.com"
 _GIT_USER_NAME = "Validate XML Test"
@@ -28,14 +25,6 @@ _VALID_MANIFEST_CONTENT = textwrap.dedent("""\
       <project name="proj" path=".packages/proj" remote="origin" revision="main" />
     </manifest>
 """)
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# NOTE: _write_xml duplicates the same helper in test_validate_lifecycle.py.
-# Consolidation into conftest.py requires updating that file too, which is
-# outside this task's Changes Manifest. Tracked as a follow-up DRY cleanup.
 
 
 def _write_xml(path: Path, content: str) -> Path:
@@ -68,11 +57,6 @@ def _init_git_repo(directory: Path) -> None:
     _git(["commit", "-m", "Initial commit"], cwd=directory)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestValidateXmlRepoRootResolution:
     """Tests for repo-root resolution in `kanon validate xml`."""
@@ -90,7 +74,6 @@ class TestValidateXmlRepoRootResolution:
 
         _write_xml(repo_root / "repo-specs" / "valid.xml", _VALID_MANIFEST_CONTENT)
 
-        # Run from a subdirectory so we confirm git traversal finds the root.
         subdir = repo_root / "some" / "nested" / "dir"
         subdir.mkdir(parents=True)
 
@@ -101,7 +84,7 @@ class TestValidateXmlRepoRootResolution:
             f"stdout: {result.stdout!r}\n"
             f"stderr: {result.stderr!r}"
         )
-        # Valid summary goes to stdout, not stderr
+
         assert "valid" in result.stdout.lower(), f"Expected success message in stdout.\nstdout: {result.stdout!r}"
         assert result.stderr == "", f"AC-CHANNEL-001: no stderr output expected on success.\nstderr: {result.stderr!r}"
 
@@ -119,7 +102,6 @@ class TestValidateXmlRepoRootResolution:
         repo_root.mkdir()
         _write_xml(repo_root / "repo-specs" / "valid.xml", _VALID_MANIFEST_CONTENT)
 
-        # AC-TEST-002: explicit absolute path succeeds.
         result = _run_kanon("validate", "xml", "--repo-root", str(repo_root))
 
         assert result.returncode == 0, (
@@ -128,11 +110,6 @@ class TestValidateXmlRepoRootResolution:
         assert "valid" in result.stdout.lower(), f"Expected success message in stdout.\nstdout: {result.stdout!r}"
         assert result.stderr == "", f"AC-CHANNEL-001: no stderr output expected on success.\nstderr: {result.stderr!r}"
 
-        # AC-FUNC-001: verify that the CLI resolves a relative --repo-root to
-        # absolute at the CLI boundary. We pass a relative nonexistent path from
-        # tmp_path as cwd; the production code must call .resolve() so that the
-        # error message contains the absolute form. If .resolve() is removed the
-        # error message would show the bare relative name, and this assertion fails.
         relative_name = "nonexistent_sub"
         absolute_form = str(tmp_path / relative_name)
         resolution_check = _run_kanon("validate", "xml", "--repo-root", relative_name, cwd=tmp_path)
@@ -177,7 +154,7 @@ class TestValidateXmlRepoRootResolution:
         assert result.returncode == 1, (
             f"Expected exit code 1 for nonexistent --repo-root.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # AC-CHANNEL-001: error message must appear on stderr
+
         assert "--repo-root directory not found" in result.stderr, (
             f"AC-TEST-004 + AC-CHANNEL-001: expected '--repo-root directory not found' in stderr.\n"
             f"stderr: {result.stderr!r}"

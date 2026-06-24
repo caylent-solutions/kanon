@@ -42,10 +42,6 @@ from kanon_cli.core.lockfile import read_lockfile
 from tests.scenarios.conftest import init_git_work_dir, make_plain_repo, run_git
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_ENV = {
     **os.environ,
     "GIT_AUTHOR_NAME": "Test",
@@ -53,11 +49,6 @@ _GIT_ENV = {
     "GIT_COMMITTER_NAME": "Test",
     "GIT_COMMITTER_EMAIL": "t@t.com",
 }
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git_capturing(args: list[str], cwd: pathlib.Path) -> str:
@@ -182,9 +173,6 @@ def _advance_manifest_branch(
     _git_capturing(["config", "user.name", "Test"], clone)
     _git_capturing(["config", "user.email", "t@t.com"], clone)
 
-    # Update manifest.xml so that the new commit differs from the old commit on
-    # the manifest.xml path.  Without this change, git checkout from old-sha to
-    # new-sha does not touch manifest.xml and the dirty file is not a conflict.
     updated_manifest_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<manifest>\n"
@@ -296,11 +284,6 @@ def _resolved_sha_from_lock(lock_path: pathlib.Path, source_name: str) -> str:
     raise KeyError(f"Source {source_name!r} not found in lockfile; known: {known!r}")
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRefreshLockExistingCheckout:
     """BUG-1 fix: --refresh-lock[-source] survives an existing .kanon-data checkout.
@@ -335,7 +318,6 @@ class TestRefreshLockExistingCheckout:
 
         _write_kanon_file(project, "SRC", manifest_bare, "main")
 
-        # Step 4: initial install.
         r1 = _run_install(project, catalog_uri)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
@@ -344,20 +326,11 @@ class TestRefreshLockExistingCheckout:
         assert lock_path.exists(), ".kanon.lock not created after initial install"
         sha_before = _resolved_sha_from_lock(lock_path, "SRC")
 
-        # Step 5: advance main in the manifest bare repo, changing manifest.xml.
-        # Changing manifest.xml between commits is essential to reproduce BUG-1:
-        # envsubst dirtied manifest.xml in the working tree (rewriting it via minidom);
-        # git checkout from old-sha to new-sha conflicts when manifest.xml also changed
-        # between commits, leaving HEAD pointing to the deleted "default" branch ref and
-        # causing the subsequent rev-list ^HEAD <sha> to raise GitCommandError.
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
         assert sha_new_tip != sha_before, "New tip SHA should differ from the initial SHA -- fixture setup error"
 
-        # Step 6: refresh-lock over the existing .kanon-data.
-        # Before the fix: exits 1 with unhandled GitCommandError ("bad revision '^HEAD'").
-        # After the fix: exits 0 and the lockfile pin advances to sha_new_tip.
         r2 = _run_install(project, catalog_uri, refresh_lock=True)
         assert r2.returncode == 0, (
             f"kanon install --refresh-lock failed (exit {r2.returncode}) over existing checkout:\n"
@@ -386,7 +359,6 @@ class TestRefreshLockExistingCheckout:
 
         _write_kanon_file(project, "SRC", manifest_bare, "main")
 
-        # Initial install.
         r1 = _run_install(project, catalog_uri)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
@@ -395,15 +367,11 @@ class TestRefreshLockExistingCheckout:
         assert lock_path.exists(), ".kanon.lock not created after initial install"
         sha_before = _resolved_sha_from_lock(lock_path, "SRC")
 
-        # Advance main (changing manifest.xml to trigger the dirty-tree conflict).
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
         assert sha_new_tip != sha_before, "New tip SHA should differ from the initial SHA -- fixture setup error"
 
-        # Refresh-lock-source over the existing .kanon-data.
-        # Before the fix: exits 1 with unhandled GitCommandError ("bad revision '^HEAD'").
-        # After the fix: exits 0 and the lockfile pin for SRC advances.
         r2 = _run_install(project, catalog_uri, refresh_lock_source="SRC")
         assert r2.returncode == 0, (
             f"kanon install --refresh-lock-source SRC failed (exit {r2.returncode}) over existing checkout:\n"

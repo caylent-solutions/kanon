@@ -30,11 +30,6 @@ from kanon_cli.commands.search import VersionRow
 from kanon_cli.core.metadata import CatalogMetadata
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _full_metadata(name: str = "package-a") -> CatalogMetadata:
     """Return a fully-populated CatalogMetadata for testing."""
     return CatalogMetadata(
@@ -84,11 +79,6 @@ def _make_args(**kwargs) -> argparse.Namespace:
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# Tests for _format_json_catalog (default + detail mode JSON renderer)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -170,7 +160,7 @@ class TestFormatJsonCatalog:
     def test_output_is_valid_json(self):
         """json.loads must succeed without raising ValueError."""
         result = _format_json_catalog([_full_metadata()])
-        json.loads(result)  # raises on invalid JSON
+        json.loads(result)
 
     @pytest.mark.parametrize(
         "name,expected_name",
@@ -193,11 +183,6 @@ class TestFormatJsonCatalog:
         result = _format_json_catalog([metadata])
         parsed = json.loads(result)
         assert parsed[0]["type"] is None
-
-
-# ---------------------------------------------------------------------------
-# Tests for _format_json_all_versions (--all-versions JSON renderer)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -282,11 +267,6 @@ class TestFormatJsonAllVersions:
         assert parsed[0]["sha"] == sha
 
 
-# ---------------------------------------------------------------------------
-# Tests for register() -- --format flag is registered on the subparser
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRegisterFormatFlag:
     """AC-FUNC-001: --format flag registered with choices and default."""
@@ -297,7 +277,7 @@ class TestRegisterFormatFlag:
         subs = top.add_subparsers()
         register(subs)
         args = top.parse_args(["search", "--catalog-source", "x@main"])
-        # Default is None so run_search can distinguish "not set" from explicit "names"
+
         assert args.list_format is None
 
     def test_format_flag_accepts_names(self):
@@ -353,14 +333,9 @@ class TestRegisterFormatFlag:
         with pytest.raises(SystemExit):
             top.parse_args(["search", "--help"])
         captured = capsys.readouterr()
-        # The help must mention the incompatibility with --tree
+
         assert "--tree" in captured.out
         assert "json" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for env var KANON_LIST_FORMAT
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -382,7 +357,6 @@ class TestEnvVarListFormat:
             "</catalog-metadata></manifest>"
         )
 
-        # list_format=None simulates "flag absent from CLI"
         args = _make_args(catalog_source="file:///unused@main", list_format=None)
 
         with (
@@ -413,7 +387,6 @@ class TestEnvVarListFormat:
             "</catalog-metadata></manifest>"
         )
 
-        # list_format="names" simulates explicit CLI --format names flag
         args = _make_args(catalog_source="file:///unused@main", list_format="names")
 
         with (
@@ -424,20 +397,15 @@ class TestEnvVarListFormat:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        # names format: one line per entry, ending with newline
+
         lines = captured.out.strip().splitlines()
         assert lines == ["alpha"]
-        # Must NOT be valid JSON array of dicts
+
         try:
             parsed = json.loads(captured.out)
             assert not (isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict))
         except json.JSONDecodeError:
-            pass  # Not JSON -- correct for names format
-
-
-# ---------------------------------------------------------------------------
-# Tests for --format json --tree mutual exclusion
-# ---------------------------------------------------------------------------
+            pass
 
 
 @pytest.mark.unit
@@ -479,18 +447,13 @@ class TestFormatJsonTreeMutualExclusion:
         assert captured.out == ""
 
 
-# ---------------------------------------------------------------------------
-# Tests for empty catalog + --format json
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmptyCatalogJsonFormat:
     """AC-FUNC-007: empty catalog with --format json emits [] and exits 0."""
 
     def test_empty_catalog_emits_empty_json_array(self, tmp_path: Path, capsys):
         """Empty manifest repo produces '[]' on stdout."""
-        # Create an empty repo-specs dir (no XML files)
+
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
 
@@ -532,11 +495,6 @@ class TestEmptyCatalogJsonFormat:
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
         assert parsed == []
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_search() with --format json default mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -599,11 +557,6 @@ class TestRunListJsonDefaultMode:
         assert obj["type"] == "library"
 
 
-# ---------------------------------------------------------------------------
-# Tests for run_search() with --format json --detail (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunListJsonDetailMode:
     """AC-FUNC-004: --format json --detail emits the same shape as default mode."""
@@ -637,11 +590,6 @@ class TestRunListJsonDetailMode:
         parsed_default = json.loads(captured_default.out)
         parsed_detail = json.loads(captured_detail.out)
         assert parsed_default == parsed_detail
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_search() with --format json --all-versions (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -691,11 +639,6 @@ class TestRunListJsonAllVersionsMode:
         assert parsed[0]["sha"] == "deadbeef1234"
 
 
-# ---------------------------------------------------------------------------
-# Tests for invalid KANON_LIST_FORMAT env var value (fail-fast, AC-FAIL-FAST-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInvalidEnvVarListFormat:
     """AC-FAIL-FAST-001: invalid KANON_LIST_FORMAT value must error, not fall through."""
@@ -742,11 +685,6 @@ class TestInvalidEnvVarListFormat:
         assert "json" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Tests for _KANON_LIST_FORMAT_ENV_VAR private inline constant in list.py
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestListFormatEnvVarConstant:
     """AC-CONST-001: _KANON_LIST_FORMAT_ENV_VAR private constant is defined inline in list.py."""
@@ -768,11 +706,6 @@ class TestListFormatEnvVarConstant:
         import kanon_cli.commands.search as list_module
 
         assert isinstance(list_module._KANON_LIST_FORMAT_ENV_VAR, str)
-
-
-# ---------------------------------------------------------------------------
-# Tests verifying _build_catalog_payload and _build_all_versions_payload helpers
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

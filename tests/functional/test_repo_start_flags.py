@@ -47,40 +47,31 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for argument-parsing errors.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-start-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Non-integer token for --jobs negative test.
-# optparse exits 2 with 'invalid integer value' when a non-int is supplied.
+
 _JOBS_NON_INT_VALUE = "notanumber"
 
-# Valid integer value for the -j/--jobs flag.
+
 _VALID_JOBS_INT = "1"
 
-# Valid --jobs argument used in tests that require a real synced repo.
+
 _VALID_JOBS_ARG = "--jobs=1"
 
-# Branch names used in start flag tests -- each test uses a unique name.
+
 _BRANCH_ALL_FLAG = "feature/flags-all"
 _BRANCH_REV_FLAG = "feature/flags-rev"
 _BRANCH_HEAD_FLAG = "feature/flags-head"
@@ -93,14 +84,13 @@ _BRANCH_FUNC_REV = "feature/func-rev"
 _BRANCH_FUNC_HEAD = "feature/func-head"
 _BRANCH_CHANNEL_VALID = "feature/channel-valid"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Boolean store_true flags from Start._Options() and _CommonOptions().
-# All accept no value; negative test uses inline-value syntax.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--all", "all"),
     ("-v", "short-verbose"),
@@ -109,7 +99,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Boolean store_false / store_const flags from Start._Options() and _CommonOptions().
+
 _BOOL_STORE_FALSE_AND_CONST_FLAGS: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -120,9 +110,7 @@ _BOOL_STORE_FALSE_AND_CONST_FLAGS: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Long-form boolean flags (store_true, store_false, and store_const) used in
-# AC-TEST-002 negative tests. Short-form flags cannot use '--flag=value' syntax
-# in optparse. --head and --HEAD are store_const and also reject inline values.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--all", "all"),
     ("--verbose", "verbose"),
@@ -136,14 +124,8 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--HEAD", "HEAD"),
 ]
 
-# Non-integer values for the --jobs parametrize test.
+
 _NON_INTEGER_JOBS_VALUES: list[str] = ["notanumber", "1.5", "abc", "two"]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/start.py
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -191,7 +173,7 @@ class TestRepoStartFlagsValidValues:
         on repository state.
         """
         checkout_dir, repo_dir = _setup_synced_repo(tmp_path)
-        # Use the flag name as part of the branch name to ensure uniqueness.
+
         branch_name = f"feature/flag-test-{flag.lstrip('-').replace('/', '-')}"
         result = _run_kanon(
             "repo",
@@ -416,11 +398,6 @@ class TestRepoStartFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with typed or inline values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStartFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts typed or inline values has a negative test.
@@ -622,11 +599,6 @@ class TestRepoStartFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStartFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -773,11 +745,6 @@ class TestRepoStartFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStartFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -895,11 +862,6 @@ class TestRepoStartFlagsDocumentedBehavior:
             f"'--rev main --head' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

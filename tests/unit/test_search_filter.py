@@ -31,11 +31,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.core.metadata import CatalogMetadata
 
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_entry(
     name: str = "my-entry",
     display_name: str = "My Entry",
@@ -62,11 +57,6 @@ def _make_entry(
     )
 
 
-# ---------------------------------------------------------------------------
-# _build_filter_predicate -- substring matcher
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildFilterPredicateSubstring:
     """Tests for the substring filter path in ``_build_filter_predicate``."""
@@ -74,16 +64,12 @@ class TestBuildFilterPredicateSubstring:
     @pytest.mark.parametrize(
         "field_name,field_value,substring,should_match",
         [
-            # name field
             ("name", "foo-lib", "foo", True),
             ("name", "other-lib", "foo", False),
-            # display-name field
             ("display_name", "Foo Library", "Foo", True),
             ("display_name", "Other Library", "Foo", False),
-            # description field
             ("description", "A foo widget for testing", "foo", True),
             ("description", "A bar widget for testing", "foo", False),
-            # keywords field
             ("keywords", ["alpha", "foo", "beta"], "foo", True),
             ("keywords", ["alpha", "bar", "beta"], "foo", False),
         ],
@@ -137,11 +123,6 @@ class TestBuildFilterPredicateSubstring:
         assert predicate(entry) is False
 
 
-# ---------------------------------------------------------------------------
-# _build_filter_predicate -- regex matcher
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildFilterPredicateRegex:
     """Tests for the regex filter path in ``_build_filter_predicate``."""
@@ -149,16 +130,12 @@ class TestBuildFilterPredicateRegex:
     @pytest.mark.parametrize(
         "field_name,field_value,pattern,should_match",
         [
-            # name field
             ("name", "foobar", "^foo", True),
             ("name", "barfoo", "^foo", False),
-            # display-name field
             ("display_name", "Foo Library", "^Foo", True),
             ("display_name", "Library Foo", "^Foo", False),
-            # description field
             ("description", "fooish entry", "foo", True),
             ("description", "bar entry", "foo", False),
-            # keywords field -- matches any element
             ("keywords", ["alpha", "foobar"], "foo", True),
             ("keywords", ["alpha", "bar"], "foo", False),
         ],
@@ -186,7 +163,7 @@ class TestBuildFilterPredicateRegex:
     def test_regex_keywords_matches_any_element(self) -> None:
         """Regex matches when any single keyword element satisfies re.search."""
         entry = _make_entry(keywords=["alpha", "beta", "gamma"])
-        # Matches "beta"
+
         predicate = _build_filter_predicate(substring=None, regex="bet", match_fields=None)
         assert predicate(entry) is True
 
@@ -203,11 +180,6 @@ class TestBuildFilterPredicateRegex:
         predicate = _build_filter_predicate(substring=None, regex="^foo", match_fields=None)
         assert predicate(entry_match) is True
         assert predicate(entry_no_match) is False
-
-
-# ---------------------------------------------------------------------------
-# _build_filter_predicate -- match_fields narrowing
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -278,7 +250,7 @@ class TestBuildFilterPredicateMatchFields:
             keywords=[],
         )
         predicate = _build_filter_predicate(substring="foo", regex=None, match_fields=["name", "display-name"])
-        # "foo" is not in name "bar" but display_name "Foo Library" has "Foo" not "foo" (case-sensitive)
+
         assert predicate(entry) is False
 
     def test_match_fields_regex_narrowed(self) -> None:
@@ -291,11 +263,6 @@ class TestBuildFilterPredicateMatchFields:
         )
         predicate = _build_filter_predicate(substring=None, regex="^foo", match_fields=["keywords"])
         assert predicate(entry) is True
-
-
-# ---------------------------------------------------------------------------
-# _apply_filter
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -332,11 +299,6 @@ class TestApplyFilter:
         assert [e.name for e in result] == ["foo-z", "foo-a", "foo-m"]
 
 
-# ---------------------------------------------------------------------------
-# MATCH_FIELDS_LEGAL constant
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMatchFieldsLegalConstant:
     """Tests for the MATCH_FIELDS_LEGAL exported constant."""
@@ -344,11 +306,6 @@ class TestMatchFieldsLegalConstant:
     def test_contains_all_four_fields(self) -> None:
         """MATCH_FIELDS_LEGAL contains the four spec-defined field names."""
         assert set(MATCH_FIELDS_LEGAL) == {"name", "display-name", "description", "keywords"}
-
-
-# ---------------------------------------------------------------------------
-# LIST_FILTER_ZERO_MATCH_NOTE constant
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -360,18 +317,13 @@ class TestZeroMatchNote:
         assert LIST_FILTER_ZERO_MATCH_NOTE == "0 entries match filter"
 
 
-# ---------------------------------------------------------------------------
-# _check_tree_guardrail -- filter_present integration
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckTreeGuardrailFilterPresent:
     """Tests that _check_tree_guardrail respects the filter_present flag."""
 
     def test_guardrail_skipped_when_filter_present(self) -> None:
         """Guardrail returns None when filter_present=True even above threshold."""
-        # Use a count that would normally trigger the guardrail.
+
         result = _check_tree_guardrail(
             entry_count=999,
             max_depth=None,
@@ -392,11 +344,6 @@ class TestCheckTreeGuardrailFilterPresent:
         assert "ERROR:" in result
 
 
-# ---------------------------------------------------------------------------
-# _build_filter_predicate -- defensive guard for both-None input
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildFilterPredicateDefensiveGuard:
     """Tests for the defensive guard when both substring and regex are None."""
@@ -405,11 +352,6 @@ class TestBuildFilterPredicateDefensiveGuard:
         """_build_filter_predicate raises ValueError when both substring and regex are None."""
         with pytest.raises(ValueError, match="exactly one of substring or regex"):
             _build_filter_predicate(substring=None, regex=None, match_fields=None)
-
-
-# ---------------------------------------------------------------------------
-# Invalid --regex pattern: fail-fast with exit 1 and ERROR to stderr
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -447,11 +389,6 @@ class TestInvalidRegexPattern:
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Mutual-exclusion: <substring> + --regex
-# ---------------------------------------------------------------------------
 
 
 _XML_TEMPLATE = textwrap.dedent("""\
@@ -557,7 +494,7 @@ class TestMutualExclusionSubstringRegex:
     def test_substring_and_regex_error_before_catalog_work(self, capsys: pytest.CaptureFixture) -> None:
         """The mutual-exclusion check fires without consulting the catalog source."""
         args = _make_args(
-            catalog_source=None,  # no catalog source -- error should still fire first
+            catalog_source=None,
             substring="foo",
             regex="bar",
         )
@@ -565,11 +502,6 @@ class TestMutualExclusionSubstringRegex:
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Mutual-exclusion: --match-fields without filter
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -608,11 +540,6 @@ class TestMutualExclusionMatchFieldsWithoutFilter:
         assert "ERROR:" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Unknown field name in --match-fields
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUnknownMatchField:
     """Tests for the hard error when an unknown field name appears in --match-fields."""
@@ -647,14 +574,9 @@ class TestUnknownMatchField:
         captured = capsys.readouterr()
         assert result == 1
         assert "ERROR:" in captured.err
-        # Error message must reference the legal fields
+
         for legal in MATCH_FIELDS_LEGAL:
             assert legal in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Zero-match behaviour
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -728,11 +650,6 @@ class TestZeroMatchBehaviour:
         assert LIST_FILTER_ZERO_MATCH_NOTE in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Filter applies before every renderer
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFilterAppliedBeforeRenderers:
     """Tests that the filter runs before each output renderer."""
@@ -797,11 +714,6 @@ class TestFilterAppliedBeforeRenderers:
         assert "bar-entry" not in captured.out
 
 
-# ---------------------------------------------------------------------------
-# Argparse registration: positional substring and flag attributes
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestArgparseRegistration:
     """Tests that ``register`` wires up the new arguments correctly."""
@@ -861,11 +773,6 @@ class TestArgparseRegistration:
         assert args.match_fields == ["keywords"]
 
 
-# ---------------------------------------------------------------------------
-# Coverage gaps: tree mode + filter paths
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestTreeModeWithFilter:
     """Tests for tree mode filter paths to ensure full coverage."""
@@ -879,7 +786,7 @@ class TestTreeModeWithFilter:
             catalog_source=f"file://{tmp_path}@main",
             tree=True,
             substring="xyz-no-match",
-            no_filter_required=True,  # bypass the entry-count guardrail
+            no_filter_required=True,
         )
 
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
@@ -944,7 +851,7 @@ class TestEmptyCatalogWithJsonFormat:
 
     def test_empty_catalog_json_prints_empty_array(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """Empty catalog + --format json prints '[]' to stdout."""
-        # No XML files -- empty catalog
+
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir(parents=True, exist_ok=True)
 

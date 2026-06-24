@@ -154,8 +154,7 @@ def test_pre_push_hook_fails_on_unit_test_failure():
     AC-FUNC-005
     """
     content = _hook_content()
-    # The hook must check the return code of the unit test command and exit on failure.
-    # Pattern: "if ! make test-unit" or checking exit code after test-unit
+
     has_failure_check = ("make test-unit" in content and "exit 1" in content) or (
         "pytest -m unit" in content and "exit 1" in content
     )
@@ -264,11 +263,11 @@ def test_makefile_test_integration_uses_integration_marker():
     """
     content = _makefile_content()
     assert "test-integration:" in content, "Makefile must have a 'test-integration' target"
-    # Find the lines around the test-integration target
+
     lines = content.splitlines()
     target_idx = next((i for i, line in enumerate(lines) if line.startswith("test-integration:")), None)
     assert target_idx is not None, "test-integration target must exist in Makefile"
-    # Check that -m integration appears in subsequent lines (the recipe)
+
     recipe_lines = []
     for line in lines[target_idx + 1 :]:
         if line.startswith("\t"):
@@ -276,8 +275,7 @@ def test_makefile_test_integration_uses_integration_marker():
         elif line.strip() and not line.startswith("\t"):
             break
     recipe_text = "\n".join(recipe_lines)
-    # The recipe selects the integration tier with the bare tier marker:
-    #   uv run pytest -m "integration"
+
     assert re.search(r'-m "integration', recipe_text), (
         f"Makefile test-integration target must invoke pytest selecting the integration tier "
         f'(-m "integration[...]"). Recipe lines:\n{recipe_text}'

@@ -73,9 +73,7 @@ class TestEC:
         assert "no longer supported" in result.stderr, f"stderr={result.stderr!r}"
 
     def test_ec_06_marketplace_install_without_marketplaces_dir(self, tmp_path: pathlib.Path) -> None:
-        # 3.0.0 marketplace opt-in is per-dependency (KANON_SOURCE_<alias>_MARKETPLACE);
-        # the removed global KANON_MARKETPLACE_INSTALL header no longer exists. A
-        # dependency that opts in without CLAUDE_MARKETPLACES_DIR is a hard error.
+
         (tmp_path / ".kanon").write_text(
             "KANON_SOURCE_primary_URL=file:///does/not/matter\n"
             "KANON_SOURCE_primary_REF=main\n"
@@ -84,10 +82,7 @@ class TestEC:
             "KANON_SOURCE_primary_GITBASE=file:///does/not/matter\n"
             "KANON_SOURCE_primary_MARKETPLACE=true\n"
         )
-        # Inherit the parent env but strip CLAUDE_MARKETPLACES_DIR so the
-        # subprocess hits the "not defined" branch. KANON_ALLOW_INSECURE_REMOTES
-        # is set so the insecure-file://-URL check does not mask the
-        # marketplace-dir check (the error this test targets).
+
         env_no_mkt = {k: v for k, v in os.environ.items() if k != "CLAUDE_MARKETPLACES_DIR"}
         env_no_mkt["KANON_ALLOW_INSECURE_REMOTES"] = "1"
         result = run_kanon("install", ".kanon", cwd=tmp_path, env=env_no_mkt)

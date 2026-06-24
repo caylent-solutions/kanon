@@ -35,10 +35,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_superproject_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -120,11 +116,6 @@ def _build_manifest_server_manifest(
         f'  <manifest-server url="{server_url}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <manifest-server> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -258,11 +249,6 @@ class TestManifestServerMinimumAttributes:
         assert manifest.manifest_server == server_url, (
             f"AC-TEST-001: expected manifest_server={server_url!r} but got: {manifest.manifest_server!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <manifest-server> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -405,11 +391,6 @@ class TestManifestServerAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <manifest-server> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerDefaultAttributeValues:
     """Verify that default attribute values on <manifest-server> behave as documented.
@@ -545,11 +526,6 @@ class TestManifestServerDefaultAttributeValues:
         assert manifest.manifest_server == server_url, (
             f"AC-TEST-003: expected manifest_server={server_url!r} but got: {manifest.manifest_server!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

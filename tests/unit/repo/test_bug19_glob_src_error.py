@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 19: Glob source path with non-existent directory
 produces a confusing or silent error.
 
@@ -32,19 +18,9 @@ from kanon_cli.repo import project
 from kanon_cli.repo.error import ManifestInvalidPathError
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths."""
     return project._LinkFile(str(worktree), src_rel, str(topdir), dest_rel)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004 -- Clear error message when glob source path does not exist
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -68,8 +44,6 @@ def test_nonexistent_glob_source_raises_error(tmp_path):
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()
 
-    # The source uses a glob pattern (has_magic=True), but the base directory
-    # does not exist.
     nonexistent_src_rel = "nonexistent_dir/*.xml"
 
     lf = _make_link_file(worktree, nonexistent_src_rel, topdir, "dest")
@@ -78,8 +52,7 @@ def test_nonexistent_glob_source_raises_error(tmp_path):
         lf._Link()
 
     error_message = str(exc_info.value)
-    # The error message must contain the non-existent source path or the
-    # directory that was checked.
+
     nonexistent_dir = str(worktree / "nonexistent_dir")
     assert nonexistent_dir in error_message or "nonexistent_dir" in error_message, (
         f"Expected the error message to include the non-existent source path "
@@ -117,7 +90,7 @@ def test_nonexistent_glob_source_error_includes_path(tmp_path, nonexistent_src):
         lf._Link()
 
     error_message = str(exc_info.value)
-    # At minimum the directory portion of the src must appear in the error.
+
     src_dir = os.path.dirname(nonexistent_src)
     assert src_dir in error_message or nonexistent_src in error_message, (
         f"Expected error message to include the missing source path component "

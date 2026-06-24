@@ -11,11 +11,6 @@ import pytest
 from kanon_cli.core.discover import find_kanonenv
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Auto-discovery integration tests (12 tests)
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(directory: Path) -> Path:
     """Write a minimal .kanon file in directory and return its path."""
     kanonenv = directory / ".kanon"

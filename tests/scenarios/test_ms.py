@@ -19,11 +19,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
     """Build the fixture repos needed by MS scenarios.
 
@@ -90,11 +85,6 @@ def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pat
     return pkg_alpha_bare, pkg_bravo_bare, manifest_primary_bare
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestMS:
     def test_ms_01_two_sources_aggregate_both(self, tmp_path: pathlib.Path) -> None:
@@ -125,11 +115,8 @@ class TestMS:
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
-        # Install artifacts (.kanon-data/, .packages/) now live under the shared
-        # store (<KANON_HOME>/store), not beside the project .kanon in work_dir.
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # Both source directories must exist
         assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
             ".kanon-data/sources/alpha/ directory missing"
         )
@@ -137,7 +124,6 @@ class TestMS:
             ".kanon-data/sources/bravo/ directory missing"
         )
 
-        # .packages/ directory must exist and contain symlinks from both sources
         packages_dir = store_base / ".packages"
         assert packages_dir.is_dir(), ".packages/ directory missing"
 
@@ -147,7 +133,6 @@ class TestMS:
         pkg_bravo_link = packages_dir / "pkg-bravo"
         assert pkg_bravo_link.is_symlink(), ".packages/pkg-bravo is not a symlink"
 
-        # Both symlinks must resolve to valid targets
         assert pkg_alpha_link.resolve().exists(), ".packages/pkg-alpha symlink does not resolve"
         assert pkg_bravo_link.resolve().exists(), ".packages/pkg-bravo symlink does not resolve"
 

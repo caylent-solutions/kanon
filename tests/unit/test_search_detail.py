@@ -28,11 +28,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.core.metadata import CatalogMetadata
 
 
-# ---------------------------------------------------------------------------
-# Shared CatalogMetadata instances
-# ---------------------------------------------------------------------------
-
-
 def _full_metadata(name: str = "package-a") -> CatalogMetadata:
     """Return a fully-populated CatalogMetadata for testing."""
     return CatalogMetadata(
@@ -59,11 +54,6 @@ def _missing_type_metadata(name: str = "package-b") -> CatalogMetadata:
         owner_email=None,
         keywords=[],
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests for _format_detail_record
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -106,7 +96,7 @@ class TestFormatDetailRecord:
         meta = _full_metadata()
         record = _format_detail_record(meta)
         lines = record.splitlines()
-        # First line is the name header -- no indent.
+
         for line in lines[1:]:
             assert line.startswith("  "), f"Line missing two-space indent: {line!r}"
 
@@ -115,13 +105,13 @@ class TestFormatDetailRecord:
         meta = _full_metadata()
         record = _format_detail_record(meta)
         lines = record.splitlines()
-        # Collect the position of ' : ' on each field line.
+
         colon_positions = []
         for line in lines[1:]:
             pos = line.find(" : ")
             assert pos != -1, f"No ' : ' separator found in line: {line!r}"
             colon_positions.append(pos)
-        # All positions must be identical (column-aligned).
+
         assert len(set(colon_positions)) == 1, (
             f"Field labels are not column-aligned; colon positions: {colon_positions}"
         )
@@ -161,9 +151,9 @@ class TestFormatDetailRecord:
         meta = _missing_type_metadata("package-b")
         result = _format_detail_record(meta)
         lines = result.splitlines()
-        # The name header must be the first non-empty line.
+
         assert lines[0] == "package-b", f"Expected name header 'package-b'; got {lines[0]!r}"
-        # The record must have exactly 5 lines (name + 4 field lines).
+
         assert len(lines) == 5, f"Expected 5 lines; got {len(lines)}: {lines}"
 
     def test_record_field_order_matches_spec(self) -> None:
@@ -171,7 +161,7 @@ class TestFormatDetailRecord:
         meta = _full_metadata()
         record = _format_detail_record(meta)
         lines = record.splitlines()
-        field_lines = lines[1:]  # Skip name header.
+        field_lines = lines[1:]
         labels = []
         for line in field_lines:
             label = line.strip().split(" : ")[0].strip()
@@ -203,17 +193,12 @@ class TestFormatDetailRecord:
         lines = record.splitlines()
 
         assert lines[0] == "package-a"
-        # The remaining lines should have two-space indent and column-aligned labels.
+
         field_lines = lines[1:]
         assert any("display-name" in ln and "Package A" in ln for ln in field_lines)
         assert any("description" in ln and "Example dependency" in ln for ln in field_lines)
         assert any("version" in ln and "1.4.2" in ln for ln in field_lines)
         assert any("type" in ln and "library" in ln for ln in field_lines)
-
-
-# ---------------------------------------------------------------------------
-# Tests for _format_detail_record with fully-missing recommended fields
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -245,11 +230,6 @@ class TestFormatDetailRecordMissingFields:
         record = _format_detail_record(meta)
         lines = record.splitlines()
         assert len(lines) == 5, f"Expected 5 lines; got {len(lines)}: {lines}"
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_search with --detail flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -322,7 +302,7 @@ class TestRunListDetail:
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
-        # Extract the header lines (non-indented) to check ordering.
+
         header_lines = [ln for ln in captured.out.splitlines() if ln and not ln.startswith(" ")]
         assert header_lines == ["alpha", "mango", "zebra"]
 
@@ -354,7 +334,7 @@ class TestRunListDetail:
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
-        # _parse_catalog_metadata emits "WARNING: ..." to stderr for missing recommended.
+
         assert "WARNING:" in captured.err
 
     def test_detail_missing_type_warning_not_duplicated(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
@@ -377,7 +357,7 @@ class TestRunListDetail:
             run_search(args)
         captured = capsys.readouterr()
         lines = captured.out.splitlines()
-        # Default mode: just the name on one line.
+
         assert lines == ["my-entry"]
 
     def test_detail_empty_catalog_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
@@ -394,11 +374,6 @@ class TestRunListDetail:
         args = argparse.Namespace(catalog_source=None, detail=True, no_color=False)
         result = run_search(args)
         assert result != 0
-
-
-# ---------------------------------------------------------------------------
-# Tests for register(): --detail flag registration and help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

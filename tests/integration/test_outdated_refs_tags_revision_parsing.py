@@ -35,12 +35,6 @@ from tests.integration.test_add_core import (
 )
 
 
-# ---------------------------------------------------------------------------
-# .kanon file template for the refs/heads case (written directly).
-# The refs/tags case is set up by running 'kanon add foo@==1.0.0' so that
-# the REVISION is written by the real add command, not constructed by hand.
-# ---------------------------------------------------------------------------
-
 _KANON_REFS_HEADS_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_URL={url}
     KANON_SOURCE_{name_upper}_REF={revision}
@@ -48,11 +42,6 @@ _KANON_REFS_HEADS_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_NAME={name_upper}
     KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -76,13 +65,7 @@ class TestOutdatedRefsTagsParsing:
     @pytest.mark.parametrize(
         "revision,expected_display",
         [
-            # Case 1: refs/tags/1.0.0 -- written by 'kanon add foo@==1.0.0'.
-            # The spec D5 decision normalises the display to the bare version.
-            # Accept either the bare version '1.0.0' or the full 'refs/tags/1.0.0'.
             ("refs/tags/1.0.0", ("1.0.0", "refs/tags/1.0.0")),
-            # Case 2: refs/heads/main -- a branch-shaped ref stored verbatim.
-            # The spec D5 decision normalises the display to the bare branch name.
-            # Accept either 'main' or 'refs/heads/main'.
             ("refs/heads/main", ("main", "refs/heads/main")),
         ],
     )
@@ -117,8 +100,6 @@ class TestOutdatedRefsTagsParsing:
         workspace.mkdir()
 
         if revision.startswith("refs/tags/"):
-            # Use the real 'kanon add' command so the REVISION comes from the
-            # add command's resolver (which writes 'refs/tags/1.0.0').
             add_result = _run_kanon(
                 [
                     "add",
@@ -133,8 +114,6 @@ class TestOutdatedRefsTagsParsing:
                 f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
             )
         else:
-            # Write .kanon directly with the refs/heads/main REVISION.
-            # The catalog bare URL is used so the catalog lookup can proceed.
             kanon_file = workspace / ".kanon"
             kanon_file.write_text(
                 _KANON_REFS_HEADS_TEMPLATE.format(
@@ -146,7 +125,6 @@ class TestOutdatedRefsTagsParsing:
             )
             kanon_file.chmod(0o644)
 
-        # Run 'kanon outdated' with the same catalog source.
         env = dict(os.environ)
         env.pop("KANON_CATALOG_SOURCES", None)
         outdated_result = subprocess.run(
@@ -171,17 +149,12 @@ class TestOutdatedRefsTagsParsing:
             f"stderr: {outdated_result.stderr!r}"
         )
 
-        # Accept either uppercase 'FOO' (refs/heads case: template writes
-        # KANON_SOURCE_FOO_URL) or lowercase 'foo' (refs/tags case: kanon add
-        # lowercases via derive_source_name).
         stdout_lower = outdated_result.stdout.lower()
         assert "foo" in stdout_lower, (
             f"Expected source name 'foo' (case-insensitive) in output for revision {revision!r}.\n"
             f"stdout: {outdated_result.stdout!r}"
         )
 
-        # The 'current' column must display one of the accepted display tokens
-        # per spec D5 (normalized form preferred, full form also accepted).
         display_a, display_b = expected_display
         assert display_a in outdated_result.stdout or display_b in outdated_result.stdout, (
             f"Expected either {display_a!r} or {display_b!r} in the 'current' column "
@@ -190,8 +163,6 @@ class TestOutdatedRefsTagsParsing:
         )
 
         if revision.startswith("refs/heads/"):
-            # For branch-shaped revisions the upgrade-type column must read
-            # 'branch' or 'none' per spec D5.
             assert "branch" in outdated_result.stdout or "none" in outdated_result.stdout, (
                 f"Expected 'branch' or 'none' in upgrade-type column for "
                 f"branch revision {revision!r}.\n"

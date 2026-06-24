@@ -18,8 +18,7 @@ import pytest
 
 from kanon_cli.core.kanonenv import parse_kanonenv
 
-# Minimal valid .kanon content template. Each test customizes the PATH value
-# to exercise the specific attack vector.
+
 _SAFE_URL = "https://example.com/repo.git"
 _SAFE_REVISION = "main"
 _SAFE_PATH = "manifests/meta.xml"
@@ -37,11 +36,6 @@ def _make_kanonenv(tmp_path: pathlib.Path, path_value: str = _SAFE_PATH) -> path
         f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
     )
     return kanonenv
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: path traversal in .kanon values is rejected
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -77,11 +71,6 @@ class TestPathTraversalRejected:
         assert result["sources"][_SOURCE_NAME]["path"] == "./meta.xml"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: command injection via env var is not executed
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCommandInjectionViaEnvVarNotExecuted:
     """Shell metacharacters supplied through env var overrides must be
@@ -110,7 +99,7 @@ class TestCommandInjectionViaEnvVarNotExecuted:
         kanonenv = _make_kanonenv(tmp_path, _SAFE_PATH)
         env_var = f"KANON_SOURCE_{_SOURCE_NAME}_REF"
         monkeypatch.setenv(env_var, injection_payload)
-        # parse_kanonenv must not raise, and must return the payload verbatim
+
         result = parse_kanonenv(kanonenv)
         assert result["sources"][_SOURCE_NAME]["ref"] == injection_payload, (
             f"Expected literal payload in ref, got {result['sources'][_SOURCE_NAME]['ref']!r}"
@@ -126,11 +115,6 @@ class TestCommandInjectionViaEnvVarNotExecuted:
         monkeypatch.setenv(f"KANON_SOURCE_{_SOURCE_NAME}_URL", "https://host/$branch")
         result = parse_kanonenv(kanonenv)
         assert result["sources"][_SOURCE_NAME]["url"] == "https://host/$branch"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: command injection via XML attribute is not executed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -161,8 +145,7 @@ class TestCommandInjectionViaXmlAttributeNotExecuted:
             f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
             f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com\n"
         )
-        # The parser reads KEY=VALUE pairs as plain strings -- it does not
-        # perform XML interpretation, so the payload is stored verbatim.
+
         result = parse_kanonenv(kanonenv)
         assert result["sources"][_SOURCE_NAME]["path"] == xml_payload
 
@@ -181,11 +164,6 @@ class TestCommandInjectionViaXmlAttributeNotExecuted:
         assert result["sources"][_SOURCE_NAME]["url"] == xml_url
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: symlink TOCTOU race is detected or mitigated
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSymlinkToctouMitigated:
     """When .kanon is a symlink pointing outside the project tree,
@@ -194,7 +172,7 @@ class TestSymlinkToctouMitigated:
 
     def test_symlink_to_file_outside_parent_raises(self, tmp_path: pathlib.Path) -> None:
         """A .kanon symlink resolving outside the parent directory raises ValueError."""
-        # Create a real .kanon file in a separate temp dir (simulates external path)
+
         external_dir = tmp_path / "external"
         external_dir.mkdir()
         external_kanon = external_dir / ".kanon"
@@ -243,11 +221,6 @@ class TestSymlinkToctouMitigated:
             parse_kanonenv(symlink_kanon)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: world-writable .kanon is rejected
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWorldWritableKanonRejected:
     """A .kanon file with world-writable permissions must be rejected to
@@ -257,7 +230,7 @@ class TestWorldWritableKanonRejected:
     def test_world_writable_file_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         """parse_kanonenv raises ValueError when .kanon is world-writable."""
         kanonenv = _make_kanonenv(tmp_path)
-        # Set world-writable (o+w) bit
+
         current_mode = kanonenv.stat().st_mode
         kanonenv.chmod(current_mode | stat.S_IWOTH)
         with pytest.raises(ValueError, match=r"world.writ|permission|insecure"):
@@ -274,7 +247,7 @@ class TestWorldWritableKanonRejected:
     def test_owner_only_write_is_accepted(self, tmp_path: pathlib.Path) -> None:
         """A .kanon file writable only by the owner (0o600, 0o640, 0o644) is accepted."""
         kanonenv = _make_kanonenv(tmp_path)
-        # Explicitly remove group and other write bits
+
         kanonenv.chmod(0o644)
         result = parse_kanonenv(kanonenv)
         assert _SOURCE_NAME in result["sources"]
@@ -282,10 +255,10 @@ class TestWorldWritableKanonRejected:
     @pytest.mark.parametrize(
         "mode",
         [
-            0o777,  # rwxrwxrwx
-            0o666,  # rw-rw-rw-
-            0o664,  # rw-rw-r-- (group-writable)
-            0o606,  # rw----rw- (world-writable)
+            0o777,
+            0o666,
+            0o664,
+            0o606,
         ],
     )
     def test_permissive_modes_are_rejected(self, tmp_path: pathlib.Path, mode: int) -> None:
@@ -298,9 +271,9 @@ class TestWorldWritableKanonRejected:
     @pytest.mark.parametrize(
         "mode",
         [
-            0o600,  # rw------- (owner read/write only)
-            0o644,  # rw-r--r-- (standard read-only for others)
-            0o640,  # rw-r----- (owner rw, group r)
+            0o600,
+            0o644,
+            0o640,
         ],
     )
     def test_safe_modes_are_accepted(self, tmp_path: pathlib.Path, mode: int) -> None:

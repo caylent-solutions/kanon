@@ -21,25 +21,21 @@ class TestMkdtempCleanupHelpers:
 
     def test_make_project_creates_real_directories(self):
         """_make_project() returns a project whose manifest.topdir exists on disk."""
-        # Reset tracked list so previous test runs do not pollute counts.
+
         original_tracked = list(module_under_test._TRACKED_TEMPDIRS)
         module_under_test._TRACKED_TEMPDIRS.clear()
 
         projs = [module_under_test._make_project() for _ in range(3)]
         dirs = [p.manifest.topdir for p in projs]
 
-        # Every directory must exist right after the helper returns.
         for d in dirs:
             assert os.path.isdir(d), f"expected {d!r} to exist after _make_project()"
 
-        # Invoke the cleanup callback directly.
         module_under_test._cleanup_tracked_tempdirs()
 
-        # Every directory must now be gone.
         for d in dirs:
             assert not os.path.exists(d), f"expected {d!r} to be removed after cleanup"
 
-        # Restore original tracked list.
         module_under_test._TRACKED_TEMPDIRS.extend(original_tracked)
 
     def test_make_meta_project_creates_real_directory_when_manifest_lacks_repodir(self):
@@ -48,15 +44,12 @@ class TestMkdtempCleanupHelpers:
         module_under_test._TRACKED_TEMPDIRS.clear()
 
         manifest = mock.MagicMock()
-        # Force the fallback branch by returning a falsy value from .repodir.
+
         manifest.repodir = None
 
         for _ in range(3):
             module_under_test._make_meta_project(manifest)
 
-        # When manifest.repodir is falsy, each call should produce a distinct tmpdir.
-        # The worktree path has a suffix; gitdir is just the repodir itself.
-        # We confirm at least 3 paths were tracked (one per call).
         assert len(module_under_test._TRACKED_TEMPDIRS) >= 3, (
             "expected at least 3 entries in _TRACKED_TEMPDIRS after 3 _make_meta_project calls"
         )
@@ -78,11 +71,10 @@ class TestMkdtempCleanupHelpers:
         module_under_test._TRACKED_TEMPDIRS.clear()
 
         manifest = mock.MagicMock()
-        manifest.repodir = "/tmp/some-existing-path"  # truthy -- no mkdtemp call expected
+        manifest.repodir = "/tmp/some-existing-path"
 
         module_under_test._make_meta_project(manifest)
 
-        # No new directories should have been appended to _TRACKED_TEMPDIRS.
         assert len(module_under_test._TRACKED_TEMPDIRS) == 0, (
             "expected zero entries in _TRACKED_TEMPDIRS when manifest.repodir is set"
         )
@@ -110,7 +102,6 @@ class TestAtexitRegistration:
                 f"(ncallbacks before={before}, after unregister={after})"
             )
         finally:
-            # Re-register so interpreter exit still cleans up.
             atexit.register(module_under_test._cleanup_tracked_tempdirs)
 
 
@@ -123,7 +114,6 @@ class TestCleanupIdempotence:
         original_tracked = list(module_under_test._TRACKED_TEMPDIRS)
         module_under_test._TRACKED_TEMPDIRS.clear()
 
-        # Add one real directory and one already-removed path.
         real_dir = str(tmp_path / "cleanup-test")
         os.makedirs(real_dir)
         module_under_test._TRACKED_TEMPDIRS.append(real_dir)
@@ -131,7 +121,6 @@ class TestCleanupIdempotence:
         module_under_test._cleanup_tracked_tempdirs()
         assert not os.path.exists(real_dir), "first call should remove the directory"
 
-        # Second call -- directory is already gone; must not raise.
         module_under_test._cleanup_tracked_tempdirs()
 
         module_under_test._TRACKED_TEMPDIRS.extend(original_tracked)

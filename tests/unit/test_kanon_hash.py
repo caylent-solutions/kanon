@@ -11,9 +11,6 @@ import pytest
 
 from kanon_cli.core.kanon_hash import KanonHashError, kanon_hash
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 _VALID_URL = "https://example.com/repo.git"
 _VALID_REVISION = "main"
@@ -69,11 +66,6 @@ def _expected_hash(sources: list[tuple[str, str, str, str]]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Shape of return value
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashReturnShape:
     """kanon_hash returns a string of shape sha256:<64 lowercase hex chars>."""
@@ -102,11 +94,6 @@ class TestKanonHashReturnShape:
         hex_part = result[len("sha256:") :]
         assert len(hex_part) == 64
         assert all(c in "0123456789abcdef" for c in hex_part)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Re-ordering source blocks does NOT change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -157,11 +144,6 @@ class TestKanonHashSourceOrdering:
         assert kanon_hash(file_a) == kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: Comments do NOT change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashComments:
     """Adding, removing, or modifying comments does NOT change the hash."""
@@ -192,11 +174,6 @@ class TestKanonHashComments:
         assert kanon_hash(file_a) == kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Blank lines do NOT change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashBlankLines:
     """Adding or removing blank lines does NOT change the hash."""
@@ -215,11 +192,6 @@ class TestKanonHashBlankLines:
             suffix_lines=["", "", ""],
         )
         assert kanon_hash(file_a) == kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Changing REVISION DOES change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -249,11 +221,6 @@ class TestKanonHashRevisionChange:
         assert kanon_hash(file_a) != kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Changing URL DOES change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashUrlChange:
     """Changing any URL value DOES change the hash."""
@@ -278,11 +245,6 @@ class TestKanonHashUrlChange:
         file_a = _write_kanon(dir_a, [("alpha", url_a, _VALID_REVISION, _VALID_PATH)])
         file_b = _write_kanon(dir_b, [("alpha", url_b, _VALID_REVISION, _VALID_PATH)])
         assert kanon_hash(file_a) != kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Changing PATH DOES change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -311,11 +273,6 @@ class TestKanonHashPathChange:
         assert kanon_hash(file_a) != kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Changing source name DOES change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashSourceNameChange:
     """Changing a source name DOES change the hash."""
@@ -341,11 +298,6 @@ class TestKanonHashSourceNameChange:
         file_a = _write_kanon(dir_a, [(name_a, _VALID_URL, _VALID_REVISION, _VALID_PATH)])
         file_b = _write_kanon(dir_b, [(name_b, _VALID_URL, _VALID_REVISION, _VALID_PATH)])
         assert kanon_hash(file_a) != kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: Non-source keys do NOT change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -378,11 +330,6 @@ class TestKanonHashNonSourceKeys:
         file_a = _write_kanon(dir_a, sources)
         file_b = _write_kanon(dir_b, sources, suffix_lines=extra_lines)
         assert kanon_hash(file_a) == kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-010: Tab in URL raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -419,11 +366,6 @@ class TestKanonHashTabInUrl:
         )
         with pytest.raises(KanonHashError, match="mysvc"):
             kanon_hash(kanon_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-010b: Forbidden character in NAME raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -542,11 +484,6 @@ class TestKanonHashForbiddenCharInName:
         assert "0x0A" in msg
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-011: Newline in PATH raises KanonHashError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashNewlineInPath:
     """A PATH containing a literal newline raises KanonHashError."""
@@ -588,11 +525,6 @@ class TestKanonHashNewlineInPath:
         assert "alpha" in msg
         assert "PATH" in msg
         assert "0x0A" in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-012: NUL byte in REVISION raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -638,11 +570,6 @@ class TestKanonHashNulInRevision:
         assert "0x00" in msg
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-013: Stable signature
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashSignature:
     """kanon_hash(kanon_path: Path) -> str: no optional kwargs, stable signature."""
@@ -661,11 +588,6 @@ class TestKanonHashSignature:
         sig = inspect.signature(kanon_hash)
         params = list(sig.parameters.keys())
         assert params == ["kanon_path"]
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -702,9 +624,8 @@ class TestKanonHashEndToEndCycle:
             f"fixture_b hash: {hash_b}"
         )
 
-        # Now modify one REVISION in fixture_b
         sources_cba_mutated = list(sources_cba)
-        # Change gamma's revision from v1.0.0 to v2.0.0
+
         sources_cba_mutated[0] = (
             sources_cba_mutated[0][0],
             sources_cba_mutated[0][1],

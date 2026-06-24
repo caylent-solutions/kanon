@@ -28,9 +28,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Constants (no inline literals in assertions / fixtures).
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Hermetic Journey User"
 _GIT_USER_EMAIL = "hermetic-journey@example.com"
@@ -43,8 +40,8 @@ _INSECURE_REMOTES_ENV = "KANON_ALLOW_INSECURE_REMOTES"
 _INSECURE_REMOTES_VALUE = "1"
 _CATALOG_SOURCES_ENV = "KANON_CATALOG_SOURCES"
 _LOCKFILE_NAME = ".kanon.lock"
-# A line that varies between runs (the lockfile's generation timestamp); excluded
-# from the byte-for-byte reproducibility comparison.
+
+
 _VOLATILE_LOCK_PREFIX = "generated_at"
 
 
@@ -134,7 +131,7 @@ class TestHermeticInstallJourney:
         assert result.returncode == 0, f"install must succeed.\n  stdout={result.stdout!r}\n  stderr={result.stderr!r}"
         lock_path = hermetic_project / _LOCKFILE_NAME
         assert lock_path.is_file(), "install must write the committed .kanon.lock"
-        # The lock records the committed source alias.
+
         assert _SOURCE_ALIAS in lock_path.read_text(encoding="utf-8")
 
     def test_install_is_reproducible_across_two_runs(
@@ -159,7 +156,6 @@ class TestHermeticInstallJourney:
         """A populated KANON_CATALOG_SOURCES env has no effect: install succeeds with the same lock."""
         lock_path = hermetic_project / _LOCKFILE_NAME
 
-        # Baseline run with the env unset.
         baseline = _run_kanon(
             "install",
             str(hermetic_project / ".kanon"),
@@ -168,8 +164,6 @@ class TestHermeticInstallJourney:
         assert baseline.returncode == 0, f"baseline install must succeed. stderr={baseline.stderr!r}"
         baseline_body = _stable_lock_body(lock_path)
 
-        # Run with a populated (and bogus) catalog-sources env: it must be ignored,
-        # not consulted -- the bogus URL never reaches resolution.
         with_env = _run_kanon(
             "install",
             str(hermetic_project / ".kanon"),
@@ -182,8 +176,7 @@ class TestHermeticInstallJourney:
             "a populated KANON_CATALOG_SOURCES must be IGNORED (install still succeeds), not rejected.\n"
             f"  stdout={with_env.stdout!r}\n  stderr={with_env.stderr!r}"
         )
-        # The ignored env-var URL is never recorded in the lock, and the lock is
-        # unchanged from the baseline (env had no effect).
+
         env_body = _stable_lock_body(lock_path)
         assert "should-be-ignored" not in env_body
         assert env_body == baseline_body
@@ -202,6 +195,6 @@ class TestHermeticInstallJourney:
             extra_env={_INSECURE_REMOTES_ENV: _INSECURE_REMOTES_VALUE},
         )
         assert result.returncode != 0, "install must reject --catalog-source with a non-zero exit"
-        # argparse reports the unrecognized option on stderr and writes nothing to stdout.
+
         assert "--catalog-source" in result.stderr
         assert "unrecognized arguments" in result.stderr

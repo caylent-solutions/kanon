@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for subcmds/info.py module."""
 
 from unittest import mock
@@ -234,7 +220,6 @@ class TestInfoFindRemoteLocalDiff:
 
         info.findRemoteLocalDiff(project)
 
-        # Should print local and remote commits
         assert info.sha.call_count >= 3
 
 
@@ -323,7 +308,6 @@ class TestInfoPrintCommitOverview:
 
         info._printCommitOverview(opt, [])
 
-        # Should only show main branch
         assert info.text.call_count >= 1
 
     def test_print_commit_overview_no_branches(self):
@@ -345,7 +329,6 @@ class TestInfoPrintCommitOverview:
 
         info._printCommitOverview(opt, [])
 
-        # Should not call heading since no branches
         info.heading.assert_not_called()
 
 
@@ -397,7 +380,6 @@ class TestInfoExecute:
 
         info.Execute(opt, [])
 
-        # Just verify Execute completes without error
         info._printDiffInfo.assert_called_once()
 
     def test_execute_overview_mode(self):
@@ -450,7 +432,6 @@ class TestInfoExecute:
 
         info.Execute(opt, [])
 
-        # Should use outer_client
         assert info.manifest == outer_manifest
 
     def test_execute_no_merge_branch(self):
@@ -472,5 +453,4 @@ class TestInfoExecute:
 
         info.Execute(opt, [])
 
-        # Should handle None merge branch
         info._printDiffInfo.assert_called_once()

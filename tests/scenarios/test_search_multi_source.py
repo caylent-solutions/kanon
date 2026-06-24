@@ -32,9 +32,6 @@ from tests.scenarios.conftest import (
     run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Fixture builders: a name-namespaced catalog manifest repo
-# ---------------------------------------------------------------------------
 
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -93,11 +90,10 @@ def _build_catalog_repo(
     return clone_as_bare(work, bare)
 
 
-# Source A: entry "alpha" with three releases.
 _A_ENTRY = "alpha"
 _A_VERSIONS = ("1.0.0", "1.1.0", "1.2.0")
 
-# Source B: entry "beta" with two releases.
+
 _B_ENTRY = "beta"
 _B_VERSIONS = ("0.9.0", "1.0.0")
 
@@ -120,14 +116,12 @@ def multi_source_setup(tmp_path: pathlib.Path) -> dict[str, object]:
     source_a = f"{repo_a.as_uri()}@main"
     source_b = f"{repo_b.as_uri()}@main"
 
-    # An unreachable source: a file:// URI to a path that does not exist.
     missing = fixtures / "does-not-exist.git"
     source_unreachable = f"{missing.as_uri()}@main"
 
     kanon_home = tmp_path / "kanon-home"
     kanon_home.mkdir()
-    # The CLI resolves the cache as <KANON_HOME>/cache; expose that resolved
-    # directory so search-cache assertions point at the real location.
+
     cache_dir = kanon_home / "cache"
 
     return {
@@ -137,11 +131,6 @@ def multi_source_setup(tmp_path: pathlib.Path) -> dict[str, object]:
         "kanon_home": str(kanon_home),
         "cache_dir": str(cache_dir),
     }
-
-
-# ---------------------------------------------------------------------------
-# J4 scenario tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -168,14 +157,14 @@ class TestSearchMultiSourceJourney:
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        # Both source group headers are on stderr, never on stdout.
+
         assert f"Source: {source_a}" in result.stderr
         assert f"Source: {source_b}" in result.stderr
         assert "Source:" not in result.stdout
-        # Default mode shows the latest of each entry (one row per matching entry).
+
         assert f"{_A_ENTRY} (latest)" in result.stdout
         assert f"{_B_ENTRY} (latest)" in result.stdout
-        # Latest-only default does NOT enumerate the full release history.
+
         assert f"{_A_ENTRY}@1.0.0" not in result.stdout
         assert f"{_B_ENTRY}@0.9.0" not in result.stdout
 
@@ -196,18 +185,18 @@ class TestSearchMultiSourceJourney:
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        # Every alpha release is enumerated (source A).
+
         for version in _A_VERSIONS:
             assert f"{_A_ENTRY}@{version}" in result.stdout, (
                 f"missing {_A_ENTRY}@{version} in -A output: {result.stdout!r}"
             )
-        # Every beta release is enumerated (source B).
+
         for version in _B_VERSIONS:
             assert f"{_B_ENTRY}@{version}" in result.stdout
-        # Each entry also shows the branch-tip latest marker.
+
         assert f"{_A_ENTRY} (latest)" in result.stdout
         assert f"{_B_ENTRY} (latest)" in result.stdout
-        # Both source headers present on stderr.
+
         assert f"Source: {source_a}" in result.stderr
         assert f"Source: {source_b}" in result.stderr
 
@@ -253,15 +242,14 @@ class TestSearchMultiSourceJourney:
             extra_env={"KANON_HOME": kanon_home},
         )
 
-        # skip+warn: the whole search is NOT hard-failed.
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        # A WARNING names the unreachable source on stderr.
+
         assert "WARNING" in result.stderr
         assert source_unreachable in result.stderr
-        # The reachable source is still rendered.
+
         assert f"Source: {source_a}" in result.stderr
         assert f"{_A_ENTRY} (latest)" in result.stdout
-        # The unreachable source is NOT rendered as a group header.
+
         assert f"Source: {source_unreachable}" not in result.stderr
 
     def test_filter_narrows_across_sources(self, multi_source_setup: dict[str, object]) -> None:
@@ -281,7 +269,7 @@ class TestSearchMultiSourceJourney:
         )
 
         assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        # alpha matches; beta does not.
+
         assert f"{_A_ENTRY} (latest)" in result.stdout
         assert _B_ENTRY not in result.stdout
 
@@ -317,8 +305,7 @@ class TestSearchMultiSourceJourney:
         source_a = str(multi_source_setup["source_a"])
         source_b = str(multi_source_setup["source_b"])
         kanon_home = str(multi_source_setup["kanon_home"])
-        # The CLI writes its TTL cache under <KANON_HOME>/cache; the fixture's
-        # cache_dir is exactly that resolved directory.
+
         cache_dir = pathlib.Path(str(multi_source_setup["cache_dir"]))
 
         first = run_kanon(
@@ -332,16 +319,14 @@ class TestSearchMultiSourceJourney:
         )
         assert first.returncode == 0, f"stdout={first.stdout!r} stderr={first.stderr!r}"
 
-        # The search cache namespace now holds at least one per-source entry.
         search_cache = cache_dir / "search"
         assert search_cache.is_dir(), f"search cache dir not created under {cache_dir}"
         versions_files = list(search_cache.rglob("versions.txt"))
         assert versions_files, f"no versions.txt cache entry written under {search_cache}"
-        # The cached enumeration carries the alpha release tags.
+
         cached_text = "\n".join(p.read_text() for p in versions_files)
         assert "1.2.0" in cached_text
 
-        # A second identical run within the TTL still succeeds and renders history.
         second = run_kanon(
             "search",
             "-A",

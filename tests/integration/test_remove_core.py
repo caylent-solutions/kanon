@@ -24,11 +24,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -41,10 +36,6 @@ def _run_kanon(
         cwd=str(cwd) if cwd else None,
     )
 
-
-# ---------------------------------------------------------------------------
-# Fixture .kanon content helpers
-# ---------------------------------------------------------------------------
 
 _STANDARD_HEADER = textwrap.dedent("""\
     GITBASE=https://example.com
@@ -66,11 +57,6 @@ def _kanon_simple(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = tmp_path / ".kanon"
     kanon_file.write_text(_STANDARD_HEADER + _FOO_BAR_BLOCK)
     return kanon_file
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 fixture: interleaved content
-# ---------------------------------------------------------------------------
 
 
 def _kanon_interleaved(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -102,11 +88,6 @@ def _kanon_interleaved(tmp_path: pathlib.Path) -> pathlib.Path:
     kanon_file = tmp_path / ".kanon"
     kanon_file.write_text(content)
     return kanon_file
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: happy paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -167,11 +148,6 @@ class TestRemoveCoreHappyPath:
         assert "KANON_SOURCE_foo_bar_GITBASE" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: interleaved fixture end-to-end evidence
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRemoveCoreACCycle001:
     """AC-CYCLE-001 evidence: interleaved fixture, both input forms, re-run error."""
@@ -185,24 +161,20 @@ class TestRemoveCoreACCycle001:
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         content = kanon_file.read_text()
 
-        # foo_bar lines gone
         assert "KANON_SOURCE_foo_bar_URL" not in content
         assert "KANON_SOURCE_foo_bar_REF" not in content
         assert "KANON_SOURCE_foo_bar_PATH" not in content
         assert "KANON_SOURCE_foo_bar_NAME" not in content
         assert "KANON_SOURCE_foo_bar_GITBASE" not in content
 
-        # baz block intact
         assert "KANON_SOURCE_baz_URL=https://example.com/baz.git" in content
         assert "KANON_SOURCE_baz_REF=refs/tags/2.0.0" in content
         assert "KANON_SOURCE_baz_PATH=repo-specs/baz-marketplace.xml" in content
         assert "KANON_SOURCE_baz_NAME=baz" in content
         assert "KANON_SOURCE_baz_GITBASE=https://example.com" in content
 
-        # header intact
         assert "GITBASE=https://example.com" in content
 
-        # comment intact
         assert "# trailing comment about baz" in content
 
     def test_interleaved_stdout_summary_present(self, tmp_path: pathlib.Path) -> None:
@@ -222,21 +194,14 @@ class TestRemoveCoreACCycle001:
         """Re-running remove on an already-clean file produces spec-canonical hard error."""
         kanon_file = _kanon_interleaved(tmp_path)
 
-        # First remove succeeds
         first = _run_kanon(["remove", "Foo-Bar", "--kanon-file", str(kanon_file)])
         assert first.returncode == 0, f"First remove failed: {first.stderr!r}"
 
-        # Second remove against now-clean file must fail
         second = _run_kanon(["remove", "foo_bar", "--kanon-file", str(kanon_file)])
         assert second.returncode != 0, "Expected non-zero exit on second remove"
         assert "foo_bar" in second.stderr
         assert "not fully present in .kanon" in second.stderr
         assert "found 0 of 5 expected" in second.stderr
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: error paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -245,7 +210,7 @@ class TestRemoveCoreErrorPaths:
 
     def test_missing_kanon_file_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
         """'kanon remove' exits non-zero when .kanon file is absent."""
-        kanon_file = tmp_path / ".kanon"  # does not exist
+        kanon_file = tmp_path / ".kanon"
 
         result = _run_kanon(["remove", "foo_bar", "--kanon-file", str(kanon_file)])
 

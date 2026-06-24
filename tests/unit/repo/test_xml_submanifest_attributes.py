@@ -42,10 +42,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestInvalidPathError, ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -117,11 +113,6 @@ def _build_submanifest_manifest(
         f"  <submanifest {submanifest_attrs} />\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented <submanifest> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -329,11 +320,6 @@ class TestSubmanifestAttributeValidValues:
         assert sm.relpath == "my-checkout", (
             f"AC-TEST-001: expected submanifest.relpath='my-checkout' when path is set but got: {sm.relpath!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- every attribute has at least one invalid path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -627,11 +613,6 @@ class TestSubmanifestAttributeInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission -- message must name the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSubmanifestRequiredAttributeOmission:
     """AC-TEST-003: omitting the required name attribute raises ManifestParseError naming it.
@@ -736,11 +717,6 @@ class TestSubmanifestRequiredAttributeOmission:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parse-time validation coverage
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSubmanifestParseTimeValidation:
     """AC-FUNC-001: every documented attribute of <submanifest> is validated at parse time.
@@ -827,11 +803,6 @@ class TestSubmanifestParseTimeValidation:
         assert sm.relpath == "mypath", (
             f"AC-FUNC-001: expected relpath='mypath' when path is given but got: {sm.relpath!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

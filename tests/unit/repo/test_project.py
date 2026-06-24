@@ -1,17 +1,3 @@
-# Copyright (C) 2019 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the project.py module."""
 
 import contextlib
@@ -37,13 +23,10 @@ from kanon_cli.repo import project
 def TempGitTree():
     """Create a new empty git checkout for testing."""
     with tempfile.TemporaryDirectory(prefix="repo-tests") as tempdir:
-        # Tests need to assume, that main is default branch at init,
-        # which is not supported in config until 2.28.
         cmd = ["git", "init"]
         if git_command.git_require((2, 28, 0)):
             cmd += ["--initial-branch=main"]
         else:
-            # Use template dir for init.
             templatedir = tempfile.mkdtemp(prefix=".test-template")
             with open(os.path.join(templatedir, "HEAD"), "w") as fp:
                 fp.write("ref: refs/heads/main\n")
@@ -72,7 +55,6 @@ class ReviewableBranchTests(unittest.TestCase):
         with TempGitTree() as tempdir:
             fakeproj = FakeProject(tempdir)
 
-            # Generate some commits.
             with open(os.path.join(tempdir, "readme"), "w") as fp:
                 fp.write("txt")
             fakeproj.work_git.add("readme")
@@ -81,7 +63,6 @@ class ReviewableBranchTests(unittest.TestCase):
             fakeproj.work_git.rm("-f", "readme")
             fakeproj.work_git.commit("-mDel file")
 
-            # Start off with the normal details.
             rb = project.ReviewableBranch(fakeproj, fakeproj.config.GetBranch("work"), "main")
             self.assertEqual("work", rb.name)
             self.assertEqual(1, len(rb.commits))
@@ -91,15 +72,14 @@ class ReviewableBranchTests(unittest.TestCase):
             short, long = next(iter(d.items()))
             self.assertTrue(long.startswith(short))
             self.assertTrue(rb.base_exists)
-            # Hard to assert anything useful about this.
+
             self.assertTrue(rb.date)
 
-            # Now delete the tracking branch!
             fakeproj.work_git.branch("-D", "main")
             rb = project.ReviewableBranch(fakeproj, fakeproj.config.GetBranch("work"), "main")
             self.assertEqual(0, len(rb.commits))
             self.assertFalse(rb.base_exists)
-            # Hard to assert anything useful about this.
+
             self.assertTrue(rb.date)
 
 
@@ -153,8 +133,6 @@ class CopyLinkTestCase(unittest.TestCase):
             while path != "/":
                 path = os.path.dirname(path)
                 if not path:
-                    # If we're given something like "foo", abort once we get to
-                    # "".
                     break
                 result = os.path.exists(path)
                 msg.append(f"\tos.path.exists({path}): {result}")
@@ -336,7 +314,6 @@ class LinkFile(CopyLinkTestCase):
         lf._Link()
         self.assertEqual(os.path.join("git-project", "foo.txt"), os.readlink(dest))
 
-        # Point the symlink somewhere else.
         os.unlink(dest)
         platform_utils.symlink(self.tempdir, dest)
         lf._Link()
@@ -365,7 +342,7 @@ class LinkFileDirectoryTargetTests(CopyLinkTestCase):
             directory, and the symlink target is valid.
         Spec: Section 17.3 — directory linkfile targets preserved.
         """
-        # Create a directory with a file inside the project worktree.
+
         src_dir = os.path.join(self.worktree, "data", "configs")
         os.makedirs(src_dir)
         self.touch(os.path.join(src_dir, "settings.json"))
@@ -376,10 +353,10 @@ class LinkFileDirectoryTargetTests(CopyLinkTestCase):
         dest = os.path.join(self.topdir, "configs")
         self.assertExists(dest)
         self.assertTrue(os.path.islink(dest))
-        # The symlink target should be relative, pointing into git-project.
+
         link_target = os.readlink(dest)
         self.assertEqual(os.path.join("git-project", "data", "configs"), link_target)
-        # The file inside the directory should be accessible through the link.
+
         linked_file = os.path.join(dest, "settings.json")
         self.assertTrue(
             os.path.exists(linked_file),
@@ -510,11 +487,11 @@ class LinkFileAbsoluteDestTests(CopyLinkTestCase):
         self.touch(src_old)
         self.touch(src_new)
         abs_dest = os.path.join(self.tempdir, "abs-out", "link")
-        # Create initial symlink via _Link with old source.
+
         lf_old = self.LinkFile("old.txt", abs_dest)
         lf_old._Link()
         self.assertTrue(os.path.islink(abs_dest))
-        # Replace with new source.
+
         lf_new = self.LinkFile("new.txt", abs_dest)
         lf_new._Link()
         self.assertTrue(
@@ -560,8 +537,7 @@ class LinkFileAbsoluteDestTests(CopyLinkTestCase):
         """
         src = os.path.join(self.worktree, "trail.txt")
         self.touch(src)
-        # normpath strips trailing slash, so the link is created at the
-        # normalized path.
+
         raw_dest = os.path.join(self.tempdir, "trail-out", "link") + os.sep
         normalized = os.path.normpath(raw_dest)
         lf = self.LinkFile("trail.txt", raw_dest)
@@ -649,7 +625,7 @@ class LinkFileExcludeTests(CopyLinkTestCase):
         dest = os.path.join(self.topdir, "linked-pkg")
         lf = self.LinkFile("pkg", dest, exclude="")
         lf._Link()
-        # Empty exclude -> single symlink to directory
+
         self.assertTrue(os.path.islink(dest))
 
     def test_exclude_with_absolute_dest(self):
@@ -1060,18 +1036,16 @@ class MigrateWorkTreeTests(unittest.TestCase):
             dotgit = tempdir / "src/test/.git"
             project.Project._MigrateOldWorkTreeGitDir(str(dotgit))
 
-            # Make sure the dir was transformed into a symlink.
             self.assertTrue(dotgit.is_symlink())
             self.assertEqual(
                 os.readlink(dotgit),
                 os.path.normpath("../../.repo/projects/src/test.git"),
             )
 
-            # Make sure files were moved over.
             gitdir = tempdir / ".repo/projects/src/test.git"
             for name in self._FILES:
                 self.assertEqual(name, (gitdir / name).read_text())
-            # Make sure files were removed.
+
             for name in self._CLEAN_FILES:
                 self.assertFalse((gitdir / name).exists())
 
@@ -1084,7 +1058,6 @@ class MigrateWorkTreeTests(unittest.TestCase):
             with self.assertRaises(error.GitError):
                 project.Project._MigrateOldWorkTreeGitDir(str(dotgit))
 
-            # Make sure no content was actually changed.
             self.assertTrue(dotgit.is_dir())
             for name in self._FILES:
                 self.assertTrue((dotgit / name).is_file())
@@ -1113,8 +1086,6 @@ class ManifestPropertiesFetchedCorrectly(unittest.TestCase):
         with TempGitTree() as tempdir:
             fakeproj = self.setUpManifest(tempdir)
 
-            # Set property using the expected Set method, then ensure
-            # the porperty functions are using the correct Get methods.
             fakeproj.config.SetString("manifest.standalone", "https://chicken/manifest.git")
             self.assertEqual(fakeproj.standalone_manifest_url, "https://chicken/manifest.git")
 
@@ -1178,7 +1149,7 @@ class CopyFileLinkFileDataStructureTests(unittest.TestCase):
     def test_copyfile_is_mutable_class(self):
         """_CopyFile should be a regular class, not a NamedTuple."""
         cf = project._CopyFile("/worktree", "src.txt", "/topdir", "dest.txt")
-        # Regular classes allow attribute modification; NamedTuples don't
+
         cf.src = "new_src.txt"
         self.assertEqual(cf.src, "new_src.txt")
 
@@ -1187,9 +1158,6 @@ class CopyFileLinkFileDataStructureTests(unittest.TestCase):
         lf = project._LinkFile("/worktree", "src.txt", "/topdir", "dest.txt")
         lf.src = "new_src.txt"
         self.assertEqual(lf.src, "new_src.txt")
-
-
-# Additional coverage tests appended below
 
 
 @pytest.mark.unit
@@ -1214,7 +1182,6 @@ class TestLwriteFunction:
             content = "line1\nline2\n"
             project._lwrite(path, content)
 
-            # Read in binary mode to check line endings
             with open(path, "rb") as f:
                 raw_content = f.read()
             assert b"\r\n" not in raw_content
@@ -1224,11 +1191,10 @@ class TestLwriteFunction:
         """Test that _lwrite replaces an existing file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.txt")
-            # Create initial file
+
             with open(path, "w") as f:
                 f.write("old content")
 
-            # Overwrite with _lwrite
             new_content = "new content"
             project._lwrite(path, new_content)
 
@@ -1245,7 +1211,6 @@ class TestLwriteFunction:
                 with pytest.raises(OSError):
                     project._lwrite(path, "content")
 
-            # Lock file should be cleaned up
             assert not os.path.exists(lock_path)
 
 
@@ -1321,16 +1286,13 @@ class TestCopyFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
             cf = project._CopyFile(worktree, "src.txt", topdir, "dest.txt")
 
-            # Mock shutil.copy to raise IOError
             with mock.patch("shutil.copy", side_effect=IOError("Copy failed")):
-                # Should not raise, just log error
                 cf._Copy()
 
     def test_copy_creates_dest_directory(self):
@@ -1341,12 +1303,10 @@ class TestCopyFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Destination in subdirectory that doesn't exist
             cf = project._CopyFile(worktree, "src.txt", topdir, "subdir/dest.txt")
             cf._Copy()
 
@@ -1363,7 +1323,6 @@ class TestCopyFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source directory
             src_dir = os.path.join(worktree, "srcdir")
             os.makedirs(src_dir)
 
@@ -1383,12 +1342,10 @@ class TestCopyFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Create dest as directory
             dest_dir = os.path.join(topdir, "destdir")
             os.makedirs(dest_dir)
 
@@ -1450,12 +1407,10 @@ class TestLinkFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Create existing dest file
             dest_file = os.path.join(topdir, "dest.txt")
             with open(dest_file, "w") as f:
                 f.write("old")
@@ -1463,7 +1418,6 @@ class TestLinkFileClassExtended:
             lf = project._LinkFile(worktree, "src.txt", topdir, "dest.txt")
             lf._Link()
 
-            # Verify it's now a symlink
             assert os.path.islink(dest_file)
 
     def test_link_creates_dest_directory(self):
@@ -1474,12 +1428,10 @@ class TestLinkFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Destination in subdirectory that doesn't exist
             lf = project._LinkFile(worktree, "src.txt", topdir, "subdir/dest.txt")
             lf._Link()
 
@@ -1492,12 +1444,10 @@ class TestLinkFileClassExtended:
             worktree = os.path.join(tmpdir, "worktree")
             os.makedirs(worktree)
 
-            # Create source file
             src_file = os.path.join(worktree, "src.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Absolute destination
             abs_dest = os.path.join(tmpdir, "absolute", "nested", "dest.txt")
 
             lf = project._LinkFile(worktree, "src.txt", "/unused", abs_dest)
@@ -1511,7 +1461,6 @@ class TestLinkFileClassExtended:
             worktree = os.path.join(tmpdir, "worktree")
             os.makedirs(worktree)
 
-            # Absolute destination with ..
             abs_dest = "/tmp/../etc/passwd"
 
             lf = project._LinkFile(worktree, "src.txt", "/unused", abs_dest)
@@ -1530,20 +1479,17 @@ class TestLinkFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create multiple source files
             for i in range(3):
                 src_file = os.path.join(worktree, f"file{i}.txt")
                 with open(src_file, "w") as f:
                     f.write(f"content{i}")
 
-            # Destination directory
             dest_dir = os.path.join(topdir, "destdir")
             os.makedirs(dest_dir)
 
             lf = project._LinkFile(worktree, "*.txt", topdir, "destdir")
             lf._Link()
 
-            # Verify all files are linked
             for i in range(3):
                 dest_file = os.path.join(dest_dir, f"file{i}.txt")
                 assert os.path.islink(dest_file)
@@ -1565,12 +1511,10 @@ class TestLinkFileClassExtended:
             os.makedirs(worktree)
             os.makedirs(topdir)
 
-            # Create source file
             src_file = os.path.join(worktree, "file.txt")
             with open(src_file, "w") as f:
                 f.write("content")
 
-            # Create dest as file -- triggers Bug 20 condition
             dest_file = os.path.join(topdir, "destfile")
             with open(dest_file, "w") as f:
                 f.write("existing")
@@ -1658,7 +1602,6 @@ class TestProjectProperties:
             proj = mock.Mock(spec=project.Project)
             proj.UseAlternates = True
 
-            # Call the property directly on the class
             result = project.Project.shareable_dirs.fget(proj)
             assert result == ["hooks", "rr-cache"]
 
@@ -1769,8 +1712,8 @@ class TestProjectIsDirty:
         proj.work_git = mock.Mock()
         proj.work_git.update_index = mock.Mock()
         proj.work_git.DiffZ.side_effect = [
-            {"file.txt": mock.Mock()},  # diff-index has changes
-            {},  # diff-files no changes
+            {"file.txt": mock.Mock()},
+            {},
         ]
         proj.UntrackedFiles = mock.Mock(return_value=[])
 
@@ -1785,8 +1728,8 @@ class TestProjectIsDirty:
         proj.work_git = mock.Mock()
         proj.work_git.update_index = mock.Mock()
         proj.work_git.DiffZ.side_effect = [
-            {},  # diff-index no changes
-            {"file.txt": mock.Mock()},  # diff-files has changes
+            {},
+            {"file.txt": mock.Mock()},
         ]
         proj.UntrackedFiles = mock.Mock(return_value=[])
 
@@ -2033,7 +1976,6 @@ class TestProjectBranches:
             "refs/published/main": "abc123",
         }
 
-        # Create mock branch objects that will be returned consistently
         branches = {}
 
         def get_branch_side_effect(name):
@@ -2047,7 +1989,7 @@ class TestProjectBranches:
 
         assert "main" in result
         assert "feature" in result
-        # Verify attributes were set by GetBranches
+
         assert result["main"].current is True
         assert result["feature"].current is False
         assert result["main"].revision == "abc123"
@@ -2152,7 +2094,7 @@ class TestProjectUncommittedFiles:
 
         result = project.Project.UncommitedFiles(proj, get_all=False)
         assert len(result) > 0
-        # Should not call UntrackedFiles since it returns early
+
         proj.UntrackedFiles.assert_not_called()
 
 
@@ -2317,7 +2259,6 @@ class TestDownloadedChangeClass:
         commits = dc.commits
         assert commits == ["abc123 commit message"]
 
-        # Second call should use cache
         proj.bare_git.rev_list.reset_mock()
         dc.commits
         proj.bare_git.rev_list.assert_not_called()
@@ -2334,7 +2275,6 @@ class TestStatusColoringClass:
         config = mock.Mock()
         with mock.patch.object(project.StatusColoring, "printer", return_value=mock.Mock()):
             project.StatusColoring(config)
-            # Just verify it doesn't raise
 
 
 @pytest.mark.unit
@@ -2348,7 +2288,6 @@ class TestDiffColoringClass:
         config = mock.Mock()
         with mock.patch.object(project.DiffColoring, "printer", return_value=mock.Mock()):
             project.DiffColoring(config)
-            # Just verify it doesn't raise
 
 
 @pytest.mark.unit
@@ -2380,7 +2319,6 @@ class TestSafeExpandPath:
     def test_safe_expand_path_rejects_symlink_traversal(self):
         """Test _SafeExpandPath rejects symlink traversal."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a symlink
             linkdir = os.path.join(tmpdir, "link")
             targetdir = os.path.join(tmpdir, "target")
             os.makedirs(targetdir)
@@ -2395,7 +2333,6 @@ class TestSafeExpandPath:
     def test_safe_expand_path_skipfinal(self):
         """Test _SafeExpandPath with skipfinal=True."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create directory structure
             subdir = os.path.join(tmpdir, "subdir")
             os.makedirs(subdir)
 
@@ -2412,7 +2349,6 @@ class TestProjectHooksFunction:
         """Test _ProjectHooks caches the result."""
         from unittest import mock
 
-        # Reset the cache
         project._project_hook_list = None
 
         with (
@@ -2424,7 +2360,6 @@ class TestProjectHooksFunction:
             result1 = project._ProjectHooks()
             result2 = project._ProjectHooks()
 
-            # Both calls should return the same cached list
             assert result1 is result2
 
 

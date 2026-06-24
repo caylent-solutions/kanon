@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/checkout.py coverage."""
 
 from unittest import mock
@@ -281,7 +267,6 @@ def test_execute_mixed_results():
     cmd.ParallelContext.return_value = context_mock
     cmd.get_parallel_context.return_value = {}
 
-    # Should succeed even if one project doesn't have the branch
     cmd.Execute(opt, ["feature-branch"])
 
 
@@ -301,7 +286,7 @@ def test_execute_uses_progress():
 
     def mock_execute(*args, **kwargs):
         output = kwargs.get("output")
-        # Verify Progress was created with branch name
+
         assert output is not None
         callback = kwargs.get("callback")
         if callback:

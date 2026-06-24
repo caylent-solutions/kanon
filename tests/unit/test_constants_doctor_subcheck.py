@@ -14,11 +14,6 @@ from __future__ import annotations
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Six finding-prefix constants live in kanon_cli.constants
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFindingPrefixConstants:
     """The six finding-prefix constants are exported from kanon_cli.constants."""
@@ -58,11 +53,6 @@ class TestFindingPrefixConstants:
         from kanon_cli.constants import FINDING_PREFIX_INFO
 
         assert FINDING_PREFIX_INFO == "[info]"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Finding dataclass contract
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -134,11 +124,6 @@ class TestFindingDataclass:
 
         with pytest.raises(ValueError, match="severity"):
             Finding(severity=bad_severity, name="check")
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 cross-check: constants imported by doctor.py (no inline literals)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

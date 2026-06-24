@@ -36,10 +36,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.wrapper import Wrapper
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -99,11 +95,6 @@ def _contactinfo_manifest(bugurl: str) -> str:
         f'  <contactinfo bugurl="{bugurl}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every documented <contactinfo> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -220,11 +211,6 @@ class TestContactInfoAttributeValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- each raises ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestContactInfoAttributeInvalidValues:
     """AC-TEST-002: Invalid attribute values raise ManifestParseError.
@@ -296,11 +282,6 @@ class TestContactInfoAttributeInvalidValues:
         assert str(exc_info.value), (
             f"Expected non-empty ManifestParseError for fragment {invalid_xml_fragment!r} but got empty message"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -383,11 +364,6 @@ class TestContactInfoRequiredAttributeOmission:
         assert expected_in_message in error_text, (
             f"Expected '{expected_in_message}' in error for missing {missing_attr!r} but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

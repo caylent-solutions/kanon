@@ -82,63 +82,41 @@ from kanon_cli.core.metadata import (
 )
 from kanon_cli.version import _list_branch_head, is_version_constraint, resolve_version
 
-# Marker stored/displayed for the branch-tip "latest" version (spec Section 4.1:
-# branch-tip "latest" via _list_branch_head). The marker keeps the cached
-# versions.txt human-inspectable and lets the renderer label the tip distinctly
-# from a PEP 440 release tag.
+
 _LATEST_TIP_MARKER = "latest"
 
-# Branch name that carries release enumeration. Release tags are all cut from
-# this branch, so `search -A` lists every refs/tags/<name>/* regardless of @ref;
-# any other branch shows only its tip (spec Section 4.1 / Section 6 / FR-25).
+
 _RELEASE_BRANCH = "main"
 
-# -- Detail formatter private constants --
+
 _DETAIL_MISSING_PLACEHOLDER = "<missing>"
 _DETAIL_LABEL_WIDTH = 12
 
-# -- Format flag private constants --
-# Environment variable that sets the output format for 'kanon search'.
-# Choices: 'names' (default), 'json'.
-# CLI flag --format takes precedence when both are set.
+
 _KANON_LIST_FORMAT_ENV_VAR = "KANON_LIST_FORMAT"
 
-# Warning emitted to stderr when a historical revision has malformed catalog-metadata.
-# Uses .format(entry=<name>, revision=<version_str>, reason=<exc>) at the call site.
+
 _ALL_VERSIONS_PARSE_WARNING_FORMAT = (
     "WARNING: malformed catalog-metadata for entry {entry} at revision {revision}: {reason}"
 )
 
-# Informational note emitted to stderr when version tags using the unsupported old
-# flat-attribute scheme are skipped from the all-versions walk.
-# Uses .format(count=<int>, revision=<version_str>) at the call site.
+
 _ALL_VERSIONS_LEGACY_SKIPPED_NOTE_FORMAT = (
     "NOTE: {count} marketplace XML(s) at revision {revision} use the unsupported old "
     "flat-attribute scheme (no nested <catalog-metadata><name>); skipped"
 )
 
-# Informational note emitted to stderr (exit 0) when the all-versions walk found no
-# new-scheme version tags at all. New-scheme-only: only tags carrying the nested
-# <catalog-metadata><name> scheme are listed; an empty result here is normal, not an error.
+
 _ALL_VERSIONS_NO_NEW_SCHEME_NOTE = (
     "NOTE: no new-scheme version tags found; only releases that carry the nested "
     "<catalog-metadata><name> scheme are listed (old flat-attribute tags are skipped)"
 )
 
-# ---------------------------------------------------------------------------
-# Filter framework public constants
-# ---------------------------------------------------------------------------
 
-# Spec canonical phrasing for zero-match stderr note (Section 4.1).
 LIST_FILTER_ZERO_MATCH_NOTE = "0 entries match filter"
 
-# Legal field names for --match-fields (in the same order as the spec table).
+
 MATCH_FIELDS_LEGAL: tuple[str, ...] = ("name", "display-name", "description", "keywords")
-
-
-# ---------------------------------------------------------------------------
-# All-versions walker data types
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -166,13 +144,12 @@ class VersionRow:
         return f"{self.name}@{self.version}"
 
 
-# -- Tree renderer private constants --
 _TREE_CONNECTOR_INTERMEDIATE = "+--"
 _TREE_CONNECTOR_LAST = "\\--"
 _TREE_COLUMN_CONTINUATION = "|   "
 _TREE_COLUMN_BLANK = "    "
 
-# Guardrail error template (no em-dashes, no hardcoded values).
+
 _TREE_GUARDRAIL_ERROR = (
     "ERROR: kanon search --tree requires a filter when the catalog has more than "
     "{threshold} entries.\n"
@@ -187,11 +164,6 @@ _TREE_GUARDRAIL_ERROR = (
     "Or raise the threshold:\n"
     "  KANON_TREE_NO_FILTER_THRESHOLD={threshold_plus} kanon search --tree ...\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# All-versions walker helpers
-# ---------------------------------------------------------------------------
 
 
 def _list_tags_from_url(url: str) -> list[tuple[str, str]]:
@@ -233,11 +205,6 @@ def _list_tags_from_url(url: str) -> list[tuple[str, str]]:
         if ref.startswith("refs/tags/") and not ref.endswith("^{}"):
             pairs.append((ref, sha))
     return pairs
-
-
-# ---------------------------------------------------------------------------
-# Concurrent, TTL-cached version enumeration (spec Section 4.1 / FR-25)
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -379,16 +346,12 @@ def _enumerate_entry_versions(url: str, ref: str, entry_name: str) -> SourceEnum
 
     versions: list[str] = []
     if is_release_branch:
-        # Release enumeration: list every refs/tags/<name>/* (all cut from main).
         versions = _list_namespaced_version_tags(url, entry_name)
 
-    # Branch-tip "latest": resolve the tip of the (release or non-release) branch.
-    # A non-main branch shows only its tip (no release enumeration above).
     try:
         _list_branch_head(url, branch)
         has_latest = True
     except ValueError:
-        # Branch ref not found on the remote -- no tip to show; not unreachable.
         has_latest = False
     except RuntimeError as exc:
         raise SourceUnreachableError(url, str(exc)) from exc
@@ -401,11 +364,6 @@ def _enumerate_entry_versions(url: str, ref: str, entry_name: str) -> SourceEnum
     )
 
 
-# Delimiter joining ``<entry_name>`` and ``<version-or-latest>`` in a cache line.
-# A literal ``@`` is used (not a tab): the completion-cache sanitizer rejects every
-# character below 0x20, so a tab would be dropped on write. Catalog entry names
-# carry no ``@`` (the sanitized alias charset, audit S002), so the first ``@``
-# unambiguously splits the entry name from its version token.
 _CACHE_LINE_DELIMITER = "@"
 
 
@@ -505,10 +463,9 @@ def _enumerate_source(
     cached, freshness = read_search_versions_with_freshness(url, ref, ttl_seconds=ttl_seconds, now=now)
     if freshness is Freshness.FRESH:
         decoded = _decode_source_versions(source, cached)
-        # Only return the requested matching entries (the cache may hold more).
+
         return {name: decoded[name] for name in entry_names if name in decoded}
 
-    # MISSING or STALE: enumerate fresh and refresh the cache.
     enumerations: dict[str, SourceEnumeration] = {}
     cache_lines: list[str] = []
     for entry_name in entry_names:
@@ -768,7 +725,6 @@ def _walk_all_versions(
 
     sorted_triples = _sort_version_pairs_newest_first(pairs)
     if not sorted_triples:
-        # Zero PEP 440-parseable tags -- surface the skipped tags via a loud error.
         skipped = [ref for ref, _ in pairs]
         from kanon_cli.version import _format_zero_pep440_tags_error
 
@@ -783,17 +739,12 @@ def _walk_all_versions(
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 
-    # Apply version cap. limit=0 means unlimited.
     if limit > 0:
         sorted_triples = sorted_triples[:limit]
 
     if not sorted_triples:
         return []
 
-    # Clone each version individually and parse its catalog metadata.
-    # This ensures that the entry names emitted for each version reflect the
-    # state of the manifest repo at that specific tag, and that a malformed
-    # revision does not abort the entire walk.
     rows: list[VersionRow] = []
     successful_count = 0
     for ref, ver, sha in sorted_triples:
@@ -823,12 +774,8 @@ def _walk_all_versions(
                 version_names.append(metadata.name)
             except CatalogMetadataParseError as exc:
                 if _is_xml_well_formed(xml_path):
-                    # XML is structurally valid but lacks <catalog-metadata><name>;
-                    # this is a legacy flat-metadata tag.  Exclude it rather than
-                    # emitting a directory-path-derived name (which would be wrong).
                     legacy_skipped_count += 1
                 else:
-                    # Genuinely non-well-formed XML -- skip with warning.
                     print(
                         _ALL_VERSIONS_PARSE_WARNING_FORMAT.format(
                             entry=xml_path.stem.removesuffix("-marketplace"),
@@ -848,7 +795,6 @@ def _walk_all_versions(
             )
 
         if not version_names:
-            # No canonical-metadata entries at this version -- skip it entirely.
             continue
 
         successful_count += 1
@@ -856,11 +802,6 @@ def _walk_all_versions(
             rows.append(VersionRow(name=name, version=str(ver), ref=ref, sha=sha))
 
     if successful_count == 0 and sorted_triples:
-        # New-scheme-only: no walked tag carried a new-scheme (nested
-        # <catalog-metadata><name>) entry -- every version tag used the unsupported
-        # old flat-attribute scheme. This is NOT an error; there are simply no
-        # new-scheme version tags to list yet. Exit 0 with an empty result and a
-        # clear note (the caller renders the empty list / empty JSON array).
         print(_ALL_VERSIONS_NO_NEW_SCHEME_NOTE, file=sys.stderr)
         return rows
 
@@ -1001,11 +942,6 @@ def _format_detail_record(metadata: CatalogMetadata) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# JSON renderers (--format json)
-# ---------------------------------------------------------------------------
-
-
 def _build_catalog_payload(entries: list[CatalogMetadata]) -> list[dict]:
     """Build the JSON-serialisable payload for a list of :class:`CatalogMetadata`.
 
@@ -1088,11 +1024,6 @@ def _format_json_all_versions(rows: list[VersionRow]) -> str:
         A JSON-serialised string terminated by exactly one newline.
     """
     return json.dumps(_build_all_versions_payload(rows)) + "\n"
-
-
-# ---------------------------------------------------------------------------
-# Tree renderer helpers
-# ---------------------------------------------------------------------------
 
 
 def _sha12_from_content(content: str) -> str:
@@ -1277,7 +1208,6 @@ def _render_tree(
 
     root_includes, root_projects = _parse_xml_includes_and_projects(entry_xml)
 
-    # Resolve include names to paths (or track as placeholders when not found).
     include_paths: list[pathlib.Path] = []
     include_placeholders: list[str] = []
     for inc_name in root_includes:
@@ -1287,21 +1217,12 @@ def _render_tree(
         else:
             include_placeholders.append(inc_name)
 
-    # Determine if root projects (directly in the marketplace XML) should appear.
-    # Per the three-layer model, projects are ALWAYS layer c (depth 2).
-    # They are suppressed when max_depth < 2.
-
-    # Total depth-1 items: xml includes + placeholders.
-    # When no includes exist, root projects are promoted to depth-1 direct children
-    # (conceptually still layer c but no intermediate xml node to attach them to).
     has_includes = bool(include_paths) or bool(include_placeholders)
 
     if has_includes:
-        # Includes present: render includes at depth 1, their projects + root projects at depth 2.
         total_d1 = len(include_paths) + len(include_placeholders)
 
         for idx, inc_path in enumerate(include_paths):
-            # The include node is last only if it is the last item AND there are no placeholders.
             is_last = idx == total_d1 - 1
             inc_prefix = _TREE_CONNECTOR_LAST if is_last else _TREE_CONNECTOR_INTERMEDIATE
             inc_indent = _TREE_COLUMN_BLANK if is_last else _TREE_COLUMN_CONTINUATION
@@ -1324,16 +1245,12 @@ def _render_tree(
             ph_prefix = _TREE_CONNECTOR_LAST if is_last else _TREE_CONNECTOR_INTERMEDIATE
             lines.append(f"{ph_prefix}xml {ph_name}@unknown (000000000000)")
 
-        # Root projects (from the root marketplace XML) at depth 2.
-        # They appear after all include nodes, indented under the last include's indent.
         if show_projects and root_projects:
-            # Use the indent of the last include node for nesting root projects.
             if include_paths:
                 last_inc_idx = len(include_paths) - 1
                 last_inc_is_last_d1 = last_inc_idx == total_d1 - 1
                 last_inc_indent = _TREE_COLUMN_BLANK if last_inc_is_last_d1 else _TREE_COLUMN_CONTINUATION
             else:
-                # Only placeholders exist; use empty indent for root projects.
                 last_inc_indent = ""
             for j, (proj_name, fetch_url, revision) in enumerate(root_projects):
                 is_last_rp = j == len(root_projects) - 1
@@ -1343,7 +1260,6 @@ def _render_tree(
                 lines.append(f"{proj_prefix}project {proj_name}@{proj_spec} ({proj_sha})")
 
     else:
-        # No includes: root projects appear as direct depth-1 children.
         if show_projects and root_projects:
             for j, (proj_name, fetch_url, revision) in enumerate(root_projects):
                 is_last = j == len(root_projects) - 1
@@ -1353,11 +1269,6 @@ def _render_tree(
                 lines.append(f"{proj_prefix}project {proj_name}@{proj_spec} ({proj_sha})")
 
     return lines
-
-
-# ---------------------------------------------------------------------------
-# Filter framework helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_filter_predicate(
@@ -1418,8 +1329,6 @@ def _build_filter_predicate(
 
         return _substring_predicate
 
-    # regex path: caller guarantees exactly one of substring/regex is non-None.
-    # When substring is None the caller must have passed a non-None regex string.
     if regex is None:
         raise ValueError("_build_filter_predicate requires exactly one of substring or regex to be non-None")
     compiled = re.compile(regex)
@@ -1451,11 +1360,6 @@ def _apply_filter(
         Filtered list preserving the original order of matching entries.
     """
     return [e for e in entries if predicate(e)]
-
-
-# ---------------------------------------------------------------------------
-# Threshold guardrail
-# ---------------------------------------------------------------------------
 
 
 def _check_tree_guardrail(
@@ -1501,15 +1405,6 @@ def _check_tree_guardrail(
     return None
 
 
-# ---------------------------------------------------------------------------
-# Source grouping
-# ---------------------------------------------------------------------------
-
-# Header line emitted to stderr before the entries discovered for a catalog
-# source. ``kanon search`` groups its results by catalog source (spec
-# Section 4.1 / FR-10). The header is written to stderr -- never stdout -- so
-# the stdout stream stays pipeable into ``kanon add`` and any JSON document on
-# stdout stays machine-parseable. Uses .format(source=<url>@<ref>).
 _SOURCE_GROUP_HEADER_FORMAT = "Source: {source}"
 
 
@@ -1628,8 +1523,7 @@ def _run_search_multi_source(
         Exit code: 0 on success (including a no-matches result), 1 on a flag
         combination unsupported in multi-source mode.
     """
-    # --tree and --format json are single-source rendering modes; they are not
-    # defined for the multi-source grouped output. Fail fast (no silent partial).
+
     if tree:
         print(
             "ERROR: --tree is not supported across multiple catalog sources. "
@@ -1649,9 +1543,6 @@ def _run_search_multi_source(
         _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields) if filter_present else None
     )
 
-    # Discover matching entry names per source (clone + filter). An unreachable
-    # source surfaces as a SystemExit from _resolve_manifest_repo; convert that
-    # into a skip+warn rather than aborting the whole search.
     source_entry_names: dict[str, list[str]] = {}
     source_metadata: dict[str, list[CatalogMetadata]] = {}
     warnings: list[tuple[str, str]] = []
@@ -1674,7 +1565,6 @@ def _run_search_multi_source(
         source_metadata[source] = entries
         source_entry_names[source] = [m.name for m in entries]
 
-    # Concurrent, TTL-cached version enumeration across the reachable sources.
     ttl_seconds = _resolve_search_ttl()
     now = int(time.time())
     max_workers = KANON_SEARCH_MAX_WORKERS
@@ -1686,7 +1576,6 @@ def _run_search_multi_source(
     )
     warnings.extend(enum_warnings)
 
-    # Emit skip+warn diagnostics for every unreachable / skipped source.
     for source, reason in warnings:
         print(
             SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE.format(source=source, reason=reason),
@@ -1695,7 +1584,6 @@ def _run_search_multi_source(
 
     any_match = False
     for source in sources:
-        # A source skipped above (unreachable) is not rendered as a group.
         if source not in source_entry_names:
             continue
         _emit_source_group_header(source)
@@ -1801,14 +1689,9 @@ def run_search(args: argparse.Namespace) -> int:
         Exit code: 0 on success (including empty catalog), 1 when no catalog
         source is configured or a flag conflict is detected.
     """
-    # Resolve the catalog discovery set (spec Section 4.1 / FR-9): the
-    # --catalog-source flag(s) FULLY REPLACE KANON_CATALOG_SOURCES for this
-    # invocation (not additive). When the flag is absent the plural env discovery
-    # set is used. ``search`` accepts many sources; the env read is deferred to
-    # here (out of the parser default) so a multi-source config never crashes
-    # parser construction.
+
     sources: list[str] = _resolve_search_sources(getattr(args, "catalog_source", None))
-    # Back-compat single-source alias used by the single-source render path below.
+
     catalog_source: str | None = sources[0] if sources else None
     detail: bool = getattr(args, "detail", False)
     tree: bool = getattr(args, "tree", False)
@@ -1822,9 +1705,6 @@ def run_search(args: argparse.Namespace) -> int:
     regex: str | None = getattr(args, "regex", None)
     match_fields: list[str] | None = getattr(args, "match_fields", None)
 
-    # -- Filter mutual-exclusion checks (fail-fast, before catalog work) --
-
-    # <substring> and --regex are mutually exclusive.
     if substring is not None and regex is not None:
         print(
             "ERROR: <substring> and --regex are mutually exclusive. "
@@ -1833,7 +1713,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # --match-fields requires <substring> or --regex.
     if match_fields is not None and substring is None and regex is None:
         print(
             "ERROR: --match-fields requires a filter. "
@@ -1842,7 +1721,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Unknown values in --match-fields are a hard error.
     if match_fields is not None:
         unknown = [f for f in match_fields if f not in MATCH_FIELDS_LEGAL]
         if unknown:
@@ -1854,7 +1732,6 @@ def run_search(args: argparse.Namespace) -> int:
             )
             return 1
 
-    # Validate the --regex pattern early (fail-fast, before catalog work).
     if regex is not None:
         try:
             re.compile(regex)
@@ -1865,16 +1742,8 @@ def run_search(args: argparse.Namespace) -> int:
             )
             return 1
 
-    # -- Determine whether a user-supplied filter is active --
     filter_present: bool = substring is not None or regex is not None
 
-    # Resolve the output format: CLI flag > env var > default "names".
-    # The argparse default is None (not "names") so we can detect when the
-    # flag was explicitly set vs. defaulted. Precedence:
-    #   1. CLI flag (args.list_format is not None) -- use it.
-    #   2. KANON_LIST_FORMAT env var (when CLI flag was absent) -- use it if valid.
-    #   3. Default: "names".
-    # Fail-fast: an unrecognized KANON_LIST_FORMAT value is an immediate error.
     _arg_format: str | None = getattr(args, "list_format", None)
     _env_format: str | None = os.environ.get(_KANON_LIST_FORMAT_ENV_VAR)
     if _arg_format is not None:
@@ -1891,7 +1760,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Mutual exclusion: --format json and --tree cannot be combined.
     if list_format == "json" and tree:
         print(
             "ERROR: --format json and --tree are mutually exclusive. "
@@ -1901,7 +1769,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Mutual exclusion: --tree and -A/--all cannot be combined.
     if tree and all_versions:
         print(
             "ERROR: --tree and -A/--all are mutually exclusive. "
@@ -1911,10 +1778,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Mutual exclusion: --limit and --no-limit cannot be combined.
-    # ``limit`` defaults to KANON_LIST_LIMIT in the parser. When --no-limit is
-    # present alongside an explicitly different --limit value, the user has
-    # supplied both flags, which is an error.
     if no_limit and limit != KANON_LIST_LIMIT:
         print(
             "ERROR: --limit and --no-limit are mutually exclusive. "
@@ -1930,11 +1793,6 @@ def run_search(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Multi-source dispatch (spec Section 4.1 / FR-25): when more than one source
-    # is configured, enumerate the configured sources CONCURRENTLY through the
-    # TTL cache and render the results grouped per source, skipping+warning on any
-    # unreachable source. The single-source path below keeps the established
-    # tree/detail/json/filter rendering unchanged.
     if len(sources) > 1:
         return _run_search_multi_source(
             sources=sources,
@@ -1953,12 +1811,9 @@ def run_search(args: argparse.Namespace) -> int:
             list_format=list_format,
         )
 
-    # Group results by catalog source (spec Section 4.1 / FR-10): emit the
-    # per-source header on stderr before any entries for this single source.
     _emit_source_group_header(catalog_source)
 
     if all_versions:
-        # Determine the effective cap: no_limit -> 0 (unlimited), else use limit.
         effective_limit = 0 if no_limit else limit
         rows = _walk_all_versions(catalog_source, effective_limit, since_version)
         if not rows:
@@ -1980,7 +1835,6 @@ def run_search(args: argparse.Namespace) -> int:
     manifest_root = _resolve_manifest_repo(catalog_source)
 
     if tree:
-        # Build the full metadata list first so the filter can be applied.
         try:
             all_entries = _build_sorted_metadata(manifest_root)
         except CatalogMetadataParseError as exc:
@@ -1993,7 +1847,6 @@ def run_search(args: argparse.Namespace) -> int:
             print(guardrail_msg, file=sys.stderr, end="")
             return 1
 
-        # Apply filter to narrow the tree entries.
         if filter_present:
             predicate = _build_filter_predicate(substring=substring, regex=regex, match_fields=match_fields)
             filtered_entries = _apply_filter(all_entries, predicate)
@@ -2014,7 +1867,6 @@ def run_search(args: argparse.Namespace) -> int:
 
         return 0
 
-    # Non-tree modes: build full metadata, apply filter, render.
     try:
         all_entries = _build_sorted_metadata(manifest_root)
     except CatalogMetadataParseError as exc:
@@ -2166,9 +2018,6 @@ def register(subparsers) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # search accepts MANY sources: repeated --catalog-source flags append into a
-    # list (spec Section 4.1 / FR-9). The flags fully replace KANON_CATALOG_SOURCES
-    # for the invocation.
     add_catalog_source_arg(parser, allow_multiple=True)
 
     parser.add_argument(

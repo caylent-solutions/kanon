@@ -32,8 +32,7 @@ class TestHV:
     def test_hv_01_top_level_help(self) -> None:
         result = run_kanon("--help")
         assert result.returncode == 0, f"stderr={result.stderr!r}"
-        # The 3.0.0 top-level help lists the shipped commands (search replaced
-        # list; bootstrap was removed).
+
         for token in ("install", "clean", "validate", "search"):
             assert token in result.stdout, f"missing {token!r} in stdout"
 
@@ -71,9 +70,7 @@ class TestHV:
         assert "--repo-root" in result.stdout
 
     def test_hv_08_bootstrap_help(self) -> None:
-        # bootstrap was removed entirely in 3.0.0. `kanon bootstrap --help` is
-        # not help output: argparse rejects 'bootstrap' as an unknown command,
-        # exiting 2 with an 'invalid choice' usage error on stderr (no stdout).
+
         result = run_kanon("bootstrap", "--help")
         assert result.returncode == 2, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"

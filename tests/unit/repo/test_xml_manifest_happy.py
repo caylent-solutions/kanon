@@ -19,10 +19,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_manifest_parsing.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -77,11 +73,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <manifest> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -227,11 +218,6 @@ class TestManifestMinimumAttributes:
         )
         remote = manifest.remotes[remote_name]
         assert remote.fetchUrl is not None, f"Expected fetchUrl to be set for remote '{remote_name}' but got None"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <manifest> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -480,11 +466,6 @@ class TestManifestAllDocumentedAttributes:
         project_names = [p.name for p in manifest.projects]
         for name in ("platform/build", "platform/tools", "platform/docs"):
             assert name in project_names, f"Expected '{name}' in manifest.projects but got: {project_names!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <manifest> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -741,11 +722,6 @@ class TestManifestDefaultAttributeValues:
         assert "all" in projects["platform/core"].groups, (
             f"Expected 'all' in project.groups by default but got: {projects['platform/core'].groups!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

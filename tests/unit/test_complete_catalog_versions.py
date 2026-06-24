@@ -25,11 +25,6 @@ from kanon_cli.completions.catalog_versions import (
 )
 
 
-# ---------------------------------------------------------------------------
-# _parse_ls_remote_output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestParseLsRemoteOutput:
     """_parse_ls_remote_output() splits git ls-remote output into (tags, branches)."""
@@ -63,7 +58,7 @@ class TestParseLsRemoteOutput:
         """refs/tags/release/v3 -- last component is 'v3'."""
         output = "abc123\trefs/tags/release/v3\n"
         tags, branches = _parse_ls_remote_output(output)
-        # Last component "v3" is kept in tags list; filtering happens separately
+
         assert tags == ["v3"]
         assert branches == []
 
@@ -86,11 +81,6 @@ class TestParseLsRemoteOutput:
         tags, branches = _parse_ls_remote_output(output)
         assert tags == ["1.0.0"]
         assert branches == []
-
-
-# ---------------------------------------------------------------------------
-# _run_ls_remote
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -130,11 +120,6 @@ class TestRunLsRemote:
         ):
             with pytest.raises(TimeoutError, match="timed out"):
                 _run_ls_remote("https://example.com/repo.git", timeout=2)
-
-
-# ---------------------------------------------------------------------------
-# complete() -- main function
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -199,9 +184,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # Tags: 1.0.0a1, 1.0.0, 2.0.0 pass; not-a-version excluded
-        # Branches: main, develop pass unfiltered
-        # Sorted: tags by PEP 440 version ordering first, then branches alphabetically
         assert result == ["1.0.0a1", "1.0.0", "2.0.0", "develop", "main"]
 
     def test_not_a_version_tag_excluded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,9 +210,8 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # "release/v3" should NOT appear -- only extracted last component "v3" may appear
         assert "release/v3" not in result
-        # "v3" is valid PEP 440 (normalizes to 3), so it passes filter
+
         assert "v3" in result
         assert "1.0.0" in result
 
@@ -242,7 +223,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # Branches pass through without PEP 440 filter
         assert "not-a-version" in result
         assert "main" in result
 
@@ -288,7 +268,6 @@ class TestComplete:
     def test_cache_miss_calls_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Cache miss triggers inline fetch."""
         self._setup_env(monkeypatch, tmp_path)
-        # No cache directory -- miss
 
         with patch.object(cv, "_run_ls_remote", return_value="sha1\trefs/tags/1.0.0\n"):
             result = complete("")
@@ -345,7 +324,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # PEP 440 ordering: 1.0.0a1 < 1.0.0 < 2.0.0
         tags_only = [r for r in result if r not in ("main", "develop")]
         assert tags_only == ["1.0.0a1", "1.0.0", "2.0.0"]
 
@@ -358,11 +336,6 @@ class TestComplete:
             result = complete("")
 
         assert result == ["1.0.0", "alpha", "zebra"]
-
-
-# ---------------------------------------------------------------------------
-# _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -390,11 +363,6 @@ class TestFetchAndCacheVersions:
         with patch.object(cv, "_run_ls_remote", side_effect=RuntimeError("ls-remote failed")):
             with pytest.raises(RuntimeError, match="ls-remote failed"):
                 _fetch_and_cache_versions("https://example.com/repo.git", entry_dir)
-
-
-# ---------------------------------------------------------------------------
-# _handle()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -463,11 +431,6 @@ class TestHandle:
         assert result == 0
 
 
-# ---------------------------------------------------------------------------
-# _write_stderr_diagnostic
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWriteStderrDiagnostic:
     """_write_stderr_diagnostic() writes to stderr when stderr is a tty."""
@@ -523,11 +486,6 @@ class TestWriteStderrDiagnostic:
         assert err_lines == [], f"Expected no stderr output, got: {err_lines!r}"
 
 
-# ---------------------------------------------------------------------------
-# _inline_fetch env restoration
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInlineFetchEnvRestore:
     """_inline_fetch() restores KANON_COMPLETION_TIMEOUT after fetch."""
@@ -554,11 +512,6 @@ class TestInlineFetchEnvRestore:
         assert os.environ.get("KANON_COMPLETION_TIMEOUT") == "99"
 
 
-# ---------------------------------------------------------------------------
-# complete() -- malformed catalog source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteMalformedSource:
     """complete() returns [] on malformed KANON_CATALOG_SOURCES (no @)."""
@@ -573,11 +526,6 @@ class TestCompleteMalformedSource:
 
         assert result == []
         mock_log.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# register()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -624,11 +572,6 @@ class TestRegister:
         assert args_without.refresh_only is False
 
 
-# ---------------------------------------------------------------------------
-# _spawn_background_refresh
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSpawnBackgroundRefresh:
     """_spawn_background_refresh() spawns a detached subprocess for cache refresh."""
@@ -648,11 +591,6 @@ class TestSpawnBackgroundRefresh:
         assert call_kwargs["start_new_session"] is True
         assert call_kwargs["stdout"] == subprocess.DEVNULL
         assert call_kwargs["stderr"] == subprocess.DEVNULL
-
-
-# ---------------------------------------------------------------------------
-# complete() -- stale cache + bg disabled
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

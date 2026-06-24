@@ -38,24 +38,18 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Constants (no inline literals scattered across assertions / fixtures).
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Lifecycle Journey User"
 _GIT_USER_EMAIL = "lifecycle-journey@example.com"
 _DEFAULT_BRANCH = "main"
 
-# The single catalog entry name published by the synthetic source repo. The
-# add step keys the .kanon block under this bare alias.
+
 _ENTRY_NAME = "widget"
 
-# The PEP 440 release tag cut on the source repo. The catalog tag scheme uses
-# both the per-manifest ``<name>/<version>`` tag and a plain version tag so an
-# exact revision resolves.
+
 _RELEASE_VERSION = "1.0.0"
 
-# The repo-relative manifest path under repo-specs/.
+
 _XML_FILENAME = f"{_ENTRY_NAME}-marketplace.xml"
 _XML_REL_PATH = f"repo-specs/{_XML_FILENAME}"
 
@@ -68,8 +62,7 @@ _INSECURE_REMOTES_VALUE = "1"
 _KANON_HOME_ENV = "KANON_HOME"
 _CATALOG_SOURCES_ENV = "KANON_CATALOG_SOURCES"
 
-# The marketplace status table renders a disabled dependency in the SETTING
-# column; a freshly-added dep has no _MARKETPLACE line (canonical false).
+
 _SETTING_DISABLED = "disabled"
 
 
@@ -178,9 +171,6 @@ class TestFullLifecycleJourney:
         lock_file = project / _LOCKFILE_NAME
         base_env = {_KANON_HOME_ENV: kanon_home, _CATALOG_SOURCES_ENV: ""}
 
-        # --- Step 1: add (source-explicit) -----------------------------------
-        # Resolve the entry from the explicit --catalog-source and append the
-        # alias-keyed block to .kanon (spec Section 4.2 / FR-11).
         add_result = _run_kanon(
             "add",
             _ENTRY_NAME,
@@ -196,17 +186,14 @@ class TestFullLifecycleJourney:
         )
         assert kanon_file.is_file(), "add must create the committed .kanon"
         kanon_after_add = kanon_file.read_text(encoding="utf-8")
-        # The bare alias keys the block; _NAME carries the manifest name and the
-        # block records URL/REF/PATH for the hermetic install.
+
         assert _block_value(kanon_after_add, _ENTRY_NAME, "_NAME") == _ENTRY_NAME
         assert _block_value(kanon_after_add, _ENTRY_NAME, "_URL") is not None
         assert _block_value(kanon_after_add, _ENTRY_NAME, "_REF") is not None
         assert _block_value(kanon_after_add, _ENTRY_NAME, "_PATH") == _XML_REL_PATH
-        # add edits only .kanon -- no lock is written yet.
+
         assert not lock_file.exists(), "add must not write .kanon.lock"
 
-        # --- Step 2: install (hermetic) --------------------------------------
-        # install is driven solely by the committed .kanon and writes the lock.
         install_env = dict(base_env)
         install_env[_INSECURE_REMOTES_ENV] = _INSECURE_REMOTES_VALUE
         install_result = _run_kanon(
@@ -224,7 +211,6 @@ class TestFullLifecycleJourney:
         assert lock_file.is_file(), "install must write the committed .kanon.lock"
         assert _ENTRY_NAME in lock_file.read_text(encoding="utf-8"), "the lock must record the committed source alias"
 
-        # install is hermetic: it does not accept --catalog-source.
         reject_result = _run_kanon(
             "install",
             str(kanon_file),
@@ -237,9 +223,6 @@ class TestFullLifecycleJourney:
         assert "--catalog-source" in reject_result.stderr
         assert "unrecognized arguments" in reject_result.stderr
 
-        # --- Step 3: search --------------------------------------------------
-        # Discover the entry from the same source: name on stdout, per-source
-        # header on stderr (spec Section 4.1 / FR-9, FR-10).
         search_result = _run_kanon(
             "search",
             "--catalog-source",
@@ -254,14 +237,10 @@ class TestFullLifecycleJourney:
         assert _ENTRY_NAME in stdout_entries, (
             f"search stdout must list the catalog entry {_ENTRY_NAME!r}; got {search_result.stdout!r}"
         )
-        # The per-source header is on stderr, never on stdout (stdout stays pipeable).
+
         assert f"Source: {catalog_source}" in search_result.stderr
         assert "Source:" not in search_result.stdout
 
-        # --- Step 4: marketplace status --------------------------------------
-        # Render each dependency's alias + effective marketplace setting from
-        # .kanon. The added dep has no _MARKETPLACE line, so it reads disabled
-        # (spec Section 4.4 / FR-18).
         status_result = _run_kanon(
             "marketplace",
             "status",
@@ -283,8 +262,6 @@ class TestFullLifecycleJourney:
             f"a dependency with no _MARKETPLACE line must read {_SETTING_DISABLED!r}; got row {status_row!r}"
         )
 
-        # --- Step 5: remove --------------------------------------------------
-        # Remove the alias block from .kanon; the alias is gone afterwards.
         remove_result = _run_kanon(
             "remove",
             _ENTRY_NAME,

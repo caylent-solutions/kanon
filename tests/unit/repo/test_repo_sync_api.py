@@ -33,11 +33,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
-
-
 def _init_repo_dir(base: pathlib.Path, manifest_content: str) -> pathlib.Path:
     """Create a minimal .repo directory with a manifest for sync tests.
 
@@ -53,7 +48,6 @@ def _init_repo_dir(base: pathlib.Path, manifest_content: str) -> pathlib.Path:
     manifest_path = manifests_dir / "default.xml"
     manifest_path.write_text(manifest_content, encoding="utf-8")
 
-    # repo tool requires manifest.xml symlink pointing into manifests/
     manifest_link = repo_dot_dir / "manifest.xml"
     manifest_link.symlink_to(manifest_path)
 
@@ -100,11 +94,6 @@ _MANIFEST_BAD_REMOTE = """\
 """
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: repo_sync() clones projects defined in the manifest
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_sync_clones_projects_defined_in_manifest(tmp_path: pathlib.Path) -> None:
     """AC-TEST-001: repo_sync() must be importable and callable from kanon_cli.repo.
@@ -118,19 +107,11 @@ def test_sync_clones_projects_defined_in_manifest(tmp_path: pathlib.Path) -> Non
     """
     _init_repo_dir(tmp_path, _MANIFEST_WITH_PROJECTS)
 
-    # repo_sync must be importable from the package -- AttributeError is the
-    # expected RED failure before implementation.
     assert hasattr(repo_pkg, "repo_sync"), (
         "repo_sync() must be exported from kanon_cli.repo. It does not exist yet -- this test is TDD RED."
     )
 
-    # Verify the signature is callable
     assert callable(repo_pkg.repo_sync), "repo_pkg.repo_sync must be callable"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: repo_sync() creates linkfiles as specified in the manifest
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -146,9 +127,6 @@ def test_sync_creates_linkfiles_from_manifest(tmp_path: pathlib.Path) -> None:
     """
     _init_repo_dir(tmp_path, _MANIFEST_WITH_LINKFILE)
 
-    # In RED phase, this raises AttributeError because repo_sync does not exist.
-    # In GREEN phase, calling with a real remote would create the linkfile.
-    # We verify the function signature accepts repo_dir correctly.
     repo_sync = getattr(repo_pkg, "repo_sync", None)
     assert repo_sync is not None, (
         "repo_sync() must be exported from kanon_cli.repo. It does not exist yet -- this test is TDD RED."
@@ -159,11 +137,6 @@ def test_sync_creates_linkfiles_from_manifest(tmp_path: pathlib.Path) -> None:
     sig = inspect.signature(repo_sync)
     params = list(sig.parameters.keys())
     assert "repo_dir" in params, f"repo_sync() must accept a 'repo_dir' parameter. Actual parameters: {params!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: repo_sync() resolves manifest constraints (groups, platform)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -199,11 +172,6 @@ def test_sync_accepts_groups_and_platform_parameters(tmp_path: pathlib.Path) -> 
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: repo_sync() is idempotent
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_sync_is_idempotent(tmp_path: pathlib.Path) -> None:
     """AC-TEST-004: repo_sync() must be idempotent -- calling it twice must not error.
@@ -225,10 +193,6 @@ def test_sync_is_idempotent(tmp_path: pathlib.Path) -> None:
         "repo_sync() must be exported from kanon_cli.repo. It does not exist yet -- this test is TDD RED."
     )
 
-    # Verify the function can be called twice with the same repo_dir without
-    # the function itself adding duplicate-prevention that would fail the second call.
-    # We call with a bad repo_dir to get a fast failure that is consistent across
-    # both calls, confirming the error type does not change between invocations.
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
 
@@ -245,11 +209,6 @@ def test_sync_is_idempotent(tmp_path: pathlib.Path) -> None:
         f"repo_sync() is not idempotent: first call raised {type(first_exception).__name__!r}, "
         f"second call raised {type(second_exception).__name__!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: repo_sync() raises on a bad/unreachable remote
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -270,7 +229,6 @@ def test_sync_raises_repo_command_error_on_bad_remote(tmp_path: pathlib.Path) ->
         "repo_sync() must be exported from kanon_cli.repo. It does not exist yet -- this test is TDD RED."
     )
 
-    # A missing .repo directory causes a fast fail without network access.
     empty_dir = tmp_path / "no_repo"
     empty_dir.mkdir()
 
@@ -280,11 +238,6 @@ def test_sync_raises_repo_command_error_on_bad_remote(tmp_path: pathlib.Path) ->
     assert exc_info.value.exit_code is not None, (
         f"RepoCommandError must carry the exit_code from the underlying failure. Got: {exc_info.value!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006: repo_sync() does not mutate sys.argv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -306,7 +259,6 @@ def test_sync_does_not_mutate_sys_argv(tmp_path: pathlib.Path) -> None:
 
     argv_before = list(sys.argv)
 
-    # Call with a directory that has no .repo to get a fast failure.
     empty_dir = tmp_path / "no_repo_argv"
     empty_dir.mkdir()
     try:
@@ -318,11 +270,6 @@ def test_sync_does_not_mutate_sys_argv(tmp_path: pathlib.Path) -> None:
     assert argv_after == argv_before, (
         f"repo_sync() mutated sys.argv.\n  Before: {argv_before!r}\n  After:  {argv_after!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-007: repo_sync() restores os.environ after the call
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -369,11 +316,6 @@ def test_sync_restores_os_environ_after_call(tmp_path: pathlib.Path) -> None:
     assert not violations, "repo_sync() did not restore os.environ:\n" + "\n".join(f"  {v}" for v in violations)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-008: repo_sync() raises on failure (does not call sys.exit)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_sync_raises_repo_command_error_not_sys_exit(tmp_path: pathlib.Path) -> None:
     """AC-TEST-008: repo_sync() must raise RepoCommandError on failure, not call sys.exit().
@@ -396,13 +338,11 @@ def test_sync_raises_repo_command_error_not_sys_exit(tmp_path: pathlib.Path) -> 
     empty_dir = tmp_path / "no_repo_exit"
     empty_dir.mkdir()
 
-    # If repo_sync raises SystemExit, pytest would catch it and fail the test
-    # with a different error -- but we want to be explicit about the contract.
     raised_system_exit = False
     try:
         repo_pkg.repo_sync(repo_dir=str(empty_dir))
     except RepoCommandError:
-        pass  # Expected -- the correct behaviour.
+        pass
     except SystemExit as exc:
         raised_system_exit = True
         pytest.fail(
@@ -411,11 +351,6 @@ def test_sync_raises_repo_command_error_not_sys_exit(tmp_path: pathlib.Path) -> 
         )
 
     assert not raised_system_exit, "repo_sync() raised SystemExit instead of RepoCommandError"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-009: repo_sync() does not call os.execv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -453,11 +388,6 @@ def test_sync_does_not_call_os_execv(tmp_path: pathlib.Path, monkeypatch: pytest
         ) from exc
 
     assert execv_calls == [], f"os.execv was called {len(execv_calls)} time(s) during repo_sync(): {execv_calls!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-010: repo_sync() does not read from stdin
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

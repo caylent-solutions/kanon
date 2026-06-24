@@ -13,11 +13,6 @@ import pytest
 from kanon_cli.core.xml_validator import find_xml_files, validate_manifest, validate_xml
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: Validate XML integration tests (15 tests)
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: Path, content: str) -> Path:
     """Write XML content to path (creating parent dirs) and return path."""
     path.parent.mkdir(parents=True, exist_ok=True)

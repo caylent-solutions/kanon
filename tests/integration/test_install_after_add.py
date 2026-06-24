@@ -79,7 +79,6 @@ class TestInstallAfterAdd:
             f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
         )
 
-        # Remove any catalog-source env var so the install is truly bare.
         env = dict(os.environ)
         env.pop("KANON_CATALOG_SOURCES", None)
 
@@ -169,8 +168,7 @@ class TestInstallAfterAdd:
             f"got exit {install_result.returncode}.\n"
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
-        # The install subparser does not register --catalog-source (install is
-        # hermetic), so argparse rejects it fail-fast as an unrecognized argument.
+
         assert "--catalog-source" in install_result.stderr and "unrecognized arguments" in install_result.stderr, (
             f"kanon install --catalog-source must be rejected as an unrecognized argument.\n"
             f"  exit code: {install_result.returncode}\n"

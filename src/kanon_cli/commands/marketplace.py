@@ -48,34 +48,20 @@ from kanon_cli.constants import (
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
-# ---------------------------------------------------------------------------
-# Module-level presentation constants (spec Section 4.4 worked example)
-# ---------------------------------------------------------------------------
 
-# Effective-setting tokens rendered in the status table. The spec worked example
-# renders an enabled marketplace dependency as "enabled"; an absent line and a
-# hand-written ``=false`` render identically as "disabled".
 _STATUS_ENABLED = "enabled"
 _STATUS_DISABLED = "disabled"
 
-# Type token rendered for a dependency that carries no marketplace type marker in
-# .kanon (no ``_MARKETPLACE`` line). The command is offline and cannot resolve a
-# dependency's catalog ``<type>`` from the network, so a non-marketplace
-# dependency renders this neutral placeholder rather than a fabricated type.
+
 _TYPE_UNKNOWN = "--"
 
-# Column headers for the status table.
+
 _STATUS_HEADER_ALIAS = "ALIAS"
 _STATUS_HEADER_TYPE = "TYPE"
 _STATUS_HEADER_SETTING = "SETTING"
 
-# Minimum padding (in spaces) between rendered status columns.
+
 _STATUS_COLUMN_GAP = 2
-
-
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
 
 
 class MarketplaceAliasError(ValueError):
@@ -135,11 +121,6 @@ class NonMarketplaceTypeError(ValueError):
             "Re-add it with 'kanon add <entry> --marketplace-install' if it really "
             "is a marketplace entry."
         )
-
-
-# ---------------------------------------------------------------------------
-# Subparser registration
-# ---------------------------------------------------------------------------
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -308,11 +289,6 @@ def _register_status(
     status_parser.set_defaults(func=run_status)
 
 
-# ---------------------------------------------------------------------------
-# .kanon line model
-# ---------------------------------------------------------------------------
-
-
 def _read_lines(kanon_file: pathlib.Path) -> list[str]:
     """Read the ``.kanon`` file into a list of lines (newlines retained).
 
@@ -449,11 +425,6 @@ def _detect_newline(lines: list[str]) -> str:
     return "\n"
 
 
-# ---------------------------------------------------------------------------
-# enable / disable / status handlers
-# ---------------------------------------------------------------------------
-
-
 def _require_known_alias(lines: list[str], alias: str, kanon_file: pathlib.Path) -> None:
     """Fail fast when ``alias`` has no source block in ``.kanon``.
 
@@ -515,7 +486,6 @@ def run_enable(args: argparse.Namespace) -> int:
 
     idx = _marketplace_line_index(lines, alias)
     if idx is None:
-        # No _MARKETPLACE marker => the dependency is not a marketplace type.
         print(str(NonMarketplaceTypeError(alias=alias, kanon_file=kanon_file)), file=sys.stderr)
         sys.exit(1)
 
@@ -560,7 +530,6 @@ def run_disable(args: argparse.Namespace) -> int:
 
     idx = _marketplace_line_index(lines, alias)
     if idx is None:
-        # Already disabled (absence is the canonical false): nothing to remove.
         print(f"Marketplace install already disabled for '{alias}' in {kanon_file}")
         return 0
 

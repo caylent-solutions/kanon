@@ -47,21 +47,11 @@ from kanon_cli.core.install import (
 from kanon_cli.core.kanonenv import parse_kanonenv
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-010: Miscellaneous feature integration tests (24 tests)
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(path: pathlib.Path, content: str) -> pathlib.Path:
     """Write a .kanon file at path and return its absolute path."""
     kanonenv = path / ".kanon"
     kanonenv.write_text(content)
     return kanonenv
-
-
-# -------------------------------------------------------------------------
-# Constants module integrity
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -113,11 +103,6 @@ class TestConstantsModule:
         assert KANON_REPO_DIR_ENV
 
 
-# -------------------------------------------------------------------------
-# Version export
-# -------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestVersionExport:
     """Verify kanon_cli.__version__ is exported and non-empty."""
@@ -128,11 +113,6 @@ class TestVersionExport:
     def test_version_is_non_empty_string(self) -> None:
         assert isinstance(kanon_cli.__version__, str)
         assert len(kanon_cli.__version__) > 0
-
-
-# -------------------------------------------------------------------------
-# Install core business logic
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -185,11 +165,6 @@ class TestInstallCoreLogic:
         assert list(mp_dir.iterdir()) == []
 
 
-# -------------------------------------------------------------------------
-# Clean lifecycle
-# -------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanLifecycle:
     """Verify clean helper functions and full clean() lifecycle."""
@@ -224,18 +199,13 @@ class TestCleanLifecycle:
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
-        # Artifacts live under the shared KANON_HOME store, not next to .kanon.
+
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         (store_base / ".packages").mkdir(parents=True)
         (store_base / ".kanon-data").mkdir(parents=True)
         clean(kanonenv)
         assert not (store_base / ".packages").exists()
         assert not (store_base / ".kanon-data").exists()
-
-
-# -------------------------------------------------------------------------
-# kanonenv edge-case parsing
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -287,7 +257,7 @@ class TestKanonenvEdgeCases:
             patch("kanon_cli.repo.repo_sync"),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
-        # Install artifacts are written under the shared KANON_HOME store.
+
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert (store_base / ".kanon-data" / "sources" / "s").is_dir()
         assert (store_base / ".gitignore").is_file()

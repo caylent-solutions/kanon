@@ -40,11 +40,6 @@ from kanon_cli.core.lockfile import read_lockfile
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures: this module uses real local git repos
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
     """Override: let the test's own patch handle _resolve_ref_to_sha."""
@@ -55,11 +50,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: let the test's own subprocess.run patches handle reachability."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(*args: str, cwd: pathlib.Path) -> str:
@@ -179,11 +169,6 @@ def _run_install_with_real_sources(
         )
 
 
-# ===========================================================================
-# AC-TEST-002: refresh-lock-source rewrites only the named source
-# ===========================================================================
-
-
 @pytest.mark.integration
 class TestRefreshLockSourceRebuildsOnlyNamedSource:
     """AC-TEST-002: --refresh-lock-source rewrites only the named source's row."""
@@ -206,7 +191,6 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
         project_dir.mkdir()
         kanon_path = _write_two_source_kanon(project_dir, str(alpha_repo), str(beta_repo))
 
-        # Baseline install -- writes the lockfile with both 1.0.0 SHAs.
         _run_install_with_real_sources(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
@@ -218,10 +202,8 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
         assert alpha_baseline.resolved_sha == alpha_sha_v1
         assert beta_baseline.resolved_sha == beta_sha_v1
 
-        # Bump alpha to 1.1.0 on the remote.
         alpha_sha_v2 = _add_tag(alpha_repo, "1.1.0")
 
-        # Modify .kanon to point alpha at 1.1.0 so kanon_hash changes.
         kanon_path = _write_two_source_kanon(
             project_dir,
             str(alpha_repo),
@@ -230,20 +212,16 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
             beta_revision="==1.0.0",
         )
 
-        # Run --refresh-lock-source alpha.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
 
         lf_after = read_lockfile(lock_path)
         alpha_after = next(e for e in lf_after.sources if e.name == "alpha")
         beta_after = next(e for e in lf_after.sources if e.name == "beta")
 
-        # alpha row reflects the new SHA from 1.1.0.
         assert alpha_after.resolved_sha == alpha_sha_v2, (
             f"Expected alpha SHA {alpha_sha_v2!r}; got {alpha_after.resolved_sha!r}"
         )
 
-        # beta row is byte-equal to the baseline (excluding top-level kanon_hash
-        # and generated_at, which are not in SourceEntry).
         assert beta_after.resolved_sha == beta_sha_v1
         assert beta_after.url == beta_baseline.url
         assert beta_after.ref_spec == beta_baseline.ref_spec
@@ -265,13 +243,11 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
         project_dir.mkdir()
         kanon_path = _write_two_source_kanon(project_dir, str(alpha_repo), str(beta_repo))
 
-        # Baseline install.
         _run_install_with_real_sources(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
         lf_baseline = read_lockfile(lock_path)
 
-        # Bump alpha to 1.1.0 and rewrite .kanon.
         _add_tag(alpha_repo, "1.1.0")
         kanon_path = _write_two_source_kanon(
             project_dir,
@@ -281,16 +257,13 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
             beta_revision="==1.0.0",
         )
 
-        # First pass: refresh by literal source name.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
         lf_by_name = read_lockfile(lock_path)
 
-        # Reset the lockfile to baseline before the second pass.
         from kanon_cli.core.lockfile import write_lockfile
 
         write_lockfile(lf_baseline, lock_path)
 
-        # Rewrite .kanon again (same content) so the lock is re-valid.
         kanon_path = _write_two_source_kanon(
             project_dir,
             str(alpha_repo),
@@ -299,12 +272,9 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
             beta_revision="==1.0.0",
         )
 
-        # Second pass: refresh by derive_source_name form.
-        # 'Alpha' normalises to 'alpha' via derive_source_name (lowercase).
         _run_install_with_real_sources(kanon_path, refresh_lock_source="Alpha")
         lf_by_derive = read_lockfile(lock_path)
 
-        # The refreshed alpha SHAs must be identical.
         alpha_by_name = next(e for e in lf_by_name.sources if e.name == "alpha")
         alpha_by_derive = next(e for e in lf_by_derive.sources if e.name == "alpha")
         assert alpha_by_name.resolved_sha == alpha_by_derive.resolved_sha, (
@@ -312,15 +282,9 @@ class TestRefreshLockSourceRebuildsOnlyNamedSource:
             f"{alpha_by_name.resolved_sha!r} vs {alpha_by_derive.resolved_sha!r}"
         )
 
-        # The beta rows must also be identical.
         beta_by_name = next(e for e in lf_by_name.sources if e.name == "beta")
         beta_by_derive = next(e for e in lf_by_derive.sources if e.name == "beta")
         assert beta_by_name.resolved_sha == beta_by_derive.resolved_sha
-
-
-# ===========================================================================
-# AC-FUNC-003: --refresh-lock-source with unknown name raises UnknownSourceError
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -338,7 +302,6 @@ class TestRefreshLockSourceUnknownName:
         project_dir.mkdir()
         kanon_path = _write_two_source_kanon(project_dir, str(alpha_repo), str(beta_repo))
 
-        # Write a valid lockfile first.
         _run_install_with_real_sources(kanon_path)
 
         with pytest.raises(UnknownSourceError) as exc_info:
@@ -348,11 +311,6 @@ class TestRefreshLockSourceUnknownName:
         assert "gamma" in err_str
         assert "alpha" in err_str
         assert "beta" in err_str
-
-
-# ===========================================================================
-# AC-FUNC-007: kanon_hash is freshly computed on the refresh path
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -373,13 +331,11 @@ class TestRefreshLockSourceFreshKanonHash:
         project_dir.mkdir()
         kanon_path = _write_two_source_kanon(project_dir, str(alpha_repo), str(beta_repo))
 
-        # Baseline install.
         _run_install_with_real_sources(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
         lf_before = read_lockfile(lock_path)
 
-        # Bump alpha and rewrite .kanon to change kanon_hash.
         _add_tag(alpha_repo, "1.1.0")
         kanon_path = _write_two_source_kanon(
             project_dir,
@@ -389,26 +345,18 @@ class TestRefreshLockSourceFreshKanonHash:
             beta_revision="==1.0.0",
         )
 
-        # kanon_hash must differ now.
         expected_new_hash = compute_kanon_hash(kanon_path)
         assert expected_new_hash != lf_before.kanon_hash, (
             "Test setup error: kanon_hash should have changed after revision bump"
         )
 
-        # Run --refresh-lock-source alpha.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
 
         lf_after = read_lockfile(lock_path)
 
-        # The lockfile must record the freshly-computed kanon_hash.
         assert lf_after.kanon_hash == expected_new_hash, (
             f"Expected kanon_hash {expected_new_hash!r}; got {lf_after.kanon_hash!r}"
         )
-
-
-# ===========================================================================
-# E25-DEFECT-010: --refresh-lock-source summary line counters
-# ===========================================================================
 
 
 def _advance_bare_repo_tip(bare_path: pathlib.Path, new_tag: str, work_root: pathlib.Path) -> str:
@@ -541,7 +489,7 @@ class TestRefreshLockSourceCounters:
         synthetic fixture repos) instead of counting top-level source entries.
         The resulting broken output is "(0 projects refreshed; 0 projects preserved)".
         """
-        # Build two synthetic bare repos: catA and catB.
+
         cat_a_bare = _create_manifest_repo_with_tags(
             tmp_path / "catA",
             entry_names=["A"],
@@ -561,22 +509,19 @@ class TestRefreshLockSourceCounters:
             srcb_url=str(cat_b_bare),
         )
 
-        # Baseline install -- writes the lockfile with both 1.0.0 SHAs.
-        capsys.readouterr()  # discard any earlier output
+        capsys.readouterr()
         _run_install_with_real_sources(kanon_path)
-        capsys.readouterr()  # discard baseline output
+        capsys.readouterr()
 
         lock_path = project_dir / ".kanon.lock"
         assert lock_path.exists(), "Baseline install must write a lockfile; lockfile absent after install()"
 
-        # Advance catA's bare repo: new commit tagged 1.1.0.
         _advance_bare_repo_tip(
             bare_path=cat_a_bare,
             new_tag="1.1.0",
             work_root=tmp_path / "advance-work",
         )
 
-        # Rewrite .kanon to point srca at 1.1.0 so kanon_hash changes.
         kanon_path = _write_two_source_kanon_for_bare(
             project_dir,
             srca_url=str(cat_a_bare),
@@ -585,12 +530,10 @@ class TestRefreshLockSourceCounters:
             srcb_revision="==1.0.0",
         )
 
-        # Run --refresh-lock-source srca and capture stdout.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="srca")
         captured = capsys.readouterr()
         stdout = captured.out
 
-        # Assert the exact counter substring -- must match (1 ... 1 ...), not (0 ... 0 ...).
         expected_counter = "(1 project refreshed; 1 project preserved)"
         assert expected_counter in stdout, f"Expected stdout to contain {expected_counter!r}; got stdout={stdout!r}"
 
@@ -614,17 +557,14 @@ class TestRefreshLockSourceCounters:
         project_dir = tmp_path / "empty-project"
         project_dir.mkdir()
 
-        # Write a minimal .kanon with no KANON_SOURCE_* entries.
         kanon_path = project_dir / ".kanon"
         kanon_path.write_text(
             "GITBASE=https://unused.example.com\nCLAUDE_MARKETPLACES_DIR=/tmp/mktplc\nKANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_path.chmod(0o600)
 
-        capsys.readouterr()  # discard any earlier output
+        capsys.readouterr()
 
-        # Zero-source .kanon raises ValueError from kanonenv parsing
-        # (no KANON_SOURCE_* entries) before reaching the summary-line code.
         with pytest.raises(ValueError, match="No sources found"):
             _run_install_with_real_sources(kanon_path, refresh_lock_source="nonexistent")
 
@@ -634,11 +574,6 @@ class TestRefreshLockSourceCounters:
         assert "projects refreshed" not in stdout, (
             f"Counter line must not appear when workspace has zero sources; got stdout={stdout!r}"
         )
-
-
-# ===========================================================================
-# AC-FUNC-003 (E49-F6-S1-T1): both-direction assertions -- exact stays, range advances
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -679,7 +614,6 @@ class TestRefreshLockSourceExactVsRange:
             beta_revision="==1.0.0",
         )
 
-        # Baseline install using range spec -- resolves to 1.0.0 (only tag available).
         _run_install_with_real_sources(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
@@ -693,19 +627,15 @@ class TestRefreshLockSourceExactVsRange:
         )
         assert exactsrc_baseline.resolved_sha == exactsrc_sha_v1
 
-        # Publish 1.1.0 on both repos.
         rangesrc_sha_v2 = _add_tag(rangesrc_repo, "1.1.0")
         _add_tag(exactsrc_repo, "1.1.0")
 
-        # Run --refresh-lock-source alpha (the range-spec source).
-        # The .kanon still has >=1.0.0 for alpha -- no spec change needed.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
 
         lf_after = read_lockfile(lock_path)
         rangesrc_after = next(e for e in lf_after.sources if e.name == "alpha")
         exactsrc_after = next(e for e in lf_after.sources if e.name == "beta")
 
-        # Range-spec source must have advanced to the new 1.1.0 SHA.
         assert rangesrc_after.resolved_sha != rangesrc_sha_v1, (
             f"ERROR: range-spec source 'alpha' (>=1.0.0) did NOT advance SHA after "
             f"--refresh-lock-source + new tag 1.1.0. "
@@ -716,7 +646,6 @@ class TestRefreshLockSourceExactVsRange:
             f"expected {rangesrc_sha_v2!r} (the 1.1.0 tag commit SHA)"
         )
 
-        # Exact-pin source was the preserved (non-target) source -- its SHA must be unchanged.
         assert exactsrc_after.resolved_sha == exactsrc_sha_v1, (
             f"ERROR: exactsrc (non-target, preserved) SHA changed unexpectedly: "
             f"before={exactsrc_sha_v1!r}, after={exactsrc_after.resolved_sha!r}"
@@ -752,7 +681,6 @@ class TestRefreshLockSourceExactVsRange:
             beta_revision=">=1.0.0",
         )
 
-        # Baseline install.
         _run_install_with_real_sources(kanon_path)
 
         lock_path = project_dir / ".kanon.lock"
@@ -764,18 +692,14 @@ class TestRefreshLockSourceExactVsRange:
             f"Baseline exactsrc SHA mismatch: expected {exactsrc_sha_v1!r}, got {exactsrc_baseline.resolved_sha!r}"
         )
 
-        # Publish 1.1.0 on both repos.
         _add_tag(exactsrc_repo, "1.1.0")
         _add_tag(other_repo, "1.1.0")
 
-        # Run --refresh-lock-source alpha (the exact-pin source).
-        # The .kanon still has ==1.0.0 for alpha.
         _run_install_with_real_sources(kanon_path, refresh_lock_source="alpha")
 
         lf_after = read_lockfile(lock_path)
         exactsrc_after = next(e for e in lf_after.sources if e.name == "alpha")
 
-        # Exact-pin source must stay at the original SHA.
         assert exactsrc_after.resolved_sha == exactsrc_sha_v1, (
             f"ERROR: exact-pin source 'alpha' (==1.0.0) changed SHA after "
             f"--refresh-lock-source -- a pin must stay pinned. "

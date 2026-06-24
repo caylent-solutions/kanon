@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for envsubst edge cases.
 
 Covers the following edge cases from parser-rules.tsv ENVSUBST-005..006 and
@@ -50,11 +36,6 @@ import pytest
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd() -> Envsubst:
     """Return an Envsubst instance ready for direct method calls.
 
@@ -69,11 +50,6 @@ def _make_cmd() -> Envsubst:
 def _write_manifest(path: pathlib.Path, content: str) -> None:
     """Write manifest content to path with UTF-8 encoding."""
     path.write_text(content, encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Undefined variable warns and placeholder is preserved
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -214,11 +190,6 @@ def test_various_undefined_variable_names_warn(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Nested substitution ${${NESTED}} warns and does not expand
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_nested_substitution_logs_warning(
     tmp_path: pathlib.Path,
@@ -341,11 +312,6 @@ def test_nested_patterns_each_warn(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: $$ literal-dollar form works
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_double_dollar_preserved_in_output(tmp_path: pathlib.Path) -> None:
     """AC-TEST-003: EnvSubst() preserves $$ sequences unchanged in the output file.
@@ -465,11 +431,6 @@ def test_double_dollar_shapes_preserved(
         f"for annotation value {annotation_value!r}, but it was not found.\n"
         f"Output content:\n{result}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: ${VAR:-default} is explicitly rejected (not supported)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -612,12 +573,6 @@ def test_various_default_forms_all_preserved(
         "literally in the output (${VAR:-default} is not supported by envsubst), "
         f"but it was absent or modified.\nOutput content:\n{result}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: envsubst edge cases documented and tested
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

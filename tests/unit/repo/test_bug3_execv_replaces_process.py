@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 3: os.execv replaces process on RepoChangedException.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 3 -- main.py RepoChangedException
@@ -46,11 +32,6 @@ import pytest
 import kanon_cli.repo as repo_pkg
 import kanon_cli.repo.main as repo_main
 from kanon_cli.repo import RepoCommandError
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: os.execv is not called when RepoChangedException is raised
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -139,11 +120,6 @@ def test_os_execv_not_called_regardless_of_extra_args_in_repo_changed_exception(
         f"os.execv was called with extra_args={extra_args!r}. "
         f"Bug 3 regression: the embedded process would have been replaced."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: RepoCommandError is raised to the caller (not process replacement)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -237,11 +213,6 @@ def test_embedded_flag_is_false_after_repo_changed_exception_handling(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Error message includes actionable information
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_error_message_mentions_retry_limit_env_var(
     monkeypatch: pytest.MonkeyPatch,
@@ -333,7 +304,7 @@ def test_error_message_is_actionable_for_various_retry_limits(
     assert str(retry_limit) in message, (
         f"retry_limit={retry_limit}: message must include the limit value. Got: {message!r}"
     )
-    # _Main is invoked once per attempt: initial + retries = retry_limit + 1
+
     expected_invocations = retry_limit + 1
     assert invocation_count[0] == expected_invocations, (
         f"retry_limit={retry_limit}: expected {expected_invocations} _Main invocations "

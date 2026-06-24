@@ -28,8 +28,7 @@ def _load_doc() -> str:
 class TestT14EnvDependencyNotes:
     def test_rp_init_07_has_environment_dependency_note(self) -> None:
         doc = _load_doc()
-        # The block extends until the next `### ` so we capture the env note that
-        # follows the Pass criteria.
+
         match = re.search(
             r"^### RP-init-07.*?(?=^### )",
             doc,
@@ -46,8 +45,7 @@ class TestT14EnvDependencyNotes:
 
     def test_rp_upload_section_has_environment_dependency_note(self) -> None:
         doc = _load_doc()
-        # The §25 preamble (between the section heading and the first scenario
-        # heading) must contain the env-dependency block.
+
         match = re.search(
             r"^## 25\..*?Code-Review Workflows.*?(?=^### )",
             doc,
@@ -61,14 +59,3 @@ class TestT14EnvDependencyNotes:
         assert "accepted-env-failures.md" in preamble, (
             "§25 env note must reference the archive's accepted-env-failures.md"
         )
-
-    # The third assertion that originally lived here checked for the archive
-    # file `kanon-migration-backlog/it-run-archives/.../accepted-env-failures.md`.
-    # That file lives in a *sibling* repo (`kanon-migration-backlog`), not in
-    # the `kanon` repository checked out by CI. Asserting on a sibling-repo
-    # path made the kanon test suite fail in any environment where the
-    # sibling clone is absent. The integrity of that archive is the
-    # responsibility of the `kanon-migration-backlog` repository's own CI;
-    # the cross-reference in `docs/integration-testing.md` is verified by
-    # the assertions above (presence of the `accepted-env-failures.md`
-    # filename string in the env-dependency note).

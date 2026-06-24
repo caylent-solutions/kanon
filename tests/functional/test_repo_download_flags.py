@@ -69,68 +69,53 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon, _setup_synced_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Git identity used when creating the fixture bare repos.
 _GIT_USER_NAME = "Repo Download Flags Test User"
 _GIT_USER_EMAIL = "repo-download-flags@example.com"
 
-# Manifest project name and worktree path for the download fixture.
+
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "download-flags-test-project"
 
-# Gerrit-style change fixture constants.
+
 _CHANGE_ID = 456
 _PATCH_SET_ID = 1
-_CHANGE_DIR_BUCKET = _CHANGE_ID % 100  # 56
+_CHANGE_DIR_BUCKET = _CHANGE_ID % 100
 _GERRIT_REF = f"refs/changes/{_CHANGE_DIR_BUCKET:02d}/{_CHANGE_ID}/{_PATCH_SET_ID}"
 
-# File committed to the bare repo to create a downloadable change.
+
 _DOWNLOAD_CONTENT_FILE = "download-flags-change.txt"
 _DOWNLOAD_CONTENT_TEXT = "content for download flags functional test"
 _DOWNLOAD_COMMIT_MSG = "Add downloadable change for flags functional test"
 
-# Serialised change positional argument strings.
+
 _CHANGE_WITH_PATCHSET = f"{_CHANGE_ID}/{_PATCH_SET_ID}"
 
-# Exit codes.
+
 _EXPECTED_EXIT_CODE = 0
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo dir path fragment -- no real .repo under this path; used
-# for pure argument-parser acceptance and rejection tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-download-flags-repo-dir"
 
-# Inline-value suffix for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value'.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# CLI token constants.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_DOWNLOAD = "download"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 
-# A valid positional arg accepted by the argument parser (even without a repo).
+
 _DUMMY_CHANGE_ARG = "999/1"
 
-# ---------------------------------------------------------------------------
-# Download-specific boolean store_true flags (short and long forms).
-# Tuples are (flag_token, test_id).
-# ---------------------------------------------------------------------------
 
-# Flags that are accepted by the argument parser when passed alone (no special
-# preconditions required for ValidateOptions to pass).
-# Note: -x / --record-origin are excluded here because ValidateOptions exits 2
-# when they are passed without --cherry-pick. Their acceptance test is covered
-# by test_record_origin_with_cherry_pick_accepted.
 _DOWNLOAD_BOOL_STORE_TRUE_FLAGS_STANDALONE: list[tuple[str, str]] = [
     ("-c", "short-cherry-pick"),
     ("--cherry-pick", "long-cherry-pick"),
@@ -140,8 +125,7 @@ _DOWNLOAD_BOOL_STORE_TRUE_FLAGS_STANDALONE: list[tuple[str, str]] = [
     ("--ff-only", "long-ff-only"),
 ]
 
-# Long-form download boolean flags only -- for inline-value negative tests.
-# Short-form flags do not support '--flag=value' syntax in optparse.
+
 _DOWNLOAD_LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--cherry-pick", "cherry-pick"),
     ("--record-origin", "record-origin"),
@@ -149,7 +133,7 @@ _DOWNLOAD_LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--ff-only", "ff-only"),
 ]
 
-# Common-options boolean store_true flags (shared by all subcommands).
+
 _COMMON_BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -157,7 +141,7 @@ _COMMON_BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Common-options boolean store_false flags.
+
 _COMMON_BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -166,7 +150,7 @@ _COMMON_BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Long-form common boolean flags for inline-value negative tests.
+
 _COMMON_LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--verbose", "verbose"),
     ("--outer-manifest", "outer-manifest"),
@@ -176,11 +160,6 @@ _COMMON_LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--no-this-manifest-only", "no-this-manifest-only"),
     ("--all-manifests", "all-manifests"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Fixture setup helpers
-# ---------------------------------------------------------------------------
 
 
 def _add_gerrit_change_to_bare_repo(
@@ -284,12 +263,6 @@ def _setup_download_flags_repo(
     _add_gerrit_change_to_bare_repo(bare_repo)
 
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in download.py
-# (Also covers AC-FUNC-001 for common boolean flags and the --branch flag.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -437,11 +410,6 @@ class TestRepoDownloadFlagsValidValues:
             f"'-x --cherry-pick' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with typed or inline values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -706,11 +674,6 @@ class TestRepoDownloadFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDownloadFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -809,11 +772,6 @@ class TestRepoDownloadFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -963,11 +921,6 @@ class TestRepoDownloadFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

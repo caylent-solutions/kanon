@@ -13,20 +13,11 @@ from unittest.mock import patch
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Spec-verbatim error wording
-# ---------------------------------------------------------------------------
-
 _SPEC_ERROR_MSG = (
     "manifest repo has no PEP 440-valid tags; pin to a branch or SHA"
     " explicitly (e.g., 'kanon add foo@main') or ask the catalog author"
     " to publish a release tag."
 )
-
-
-# ---------------------------------------------------------------------------
-# Helper: call _resolve_spec with a mocked _list_tags return value
-# ---------------------------------------------------------------------------
 
 
 def _call_resolve_spec(tags: list[str], url: str = "https://example.com/repo.git") -> None:
@@ -43,11 +34,6 @@ def _call_resolve_spec(tags: list[str], url: str = "https://example.com/repo.git
 
     with patch.object(add_mod, "_list_tags", return_value=tags):
         add_mod._resolve_spec(url, spec=None)
-
-
-# ---------------------------------------------------------------------------
-# Parameterised tests: zero-tags-total vs zero-PEP-440-tags
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -118,9 +104,9 @@ class TestResolveSpecZeroPEP440TagsListsSkipped:
         with pytest.raises(SystemExit):
             _call_resolve_spec(many_non_pep440)
         captured = capsys.readouterr()
-        # Verify the spec-verbatim error is there
+
         assert _SPEC_ERROR_MSG in captured.err, f"spec-verbatim error not found in stderr: {captured.err!r}"
-        # Count how many "bad-tag-" occurrences appear in the skipped list
+
         listed_count = captured.err.count("bad-tag-")
         assert listed_count <= 10, f"expected at most 10 skipped tags listed, found {listed_count}"
 

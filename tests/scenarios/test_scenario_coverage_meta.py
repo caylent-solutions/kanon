@@ -48,7 +48,7 @@ def _scenario_ids_referenced_in_tests() -> set[str]:
         text = path.read_text()
         for match in pattern.finditer(text):
             ids.add(match.group(1))
-        # Also collect from filename (lowercase ids like hv-01 -> HV-01).
+
         for match in pattern.finditer(path.name.upper().replace("_", "-")):
             ids.add(match.group(1))
     return ids

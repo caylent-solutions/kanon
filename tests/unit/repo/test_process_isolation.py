@@ -22,9 +22,8 @@ import kanon_cli.repo.main as repo_main
 from kanon_cli.repo import RepoCommandError
 
 _SENTINEL_REPO_DIR = "/nonexistent/.repo"
-# Use an unknown subcommand so _Main raises SystemExit(1) immediately after
-# printing "not a repo command", without attempting any git operations that
-# would fail with GitCommandError on a nonexistent repo directory.
+
+
 _SENTINEL_ARGS = ["kanon-nonexistent-subcommand-sentinel"]
 
 
@@ -189,8 +188,6 @@ def test_repo_changed_retries_without_execv_and_raises_on_exhaustion(
 
     monkeypatch.setattr(os, "execv", _record_execv)
 
-    # Patch _Main to always raise _ExecvIntercepted, simulating a scenario
-    # where every invocation triggers a RepoChangedException -> os.execv path.
     def _always_intercept(argv: list[str]) -> None:
         raise repo_main._ExecvIntercepted("/fake/python", list(argv))
 

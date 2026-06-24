@@ -20,17 +20,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Marketplace XML for a catalog entry that points to a project repo.
-# The outdated command reads the .kanon file directly; the catalog is used
-# only to resolve available tags via git ls-remote. The marketplace XML
-# structure is required for the catalog resolver to accept the repo.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -47,10 +40,7 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Minimal .kanon file content with a single source.
-# {name} -- uppercased source name for env-var key
-# {url} -- file:// URL to the bare project repo
-# {revision} -- PEP 440 constraint string (e.g. ">=1.0.0,<1.1")
+
 _KANON_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_URL={url}
     KANON_SOURCE_{name_upper}_REF={revision}
@@ -58,11 +48,6 @@ _KANON_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_NAME={name_upper}
     KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -103,11 +88,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _create_project_repo_with_tags(
     base: pathlib.Path,
     name: str,
@@ -129,7 +109,6 @@ def _create_project_repo_with_tags(
     work_dir.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(work_dir)
 
-    # Initial file so we have something to commit
     (work_dir / "README.md").write_text(f"# {name}\n")
     _git(["add", "."], cwd=work_dir)
     _git(["commit", "-m", "Initial commit"], cwd=work_dir)
@@ -177,11 +156,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -210,11 +184,6 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestOutdatedCoreTableOutput:
     """End-to-end kanon outdated test against a real file:// catalog.
@@ -230,19 +199,17 @@ class TestOutdatedCoreTableOutput:
         Expected row: current=1.0.0, latest-matching-spec=1.0.1,
                       latest-available=1.1.0, upgrade-type=patch.
         """
-        # Build the project repo (bare) with three tags
+
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
         project_bare = _create_project_repo_with_tags(project_base, "foo", ["1.0.0", "1.0.1", "1.1.0"])
         project_url = f"file://{project_bare}"
 
-        # Build the manifest (catalog) repo
         manifest_base = tmp_path / "manifest-repos"
         manifest_base.mkdir()
         manifest_bare = _create_manifest_repo(manifest_base, ["foo"])
         catalog_source = f"file://{manifest_bare}@main"
 
-        # Write the .kanon file
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
@@ -255,13 +222,11 @@ class TestOutdatedCoreTableOutput:
         kanon_file.write_text(kanon_content)
         kanon_file.chmod(0o644)
 
-        # Resolve the SHA for tag 1.0.0 so we can write a lockfile
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
         ).split("\t")[0]
 
-        # Write a minimal lockfile pinning foo to the 1.0.0 SHA
         lock_file = workspace / ".kanon.lock"
         lock_content = (
             "schema_version = 4\n"
@@ -406,7 +371,6 @@ class TestOutdatedCoreTableOutput:
         )
         kanon_file.chmod(0o644)
 
-        # No lockfile -- live resolve should pick highest matching (1.0.1)
         result = _run_kanon(
             [
                 "outdated",
@@ -420,8 +384,7 @@ class TestOutdatedCoreTableOutput:
         assert result.returncode == 0, (
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Live-resolved current should equal latest-matching-spec (1.0.1)
-        # so upgrade-type is none
+
         assert "1.0.1" in result.stdout, f"Expected 1.0.1 in output:\n{result.stdout}"
         assert "none" in result.stdout, f"Expected upgrade-type=none in output:\n{result.stdout}"
 

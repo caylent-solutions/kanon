@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T3: git ls-remote not retried on transient errors.
 
 Bug reference: E0-F6-S2-T3 / Bug 7 -- git ls-remote calls used by
@@ -54,11 +40,6 @@ import pytest
 from kanon_cli.repo.error import ManifestInvalidRevisionError
 from kanon_cli.repo import project as project_module
 from kanon_cli.repo.project import Project
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(remote_url="https://git.example.com/org/library.git"):
@@ -122,11 +103,6 @@ def _make_success(tags=("refs/tags/dev/regression-library/1.0.0",)):
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- regression: transient failure is retried and recovers
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_transient_failure_is_retried_and_recovers(monkeypatch):
     """AC-TEST-001: A transient git ls-remote failure must be retried until success.
@@ -186,11 +162,6 @@ def test_regression_transient_failure_is_retried_and_recovers(monkeypatch):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- exact bug condition from E0-F6-S2-T3
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_exact_bug_condition_single_transient_failure(monkeypatch):
     """AC-TEST-002: The exact E0-F6-S2-T3 bug condition: no retry on transient fail.
@@ -244,11 +215,6 @@ def test_regression_exact_bug_condition_single_transient_failure(monkeypatch):
         f"Actual: {mock_run.call_count}. "
         "A count of 1 indicates the retry loop was removed (Bug 7 regressed)."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- current fixed code passes multiple retry scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -338,11 +304,6 @@ def test_regression_fixed_code_retries_and_resolves(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: _run_ls_remote_with_retry present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_ls_remote_retry_helper_present_in_project_source():
     """AC-FUNC-001: The retry helper _run_ls_remote_with_retry is in project.py.
@@ -383,11 +344,6 @@ def test_regression_ls_remote_retry_helper_present_in_project_source():
         "KANON_GIT_RETRY_COUNT times has been removed. "
         "Restore the retry loop in project.py _run_ls_remote_with_retry()."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline for retry warnings
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

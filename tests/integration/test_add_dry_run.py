@@ -23,14 +23,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal marketplace XML for a named entry.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -46,11 +42,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers (shared with test_add_core.py pattern)
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -106,11 +97,6 @@ def _create_manifest_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -132,11 +118,6 @@ def _run_kanon(
 def _sha256(path: pathlib.Path) -> str:
     """Return the SHA-256 hex digest of a file's content."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: --dry-run
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -254,7 +235,7 @@ class TestAddDryRun:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
-        # Pre-populate with an existing entry-a block at 1.0.0
+
         kanon_file.write_text(
             "GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
             "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\n"
@@ -266,10 +247,6 @@ class TestAddDryRun:
         )
         sha_before = _sha256(kanon_file)
 
-        # 3.0.0: --force overwrites a re-add of the SAME package (same source@ref).
-        # The existing block is at refs/tags/1.0.0, so the re-add resolves the
-        # same ref (==1.0.0). The dry-run diff shows the existing partial block
-        # removed ('-') and the normalised block (with _NAME/_GITBASE) added ('+').
         result = _run_kanon(
             [
                 "add",
@@ -285,19 +262,12 @@ class TestAddDryRun:
         )
 
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
-        # Must show minus lines for the removed existing block and plus lines for
-        # the rewritten block; the alias stays keyed by the bare alias (overwrite,
-        # not auto-suffix), and the normalised block adds the _NAME line.
+
         assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
         assert "+KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
         assert "+KANON_SOURCE_entry_a_NAME=entry-a" in result.stdout
-        # File must not be modified
+
         assert _sha256(kanon_file) == sha_before, "File content changed during --dry-run --force"
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: --force overwrite
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -379,11 +349,10 @@ class TestAddForce:
         assert result.returncode == 0, f"--force re-add must exit 0.\nstderr: {result.stderr!r}"
 
         content = kanon_file.read_text()
-        # The block stays keyed by the bare alias (overwrite, not auto-suffix) at
-        # the same ref, normalised with the full key set.
+
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
         assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
-        # No auto-suffixed alias was created.
+
         assert "KANON_SOURCE_entry_a_manifest_bare_URL" not in content
 
     def test_force_preserves_surrounding_content(self, tmp_path: pathlib.Path) -> None:
@@ -424,18 +393,13 @@ class TestAddForce:
         )
 
         content = kanon_file.read_text()
-        # Pre-existing header line preserved
+
         assert "GITBASE=" in content
-        # entry-b block preserved (the force overwrite touches only entry-a)
+
         assert "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0" in content
-        # entry-a re-pinned at the same ref, normalised with the _NAME key
+
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
         assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: collision-error path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -506,11 +470,7 @@ class TestAddCollisionError:
             ],
             cwd=workspace,
         )
-        # Must name the source name and relevant details.
-        # The existing mapping was stored with the canonical git ref form
-        # ("refs/tags/1.0.0"); the requested mapping is reported with the raw
-        # PEP 440 specifier the user supplied on the command line ("==1.0.0")
-        # because that is what surfaces the collision before any ref resolution.
+
         assert "entry_a" in result.stderr
         assert "refs/tags/1.0.0" in result.stderr
         assert "==1.0.0" in result.stderr
@@ -585,11 +545,6 @@ class TestAddCollisionError:
         assert _sha256(kanon_file) == sha_before, "File was modified on collision error"
 
 
-# ---------------------------------------------------------------------------
-# Integration tests: within-request collision
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAddWithinRequestCollision:
     """kanon add a a exits non-zero before any catalog work."""
@@ -661,11 +616,6 @@ class TestAddWithinRequestCollision:
         assert result.returncode != 0
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle evidence
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAddCycleEvidence:
     """AC-CYCLE-001: Full end-to-end cycle with entry-a and entry-b.
@@ -690,7 +640,6 @@ class TestAddCycleEvidence:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # Step 2: kanon add entry-a => triple written
         result = _run_kanon(
             [
                 "add",
@@ -710,7 +659,6 @@ class TestAddCycleEvidence:
         assert "KANON_SOURCE_entry_a_NAME=" in content_after_add
         assert "KANON_SOURCE_entry_a_GITBASE=" in content_after_add
 
-        # Step 3: kanon add entry-a (collision) => hard error
         result2 = _run_kanon(
             [
                 "add",
@@ -725,10 +673,9 @@ class TestAddCycleEvidence:
         assert result2.returncode != 0, "Expected non-zero exit on collision"
         assert "entry_a" in result2.stderr
         assert "refs/tags/1.0.0" in result2.stderr
-        # Spec-canonical: --force or kanon remove referenced
+
         assert "--force" in result2.stderr or "kanon remove" in result2.stderr
 
-        # Step 4: kanon add entry-a --force => block overwritten
         result3 = _run_kanon(
             [
                 "add",
@@ -743,10 +690,9 @@ class TestAddCycleEvidence:
         )
         assert result3.returncode == 0, f"Step 4 failed.\nstdout: {result3.stdout!r}\nstderr: {result3.stderr!r}"
         content_after_force = kanon_file.read_text()
-        # Block still present (same tags, same content)
+
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_force
 
-        # Step 5: kanon add entry-a --dry-run => diff, no file change
         sha_before_dry = _sha256(kanon_file)
         result4 = _run_kanon(
             [
@@ -766,7 +712,6 @@ class TestAddCycleEvidence:
         sha_after_dry = _sha256(kanon_file)
         assert sha_before_dry == sha_after_dry, "File changed during dry-run"
 
-        # Step 6: kanon add entry-a entry-a => within-request hard error
         result5 = _run_kanon(
             [
                 "add",

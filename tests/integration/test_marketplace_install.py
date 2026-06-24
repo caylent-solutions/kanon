@@ -32,11 +32,6 @@ from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
     """Write a .kanon file with given content in directory and return its path.
 
@@ -96,11 +91,6 @@ def _create_marketplace_fixture(marketplace_dir: pathlib.Path, name: str = "test
     plugin_meta.mkdir()
     (plugin_meta / "marketplace.json").write_text(json.dumps({"name": name}))
     return entry
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: KANON_MARKETPLACE_INSTALL=true + CLAUDE_MARKETPLACES_DIR set
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -168,11 +158,6 @@ class TestMarketplaceInstallTrue:
         assert str(passed_dir) == str(marketplace_dir), (
             f"install_marketplace_plugins called with wrong dir: expected {marketplace_dir!r}, got {passed_dir!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: KANON_MARKETPLACE_INSTALL=true + CLAUDE_MARKETPLACES_DIR unset
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -263,11 +248,6 @@ class TestMarketplaceInstallMissingDir:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: KANON_MARKETPLACE_INSTALL=false or omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestMarketplaceInstallFalse:
     """AC-TEST-003: Marketplace path is skipped when flag is false or absent.
@@ -340,11 +320,6 @@ class TestMarketplaceInstallFalse:
         assert not mock_mp.called, (
             "install_marketplace_plugins must NOT be called when no dependency opts into the marketplace"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Marketplace install is cleaned up by kanon clean
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -432,7 +407,6 @@ class TestMarketplaceCleanup:
             (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
-        # -- install phase: real prepare_marketplace_dir creates the directory
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -443,7 +417,6 @@ class TestMarketplaceCleanup:
 
         assert marketplace_dir.exists(), f"Marketplace dir must exist after install; not found at {marketplace_dir}"
 
-        # -- clean phase: uninstall_marketplace_plugins mocked; dir removal is real
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 

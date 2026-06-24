@@ -25,10 +25,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared manifest setup helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -99,11 +95,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: <include> element resolution
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -220,11 +211,6 @@ def test_include_nested_two_levels_resolves_all_projects(tmp_path: pathlib.Path)
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: <remote> definitions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_remote_single_definition_parsed(tmp_path: pathlib.Path) -> None:
     """A single <remote> element is parsed with the correct name and fetch URL.
@@ -318,11 +304,6 @@ def test_remote_missing_fetch_attribute_raises_manifest_parse_error(tmp_path: pa
     assert error_message, "Expected a non-empty error message from ManifestParseError but got an empty string"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: <default> settings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_default_revision_applied_to_project(tmp_path: pathlib.Path) -> None:
     """The <default> revision is inherited by projects without an explicit revision.
@@ -380,11 +361,6 @@ def test_default_sync_j_and_sync_c_parsed(tmp_path: pathlib.Path) -> None:
     assert manifest.default.sync_c is True, (
         f"Expected manifest default sync-c=True but got: {manifest.default.sync_c!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: <manifest-group> elements / project group filtering
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -462,11 +438,6 @@ def test_every_project_has_implicit_all_group(tmp_path: pathlib.Path) -> None:
             f"Expected project '{project.name}' to match manifest group filter ['all'] "
             f"but MatchesGroups returned False. project.groups={project.groups!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Malformed XML error handling
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

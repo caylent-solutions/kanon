@@ -44,18 +44,7 @@ from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
 
-# ---------------------------------------------------------------------------
-# Module-level private constants
-# ---------------------------------------------------------------------------
-
-# Maximum number of consecutive blank lines preserved after blank-run collapse.
-# Runs of more than this threshold are collapsed down to this value.
 _BLANK_RUN_MAX_PRESERVED = 2
-
-
-# ---------------------------------------------------------------------------
-# Subparser registration
-# ---------------------------------------------------------------------------
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -151,11 +140,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     parser.set_defaults(func=run_remove)
 
 
-# ---------------------------------------------------------------------------
-# Private helpers -- line scanner
-# ---------------------------------------------------------------------------
-
-
 def _scan_source_lines(lines: list[str], normalized: str) -> set[int]:
     """Return the set of line indices that match KANON_SOURCE_<alias>_* block keys.
 
@@ -220,11 +204,6 @@ def _collect_removal_lines(
     return matched
 
 
-# ---------------------------------------------------------------------------
-# Private helpers -- line-ending detection and file-writing rules
-# ---------------------------------------------------------------------------
-
-
 def _detect_dominant_line_ending(raw_text: str) -> str | None:
     """Detect the dominant line ending in raw_text.
 
@@ -240,13 +219,11 @@ def _detect_dominant_line_ending(raw_text: str) -> str | None:
         should normalise to LF and warn).
     """
     crlf_count = raw_text.count("\r\n")
-    lf_count = raw_text.count("\n") - crlf_count  # bare LF only
+    lf_count = raw_text.count("\n") - crlf_count
 
     if crlf_count == 0 and lf_count == 0:
-        # No newlines at all -- default to LF.
         return "\n"
     if crlf_count == lf_count:
-        # Tie -- mixed; return None so caller warns and normalises.
         return None
     return "\r\n" if crlf_count > lf_count else "\n"
 
@@ -268,12 +245,9 @@ def _apply_file_writing_rules(raw_text: str, dominant_ending: str) -> str:
     Returns:
         The processed text string with the rules applied.
     """
-    # Step 1: Normalise to bare LF for processing.
+
     normalised = raw_text.replace("\r\n", "\n")
 
-    # Step 2: Collapse runs of 3+ consecutive blank lines to exactly 2.
-    # A "blank line" is a line that is empty after stripping (i.e. contains
-    # only whitespace or nothing). We use a line-by-line approach.
     input_lines = normalised.split("\n")
     output_lines: list[str] = []
     blank_run = 0
@@ -282,27 +256,19 @@ def _apply_file_writing_rules(raw_text: str, dominant_ending: str) -> str:
             blank_run += 1
             if blank_run <= _BLANK_RUN_MAX_PRESERVED:
                 output_lines.append(line)
-            # else: discard the extra blank line (run > max collapses to max)
+
         else:
             blank_run = 0
             output_lines.append(line)
 
-    # Step 3: Ensure exactly one trailing newline.
-    # Reconstruct the text, then strip trailing blank lines and add one newline.
     text = "\n".join(output_lines)
     text = text.rstrip("\n")
     text = text + "\n"
 
-    # Step 4: Re-apply dominant ending.
     if dominant_ending == "\r\n":
         text = text.replace("\n", "\r\n")
 
     return text
-
-
-# ---------------------------------------------------------------------------
-# Private helpers -- dry-run diff renderer
-# ---------------------------------------------------------------------------
 
 
 def _render_remove_dry_run_diff(
@@ -323,11 +289,6 @@ def _render_remove_dry_run_diff(
         raw_line = lines[idx]
         clean = raw_line.rstrip("\r\n")
         print(f"-{clean}")
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 def run_remove(args: argparse.Namespace) -> int:
@@ -365,59 +326,43 @@ def run_remove(args: argparse.Namespace) -> int:
     raw_text = raw_bytes.decode("utf-8")
     lines = raw_text.splitlines(keepends=True)
 
-    # Validate ALL names first (atomicity pre-flight).
-    # When --force is set, sources that are not fully present (fewer than 3 keys)
-    # are silently skipped rather than causing a hard error; known sources are
-    # still validated and collected for atomic removal.
     removal_plan: list[tuple[str, str, set[int]]] = []
     for input_name in args.names:
         normalized = derive_source_name(input_name)
         if force:
             matched = _scan_source_lines(lines, normalized)
             if len(matched) < 3:
-                # Silently skip this source -- it is not fully present.
                 continue
             indices: set[int] = matched
         else:
-            # _collect_removal_lines calls sys.exit on failure -- no write occurs.
             indices = _collect_removal_lines(lines, normalized, input_name)
         removal_plan.append((input_name, normalized, indices))
 
-    # Build the combined set of line indices to remove across all sources.
     all_removal_indices: set[int] = set()
     for _input_name, _normalized, indices in removal_plan:
         all_removal_indices |= indices
 
     if dry_run:
-        # Print the diff that WOULD be written; make no on-disk change.
         _render_remove_dry_run_diff(lines, all_removal_indices)
         return 0
 
-    # Normal write path: acquire the workspace exclusive lock before any file
-    # write so a concurrent kanon install cannot read a half-written .kanon.
     workspace_root = kanon_file.resolve().parent
     with kanon_workspace_lock(workspace_root):
-        # Detect line endings, apply file-writing rules, write.
         dominant_ending = _detect_dominant_line_ending(raw_text)
         if dominant_ending is None:
-            # Mixed line endings -- warn and normalise to LF.
             print(
                 f".kanon file {kanon_file} has mixed line endings; normalising to LF",
                 file=sys.stderr,
             )
             dominant_ending = "\n"
 
-        # Build kept lines (all lines except the removal set).
         kept_lines = [line for idx, line in enumerate(lines) if idx not in all_removal_indices]
         kept_text = "".join(kept_lines)
 
-        # Apply file-writing rules (blank-run collapse, trailing newline, line endings).
         final_text = _apply_file_writing_rules(kept_text, dominant_ending)
 
-        # Write the file using raw bytes to preserve the exact line ending chosen.
         kanon_file.write_bytes(final_text.encode("utf-8"))
 
-    # Emit one summary line per removed source (outside lock -- read-only).
     for _input_name, normalized, _indices in removal_plan:
         key_names = ", ".join(f"{SOURCE_PREFIX}{normalized}{suffix}" for suffix in SOURCE_SUFFIXES)
         print(f"Removed {key_names} from {kanon_file}")

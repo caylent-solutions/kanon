@@ -136,11 +136,6 @@ def _auto_create_manifest_on_walk():
         yield
 
 
-# ---------------------------------------------------------------------------
-# Default values for the shared git helpers.  Consumer test modules supply
-# their own constants via keyword arguments to keep test isolation.
-# ---------------------------------------------------------------------------
-
 _DEFAULT_GIT_USER_NAME = "Shared Helper Test User"
 _DEFAULT_GIT_USER_EMAIL = "shared-helper@example.com"
 _DEFAULT_PROJECT_NAME = "content-bare"
@@ -151,22 +146,16 @@ _DEFAULT_CONTENT_FILE_TEXT = "hello from shared conftest helper"
 _DEFAULT_MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _DEFAULT_GIT_BRANCH = "main"
 
-# ---------------------------------------------------------------------------
-# Shared constants for smartsync test modules
-# ---------------------------------------------------------------------------
 
-# Localhost bind address for the XMLRPC manifest server fixture.
 _XMLRPC_HOST = "127.0.0.1"
 
-# Manifest-server URL template (formatted with the port at fixture time).
+
 _MANIFEST_SERVER_URL_TEMPLATE = "http://{host}:{port}"
 
-# Path within the .repo directory to the checked-out manifest file.
+
 _REPO_MANIFESTS_SUBPATH = "manifests"
 
-# Manifest XML template that includes a manifest-server element.
-# Used both to patch the checked-out manifest and as the approved-manifest
-# response returned by the XMLRPC server.
+
 _MANIFEST_XML_TEMPLATE = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -177,69 +166,59 @@ _MANIFEST_XML_TEMPLATE = (
     "</manifest>\n"
 )
 
-# Phrase expected in the success output of 'kanon repo smartsync'.
+
 _SUCCESS_PHRASE = "repo sync has finished successfully."
 
-# CLI token constants shared between smartsync test modules.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_SMARTSYNC = "smartsync"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 
-# Jobs flag shared between smartsync happy-path and flag-coverage test modules.
+
 _CLI_FLAG_JOBS_ONE = "--jobs=1"
 
-# Composed CLI command phrase (no inline literals in diagnostic messages).
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SMARTSYNC}"
 
-# Traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error-prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Default branch name for bare repos used in smartsync tests.
+
 _GIT_BRANCH = "main"
 
-# Manifest XML file name for smartsync tests.
+
 _MANIFEST_FILENAME = "default.xml"
 
-# Project name used in the manifest for smartsync tests.
+
 _PROJECT_NAME = "content-bare"
 
-# Project path used in the manifest for smartsync tests.
+
 _PROJECT_PATH = "smartsync-test-project"
 
-# Git user email for bare repo commits in smartsync tests.
+
 _GIT_USER_EMAIL = "repo-smartsync@example.com"
 
-# Git user name for bare repo commits in smartsync tests.
+
 _GIT_USER_NAME = "Repo Smartsync Test User"
 
 
-# ---------------------------------------------------------------------------
-# Shared constants for upload test modules
-# ---------------------------------------------------------------------------
-
-# Fake Gerrit review base URL (not a real server -- redirected via git insteadOf).
 _FAKE_REVIEW_BASE_URL = "http://fake.gerrit.example.com/"
 
-# Success marker expected in stderr when 'kanon repo upload' completes normally.
+
 _OK_MARKER = "[OK    ]"
 
-# Phrase expected in stdout when upload finds a reviewable branch.
+
 _UPLOAD_PROJECT_PHRASE = "Upload project"
 
-# Environment variable that suppresses SSH-info fetching in ReviewUrl.
+
 _ENV_IGNORE_SSH_INFO = "REPO_IGNORE_SSH_INFO"
 
-# Git config key for the review remote URL.
+
 _GIT_CONFIG_REMOTE_REVIEW = "remote.local.review"
 
-# ---------------------------------------------------------------------------
-# Upload-specific internal defaults used by _setup_upload_repo.
-# Consumer test modules supply project_name and project_path explicitly or
-# rely on these defaults when their repo uses identical settings.
-# ---------------------------------------------------------------------------
 
 _UPLOAD_DEFAULT_GIT_USER_NAME = "Repo Upload Test User"
 _UPLOAD_DEFAULT_GIT_USER_EMAIL = "repo-upload@example.com"
@@ -535,15 +514,7 @@ def _clone_as_bare(
     """
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     resolved = bare_dir.resolve()
-    # `git clone --bare` does not copy local config from the source work_dir,
-    # so the resulting bare repo has no user.name/user.email. Tests that run
-    # commit / annotated-tag operations directly against the bare repo (e.g.
-    # `_setup_tagged_synced_repo` does `git tag -a` against the bare content
-    # repo) would otherwise fall back to global gitconfig and fail with
-    # "Committer identity unknown" / "empty ident name" on hosts without one
-    # (e.g. clean GitHub-hosted runners on push-to-main, where the
-    # `setup-kanon` Simulate-merge step that sets a global identity is
-    # skipped).
+
     _git(["config", "user.name", git_user_name], cwd=resolved)
     _git(["config", "user.email", git_user_email], cwd=resolved)
     return resolved
@@ -733,12 +704,6 @@ def _setup_synced_repo(
         f"  stderr: {sync_result.stderr!r}"
     )
 
-    # Configure git identity locally on the synced project worktree. `kanon
-    # repo sync` materialises this worktree without inheriting any
-    # user.name/user.email, so fixtures that subsequently run `git commit`
-    # against it (e.g. upload + cherry-pick) would otherwise fall back to
-    # global gitconfig and fail with "Author identity unknown" on hosts
-    # without one (e.g. clean GitHub-hosted runners).
     project_dir = checkout_dir / project_path
     if project_dir.is_dir():
         _git(["config", "user.name", git_user_name], cwd=project_dir)
@@ -932,8 +897,6 @@ def functional_repo_dir(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Pat
     manifest_link = repo_dot_dir / "manifest.xml"
     manifest_link.symlink_to(manifest_path)
 
-    # The version subcommand calls git describe HEAD inside .repo/repo/,
-    # so .repo/repo/ must be a git repository with at least one tagged commit.
     repo_tool_dir = repo_dot_dir / "repo"
     repo_tool_dir.mkdir(parents=True, exist_ok=True)
     _git(["init", "-b", "main"], cwd=repo_tool_dir)

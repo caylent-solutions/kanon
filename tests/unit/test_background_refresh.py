@@ -40,18 +40,8 @@ import pytest
 from kanon_cli.completions.cache import _run_refresh_with_logging, fork_background_refresh
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-
 def _noop() -> None:
     """Refresh function that does nothing (used for parent-path tests)."""
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-TEST-001: env-var "0" (integer zero) -- disables silently
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -72,11 +62,6 @@ def test_refresh_bg_disabled_integer_zero_does_not_spawn(
         mock_spawn.assert_not_called()
 
     assert fake_stderr.getvalue() == "", "KANON_COMPLETION_REFRESH_BG=0 must not emit any warning"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001b / AC-TEST-001: non-integer env values -- disables AND warns
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -107,11 +92,6 @@ def test_refresh_bg_non_integer_does_not_spawn_and_warns(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 / AC-TEST-001: env-var-on, spawn_detached called exactly once
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_refresh_bg_enabled_calls_spawn_once(
     tmp_path: Path,
@@ -140,11 +120,6 @@ def test_refresh_bg_unset_defaults_to_enabled(
         mock_spawn.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-TEST-001: parent-return-path -- no blocking, no in-process run
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_parent_returns_without_running_refresh_fn_in_process(
     tmp_path: Path,
@@ -164,18 +139,11 @@ def test_parent_returns_without_running_refresh_fn_in_process(
     def refresh_fn() -> None:
         called.append("refresh")
 
-    # spawn_detached is patched to a no-op stand-in: it must NOT execute the
-    # wrapped callable, modelling the detached child that runs elsewhere.
     with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
         fork_background_refresh(refresh_fn)
         mock_spawn.assert_called_once()
 
     assert called == [], "refresh_fn must not run in the parent process"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: the callable handed to spawn_detached is a picklable partial
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -208,11 +176,6 @@ def test_spawn_detached_receives_picklable_partial_wrapper(
     assert passed.args[0] is _noop, "wrapper must bind the caller's refresh_fn"
 
 
-# ---------------------------------------------------------------------------
-# Fail-fast: spawn-failure propagation (no silent fallback)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_spawn_failure_propagates_runtimeerror(
     tmp_path: Path,
@@ -230,11 +193,6 @@ def test_spawn_failure_propagates_runtimeerror(
     ):
         with pytest.raises(RuntimeError, match="failed to fork background refresh child"):
             fork_background_refresh(_noop)
-
-
-# ---------------------------------------------------------------------------
-# Coverage: KANON_COMPLETION_LOG env var selects the spawn log path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

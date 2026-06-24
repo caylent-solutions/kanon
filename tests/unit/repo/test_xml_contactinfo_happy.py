@@ -28,10 +28,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.wrapper import Wrapper
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -113,11 +109,6 @@ def _build_contactinfo_manifest(
         f'  <contactinfo bugurl="{bugurl}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <contactinfo> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -223,11 +214,6 @@ class TestContactInfoMinimumAttributes:
         assert manifest.contactinfo.bugurl == bugurl, (
             f"Expected contactinfo.bugurl='{bugurl}' but got: {manifest.contactinfo.bugurl!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <contactinfo> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -360,11 +346,6 @@ class TestContactInfoAllDocumentedAttributes:
         assert manifest.contactinfo.bugurl == bugurl, (
             f"Expected contactinfo.bugurl='{bugurl}' but got: {manifest.contactinfo.bugurl!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <contactinfo> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -501,11 +482,6 @@ class TestContactInfoDefaultAttributeValues:
             f"Expected contactinfo.bugurl='{bugurl}' to override default "
             f"'{default_bugurl}' but got: {manifest.contactinfo.bugurl!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

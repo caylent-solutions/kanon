@@ -30,10 +30,6 @@ from kanon_cli.core.install import (
     install,
 )
 
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures: this module uses real git repos
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
@@ -56,11 +52,6 @@ def _mock_walk_includes():
         return_value=IncludeTree(path=pathlib.Path("manifest.xml")),
     ):
         yield
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_two_source_kanon(
@@ -152,8 +143,7 @@ def _run_install_mocked(
         raise ValueError(f"Unexpected URL in test: {url!r}")
 
     def _fake_resolve_version(url: str, rev_spec: str) -> str:
-        # Return the resolved_ref from sha_map when the URL is known;
-        # otherwise pass through the rev_spec unchanged (e.g. branch names).
+
         if url in sha_map:
             _sha, resolved_ref = sha_map[url]
             return resolved_ref
@@ -169,11 +159,6 @@ def _run_install_mocked(
         install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-CYCLE-001: SSH vs HTTPS conflict
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestInstallConflictUrlNormalization:
     """Two sources with SSH and HTTPS URLs that canonicalize to the same URL
@@ -182,12 +167,11 @@ class TestInstallConflictUrlNormalization:
 
     def test_ssh_vs_https_different_sha_raises_conflict_error(self, tmp_path: pathlib.Path) -> None:
         """kanon install raises CanonicalUrlConflictError when two sources share a canonical URL but differ in SHA."""
-        # Source A: SSH URL for the "example-package" repo, pinned to SHA_A
+
         sha_a = "a" * 40
         sha_b = "b" * 40
         source_a_url = "git@gitserver:org/example-package.git"
         source_b_url = "https://gitserver/org/example-package.git"
-        # Both canonicalize to https://gitserver/org/example-package
 
         kanon_path = _write_two_source_kanon(
             tmp_path,
@@ -206,10 +190,10 @@ class TestInstallConflictUrlNormalization:
             _run_install_mocked(kanon_path, sha_map)
 
         error_msg = str(exc_info.value)
-        # Both raw forms must appear
+
         assert source_a_url in error_msg
         assert source_b_url in error_msg
-        # The canonical form must appear
+
         assert "https://gitserver/org/example-package" in error_msg
         assert "both URLs canonicalize to:" in error_msg
 
@@ -264,7 +248,7 @@ class TestInstallConflictUrlNormalization:
             _run_install_mocked(kanon_path, sha_map)
 
         error_msg = str(exc_info.value)
-        # Source paths are in the form "<source-name>/<manifest-path>"
+
         assert "alpha/manifest.xml" in error_msg
         assert "bravo/manifest.xml" in error_msg
 
@@ -287,7 +271,6 @@ class TestInstallConflictUrlNormalization:
             source_b_url: (sha_a, "refs/tags/1.0.0"),
         }
 
-        # Should NOT raise -- both canonicalize to the same URL and same SHA
         _run_install_mocked(kanon_path, sha_map)
 
     def test_distinct_canonical_urls_no_conflict(self, tmp_path: pathlib.Path) -> None:
@@ -310,7 +293,6 @@ class TestInstallConflictUrlNormalization:
             source_b_url: (sha_b, "refs/tags/2.0.0"),
         }
 
-        # Should NOT raise -- different canonical URLs
         _run_install_mocked(kanon_path, sha_map)
 
     def test_conflict_detected_on_lockfile_consistent_path(self, tmp_path: pathlib.Path) -> None:
@@ -343,8 +325,6 @@ class TestInstallConflictUrlNormalization:
             source_b_rev="==2.0.0",
         )
 
-        # Build a lockfile whose kanon_hash matches the .kanon so the
-        # consistent path is taken, but whose sources have conflicting canonical URLs.
         computed_hash = kanon_hash(kanon_path)
         lockfile_path = kanon_path.parent / ".kanon.lock"
 
@@ -376,8 +356,6 @@ class TestInstallConflictUrlNormalization:
         )
         write_lockfile(lf, lockfile_path)
 
-        # Now run install on the consistent path -- it should detect the conflict
-        # against the lockfile data.
         with (
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
@@ -397,7 +375,6 @@ class TestInstallConflictUrlNormalization:
         source_a_url = "git@gitserver:org/example-package.git"
         source_b_url = "https://gitserver/org/example-package.git"
 
-        # Both sources now declare the same revision and resolve to the same SHA
         kanon_path = _write_two_source_kanon(
             tmp_path,
             source_a_url=source_a_url,
@@ -411,7 +388,6 @@ class TestInstallConflictUrlNormalization:
             source_b_url: (sha_a, "refs/tags/1.0.0"),
         }
 
-        # Should complete without error
         _run_install_mocked(kanon_path, sha_map)
 
     def test_remediation_removes_one_source(self, tmp_path: pathlib.Path) -> None:
@@ -421,7 +397,6 @@ class TestInstallConflictUrlNormalization:
         source_a_url = "git@gitserver:org/example-package.git"
         source_b_url = "https://gitserver/org/example-package.git"
 
-        # Both sources conflict
         conflict_dir = tmp_path / "conflict"
         conflict_dir.mkdir(parents=True, exist_ok=True)
         kanon_conflict = _write_two_source_kanon(
@@ -440,7 +415,6 @@ class TestInstallConflictUrlNormalization:
         with pytest.raises(CanonicalUrlConflictError):
             _run_install_mocked(kanon_conflict, sha_map_conflict)
 
-        # Remediation: single-source .kanon (conflict removed)
         fixed_dir = tmp_path / "fixed"
         fixed_dir.mkdir(parents=True, exist_ok=True)
         kanon_fixed = _write_single_source_kanon(
@@ -450,5 +424,4 @@ class TestInstallConflictUrlNormalization:
         )
         sha_map_fixed = {source_a_url: (sha_a, "refs/tags/1.0.0")}
 
-        # Should NOT raise -- only one source now
         _run_install_mocked(kanon_fixed, sha_map_fixed)

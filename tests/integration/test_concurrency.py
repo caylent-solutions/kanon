@@ -25,44 +25,17 @@ import pytest
 
 from kanon_cli.core.install import install
 
-# fcntl is POSIX-only; these tests exercise the POSIX fcntl.flock locking path,
-# which is the only workspace-lock backend. The importorskip is the collection
-# guard that keeps the suite POSIX-only.
+
 fcntl = pytest.importorskip("fcntl")
 
 
-# ---------------------------------------------------------------------------
-# Thread-safe patching helper
-# ---------------------------------------------------------------------------
-#
-# `unittest.mock.patch` is NOT thread-safe: when two threads enter and exit
-# overlapping `with patch(...)` blocks for the same attribute, the cleanup
-# step races on the saved "original" reference, which can permanently leave
-# a Mock object as the module attribute. Tests that previously paired
-# `with patch(...)` *inside* a thread body therefore leaked the Mock into
-# every later test that imported the patched name.
-#
-# The helpers below open the patch context ONCE in the main test thread,
-# spawn the worker threads inside it (which call the unpatched
-# `install()` directly), and exit the patch context after every thread
-# joined -- restoration is single-threaded and the original repo_*
-# functions are guaranteed to be back in place when the test returns.
-
-
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
 _SRC_DIR = pathlib.Path(__file__).resolve().parents[2] / "src"
 _LOCK_FILENAME = ".kanon-install.lock"
-# Minimal well-formed manifest XML written by fake sync helpers so that
-# install()'s include-walker can parse the manifest path after sync.
+
+
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
-# Cross-process readiness/join timeouts for the multiprocessing parallel-install
-# tests. Overridable via environment variables so slow CI can extend them
-# without editing the test; never used as a synchronization delay -- only as a
-# fail-fast upper bound on event waits and process joins.
+
 _PROC_READY_TIMEOUT = float(os.environ.get("KANON_TEST_INSTALL_READY_TIMEOUT", "30.0"))
 _PROC_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_INSTALL_JOIN_TIMEOUT", "60.0"))
 
@@ -126,9 +99,7 @@ def _install_worker(
             patch("kanon_cli.core.install._check_sha_reachable"),
         ):
             ready_event.set()
-            # Block until the parent releases both workers together. The event
-            # wait is bounded by _PROC_READY_TIMEOUT so a wedged parent fails
-            # the child fast rather than hanging it forever.
+
             if not go_event.wait(timeout=_PROC_READY_TIMEOUT):
                 error_queue.put("go_event was not set within the readiness timeout")
                 return
@@ -137,14 +108,7 @@ def _install_worker(
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
             )
     except Exception as exc:
-        # Serialise any install failure to the parent so it surfaces in the
-        # cross-process assertion rather than dying silently in the child.
         error_queue.put(f"{type(exc).__name__}: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv(directory: pathlib.Path, source_name: str = "primary") -> pathlib.Path:
@@ -329,7 +293,7 @@ def _patched_install_with_packages(
 
     def _fake_repo_sync(repo_dir: str, **_kwargs: object) -> None:
         repo_path = pathlib.Path(repo_dir)
-        # Create minimal manifest XML so install()'s include-walker succeeds.
+
         _write_empty_manifest(repo_dir)
         source_name = repo_path.name
         for pkg_name in packages_by_source.get(source_name, []):
@@ -359,11 +323,6 @@ def _build_subprocess_env() -> dict[str, str]:
     env["PYTHONPATH"] = os.pathsep.join(entries)
     env.setdefault("REPO_TRACE", "0")
     return env
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Two parallel installs produce a deterministic outcome
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -419,8 +378,6 @@ class TestParallelInstallsDeterministic:
         for proc in procs:
             proc.start()
 
-        # Readiness gate: wait until both children have installed their mocks
-        # and are parked on go_event, then release them together.
         for i, ready in enumerate(ready_events):
             assert ready.wait(timeout=_PROC_READY_TIMEOUT), (
                 f"Install worker {i} did not become ready within {_PROC_READY_TIMEOUT}s"
@@ -454,7 +411,6 @@ class TestParallelInstallsDeterministic:
         errors = self._run_two_parallel_installs(kanonenv)
         assert not errors, f"Parallel installs raised errors instead of serialising cleanly: {errors}"
 
-        # State must be deterministic regardless of which process won the lock first.
         assert (store_base / ".packages").is_dir(), (
             f".packages/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
@@ -489,19 +445,13 @@ class TestParallelInstallsDeterministic:
         lines = gitignore.read_text(encoding="utf-8").splitlines()
         packages_count = lines.count(".packages/")
         kanon_data_count = lines.count(".kanon-data/")
-        # Serialised writers must each leave the required entry exactly once --
-        # no duplication from the concurrent runs.
+
         assert packages_count == 1, (
             f".packages/ must appear exactly once in .gitignore after serialised parallel installs; found {packages_count}"
         )
         assert kanon_data_count == 1, (
             f".kanon-data/ must appear exactly once in .gitignore after serialised parallel installs; found {kanon_data_count}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Concurrent install is serialized via file lock or atomic check
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -550,8 +500,7 @@ class TestConcurrentInstallSerialization:
         kanon_data_dir.mkdir(parents=True, exist_ok=True)
         lock_file_path = kanon_data_dir / _LOCK_FILENAME
 
-        # Acquire the exclusive lock manually to simulate a running install.
-        lock_fd = open(lock_file_path, "w", encoding="utf-8")  # intentional: explicit open for fcntl
+        lock_fd = open(lock_file_path, "w", encoding="utf-8")
         try:
             fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -575,12 +524,9 @@ class TestConcurrentInstallSerialization:
         thread = threading.Thread(target=_concurrent_install)
         thread.start()
 
-        # Give the concurrent install a moment to try to acquire the lock.
-        # It should block because we hold the exclusive lock.
         thread.join(timeout=2.0)
 
         if not thread.is_alive():
-            # Thread finished -- if no error, it completed without the lock.
             fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
             lock_fd.close()
             assert not concurrent_completed_early.is_set(), (
@@ -588,21 +534,14 @@ class TestConcurrentInstallSerialization:
                 "install() must serialize concurrent runs via file lock."
             )
         else:
-            # Thread is still waiting on the lock (correctly blocked).
-            # Release the lock and let the second install finish.
             fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
             lock_fd.close()
             thread.join(timeout=10.0)
             assert not thread.is_alive(), "Concurrent install did not complete within timeout after lock release"
-            # No errors expected once the lock is released.
+
             assert not concurrent_error, (
                 f"Concurrent install raised unexpected error after lock release: {concurrent_error}"
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Idempotent retry of partial failure succeeds on second attempt
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -628,7 +567,6 @@ class TestIdempotentRetryAfterPartialFailure:
 
         kanonenv = _write_kanonenv(tmp_path, "primary")
 
-        # First attempt: fail during repo_sync.
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -640,7 +578,6 @@ class TestIdempotentRetryAfterPartialFailure:
                     lock_file_path=kanonenv.parent / ".kanon.lock",
                 )
 
-        # Second attempt: all repo ops succeed.
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
@@ -664,7 +601,6 @@ class TestIdempotentRetryAfterPartialFailure:
 
         kanonenv = _write_kanonenv(tmp_path, "alpha")
 
-        # First attempt: fail during repo_init.
         with (
             patch("kanon_cli.repo.repo_init", side_effect=RepoCommandError("simulated init failure")),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -676,7 +612,6 @@ class TestIdempotentRetryAfterPartialFailure:
                     lock_file_path=kanonenv.parent / ".kanon.lock",
                 )
 
-        # Second attempt: all repo ops succeed.
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
@@ -699,12 +634,10 @@ class TestIdempotentRetryAfterPartialFailure:
         kanonenv = _write_kanonenv(tmp_path, "beta")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # Pre-populate the store .kanon-data/ as if a prior install partially completed.
         partial_source_dir = store_base / ".kanon-data" / "sources" / "beta"
         partial_source_dir.mkdir(parents=True, exist_ok=True)
         (partial_source_dir / "leftover.txt").write_text("stale file", encoding="utf-8")
 
-        # Install must succeed even with pre-existing partial state.
         _patched_install(kanonenv)
 
         assert (store_base / ".packages").is_dir(), (
@@ -738,11 +671,9 @@ class TestIdempotentRetryAfterPartialFailure:
             source_name = repo_path.name
             if source_name == failing_source:
                 raise RepoCommandError(f"simulated failure for source '{failing_source}'")
-            # Create minimal manifest XML for the non-failing source so that
-            # install()'s include-walker can parse the manifest path after sync.
+
             _write_empty_manifest(repo_dir)
 
-        # First attempt: fails for one source.
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -754,7 +685,6 @@ class TestIdempotentRetryAfterPartialFailure:
                     lock_file_path=kanonenv.parent / ".kanon.lock",
                 )
 
-        # Second attempt: all repo ops succeed.
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
@@ -763,11 +693,6 @@ class TestIdempotentRetryAfterPartialFailure:
                 f".kanon-data/sources/{sn}/ must exist in the store after successful retry"
             )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after retry"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: install-over-install is idempotent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -789,7 +714,7 @@ class TestInstallOverInstallIdempotent:
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
         _patched_install(kanonenv)
-        # Second install -- must not raise.
+
         _patched_install(kanonenv)
 
     def test_second_install_produces_same_directory_layout(
@@ -905,11 +830,6 @@ class TestInstallOverInstallIdempotent:
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated install"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-CHANNEL-001: CLI-level concurrent install via subprocess
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCLIConcurrentInstallDeterminism:
     """AC-FUNC-001 / AC-CHANNEL-001: CLI concurrent installs behave deterministically.
@@ -956,15 +876,12 @@ class TestCLIConcurrentInstallDeterminism:
         return_codes = [p.returncode for p in procs]
 
         for i, (stdout, stderr) in enumerate(results):
-            # Stdout must only contain progress lines (no exception tracebacks).
             assert "Traceback" not in stdout, f"Process {i}: traceback leaked to stdout. stdout={stdout!r}"
-            # Stderr must only contain error messages (no progress lines).
+
             assert "kanon install:" not in stderr or "Error:" in stderr, (
                 f"Process {i}: progress output leaked to stderr without an error prefix. stderr={stderr!r}"
             )
 
-        # At least one process must terminate (both will fail because
-        # the remote is unreachable, but both must exit cleanly).
         assert all(rc is not None for rc in return_codes), "Both subprocess installs must terminate with an exit code"
 
     def test_subprocess_stderr_contains_only_error_messages(
@@ -977,7 +894,7 @@ class TestCLIConcurrentInstallDeterminism:
         A subprocess install that fails must write the error to stderr, not stdout.
         The stdout must not contain the error text.
         """
-        # Write a .kanon referencing a non-existent file to trigger parse error.
+
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_MARKETPLACE_INSTALL=false\n"
@@ -999,12 +916,11 @@ class TestCLIConcurrentInstallDeterminism:
             timeout=60,
         )
 
-        # Errors written to stderr must not appear in stdout (no cross-channel leakage).
         if result.returncode != 0 and result.stderr:
             assert "Error:" not in result.stdout, (
                 f"Error message leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
             )
-        # Progress messages must not appear in stderr.
+
         assert "kanon install: parsing" not in result.stderr, (
             f"Progress message leaked to stderr. stderr={result.stderr!r}"
         )

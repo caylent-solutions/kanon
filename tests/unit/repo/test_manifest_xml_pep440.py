@@ -54,13 +54,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     return m
 
 
-# ---------------------------------------------------------------------------
-# Direct minidom round-trip: this is the contract kanon's Save() depends on.
-# If a future refactor replaces minidom with custom string formatting and
-# forgets to escape, these tests fail.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMinidomEscapesPep440Operators:
     @pytest.mark.parametrize(
@@ -83,20 +76,16 @@ class TestMinidomEscapesPep440Operators:
         root.appendChild(e)
         doc.appendChild(root)
 
-        # Serialize the way kanon does in XmlManifest.Save().
         import io
 
         buf = io.StringIO()
         doc.writexml(buf, "", "  ", "\n", "UTF-8")
         serialized = buf.getvalue()
 
-        # Raw `<` or `>` inside the revision attribute value would make the
-        # output ill-formed. Verify the serializer escaped them.
         assert 'revision="' + revision + '"' not in serialized, (
             "Serializer must NOT emit raw < or > inside the revision attribute"
         )
 
-        # Re-parse and confirm the original value comes back.
         parsed = xml.dom.minidom.parseString(serialized)
         proj = parsed.getElementsByTagName("project")[0]
         assert proj.getAttribute("revision") == revision
@@ -122,11 +111,6 @@ class TestMinidomEscapesPep440Operators:
         assert proj.getAttribute("revision") == "tag&with&ampersand"
 
 
-# ---------------------------------------------------------------------------
-# Manifest file containing escaped PEP 440 entities parses cleanly.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestXmlManifestLoadsEscapedRevision:
     @pytest.mark.parametrize(
@@ -150,7 +134,7 @@ class TestXmlManifestLoadsEscapedRevision:
         )
         manifest_file = _write_manifest(repodir, xml_content)
         m = _load_manifest(repodir, manifest_file)
-        # The default revision should round-trip through entity-decoding.
+
         assert m.default.revisionExpr == decoded
 
     def test_raw_unescaped_lt_is_rejected(self, tmp_path: pathlib.Path) -> None:
@@ -171,13 +155,6 @@ class TestXmlManifestLoadsEscapedRevision:
             _load_manifest(repodir, manifest_file)
 
 
-# ---------------------------------------------------------------------------
-# Save() round-trip via the XmlManifest API: write a manifest containing a
-# project whose revision carries PEP 440 operators, save it, parse the
-# resulting file independently, and verify the revision is preserved.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestXmlManifestSaveRoundTrip:
     @pytest.mark.parametrize(
@@ -191,8 +168,7 @@ class TestXmlManifestSaveRoundTrip:
     )
     def test_save_then_parse_preserves_default_revision(self, tmp_path: pathlib.Path, revision: str) -> None:
         repodir = _make_repo_dir(tmp_path)
-        # Build an input manifest that the loader can accept (escape entities
-        # so the file is valid XML).
+
         encoded = revision.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         xml_content = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -206,13 +182,11 @@ class TestXmlManifestSaveRoundTrip:
         m = _load_manifest(repodir, manifest_file)
         assert m.default.revisionExpr == revision
 
-        # Save through kanon's XmlManifest.Save and re-parse the output as
-        # plain XML; the round-tripped revision must match the original.
         out_path = tmp_path / "saved.xml"
         with out_path.open("w", encoding="utf-8") as fp:
             m.Save(fp)
         saved_text = out_path.read_text(encoding="utf-8")
-        # Saved file must use entity escapes, not raw `<`/`>` inside attributes.
+
         assert f'revision="{revision}"' not in saved_text, (
             "Save() must not emit raw PEP 440 operators inside attribute values"
         )

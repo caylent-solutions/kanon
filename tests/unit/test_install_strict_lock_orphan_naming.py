@@ -23,11 +23,6 @@ from kanon_cli.core.install import (
 )
 
 
-# ===========================================================================
-# AC-FUNC-001: exception class structure
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestOrphanedLockEntryErrorStructure:
     """OrphanedLockEntryError subclasses InstallError and stores orphan_names."""
@@ -62,11 +57,6 @@ class TestOrphanedLockEntryErrorStructure:
         """Empty orphaned_names is a logic error: ValueError is raised."""
         with pytest.raises(ValueError, match="at least one orphan name"):
             OrphanedLockEntryError(orphaned_names=[])
-
-
-# ===========================================================================
-# AC-FUNC-003: remediation enumerates orphans and all three options
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -111,11 +101,6 @@ class TestOrphanedLockEntryErrorRemediation:
         assert "Remediation:" in str(err)
 
 
-# ===========================================================================
-# AC-FUNC-004: singular / plural count prefix
-# ===========================================================================
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("orphan_names", "expected_phrase"),
@@ -133,11 +118,6 @@ class TestOrphanedLockEntryErrorSingularPlural:
         """The count-prefixed noun phrase matches the number of orphans."""
         err = OrphanedLockEntryError(orphaned_names=orphan_names)
         assert expected_phrase in str(err)
-
-
-# ===========================================================================
-# AC-FUNC-005: module-level constants are the sole source of format strings
-# ===========================================================================
 
 
 @pytest.mark.unit

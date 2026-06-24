@@ -390,7 +390,7 @@ class TestDeprecationWarnings:
         assert mock_warnings.warn.called, "warnings.warn must be called when REPO_URL is set"
         call_kwargs = mock_warnings.warn.call_args
         assert call_kwargs is not None, "warnings.warn was not called"
-        # Check category argument (second positional or keyword)
+
         positional = call_kwargs[0]
         keyword = call_kwargs[1]
         category = positional[1] if len(positional) > 1 else keyword.get("category")

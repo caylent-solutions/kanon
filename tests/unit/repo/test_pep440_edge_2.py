@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for PEP 440 edge cases: pre-release, dev, post, and empty constraint.
 
 Covers:
@@ -35,9 +21,6 @@ import pytest
 
 from kanon_cli.repo import error, version_constraints
 
-# ---------------------------------------------------------------------------
-# Shared test data
-# ---------------------------------------------------------------------------
 
 _TAG_PREFIX = "refs/tags/project"
 
@@ -60,11 +43,6 @@ _POST_TAGS = [
     f"{_TAG_PREFIX}/1.0.0.post1",
     f"{_TAG_PREFIX}/1.0.0.post2",
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Pre-release identifiers (alpha, beta, rc)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -130,7 +108,7 @@ class TestPreReleaseIdentifiers:
         Then: Pre-release tags (a1, b1, rc1) are excluded; only stable releases match.
         AC: AC-TEST-001, AC-FUNC-001.
         """
-        # Only 1.0.0 and 1.1.0 are stable; a1, b1, rc1 must be excluded.
+
         result = version_constraints.resolve_version_constraint(
             f"{_TAG_PREFIX}/>=1.0.0",
             _PRERELEASE_TAGS,
@@ -162,11 +140,6 @@ class TestPreReleaseIdentifiers:
         assert version_constraints.is_version_constraint(revision) is True, (
             f"Pre-release revision '{revision}' must be detected as a version constraint"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Dev identifier (1.0.0.dev1)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -245,11 +218,6 @@ class TestDevIdentifier:
         assert result != f"{_TAG_PREFIX}/1.0.0.dev2", "dev2 must not be selected by a non-dev constraint"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Post identifier (1.0.0.post1)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestPostIdentifier:
     """AC-TEST-003: post identifier (N.N.N.postN) resolves correctly.
@@ -326,11 +294,6 @@ class TestPostIdentifier:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Empty constraint raises a clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmptyConstraintError:
     """AC-TEST-004: An empty constraint string raises ManifestInvalidRevisionError.
@@ -380,7 +343,7 @@ class TestEmptyConstraintError:
             version_constraints.resolve_version_constraint("", ["refs/tags/1.0.0"])
         error_text = str(exc_info.value)
         assert error_text, "Error message must not be empty"
-        # The message must mention the empty/invalid constraint -- not just say 'no tags found'
+
         assert (
             "empty" in error_text.lower() or "constraint" in error_text.lower() or "revision" in error_text.lower()
         ), f"Error message should describe the empty/invalid constraint, got: {error_text!r}"

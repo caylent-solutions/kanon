@@ -49,10 +49,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Diff Flags Test User"
 _GIT_USER_EMAIL = "repo-diff-flags@example.com"
@@ -60,59 +56,43 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "diff-flags-test-project"
 
-# CLI token constants -- every token referenced in test logic.
+
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_DIFF = "diff"
 
-# Flag tokens from Diff._Options()
-# Short form and long form of the absolute flag.
+
 _CLI_FLAG_ABSOLUTE_SHORT = "-u"
 _CLI_FLAG_ABSOLUTE_LONG = "--absolute"
 
-# Inline-value suffix used in negative tests for boolean flags.
-# optparse exits 2 with '--<flag> option does not take a value'.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Exit codes
+
 _EXPECTED_EXIT_CODE = 0
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Phrases verified in channel-discipline and negative-test assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 _ERROR_PREFIX = "Error:"
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
-# The command exits 2 for argument-parsing errors regardless of repo state.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-diff-flags-repo-dir"
 
-# Sentinel for empty output (no diff emitted on a clean synced repo).
+
 _EMPTY_OUTPUT = ""
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables -- all tuples use flag constants.
-#
-# AC-TEST-001 valid-value parametrize: one entry per flag form.
-# Each entry: (flag_token, test_id).
-# ---------------------------------------------------------------------------
 
-# Boolean flags: accepted standalone (no argument).
 _BOOL_FLAGS_VALID: list[tuple[str, str]] = [
     (_CLI_FLAG_ABSOLUTE_SHORT, "short-u"),
     (_CLI_FLAG_ABSOLUTE_LONG, "long-absolute"),
 ]
 
-# Long-form boolean flags for the inline-value negative test.
-# Only long-form flags support '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_INLINE_VALUE_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_ABSOLUTE_LONG, "absolute"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -234,11 +214,6 @@ class TestRepoDiffFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for invalid flag values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffFlagsInvalidValues:
     """AC-TEST-002: Flags that reject invalid values exit 2 with error on stderr.
@@ -345,11 +320,6 @@ class TestRepoDiffFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -399,11 +369,6 @@ class TestRepoDiffFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -516,11 +481,6 @@ class TestRepoDiffFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

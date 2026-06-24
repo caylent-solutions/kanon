@@ -70,31 +70,19 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from kanon_cli.core.url import canonicalize_repo_url
 
-# ---------------------------------------------------------------------------
-# Schema version constant and migration registry
-# ---------------------------------------------------------------------------
 
-#: The schema version this kanon version reads and writes.
 CURRENT_SCHEMA_VERSION: int = 4
 
-#: Registry of upgrader functions keyed by (from_version, to_version).
-#: Each upgrader receives a raw dict and returns a raw dict with the schema
-#: advanced by one step. The registry is intentionally empty in production;
-#: future schema bumps add a single entry here rather than a refactor.
+
 _UPGRADERS: dict[tuple[int, int], Callable[[dict[str, Any]], dict[str, Any]]] = {}
 
-# -- Compiled validation patterns --
 
-# resolved_sha must be exactly 40 or 64 lowercase hex digits (SHA-1 or SHA-256).
 _SHA_RE = re.compile(r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
 
-# kanon_hash must be a sha256:-prefixed 64-char lowercase hex digest (spec Rule 1a).
-# Total length: 71 chars ("sha256:" + 64 hex chars).
+
 _KANON_HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 
-# -- TOML serialisation: control-character escape table --
-# Maps every control character that TOML requires to be escaped in basic strings
-# (U+0000-U+001F, U+007F) to its TOML escape sequence.
+
 _TOML_CONTROL_ESCAPES: dict[str, str] = {
     "\x00": "\\u0000",
     "\x01": "\\u0001",
@@ -131,20 +119,15 @@ _TOML_CONTROL_ESCAPES: dict[str, str] = {
     "\x7f": "\\u007F",
 }
 
-# branch-name charset for the third accept rule of ref_spec validation.
+
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9_./+-]+$")
 
-# Characters forbidden in path / path_in_repo fields.
+
 _FORBIDDEN_PATH_CHARS: tuple[tuple[str, str], ...] = (
     ("\x00", "U+0000 (NUL)"),
     ("\n", "U+000A (newline)"),
     ("\t", "U+0009 (tab)"),
 )
-
-
-# ---------------------------------------------------------------------------
-# Migration registry helpers
-# ---------------------------------------------------------------------------
 
 
 def _register_upgrader(
@@ -239,23 +222,6 @@ def _dispatch_migration(data: dict[str, Any]) -> dict[str, Any]:
     return current
 
 
-# ---------------------------------------------------------------------------
-# Schema upgraders
-# ---------------------------------------------------------------------------
-#
-# Schema v4 (spec Section 5.2, Section 13 FLAG-C) is the breaking major: there is
-# NO silent upgrader from any older schema (v1, v2, v3) to v4.  An older lock is a
-# hard fail-fast regenerate (see ``read_lockfile``), so no upgrader functions are
-# registered here.  The migration registry below remains the documented extension
-# point for any future NON-breaking schema bump (v4 -> v5): such a bump would add a
-# single ``_register_upgrader(4, 5, fn)`` entry rather than a refactor.
-
-
-# ---------------------------------------------------------------------------
-# Exception types
-# ---------------------------------------------------------------------------
-
-
 class LockfileSchemaError(Exception):
     """Raised when the lockfile's schema_version is not supported by this kanon version.
 
@@ -292,11 +258,6 @@ class LockfileConsistencyError(Exception):
     The message always names the offending alias(es) and the operator's likely
     remediation step.
     """
-
-
-# ---------------------------------------------------------------------------
-# Dataclass tree (mirrors the TOML schema exactly)
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -387,11 +348,6 @@ class Lockfile:
     marketplace_dir: str = ""
 
 
-# ---------------------------------------------------------------------------
-# Private validation helpers
-# ---------------------------------------------------------------------------
-
-
 def _validate_kanon_hash(value: str) -> None:
     """Raise ``LockfileValidationError`` if ``value`` is not a valid kanon_hash string.
 
@@ -463,26 +419,17 @@ def _validate_ref_spec(spec: str, field_path: str) -> None:
             f"  Remediation: update the ref_spec in your .kanon file and re-lock."
         )
 
-    # Rule 0: bare wildcard "*" -- the "any version" constraint, written verbatim into
-    # the lockfile by add/install (resolved_ref/resolved_sha carry the actual
-    # resolution). The marketplace/version layers already accept it, so the lockfile
-    # reader must accept it too.
     if spec == "*":
         return
 
-    # Rule 2: refs/ prefix
     if spec.startswith("refs/"):
         return
 
-    # Rule 3: branch-charset regex
     if _BRANCH_RE.match(spec):
         return
 
-    # Rule 1: PEP 440 SpecifierSet -- strip monorepo path prefix if present
     suffix = spec
     if "/" in spec:
-        # Strip the leading path component(s) up to the last "/" before the specifier
-        # e.g. "subpackage/==1.0.0" -> "==1.0.0"
         last_slash = spec.rfind("/")
         suffix = spec[last_slash + 1 :]
 
@@ -586,11 +533,6 @@ def _validate_path_chars(path_value: str, field_path: str) -> None:
                 f"  Paths must not contain NUL (\\x00), newline (\\n), or tab (\\t).\n"
                 f"  Remediation: correct the path value in your .kanon file and re-lock."
             )
-
-
-# ---------------------------------------------------------------------------
-# Private parsing helpers
-# ---------------------------------------------------------------------------
 
 
 def _parse_include_entry(raw: dict[str, Any], field_path: str) -> IncludeEntry:
@@ -713,11 +655,6 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
     )
 
 
-# ---------------------------------------------------------------------------
-# Serialisation helpers
-# ---------------------------------------------------------------------------
-
-
 def _toml_str(value: str) -> str:
     """Encode a Python string as a TOML basic string literal.
 
@@ -731,7 +668,7 @@ def _toml_str(value: str) -> str:
         A quoted TOML basic string, e.g. ``"hello"`` or ``"line\\nbreak"``.
     """
     result = value.replace("\\", "\\\\").replace('"', '\\"')
-    # Escape control characters (TOML spec requires explicit escaping)
+
     for char, escape in _TOML_CONTROL_ESCAPES.items():
         result = result.replace(char, escape)
     return f'"{result}"'
@@ -812,7 +749,6 @@ def _serialize_toml(lockfile: Lockfile) -> str:
     """
     lines: list[str] = []
 
-    # Top-level scalar fields
     lines.append(f"schema_version = {lockfile.schema_version}")
     lines.append(f"generated_at = {_toml_str(lockfile.generated_at)}")
     lines.append(f"generator = {_toml_str(lockfile.generator)}")
@@ -820,8 +756,6 @@ def _serialize_toml(lockfile: Lockfile) -> str:
     lines.append(f"marketplace_registered = {str(lockfile.marketplace_registered).lower()}")
     lines.append(f"marketplace_dir = {_toml_str(lockfile.marketplace_dir)}")
 
-    # [[sources]] array-of-tables, alias-keyed (schema v4).  ``alias`` is the lock
-    # key and is written first in every entry.
     for source in lockfile.sources:
         lines.append("")
         lines.append("[[sources]]")
@@ -832,10 +766,7 @@ def _serialize_toml(lockfile: Lockfile) -> str:
         lines.append(f"resolved_ref = {_toml_str(source.resolved_ref)}")
         lines.append(f"resolved_sha = {_toml_str(source.resolved_sha)}")
         lines.append(f"path = {_toml_str(source.path)}")
-        # Per-source ownership ledger (schema v3): written sorted for
-        # deterministic, byte-stable output.  Emitted before the includes /
-        # projects sub-tables because TOML requires scalar keys to precede
-        # array-of-tables headers within the same table.
+
         lines.append(f"registered_marketplaces = {_toml_str_array(sorted(source.registered_marketplaces))}")
         if source.includes:
             _serialize_include_entries(source.includes, "sources.includes", lines)
@@ -850,11 +781,6 @@ def _serialize_toml(lockfile: Lockfile) -> str:
             lines.append(f"resolved_sha = {_toml_str(project.resolved_sha)}")
 
     return "\n".join(lines) + "\n"
-
-
-# ---------------------------------------------------------------------------
-# Public entry points
-# ---------------------------------------------------------------------------
 
 
 def read_lockfile(path: Path) -> Lockfile:
@@ -899,10 +825,6 @@ def read_lockfile(path: Path) -> Lockfile:
     if schema_version > CURRENT_SCHEMA_VERSION:
         raise LockfileSchemaError(f"lockfile schema v{schema_version} written by newer kanon; upgrade kanon-cli.")
     if schema_version < CURRENT_SCHEMA_VERSION:
-        # Schema v4 (spec Section 13, FLAG-C) is the breaking major: no silent
-        # upgrader re-keys an older lock by alias, renames the per-entry version
-        # field to ref_spec, or drops the [catalog] block.  Fail fast with an
-        # actionable regenerate message instead.
         raise LockfileSchemaError(
             f"ERROR: lockfile schema v{schema_version} is incompatible with this kanon "
             f"version (schema v{CURRENT_SCHEMA_VERSION}).\n"
@@ -1016,9 +938,7 @@ def check_lockfile_consistency(
             ``.kanon`` and ``.kanon.lock`` alias sets differ, or if any shared
             alias has a mismatched ref-spec.
     """
-    # Condition 1: alias uniqueness within .kanon.  A list (not a set) is
-    # supplied so a duplicate alias is detectable here rather than silently
-    # collapsed.
+
     seen: set[str] = set()
     duplicates: list[str] = []
     for alias in kanon_aliases:
@@ -1034,7 +954,6 @@ def check_lockfile_consistency(
             f"in .kanon so every alias is distinct, then re-run 'kanon install'."
         )
 
-    # Condition 2: alias-set parity between .kanon and .kanon.lock.
     kanon_alias_set = set(kanon_aliases)
     lock_alias_set = {source.alias for source in lockfile.sources}
 
@@ -1051,7 +970,6 @@ def check_lockfile_consistency(
             f"current .kanon declarations."
         )
 
-    # Condition 3: per-alias ref-spec parity for every shared alias.
     mismatches: list[str] = []
     for source in lockfile.sources:
         declared_ref_spec = kanon_ref_specs[source.alias]

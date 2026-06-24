@@ -36,11 +36,6 @@ from kanon_cli.core.metadata import derive_source_name
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures: this module uses real local git repos
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
     """Override: let the test's own patch handle _resolve_ref_to_sha."""
@@ -51,11 +46,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: let the test's own subprocess.run patches handle reachability."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(*args: str, cwd: pathlib.Path) -> str:
@@ -168,7 +158,7 @@ def _run_install_with_fake_catalog(
     """
 
     def _resolve_ref_to_sha_side_effect(url: str, ref: str) -> _RefResolution:
-        # Only the local fixture SOURCE repo is expected; resolve via real git.
+
         if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo), ref],
@@ -188,7 +178,7 @@ def _run_install_with_fake_catalog(
         raise ValueError(f"unexpected URL passed to _resolve_ref_to_sha: {url!r}")
 
     def _check_sha_reachable_side_effect(url: str, sha: str, source_name: str) -> None:
-        # Use real git ls-remote for local fixture repos; others are no-ops.
+
         if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo)],
@@ -200,7 +190,7 @@ def _run_install_with_fake_catalog(
                 from kanon_cli.core.install import LockfileUnreachableShaError
 
                 raise LockfileUnreachableShaError(source_name=source_name, sha=sha, remote_url=url)
-            # Check whether sha appears in any ref's SHA column
+
             sha_found = any(line.split("\t")[0] == sha for line in result.stdout.strip().splitlines() if "\t" in line)
             if not sha_found:
                 from kanon_cli.core.install import LockfileUnreachableShaError
@@ -221,11 +211,6 @@ def _run_install_with_fake_catalog(
         patch("kanon_cli.core.install.run_repo_sync"),
     ):
         install(kanon_path, lock_file_path=kanon_path.parent / ".kanon.lock", **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: End-to-end strict-drift against a real fixture repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -249,7 +234,6 @@ class TestStrictDriftEndToEnd:
         fixture_repo, baseline_sha = _build_branch_fixture_repo(repos_dir, "source-alpha")
         kanon_path = _write_kanon(project_dir, "alpha", str(fixture_repo))
 
-        # Step 1: Baseline install -- records lockfile with baseline_sha
         _run_install_with_fake_catalog(
             kanon_path,
             fixture_repo,
@@ -263,11 +247,9 @@ class TestStrictDriftEndToEnd:
         locked_sha = baseline_lf.sources[0].resolved_sha
         assert locked_sha == baseline_sha, f"Locked SHA {locked_sha!r} != baseline {baseline_sha!r}"
 
-        # Step 2: Advance the branch tip on the fixture remote
         new_sha = _advance_branch(fixture_repo)
         assert new_sha != locked_sha, "Expected branch to advance to a new SHA"
 
-        # Step 3: kanon install --strict-drift must raise BranchDriftError
         with pytest.raises(BranchDriftError) as exc_info:
             _run_install_with_fake_catalog(
                 kanon_path,
@@ -292,7 +274,6 @@ class TestStrictDriftEndToEnd:
         fixture_repo, baseline_sha = _build_branch_fixture_repo(repos_dir, "source-beta")
         kanon_path = _write_kanon(project_dir, "beta", str(fixture_repo))
 
-        # Baseline install
         _run_install_with_fake_catalog(
             kanon_path,
             fixture_repo,
@@ -300,11 +281,10 @@ class TestStrictDriftEndToEnd:
             strict_lock=False,
             strict_drift=False,
         )
-        # Advance branch
-        new_sha = _advance_branch(fixture_repo)
-        capsys.readouterr()  # discard baseline output
 
-        # Reinstall without strict flag -- must emit drift info-line, not raise
+        new_sha = _advance_branch(fixture_repo)
+        capsys.readouterr()
+
         _run_install_with_fake_catalog(
             kanon_path,
             fixture_repo,
@@ -314,7 +294,7 @@ class TestStrictDriftEndToEnd:
         )
 
         captured = capsys.readouterr()
-        # The drift info-line must appear in stdout
+
         assert "branch drift: beta:" in captured.out
         assert "reusing locked SHA" in captured.out
         assert new_sha in captured.out or baseline_sha in captured.out
@@ -329,7 +309,6 @@ class TestStrictDriftEndToEnd:
         fixture_repo, baseline_sha = _build_branch_fixture_repo(repos_dir, "source-gamma")
         kanon_path = _write_kanon(project_dir, "gamma", str(fixture_repo))
 
-        # Baseline install
         _run_install_with_fake_catalog(
             kanon_path,
             fixture_repo,
@@ -338,10 +317,8 @@ class TestStrictDriftEndToEnd:
             strict_drift=False,
         )
 
-        # Advance branch
         new_sha = _advance_branch(fixture_repo)
 
-        # refresh-lock-source should accept new tip
         _run_install_with_fake_catalog(
             kanon_path,
             fixture_repo,
@@ -355,11 +332,6 @@ class TestStrictDriftEndToEnd:
         updated_lf = read_lockfile(lock_path)
         updated_sha = updated_lf.sources[0].resolved_sha
         assert updated_sha == new_sha, f"Expected lockfile to record new SHA {new_sha!r}, got {updated_sha!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: full cycle with strict-lock (orphaned entries)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -442,7 +414,6 @@ class TestStrictLockEndToEnd:
         fixture_alpha, sha_alpha = _build_branch_fixture_repo(repos_dir, "source-alpha2")
         fixture_orphan, sha_orphan = _build_branch_fixture_repo(repos_dir, "source-orphan")
 
-        # Single-source .kanon (only alpha)
         kanon_path = project_dir / ".kanon"
         kanon_path.write_text(
             f"KANON_MARKETPLACE_INSTALL=false\n"
@@ -458,8 +429,6 @@ class TestStrictLockEndToEnd:
 
         real_hash = compute_hash(kanon_path)
 
-        # Write a lockfile that is CONSISTENT (correct kanon_hash) but contains
-        # an extra orphaned source entry for "ghost"
         lock_path = project_dir / ".kanon.lock"
         self._write_lockfile_with_orphan(
             lock_path,
@@ -475,7 +444,7 @@ class TestStrictLockEndToEnd:
         fake_ref = _RefResolution(sha=sha_alpha, resolved_ref="refs/heads/main")
 
         def _check_reachable(url: str, sha: str, source_name: str) -> None:
-            # Only alpha is in the .kanon, and its SHA is reachable: a no-op mock.
+
             return None
 
         with (
@@ -487,7 +456,6 @@ class TestStrictLockEndToEnd:
             patch("kanon_cli.core.install.run_repo_sync"),
             pytest.raises(OrphanedLockEntryError) as exc_info,
         ):
-            # No drift: remote tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{sha_alpha}\trefs/heads/main\n")
             install(
                 kanon_path,
@@ -497,7 +465,7 @@ class TestStrictLockEndToEnd:
 
         error_msg = str(exc_info.value)
         assert "ghost" in error_msg
-        # Remediation must mention running without --strict-lock OR restoring triples
+
         assert "KANON_SOURCE_" in error_msg or "--strict-lock" in error_msg
 
     def test_strict_lock_default_prunes_orphan(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
@@ -557,16 +525,10 @@ class TestStrictLockEndToEnd:
         captured = capsys.readouterr()
         assert "pruned orphaned lock entry: ghost" in captured.out
 
-        # Verify the lockfile was rewritten without the orphan
         updated_lf = read_lockfile(lock_path)
         source_names = [s.name for s in updated_lf.sources]
         assert "ghost" not in source_names
         assert "alpha" in source_names
-
-
-# ---------------------------------------------------------------------------
-# TestStrictLockOrphanErrorMessage: verify error message content (DEFECT-011)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -692,8 +654,7 @@ class TestStrictLockOrphanErrorMessage:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
-        # install is hermetic: a leaked KANON_CATALOG_SOURCES would trip the
-        # hermetic-rejection guard before orphan detection.
+
         env.pop("KANON_CATALOG_SOURCES", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", "--strict-lock"],
@@ -727,7 +688,6 @@ class TestStrictLockOrphanErrorMessage:
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        # Build two bare repos: one for the active source, one for the orphan.
         cat_a_bare = _create_manifest_repo_with_tags(
             repos_dir / "catA",
             entry_names=["source-delta"],
@@ -739,26 +699,21 @@ class TestStrictLockOrphanErrorMessage:
             tags=["1.0.0"],
         )
 
-        # Derive normalized source names the same way kanon's install engine does.
         active_entry_name = "source-delta"
         orphan_entry_name = "source-echo"
         active_source_key = derive_source_name(active_entry_name)
         expected_orphan_name = derive_source_name(orphan_entry_name)
 
-        # Placeholder SHAs (orphan check runs before SHA resolution).
         placeholder_sha = "a" * 40
 
-        # Write .kanon with only the active source triple.
         kanon_path = self._write_kanon_single_source(
             project_dir,
             source_name=active_source_key,
             source_url=str(cat_a_bare),
         )
 
-        # Compute kanon_hash for the single-source .kanon so the lockfile is CONSISTENT.
         real_hash = _compute_kanon_hash(kanon_path)
 
-        # Write lockfile: consistent hash, active entry, plus orphaned source-echo.
         lock_path = project_dir / ".kanon.lock"
         self._write_lockfile_with_orphans(
             lock_path,
@@ -769,7 +724,6 @@ class TestStrictLockOrphanErrorMessage:
             orphan_entries=[(expected_orphan_name, str(cat_b_bare), placeholder_sha)],
         )
 
-        # Run kanon install --strict-lock and capture the result.
         result = self._run_strict_lock_install(project_dir)
 
         stderr = result.stderr
@@ -809,7 +763,6 @@ class TestStrictLockOrphanErrorMessage:
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
-        # Build one bare repo for the active source.
         cat_active_bare = _create_manifest_repo_with_tags(
             repos_dir / "cat-active",
             entry_names=["source-foxtrot"],
@@ -817,7 +770,6 @@ class TestStrictLockOrphanErrorMessage:
         )
         active_source_key = derive_source_name("source-foxtrot")
 
-        # Build one bare repo per orphan (named golf-0, golf-1, ...).
         orphan_entries: list[tuple[str, str, str]] = []
         placeholder_sha = "b" * 40
         for idx in range(orphan_count):
@@ -830,7 +782,6 @@ class TestStrictLockOrphanErrorMessage:
             orphan_source_key = derive_source_name(orphan_entry_name)
             orphan_entries.append((orphan_source_key, str(orphan_bare), placeholder_sha))
 
-        # Write .kanon with only the active source.
         placeholder_active_sha = "c" * 40
         kanon_path = self._write_kanon_single_source(
             project_dir,
@@ -861,12 +812,6 @@ class TestStrictLockOrphanErrorMessage:
         assert expected_phrase in stderr, (
             f"Expected {expected_phrase!r} in stderr for {orphan_count} orphan(s).\nstderr: {stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# TestStrictLockDefaultAutoPrune: default install auto-prunes orphaned entries
-# (DEFECT-014)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -905,9 +850,7 @@ class TestStrictLockDefaultAutoPrune:
         """
         env = dict(os.environ)
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
-        # install is hermetic: a leaked KANON_CATALOG_SOURCES would trip the
-        # hermetic-rejection guard.  'kanon add' passes --catalog-source
-        # explicitly, so popping the env var is safe for both add and install.
+
         env.pop("KANON_CATALOG_SOURCES", None)
         return subprocess.run(
             [sys.executable, "-m", "kanon_cli"] + args,
@@ -1029,7 +972,6 @@ class TestStrictLockDefaultAutoPrune:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Build two separate bare catalog repos with distinct entry names.
         bare_a = _create_manifest_repo_with_tags(
             repos_dir / "cat-a",
             entry_names=["entry-alpha"],
@@ -1041,18 +983,15 @@ class TestStrictLockDefaultAutoPrune:
             tags=["1.0.0"],
         )
 
-        # Derive normalized source keys (what KANON_SOURCE_<key>_* will use).
         a_source_name = derive_source_name("entry-alpha")
         b_source_name = derive_source_name("entry-beta")
 
         catalog_a = f"file://{bare_a}@main"
         catalog_b = f"file://{bare_b}@main"
 
-        # Add both sources; kanon add writes the KANON_SOURCE_* triples.
         self._kanon_add("entry-alpha", catalog_a, workspace)
         self._kanon_add("entry-beta", catalog_b, workspace)
 
-        # First install: creates .kanon.lock with both A and B.
         install_result = self._kanon_install(workspace)
         assert install_result.returncode == 0, (
             f"Initial kanon install failed (exit {install_result.returncode}).\n"
@@ -1063,17 +1002,14 @@ class TestStrictLockDefaultAutoPrune:
         lock_path = workspace / ".kanon.lock"
         assert lock_path.exists(), ".kanon.lock was not created by the initial install"
 
-        # Verify both sources are in the lockfile before modification.
         initial_lock = read_lockfile(lock_path)
         initial_names = [s.name for s in initial_lock.sources]
         assert b_source_name in initial_names, (
             f"Expected {b_source_name!r} in initial lockfile sources: {initial_names!r}"
         )
 
-        # Remove B's triple from .kanon; .kanon.lock remains unchanged.
         self._remove_source_triple(kanon_path, b_source_name)
 
-        # Verify B's lines are gone and A's remain.
         kanon_content = kanon_path.read_text()
         assert f"KANON_SOURCE_{b_source_name}_URL" not in kanon_content, (
             "B's URL line should have been removed from .kanon"
@@ -1082,9 +1018,6 @@ class TestStrictLockDefaultAutoPrune:
             "A's URL line must remain in .kanon after removing B"
         )
 
-        # Second install (no flags): the test assertion target.
-        # Under the reconcile contract, plain install prunes the orphaned B entry
-        # and exits 0 with the INFO line and a pruned lockfile.
         second_result = self._kanon_install(workspace)
         stdout = second_result.stdout
 
@@ -1099,7 +1032,6 @@ class TestStrictLockDefaultAutoPrune:
             f"Expected orphan name {b_source_name!r} on the info line in stdout.\nstdout: {stdout!r}"
         )
 
-        # Re-read the lockfile from disk after the subprocess exits.
         post_run_lock = read_lockfile(lock_path)
         post_run_names = [s.name for s in post_run_lock.sources]
         assert b_source_name not in post_run_names, (
@@ -1137,7 +1069,6 @@ class TestStrictLockDefaultAutoPrune:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Build catalog repo for the single active source.
         bare_active = _create_manifest_repo_with_tags(
             repos_dir / "cat-active",
             entry_names=["entry-active"],
@@ -1147,7 +1078,6 @@ class TestStrictLockDefaultAutoPrune:
         catalog_active = f"file://{bare_active}@main"
         self._kanon_add("entry-active", catalog_active, workspace)
 
-        # Build one catalog repo per orphan source and add each.
         orphan_source_names: list[str] = []
         for idx in range(orphan_count):
             entry_name = f"entry-orphan-{idx}"
@@ -1160,7 +1090,6 @@ class TestStrictLockDefaultAutoPrune:
             self._kanon_add(entry_name, catalog_orphan, workspace)
             orphan_source_names.append(derive_source_name(entry_name))
 
-        # First install: creates .kanon.lock with active + all orphans.
         install_result = self._kanon_install(workspace)
         assert install_result.returncode == 0, (
             f"Initial install failed (exit {install_result.returncode}).\n"
@@ -1171,11 +1100,9 @@ class TestStrictLockDefaultAutoPrune:
         kanon_path = workspace / ".kanon"
         assert lock_path.exists(), ".kanon.lock was not created by initial install"
 
-        # Remove all orphan triples from .kanon; leave active source intact.
         for orphan_name in orphan_source_names:
             self._remove_source_triple(kanon_path, orphan_name)
 
-        # Second install (no flags): the assertion target.
         second_result = self._kanon_install(workspace)
         stdout = second_result.stdout
 
@@ -1184,7 +1111,6 @@ class TestStrictLockDefaultAutoPrune:
             f"stdout: {stdout!r}\nstderr: {second_result.stderr!r}"
         )
 
-        # Count INFO lines: each must contain the prefix.
         info_prefix = "pruned orphaned lock entry:"
         info_line_count = stdout.count(info_prefix)
         assert info_line_count == orphan_count, (
@@ -1192,7 +1118,6 @@ class TestStrictLockDefaultAutoPrune:
             f"got {info_line_count}.\nstdout: {stdout!r}"
         )
 
-        # Re-read the lockfile from disk (post-subprocess, no intermediate caching).
         post_run_lock = read_lockfile(lock_path)
         post_run_names = [s.name for s in post_run_lock.sources]
 

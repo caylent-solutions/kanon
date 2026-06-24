@@ -27,18 +27,9 @@ import pytest
 from kanon_cli.repo import version_constraints
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "E2E Constraint Test User"
 _GIT_USER_EMAIL = "e2e-constraint-test@example.com"
 _TAG_PREFIX = "refs/tags/pkg"
-
-
-# ---------------------------------------------------------------------------
-# Fixture: reusable git repo builder
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -156,11 +147,6 @@ def semver_repo(tmp_path: pathlib.Path) -> list[str]:
     return _fetch_tags_from_repo(bare_dir)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: ~= compatible release
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_compatible_release_constraint_resolves_to_correct_tag(semver_repo: list[str]) -> None:
     """AC-TEST-001: ~= constraint resolves to the correct compatible release tag.
@@ -177,11 +163,6 @@ def test_compatible_release_constraint_resolves_to_correct_tag(semver_repo: list
     assert result == f"{_TAG_PREFIX}/1.3.0", (
         f"Expected {_TAG_PREFIX}/1.3.0 from constraint ~=1.1 but got {result!r}. Available tags: {semver_repo!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: >=/<  range constraint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -203,11 +184,6 @@ def test_range_constraint_resolves_to_highest_within_range(semver_repo: list[str
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: == exact match
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_exact_constraint_resolves_to_exact_tag(semver_repo: list[str]) -> None:
     """AC-TEST-003: == constraint resolves to the exact matching tag.
@@ -226,11 +202,6 @@ def test_exact_constraint_resolves_to_exact_tag(semver_repo: list[str]) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: * wildcard resolves to latest tag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_wildcard_constraint_resolves_to_latest_tag(semver_repo: list[str]) -> None:
     """AC-TEST-004: * wildcard constraint resolves to the latest available tag.
@@ -247,11 +218,6 @@ def test_wildcard_constraint_resolves_to_latest_tag(semver_repo: list[str]) -> N
     assert result == f"{_TAG_PREFIX}/2.0.0", (
         f"Expected {_TAG_PREFIX}/2.0.0 from wildcard * but got {result!r}. Available tags: {semver_repo!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: ==1.* wildcard partial major version
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -273,17 +239,6 @@ def test_partial_wildcard_constraint_resolves_to_latest_matching_major(semver_re
     assert result == f"{_TAG_PREFIX}/1.3.0", (
         f"Expected {_TAG_PREFIX}/1.3.0 from constraint ==1.* but got {result!r}. Available tags: {semver_repo!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006 is structural: all tests above use real git repos (verified by
-# fixture semver_repo, which creates a bare repo and fetches tags via git ls-remote).
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Parametrized coverage: all five constraint types in one parametrize block
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

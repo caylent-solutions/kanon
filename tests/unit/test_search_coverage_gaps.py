@@ -27,11 +27,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.core.metadata import CatalogMetadata
 
 
-# ---------------------------------------------------------------------------
-# Lines 156-160: _list_tags_from_url error path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestListTagsFromUrlErrorPath:
     """_list_tags_from_url exits with code 1 when git ls-remote fails."""
@@ -96,11 +91,6 @@ class TestListTagsFromUrlErrorPath:
         assert git_error in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Lines 164-171: _list_tags_from_url parsing loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestListTagsFromUrlParsingLoop:
     """_list_tags_from_url correctly parses ls-remote output with blank/malformed lines."""
@@ -163,7 +153,6 @@ class TestListTagsFromUrlParsingLoop:
 
         pairs = _list_tags_from_url("https://example.com/repo.git")
 
-        # Only the non-peeled form should be included
         assert len(pairs) == 1
         assert not pairs[0][0].endswith("^{}")
 
@@ -183,11 +172,6 @@ class TestListTagsFromUrlParsingLoop:
         pairs = _list_tags_from_url("https://example.com/repo.git")
 
         assert len(pairs) == 3
-
-
-# ---------------------------------------------------------------------------
-# Lines 220-228: _sort_version_pairs_newest_first
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -262,7 +246,7 @@ class TestSortVersionPairsNewestFirst:
         """Version string is extracted from the last / component of the ref."""
         pairs = [("refs/tags/v3.1.4", "sha")]
         result = _sort_version_pairs_newest_first(pairs)
-        # v3.1.4 is a valid PEP 440 version (epoch-less)
+
         assert len(result) == 1
         _, ver, _ = result[0]
         assert str(ver) == "3.1.4"
@@ -272,11 +256,6 @@ class TestSortVersionPairsNewestFirst:
         pairs = [("refs/tags/1.0.0", "onlysha")]
         result = _sort_version_pairs_newest_first(pairs)
         assert len(result) == 1
-
-
-# ---------------------------------------------------------------------------
-# Lines 314-363: _walk_all_versions body
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -387,7 +366,6 @@ class TestWalkAllVersions:
                 since_version=None,
             )
 
-        # With limit=1, only the newest version (3.0.0) should be in the results
         assert len(result) == 1
         assert result[0].version == "3.0.0"
 
@@ -431,7 +409,6 @@ class TestWalkAllVersions:
                 since_version=">=2.0.0",
             )
 
-        # Only 2.0.0 and 3.0.0 match >=2.0.0
         version_strs = [r.version for r in result]
         assert "1.0.0" not in version_strs
         assert "2.0.0" in version_strs
@@ -526,7 +503,7 @@ class TestWalkAllVersions:
         result = _walk_all_versions(
             "https://example.com/repo.git@main",
             limit=0,
-            since_version=">=9.0.0",  # No tags satisfy this
+            since_version=">=9.0.0",
         )
 
         assert result == []
@@ -575,7 +552,6 @@ class TestWalkAllVersions:
                 since_version=None,
             )
 
-        # 1 version x 2 catalog names = 2 rows
         assert len(result) == 2
         names = {r.name for r in result}
         assert names == {"alpha", "beta"}

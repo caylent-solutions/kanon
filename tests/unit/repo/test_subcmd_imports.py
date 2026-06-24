@@ -14,7 +14,7 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).parents[3]
 SUBCMDS_DIR = REPO_ROOT / "src" / "kanon_cli" / "repo" / "subcmds"
 
-# All root-level modules that live in kanon_cli.repo (not stdlib or third-party)
+
 REPO_INTERNAL_MODULES = frozenset(
     {
         "color",
@@ -45,7 +45,7 @@ REPO_INTERNAL_MODULES = frozenset(
     }
 )
 
-# The subcmds package itself is also repo-internal
+
 SUBCMDS_PACKAGE = "subcmds"
 
 SUBCMD_FILENAMES = [

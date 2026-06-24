@@ -30,10 +30,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -125,11 +121,6 @@ def _build_remote_manifest(
         f'  <default revision="{default_revision}" remote="{remote_name}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <remote> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -295,11 +286,6 @@ class TestRemoteMinimumAttributes:
         remote = manifest.remotes[remote_name]
         assert remote.name == remote_name, f"Expected remote.name='{remote_name}' but got: {remote.name!r}"
         assert remote.fetchUrl == fetch_url, f"Expected remote.fetchUrl='{fetch_url}' but got: {remote.fetchUrl!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <remote> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -526,11 +512,6 @@ class TestRemoteAllDocumentedAttributes:
 
         remote = manifest.remotes["origin"]
         assert remote.revision == revision, f"Expected remote.revision='{revision}' but got: {remote.revision!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <remote> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -760,11 +741,6 @@ class TestRemoteDefaultAttributeValues:
 
         remote = manifest.remotes["origin"]
         assert remote.remoteAlias == alias, f"Expected remote.remoteAlias='{alias}' but got: {remote.remoteAlias!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

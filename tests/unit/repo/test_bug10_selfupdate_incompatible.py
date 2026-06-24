@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 10: selfupdate subcommand incompatible with embedded mode.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 10 -- selfupdate subcommand
@@ -34,11 +20,6 @@ import pytest
 import kanon_cli.repo.pager as repo_pager
 from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 from kanon_cli.repo.subcmds import selfupdate as selfupdate_mod
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_selfupdate_instance() -> selfupdate_mod.Selfupdate:
@@ -78,11 +59,6 @@ def _make_opt(repo_upgraded: bool = False, repo_verify: bool = True) -> MagicMoc
     return opt
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: selfupdate prints embedded mode informational message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_bug10_selfupdate_embedded_prints_informational_message(
     monkeypatch: pytest.MonkeyPatch,
@@ -111,11 +87,6 @@ def test_bug10_selfupdate_embedded_prints_informational_message(
         f"Bug 10 fix: expected stderr to contain {SELFUPDATE_EMBEDDED_MESSAGE!r} "
         f"in embedded mode, but stderr was: {output!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: selfupdate does not attempt any sync or update operation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -248,11 +219,6 @@ def test_bug10_selfupdate_embedded_does_not_call_post_repo_upgrade(
         f"Bug 10 fix: _PostRepoUpgrade was called {len(post_upgrade_calls)} time(s) in embedded mode -- "
         "must not be called when embedded"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: selfupdate exits with non-zero status (exit code 1) in embedded mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

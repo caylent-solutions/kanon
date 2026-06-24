@@ -32,11 +32,6 @@ from kanon_cli.commands.why import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     target: str,
     kanon_file: str = "/fake/.kanon",
@@ -173,11 +168,6 @@ def _write_lockfile_to_tmp(tmp_path: pathlib.Path, lockfile: "object") -> pathli
     return lock_path
 
 
-# ---------------------------------------------------------------------------
-# Tests for _render_json
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRenderJsonShape:
     """Tests for the _render_json function -- shape, keys, kinds, field values."""
@@ -275,18 +265,17 @@ class TestRenderJsonFieldValues:
         """The url field carries the canonicalized URL, not the raw form."""
         from kanon_cli.core.url import canonicalize_repo_url
 
-        # Use a non-canonical form as input
         raw_url = "git@github.com:org/baz.git"
         canonical = canonicalize_repo_url(raw_url)
 
         source = _make_source_node(name="src")
-        # Create project with raw url stored but canonical_url set correctly
+
         project = ChainNode(
             kind="project",
             name="baz",
             ref=None,
             sha="b" * 40,
-            url=canonical,  # url field should already be canonical per spec
+            url=canonical,
             canonical_url=canonical,
         )
 
@@ -398,7 +387,6 @@ class TestRenderJsonWellFormed:
 
         result = _render_json([[source, include, project]])
 
-        # Must not raise and must be a list
         parsed = json.loads(result)
         assert isinstance(parsed, list)
 
@@ -415,11 +403,6 @@ class TestRenderJsonWellFormed:
         result = _render_json([])
         parsed = json.loads(result)
         assert parsed == []
-
-
-# ---------------------------------------------------------------------------
-# Tests for env-var selection and CLI flag override
-# ---------------------------------------------------------------------------
 
 
 def _build_why_parser(monkeypatch: pytest.MonkeyPatch) -> argparse.ArgumentParser:
@@ -500,7 +483,7 @@ class TestFormatEnvVarAndCliOverride:
                 str(lock_file),
             ]
         )
-        # --format was not passed; env var should have made the default 'json'
+
         assert args.format == "json"
 
         exit_code = run(args)
@@ -582,13 +565,8 @@ class TestFormatEnvVarAndCliOverride:
         assert exit_code == 0
 
         captured = capsys.readouterr()
-        # Text format: output is NOT valid JSON
+
         assert " -> " in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for error paths staying plain-text on stderr regardless of format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -621,9 +599,9 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # stderr must be plain text (not JSON)
+
         assert "not found" in captured.err.lower() or "ERROR" in captured.err
-        # stdout must NOT contain a JSON object (no output on not-found)
+
         assert captured.out == ""
 
     def test_ambiguity_error_is_plain_text_regardless_of_format(
@@ -643,15 +621,10 @@ class TestErrorPathsPlainText:
         )
         from kanon_cli.core.url import canonicalize_repo_url
 
-        # Use "FOO" as the argument: it matches source-name "FOO" (via derive_source_name)
-        # AND matches XML-path "FOO" (exact-string equality).
-        # This creates a genuine two-category ambiguity.
         ambiguous_value = "FOO"
 
-        # Write a .kanon file with source name FOO
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name="FOO")
 
-        # Include with path_in_repo="FOO" so XML-path category also matches
         include = IncludeEntry(
             name="foo-include",
             path_in_repo="FOO",
@@ -704,9 +677,9 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # stderr should be plain text
+
         assert "ERROR" in captured.err
-        # stdout is empty on error
+
         assert captured.out == ""
 
     def test_missing_kanon_file_is_plain_text_regardless_of_format(
@@ -724,15 +697,10 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # Error must be plain text on stderr
+
         assert "ERROR" in captured.err or ".kanon" in captured.err
-        # No JSON output on stdout
+
         assert captured.out == ""
-
-
-# ---------------------------------------------------------------------------
-# Tests for run() JSON output -- integration-style unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -780,12 +748,10 @@ class TestRunJsonOutput:
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
 
-        # Top-level shape: dict with 'matched' and 'chains'
         assert isinstance(parsed, dict), f"Expected dict, got {type(parsed).__name__}: {parsed!r}"
         assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
         assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
 
-        # matched field
         assert parsed["matched"]["category"] == "url", (
             f"Expected category 'url', got: {parsed['matched']['category']!r}"
         )
@@ -793,29 +759,24 @@ class TestRunJsonOutput:
             f"Expected project URL in token, got: {parsed['matched']['token']!r}"
         )
 
-        # AC-CYCLE-001: chains array length 1, chain length 3
         assert len(parsed["chains"]) == 1
         chain = parsed["chains"][0]
         assert len(chain) == 3
 
-        # node[0] is source
         assert chain[0]["kind"] == "source"
         assert chain[0]["name"] == "FOO"
         assert chain[0]["ref"] is None
 
-        # node[1] is include
         assert chain[1]["kind"] == "include"
         assert chain[1]["ref"] == "repo-specs/bar.xml"
         assert chain[1]["sha"] == include_sha
         assert chain[1]["url"] is None
 
-        # node[2] is project
         assert chain[2]["kind"] == "project"
         assert chain[2]["name"] == "baz"
         assert chain[2]["sha"] == project_sha
         assert chain[2]["ref"] is None
 
-        # All five keys present on every node
         for node in chain:
             assert set(node.keys()) == {"kind", "name", "ref", "sha", "url"}
 
@@ -877,7 +838,6 @@ class TestRunJsonOutput:
         parsed = json.loads(captured.out)
         assert isinstance(parsed, dict), f"Expected dict from run() JSON mode, got {type(parsed).__name__}"
 
-        # Project node url field must equal the canonical form (accessed via chains)
         project_node = parsed["chains"][0][-1]
         assert project_node["url"] == expected_canonical
 
@@ -896,11 +856,6 @@ class TestRunJsonOutput:
         )
         assert result.returncode != 0
         assert "invalid choice" in result.stderr or "error" in result.stderr.lower()
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_why_payload helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

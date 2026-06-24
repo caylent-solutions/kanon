@@ -22,7 +22,7 @@ import pytest
 def _project_root() -> Path:
     """Return the project root by walking up from this file."""
     here = Path(__file__).resolve()
-    # tests/functional/test_make_operator_path_targets.py -> project root
+
     root = here.parent.parent.parent
     pyproject = root / "pyproject.toml"
     if not pyproject.is_file():
@@ -95,8 +95,7 @@ def test_make_test_runs_full_suite(makefile_lines: list[str]) -> None:
         "ERROR: No recipe lines found for 'test:' target in Makefile. "
         "Ensure a 'test:' target with a pytest invocation exists."
     )
-    # The 'test' target must invoke pytest and must NOT use a '-m' marker
-    # filter that would exclude scenario tests.
+
     pytest_lines = [ln for ln in recipe_lines if "pytest" in ln]
     assert pytest_lines, (
         f"ERROR: 'test:' target recipe does not contain a pytest invocation. Recipe lines: {recipe_lines}."
@@ -118,9 +117,7 @@ def test_make_test_scenarios_selects_scenario_marker(makefile_lines: list[str]) 
         "Add a 'test-scenarios:' target that runs 'uv run pytest -m scenario'."
     )
     combined = " ".join(recipe_lines)
-    # The recipe selects the scenario tier with the bare tier marker (kanon is a
-    # single Linux set; there is no per-OS platform filter), so accept the bare,
-    # single-quoted, or double-quoted scenario-marker forms.
+
     selects_scenario = "-m scenario" in combined or "-m 'scenario" in combined or '-m "scenario' in combined
     assert selects_scenario, (
         f"ERROR: 'make test-scenarios' recipe does not select the 'scenario' "
@@ -210,11 +207,6 @@ def test_operator_path_test_files_exist(project_root: Path) -> None:
         "operator-path behaviors. Verify that the E49 feature tasks have been "
         "completed and their test files are committed to the branch."
     )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _collect_recipe_lines(makefile_lines: list[str], target: str) -> list[str]:

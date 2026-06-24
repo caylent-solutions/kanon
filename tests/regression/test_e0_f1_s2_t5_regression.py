@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F1-S2-T5: __file__ path assumptions in relocated modules.
 
 Bug reference: E0-F1-S2-T5 -- Six modules in kanon_cli.repo used __file__-relative
@@ -69,22 +55,11 @@ import kanon_cli.repo.ssh as _ssh_module
 import kanon_cli.repo.subcmds.manifest as _manifest_module
 import kanon_cli.repo.wrapper as _wrapper_module
 
-# ---------------------------------------------------------------------------
-# Package directory constants -- computed once from this test file's location.
-# The regression guard is intentionally self-contained: it resolves the package
-# directory relative to THIS file so the paths stay correct even if the test
-# directory structure changes.
-# ---------------------------------------------------------------------------
 
 _TESTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 _REPO_ROOT = _TESTS_DIR.parent
 _REPO_PACKAGE_DIR = _REPO_ROOT / "src" / "kanon_cli" / "repo"
 """Absolute path to the kanon_cli.repo package directory."""
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _assert_uses_pathlib_parent(source: str, context: str) -> None:
@@ -123,20 +98,6 @@ def _assert_no_legacy_dirname_file(source: str, context: str) -> None:
         "and cannot locate adjacent resources. "
         "Replace with 'pathlib.Path(__file__).resolve().parent'."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- triggers the exact bug condition from E0-F1-S2-T5
-# ---------------------------------------------------------------------------
-#
-# The bug condition was: os.path.dirname(__file__) returned a path inside the
-# installed package rather than the repo root. We demonstrate the bug by
-# computing what the OLD pattern would have produced and asserting it differs
-# from the expected location, then showing the NEW pattern produces the right
-# result.
-#
-# Note: these tests use @pytest.mark.parametrize to cover all six affected
-# modules in a single parameterized block.
 
 
 @pytest.mark.unit
@@ -186,7 +147,7 @@ def test_regression_old_dirname_would_produce_wrong_path(
 
     AC-TEST-002
     """
-    # Compute the current resolved value from the fixed module.
+
     if new_fn is not None:
         resolved_str = new_fn(module)
     else:
@@ -195,7 +156,6 @@ def test_regression_old_dirname_would_produce_wrong_path(
     resolved = pathlib.Path(resolved_str).resolve()
     expected = (_REPO_PACKAGE_DIR / expected_subpath).resolve()
 
-    # AC-TEST-002: The fixed pattern resolves to the correct location.
     assert resolved == expected, (
         f"E0-F1-S2-T5 regression [{description}]: "
         f"resolved path {resolved!r} does not match expected {expected!r}. "
@@ -203,18 +163,12 @@ def test_regression_old_dirname_would_produce_wrong_path(
         "using pathlib.Path(__file__).resolve().parent, not legacy os.path patterns."
     )
 
-    # AC-TEST-003: The resolved resource actually exists on disk.
     assert resolved.exists(), (
         f"E0-F1-S2-T5 regression [{description}]: "
         f"resolved path {resolved!r} does not exist on disk. "
         "The resource must be present adjacent to the relocated module. "
         f"Expected file/dir: src/kanon_cli/repo/{expected_subpath}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001 -- structural guard: correct pattern present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -268,7 +222,7 @@ def test_regression_ssh_proxy_path_uses_pathlib() -> None:
 
     AC-TEST-001, AC-FUNC-001
     """
-    # Inspect the module-level source (PROXY_PATH is a module-level assignment).
+
     module_source = inspect.getsource(_ssh_module)
 
     assert "pathlib.Path(__file__).resolve().parent" in module_source, (
@@ -379,11 +333,6 @@ def test_regression_project_hooks_uses_pathlib() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- triggers the exact bug condition: hooks dir must exist
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_project_hooks_resolves_to_existing_directory() -> None:
     """AC-TEST-002: _ProjectHooks() resolves to the hooks directory that actually exists.
@@ -414,11 +363,6 @@ def test_regression_project_hooks_resolves_to_existing_directory() -> None:
         f"E0-F1-S2-T5 regression: hooks directory {hooks_dir!r} is empty. "
         "At least one hook file must be present for _ProjectHooks() to function."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- current code passes: all resolved resources exist
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -513,10 +457,9 @@ def test_regression_manifest_help_description_does_not_open_file() -> None:
     AC-TEST-003
     """
     instance = _manifest_module.Manifest.__new__(_manifest_module.Manifest)
-    # helpDescription builds on _helpDescription which is a class attribute.
+
     instance._helpDescription = _manifest_module.Manifest._helpDescription
 
-    # Must not raise FileNotFoundError or any exception.
     description = instance.helpDescription
 
     assert isinstance(description, str), (
@@ -527,7 +470,6 @@ def test_regression_manifest_help_description_does_not_open_file() -> None:
         "Expected non-empty description including the manifest schema reference."
     )
 
-    # Verify no __file__-relative open() is present in the property source.
     source = inspect.getsource(_manifest_module.Manifest.helpDescription.fget)
 
     assert "open(" not in source, (
@@ -544,11 +486,6 @@ def test_regression_manifest_help_description_does_not_open_file() -> None:
         "in helpDescription. This was the original bug's root cause. "
         "Remove the __file__-based directory traversal."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: the pathlib pattern is present in all sources
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -579,11 +516,6 @@ def test_regression_pathlib_parent_pattern_present(
     source = inspect.getsource(fn)
     _assert_uses_pathlib_parent(source, description)
     _assert_no_legacy_dirname_file(source, description)
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

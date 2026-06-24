@@ -60,10 +60,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_*_crossref.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -144,11 +140,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
         The Project object with the given name.
     """
     return {p.name: p for p in manifest.projects}[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <annotation>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -443,11 +434,6 @@ class TestAnnotationCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <annotation>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <annotation> surface clear behavior.
@@ -665,11 +651,6 @@ class TestAnnotationDuplicateElementRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <annotation> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationUnexpectedParent:
     """AC-TEST-003: <annotation> in an unexpected parent raises or is ignored per spec.
@@ -872,11 +853,6 @@ class TestAnnotationUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -1001,11 +977,6 @@ class TestAnnotationCrossRefParseTimeEnforcement:
         assert remote.annotations[0].name == "provider", (
             f"AC-FUNC-001: expected annotation.name='provider' but got: {remote.annotations[0].name!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

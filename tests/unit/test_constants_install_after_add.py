@@ -71,7 +71,7 @@ class TestInstallParserRejectsCatalogSourceFlag:
         "catalog_value",
         [
             "https://cli.example.com/repo.git@main",
-            "https://example.com/catalog.git",  # malformed (no @ref) -- still rejected
+            "https://example.com/catalog.git",
             "latest",
         ],
     )
@@ -125,8 +125,6 @@ class TestInstallIgnoresCatalogSourceEnv:
                 lock_file_path=lock_path,
             )
 
-        # The env var did not abort install: the lockfile records the committed
-        # .kanon source, not the ignored env-var URL.
         assert lock_path.exists()
         lock_text = lock_path.read_text(encoding="utf-8")
         assert "https://git.example.com/alpha.git" in lock_text

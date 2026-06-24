@@ -15,11 +15,6 @@ import pathlib
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_refresh_args(
     kanon_file: str | None = None,
     refresh_completion_cache: bool = False,
@@ -40,11 +35,6 @@ def _make_refresh_args(
         refresh_completion_cache=refresh_completion_cache,
         prune_cache=prune_cache,
     )
-
-
-# ---------------------------------------------------------------------------
-# Subparser registration
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -96,12 +86,6 @@ class TestDoctorSubparser:
         args = parser.parse_args(["doctor"])
         assert args.func is run_doctor
 
-    # NOTE: test_doctor_registered_in_top_level_cli is intentionally omitted here.
-    # Registering 'doctor' in the top-level cli.py (build_parser) is owned by the
-    # task that also owns src/kanon_cli/cli.py (currently claimed by E4-F1-S1-T1 and
-    # others via PRE_CONFLICT).  The integration between register() and the live
-    # top-level parser will be verified by whichever task lands that registration.
-
     def test_doctor_short_dash_h_exits_0(self) -> None:
         """kanon doctor -h exits 0 (add_help=True on the doctor subparser)."""
         from kanon_cli.cli import main
@@ -119,11 +103,6 @@ class TestDoctorSubparser:
         register(subparsers)
         doctor_parser = subparsers.choices["doctor"]
         assert doctor_parser.add_help is True, "doctor subparser must have add_help=True so '-h' is accepted"
-
-
-# ---------------------------------------------------------------------------
-# run_doctor -- --refresh-completion-cache uses the KANON_HOME cache
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -147,7 +126,7 @@ class TestRunDoctorRefreshCompletionCache:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("KANON_MARKETPLACE_INSTALL=false\n", encoding="utf-8")
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
-        cache_dir = tmp_path / "cache"  # == cache_dir() under KANON_HOME=tmp_path
+        cache_dir = tmp_path / "cache"
 
         args = _make_refresh_args(
             kanon_file=str(kanon_file),
@@ -228,11 +207,6 @@ class TestRunDoctorRefreshCompletionCache:
         )
 
 
-# ---------------------------------------------------------------------------
-# run_doctor -- no-flag health check path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunDoctorHealthChecks:
     """run_doctor without flags runs non-mutating health checks."""
@@ -267,7 +241,6 @@ class TestRunDoctorHealthChecks:
         """
         from kanon_cli.commands.doctor import run_doctor
 
-        # Use a .kanon file path that does not exist.
         missing_kanon = tmp_path / ".kanon"
         args = _make_refresh_args(kanon_file=str(missing_kanon))
 
@@ -328,7 +301,7 @@ class TestRunDoctorHealthChecks:
 
         assert result == 0
         captured = capsys.readouterr()
-        # When no lockfile is present, doctor_command emits an INFO notice to stderr.
+
         assert "No lockfile present" in captured.err, (
             f"run_doctor (no flags, no lockfile) must emit an INFO notice to stderr. stderr: {captured.err!r}"
         )
@@ -364,7 +337,7 @@ class TestRunDoctorHealthChecks:
 
         assert result == 0
         captured = capsys.readouterr()
-        # When no lockfile is present, doctor_command emits an INFO stderr notice.
+
         assert "No lockfile present" in captured.err, (
             f"run_doctor must emit INFO notice when no lockfile exists. stderr: {captured.err!r}"
         )
@@ -406,7 +379,6 @@ class TestRunDoctorHealthChecks:
         from kanon_cli.commands.doctor import run_doctor
         from kanon_cli.constants import KANON_KANON_FILE_DEFAULT, KANON_KANON_FILE_ENV
 
-        # Ensure env var is not set so we exercise the default-fallback branch.
         monkeypatch.delenv(KANON_KANON_FILE_ENV, raising=False)
 
         kanon_file = tmp_path / KANON_KANON_FILE_DEFAULT
@@ -420,11 +392,6 @@ class TestRunDoctorHealthChecks:
 
         assert result == 0
         monkeypatch.chdir(os.getcwd())
-
-
-# ---------------------------------------------------------------------------
-# _refresh_completion_cache -- error path (OSError on mkdir)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -448,18 +415,13 @@ class TestRefreshCompletionCacheErrors:
         from kanon_cli.commands.doctor import _refresh_completion_cache
 
         cache_dir = tmp_path / "completion-cache"
-        # Make the parent unwritable so mkdir fails.
+
         tmp_path.chmod(0o555)
         try:
             with pytest.raises(OSError):
                 _refresh_completion_cache(cache_dir)
         finally:
             tmp_path.chmod(0o755)
-
-
-# ---------------------------------------------------------------------------
-# E1-F1-S2-T1: doctor.py imports run_git_ls_remote from core.git_runner
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

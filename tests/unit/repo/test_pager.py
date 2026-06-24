@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the pager.py module."""
 
 import os
@@ -217,7 +203,7 @@ class TerminatePagerTests(unittest.TestCase):
     def test_terminate_pager_does_nothing_if_no_process(self):
         """TerminatePager should do nothing if no pager process."""
         pager.pager_process = None
-        # Should not raise
+
         pager.TerminatePager()
 
     def test_terminate_pager_flushes_stdout(self):
@@ -344,14 +330,13 @@ class ForkPagerTests(unittest.TestCase):
     def test_fork_pager_sets_active_in_child(self):
         """_ForkPager should set active=True in child process."""
         with mock.patch("os.pipe", return_value=(3, 4)):
-            with mock.patch("os.fork", return_value=0):  # Child process
+            with mock.patch("os.fork", return_value=0):
                 with mock.patch("os.dup2"):
                     with mock.patch("os.close"):
-                        # Should return (not call _BecomePager)
                         pager._ForkPager("less")
-                        # active should be set
+
                         self.assertTrue(pager.active)
-        # Reset
+
         pager.active = False
 
     def test_fork_pager_redirects_output_in_child(self):
@@ -361,7 +346,7 @@ class ForkPagerTests(unittest.TestCase):
                 with mock.patch("os.dup2") as mock_dup2:
                     with mock.patch("os.close"):
                         pager._ForkPager("less")
-                        # Should dup2 write fd to stdout and stderr
+
                         calls = mock_dup2.call_args_list
                         self.assertEqual(len(calls), 2)
         pager.active = False
@@ -373,14 +358,14 @@ class ForkPagerTests(unittest.TestCase):
                 with mock.patch("os.dup2"):
                     with mock.patch("os.close") as mock_close:
                         pager._ForkPager("less")
-                        # Should close both pipe fds
+
                         self.assertEqual(mock_close.call_count, 2)
         pager.active = False
 
     def test_fork_pager_becomes_pager_in_parent(self):
         """_ForkPager should call _BecomePager in parent."""
         with mock.patch("os.pipe", return_value=(3, 4)):
-            with mock.patch("os.fork", return_value=12345):  # Parent process
+            with mock.patch("os.fork", return_value=12345):
                 with mock.patch("os.dup2"):
                     with mock.patch("os.close"):
                         with mock.patch("kanon_cli.repo.pager._BecomePager") as mock_become:

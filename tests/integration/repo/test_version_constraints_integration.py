@@ -25,18 +25,9 @@ from kanon_cli.repo import error
 from kanon_cli.repo import version_constraints
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Version Constraint Test User"
 _GIT_USER_EMAIL = "version-constraint-test@example.com"
 _TAG_PREFIX = "refs/tags/project"
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -170,11 +161,6 @@ def _list_tags_from_repo(repo_path: pathlib.Path) -> list[str]:
     return tags
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def multi_version_repo(tmp_path: pathlib.Path) -> list[str]:
     """Create a bare git repo with versions 1.0.0, 1.1.0, 1.2.0, 1.3.0, 2.0.0.
@@ -208,11 +194,6 @@ def prerelease_repo(tmp_path: pathlib.Path) -> list[str]:
     return _list_tags_from_repo(bare_dir)
 
 
-# ---------------------------------------------------------------------------
-# Tests: is_version_constraint detection (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_is_version_constraint_detects_all_operators() -> None:
     """is_version_constraint returns True for every PEP 440 operator.
@@ -238,11 +219,6 @@ def test_is_version_constraint_detects_all_operators() -> None:
         assert version_constraints.is_version_constraint(revision), (
             f"Expected is_version_constraint({revision!r}) to return True, but got False."
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests: resolve_version_constraint -- individual operators (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -415,11 +391,6 @@ def test_wildcard_operator_returns_highest_version(multi_version_repo: list[str]
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests: compound constraints (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_compound_range_constraint_selects_highest_within_range(multi_version_repo: list[str]) -> None:
     """Compound >=X,<Y constraint selects the highest version within the range.
@@ -454,11 +425,6 @@ def test_compound_constraint_with_exclusion(multi_version_repo: list[str]) -> No
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests: pre-release handling (AC-FUNC-005)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_prerelease_versions_excluded_by_stable_constraint(prerelease_repo: list[str]) -> None:
     """Stable constraint (>=1.0.0) does not return pre-release versions by default.
@@ -491,11 +457,6 @@ def test_prerelease_selected_by_explicit_prerelease_constraint(prerelease_repo: 
     assert result == f"{_TAG_PREFIX}/1.0.0a1", (
         f"Expected {_TAG_PREFIX}/1.0.0a1 but got {result!r}. Available tags: {prerelease_repo!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests: error paths (AC-FUNC-006, AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

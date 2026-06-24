@@ -59,11 +59,6 @@ def _rp_ro_setup_block(doc: str) -> str:
     return match.group(0)
 
 
-# ---------------------------------------------------------------------------
-# TC-install-01..04: KANON_SOURCE_a_PATH MUST be repo-specs/-prefixed.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestTCInstallScenarios:
     @pytest.mark.parametrize(
@@ -87,11 +82,6 @@ class TestTCInstallScenarios:
         )
 
 
-# ---------------------------------------------------------------------------
-# TC-clean-01..02: same fix as TC-install.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestTCCleanScenarios:
     @pytest.mark.parametrize("scenario_id", ["TC-clean-01", "TC-clean-02"])
@@ -107,11 +97,6 @@ class TestTCCleanScenarios:
         assert "KANON_SOURCE_a_PATH=alpha-only.xml" not in block, (
             f"{scenario_id}: still references root-level alpha-only.xml"
         )
-
-
-# ---------------------------------------------------------------------------
-# UJ-03: alpha and bravo paths both repo-specs/-prefixed.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -133,11 +118,6 @@ class TestUJ03MultiSource:
         assert "KANON_SOURCE_bravo_PATH=bravo-only.xml" not in block
 
 
-# ---------------------------------------------------------------------------
-# UJ-04 / UJ-08 / UJ-09: alpha path repo-specs/-prefixed.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUJSingleSourceScenarios:
     @pytest.mark.parametrize("scenario_id", ["UJ-04", "UJ-08", "UJ-09"])
@@ -153,13 +133,6 @@ class TestUJSingleSourceScenarios:
         assert "KANON_SOURCE_a_PATH=alpha-only.xml" not in block, (
             f"{scenario_id}: still references root-level alpha-only.xml"
         )
-
-
-# ---------------------------------------------------------------------------
-# UJ-06: collision detection requires both source-a (primary) and source-b
-# (collision) paths to be repo-specs/-prefixed AND source-b to use
-# MANIFEST_COLLISION_DIR rather than MANIFEST_PRIMARY_DIR.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -189,12 +162,6 @@ class TestUJ06CollisionDetection:
         )
 
 
-# ---------------------------------------------------------------------------
-# rp_ro_setup() helper used by rp-status / rp-info / rp-manifest scenarios:
-# the kanon repo init invocation must use -m repo-specs/packages.xml.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRpRoSetup:
     def test_uses_repo_specs_packages_xml(self) -> None:
@@ -206,12 +173,6 @@ class TestRpRoSetup:
         assert "-m default.xml" not in block, (
             "rp_ro_setup must not reference -m default.xml (fixture has no default.xml)"
         )
-
-
-# ---------------------------------------------------------------------------
-# RP-wrap-01/02/03: each kanon repo init invocation must use
-# -m repo-specs/packages.xml.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -227,20 +188,11 @@ class TestRPWrapScenarios:
         assert "-m default.xml" not in block, f"{scenario_id} must not reference -m default.xml"
 
 
-# ---------------------------------------------------------------------------
-# Global guards: across the full doc, no scenario should declare a
-# root-level alpha/bravo/collision manifest path inside a .kanon block.
-# These provide a wider safety net beyond the per-scenario asserts above.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestGlobalNoResidualRootLevelPaths:
     def test_no_root_level_kanon_source_a_path(self) -> None:
         doc = _load_doc()
-        # The .kanon variable form is the contract this Task fixed; per-fixture
-        # bash sources may reference the root file when constructing fixtures,
-        # but a .kanon assignment of the bare form is always wrong.
+
         assert "\nKANON_SOURCE_a_PATH=alpha-only.xml\n" not in doc, (
             "Some .kanon block still assigns root-level alpha-only.xml"
         )
@@ -256,13 +208,6 @@ class TestGlobalNoResidualRootLevelPaths:
     def test_no_root_level_kanon_source_b_collision(self) -> None:
         doc = _load_doc()
         assert "\nKANON_SOURCE_b_PATH=collision.xml\n" not in doc
-
-
-# ---------------------------------------------------------------------------
-# Coverage cross-checks: every named scenario the fix targets is present in
-# the doc, and the fixture writes manifests to repo-specs/ (the location
-# the corrected paths point at).
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -41,24 +41,15 @@ from tests.scenarios.conftest import (
     run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Scenario table: (cs_id, constraint, delivery, expected_tag)
-#
-# delivery is "flag" or "env" -- controls how the catalog-source is passed.
-# expected_tag is the highest semver tag the constraint must resolve to.
-#
-# Available tags: 1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0
-# ---------------------------------------------------------------------------
 
 _CS_SCENARIOS: list[tuple[str, str, str, str]] = [
-    # id       constraint          delivery   expected_tag
     ("CS-01", "*", "flag", "3.0.0"),
     ("CS-02", "*", "env", "3.0.0"),
     ("CS-03", "latest", "flag", "3.0.0"),
     ("CS-04", "latest", "env", "3.0.0"),
-    ("CS-05", "~=1.0.0", "flag", "1.0.1"),  # >=1.0.0,<1.1.0 -> 1.0.1
+    ("CS-05", "~=1.0.0", "flag", "1.0.1"),
     ("CS-06", "~=1.0.0", "env", "1.0.1"),
-    ("CS-07", "~=2.0.0", "flag", "2.0.0"),  # >=2.0.0,<2.1.0 -> 2.0.0
+    ("CS-07", "~=2.0.0", "flag", "2.0.0"),
     ("CS-08", "~=2.0.0", "env", "2.0.0"),
     ("CS-09", ">=1.0.0,<2.0.0", "flag", "1.2.0"),
     ("CS-10", ">=1.0.0,<2.0.0", "env", "1.2.0"),
@@ -72,18 +63,17 @@ _CS_SCENARIOS: list[tuple[str, str, str, str]] = [
     ("CS-18", "<=2.0.0", "env", "2.0.0"),
     ("CS-19", "==1.1.0", "flag", "1.1.0"),
     ("CS-20", "==1.1.0", "env", "1.1.0"),
-    ("CS-21", "!=1.0.0", "flag", "3.0.0"),  # highest non-excluded
+    ("CS-21", "!=1.0.0", "flag", "3.0.0"),
     ("CS-22", "!=1.0.0", "env", "3.0.0"),
     ("CS-23", ">1.0.0,<2.0.0", "flag", "1.2.0"),
     ("CS-24", ">1.0.0,<2.0.0", "env", "1.2.0"),
-    ("CS-25", "main", "flag", "3.0.0"),  # plain branch -- HEAD of main is 3.0.0
-    ("CS-26", "2.0.0", "flag", "2.0.0"),  # plain tag passthrough
+    ("CS-25", "main", "flag", "3.0.0"),
+    ("CS-26", "2.0.0", "flag", "2.0.0"),
 ]
 
 _CS_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
 
-# The plain catalog-source env var (plural) read by the 3.0.0 CLI when no
-# --catalog-source flag is supplied.
+
 _CATALOG_SOURCES_ENV = "KANON_CATALOG_SOURCES"
 
 
@@ -117,11 +107,6 @@ def _marketplace_xml(entry_name: str, version: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Class-scoped fixture -- built once, shared across all 26 CS scenarios
-# ---------------------------------------------------------------------------
-
-
 def _build_cs_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
     """Build a bare catalog repo whose every tag publishes a unique entry.
 
@@ -139,8 +124,6 @@ def _build_cs_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
     repo_specs.mkdir()
 
     for tag in _CS_TAGS:
-        # Each tag publishes exactly one entry (remove any prior tag's file so
-        # search at this tag lists only this entry).
         for stale in repo_specs.glob("*.xml"):
             stale.unlink()
         entry_name = _entry_name_for_tag(tag)
@@ -157,11 +140,6 @@ def cs_catalog_bare(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     """Class-scoped bare catalog repo for all CS scenarios."""
     parent = tmp_path_factory.mktemp("cs-fixtures")
     return _build_cs_catalog_repo(parent)
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -228,8 +206,6 @@ class TestCS:
             f"stderr={result.stderr!r}"
         )
 
-        # The fixture publishes exactly one entry per tag, so no entry from any
-        # other tag may appear: that would mean the constraint resolved wrong.
         for other_tag in _CS_TAGS:
             if other_tag == expected_tag:
                 continue

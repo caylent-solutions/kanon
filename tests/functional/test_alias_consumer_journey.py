@@ -31,39 +31,24 @@ import textwrap
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Alias Journey Test User"
 _GIT_USER_EMAIL = "alias-journey@example.com"
 
-# The shared original catalog manifest NAME for both dependencies. The two
-# dependencies are the same package published from two different source repos;
-# the ``_NAME`` field records this shared manifest name while the two distinct
-# aliases key the blocks in ``.kanon`` (FR-6, FR-59).
+
 _MANIFEST_NAME = "history"
 
-# The two local aliases that disambiguate the two same-name sources. The second
-# alias carries the sanitized source-repo suffix (the deterministic
-# cross-source-collision shape from spec Section 4.2); this journey writes the
-# committed ``.kanon`` directly so it is independent of the add-time aliasing.
+
 _ALIAS_FIRST = "history"
 _ALIAS_SECOND = "history_caylent_private_kanon"
 
-# PEP 440 tags published on each project repo (first source older than second
-# so the rendered rows differ, exercising real tag enumeration).
+
 _TAGS_FIRST = ["1.0.0", "1.0.1"]
 _TAGS_SECOND = ["2.0.0", "2.1.0"]
 
-# Verbatim REF spec stored per dependency.
+
 _REF_FIRST = ">=1.0.0,<2.0.0"
 _REF_SECOND = ">=2.0.0,<3.0.0"
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -124,11 +109,6 @@ def _create_project_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -143,11 +123,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# .kanon / .kanon.lock builders
-# ---------------------------------------------------------------------------
 
 
 def _write_two_same_name_kanon(
@@ -220,11 +195,6 @@ def _write_lockfile(
     return lock_file
 
 
-# ---------------------------------------------------------------------------
-# J6 journey (AC-51)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestAliasConsumerJourney:
     """J6: remove / why / outdated key on the alias and render via ``_NAME``."""
@@ -247,9 +217,6 @@ class TestAliasConsumerJourney:
         """outdated renders ``alias -> name from <source>@<ref>`` via _NAME for both deps."""
         workspace, url_first, url_second = self._build_workspace(tmp_path)
 
-        # outdated requires a well-formed catalog source as a precondition; tag
-        # enumeration reads each dependency's own _URL (the file:// project
-        # repos), so a placeholder catalog source is sufficient here.
         result = _run_kanon(
             [
                 "outdated",
@@ -265,7 +232,7 @@ class TestAliasConsumerJourney:
             f"kanon outdated must exit 0.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
         out = result.stdout
-        # Both same-name deps render via the alias and the _NAME manifest name.
+
         assert f"{_ALIAS_FIRST} -> {_MANIFEST_NAME} from {url_first}@{_REF_FIRST}" in out, (
             f"missing first alias render in:\n{out}"
         )
@@ -290,11 +257,11 @@ class TestAliasConsumerJourney:
             f"kanon why must exit 0.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
         out = result.stdout
-        # The queried alias renders via its own _NAME / _REF / _URL.
+
         assert f"{_ALIAS_SECOND} -> {_MANIFEST_NAME} from {url_second}@{_REF_SECOND}" in out, (
             f"missing alias render for queried alias in:\n{out}"
         )
-        # The sibling alias is not the queried node, so its render must not appear.
+
         assert f"{_ALIAS_FIRST} -> {_MANIFEST_NAME} from {url_first}@{_REF_FIRST}" not in out, (
             f"why must render only the queried alias, not the sibling, in:\n{out}"
         )
@@ -310,12 +277,12 @@ class TestAliasConsumerJourney:
             f"kanon remove must exit 0.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
         remaining = kanon_file.read_text(encoding="utf-8")
-        # Every key of the removed alias block is gone.
+
         for suffix in ("_URL", "_REF", "_PATH", "_NAME", "_GITBASE"):
             assert f"KANON_SOURCE_{_ALIAS_SECOND}{suffix}=" not in remaining, (
                 f"removed alias key KANON_SOURCE_{_ALIAS_SECOND}{suffix} still present in:\n{remaining}"
             )
-        # The same-name sibling block is fully intact.
+
         for suffix in ("_URL", "_REF", "_PATH", "_NAME", "_GITBASE"):
             assert f"KANON_SOURCE_{_ALIAS_FIRST}{suffix}=" in remaining, (
                 f"sibling alias key KANON_SOURCE_{_ALIAS_FIRST}{suffix} unexpectedly removed from:\n{remaining}"

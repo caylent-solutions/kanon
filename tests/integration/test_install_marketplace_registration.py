@@ -41,10 +41,6 @@ from kanon_cli.core.install import install
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# XML template with linkfile element (for fake_repo_init side effects)
-# ---------------------------------------------------------------------------
-
 _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -56,11 +52,6 @@ _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
 """)
 
 _MARKETPLACE_JSON_TEMPLATE = '{{"name": "{name}", "plugins": []}}'
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv_two_sources(
@@ -145,7 +136,6 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
         manifest_file = pathlib.Path(repo_dir) / ".repo" / "manifests" / manifest_path
         manifest_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Derive source name from manifest filename: "<name>-marketplace.xml" -> "<name>"
         stem = pathlib.Path(manifest_path).name
         if stem.endswith("-marketplace.xml"):
             source_name = stem[: -len("-marketplace.xml")]
@@ -160,11 +150,6 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
             )
         )
 
-        # Write the linkfile src file into the project checkout directory.
-        # ``_process_manifest_linkfiles`` (install.py) copies this file to
-        # the dest path after ``repo_sync`` completes.  In production, the
-        # repo tool checks out the project and the file is present; here we
-        # write it explicitly so the test does not depend on a real repo sync.
         src_file = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
         src_file.parent.mkdir(parents=True, exist_ok=True)
         src_file.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
@@ -192,11 +177,6 @@ def _extract_marketplace_add_argvs(call_args_list: list) -> list[tuple[str, ...]
         if len(argv) >= 4 and argv[1:4] == ("plugin", "marketplace", "add"):
             result.append(argv)
     return result
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -230,8 +210,6 @@ class TestInstallMarketplaceRegistration:
         marketplace_dir = tmp_path / "marketplace"
         marketplace_dir.mkdir()
 
-        # Build 2 synthetic source repos using the canonical fixture helper
-        # (spec section 3.1). Each bare repo is referenced as a KANON_SOURCE.
         bare_alpha = _create_manifest_repo_with_tags(
             tmp_path / "repo-alpha",
             entry_names=["source-alpha"],
@@ -251,14 +229,9 @@ class TestInstallMarketplaceRegistration:
             marketplace_install=True,
         )
 
-        # Expected marketplace entry directories -- these are where linkfile
-        # processing would write .claude-plugin/marketplace.json if repo_sync
-        # were real. They are looked up from tmp_path (not hard-coded).
         entry_alpha_path = marketplace_dir / "source-alpha"
         entry_bravo_path = marketplace_dir / "source-bravo"
 
-        # locate_claude_binary() calls shutil.which("claude"); mock returns a
-        # fixed path so the install does not short-circuit on missing binary.
         claude_bin = "/usr/bin/claude"
 
         expected_alpha = (claude_bin, "plugin", "marketplace", "add", str(entry_alpha_path))
@@ -277,11 +250,6 @@ class TestInstallMarketplaceRegistration:
                 side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            # repo_sync is a no-op mock: it does NOT process the <linkfile>
-            # elements that fake_repo_init wrote into the manifest XML. This
-            # is the DEFECT-004 scenario: in production, repo_sync should
-            # deposit linkfile targets into CLAUDE_MARKETPLACES_DIR, but the
-            # install flow never triggers that path correctly.
             patch("kanon_cli.repo.repo_sync"),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
@@ -341,9 +309,6 @@ class TestInstallMarketplaceRegistration:
         marketplace_dir = tmp_path / "marketplace"
         marketplace_dir.mkdir()
 
-        # Build 2 synthetic source repos using the canonical fixture helper
-        # (spec section 3.1). With marketplace disabled, these sources are
-        # synced but the marketplace registration step is skipped entirely.
         bare_alpha = _create_manifest_repo_with_tags(
             tmp_path / "repo-alpha",
             entry_names=["source-alpha"],

@@ -33,10 +33,6 @@ from kanon_cli.core.lockfile import read_lockfile
 from tests.scenarios.conftest import init_git_work_dir, make_plain_repo, run_git
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_ENV = {
     **os.environ,
     "GIT_AUTHOR_NAME": "Test",
@@ -44,11 +40,6 @@ _GIT_ENV = {
     "GIT_COMMITTER_NAME": "Test",
     "GIT_COMMITTER_EMAIL": "t@t.com",
 }
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git_capturing(args: list[str], cwd: pathlib.Path) -> str:
@@ -98,15 +89,10 @@ def _build_source_fixture(
     content_dir.mkdir(parents=True, exist_ok=True)
     manifest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build the content bare repo (a plain repo with a README).
     content_bare = make_plain_repo(content_dir, f"{name}-content", {"README.md": f"# {name}\n"})
 
-    # The fetch URL for the manifest's <remote> must be the *directory*
-    # containing the content bare repo so repo tool resolves
-    # ``fetch + name + ".git"`` correctly.
     content_fetch_url = content_dir.as_uri() + "/"
 
-    # Build the manifest work dir with manifest.xml referencing the content repo.
     manifest_work = manifest_dir / f"{name}-work"
     manifest_work.mkdir(parents=True)
     init_git_work_dir(manifest_work)
@@ -280,11 +266,6 @@ def _resolved_sha(lock_path: pathlib.Path, source_name: str) -> str:
     raise KeyError(f"Source {source_name!r} not found in lockfile; known: {known!r}")
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRlsExactVsRange:
     """AC-FUNC-001/AC-FUNC-002: --refresh-lock-source exact-vs-range semantics.
@@ -313,7 +294,6 @@ class TestRlsExactVsRange:
         _, rangesrc_bare = _build_source_fixture(tmp_path / "rangesrc-fix", "rangesrc")
         _, exactsrc_bare = _build_source_fixture(tmp_path / "exactsrc-fix", "exactsrc")
 
-        # Record the 1.0.0 SHAs from the manifest bare repos.
         rangesrc_sha_v1 = _sha_from_manifest_bare(rangesrc_bare, "refs/tags/1.0.0")
 
         project_dir = tmp_path / "project"
@@ -326,7 +306,6 @@ class TestRlsExactVsRange:
             ],
         )
 
-        # Baseline install -- writes lockfile with both sources at 1.0.0.
         baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, "baseline install")
         lock_path = project_dir / ".kanon.lock"
@@ -338,20 +317,17 @@ class TestRlsExactVsRange:
             f"Baseline rangesrc SHA mismatch: expected {rangesrc_sha_v1!r}, got {sha_rangesrc_before!r}"
         )
 
-        # Publish 1.1.0 on both manifest repos.
         scratch = tmp_path / "advance-scratch"
         scratch.mkdir()
         rangesrc_sha_v2 = _advance_manifest_bare(scratch, rangesrc_bare, "1.1.0")
         _advance_manifest_bare(scratch, exactsrc_bare, "1.1.0")
 
-        # Run --refresh-lock-source rangesrc.  Range spec >=1.0.0 should advance to 1.1.0.
         refresh_result = _run_kanon_install(project_dir, refresh_lock_source="rangesrc")
         _assert_install_ok(refresh_result, "--refresh-lock-source rangesrc")
 
         sha_rangesrc_after = _resolved_sha(lock_path, "rangesrc")
         sha_exactsrc_after = _resolved_sha(lock_path, "exactsrc")
 
-        # RED guard: range-spec SHA must have changed.
         assert sha_rangesrc_after != sha_rangesrc_before, (
             f"ERROR: range-spec source 'rangesrc' did NOT advance SHA after "
             f"--refresh-lock-source + new tag 1.1.0 -- the resolution path has regressed. "
@@ -362,7 +338,6 @@ class TestRlsExactVsRange:
             f"expected {rangesrc_sha_v2!r} (the 1.1.0 tag commit SHA)"
         )
 
-        # exactsrc was NOT the refresh target; its SHA must be preserved verbatim.
         assert sha_exactsrc_after == sha_exactsrc_before, (
             f"ERROR: exactsrc (not the refresh target) SHA changed unexpectedly: "
             f"before={sha_exactsrc_before!r}, after={sha_exactsrc_after!r}"
@@ -394,7 +369,6 @@ class TestRlsExactVsRange:
             ],
         )
 
-        # Baseline install.
         baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, "baseline install")
         lock_path = project_dir / ".kanon.lock"
@@ -405,19 +379,16 @@ class TestRlsExactVsRange:
             f"Baseline exactsrc SHA mismatch: expected {exactsrc_sha_v1!r}, got {sha_exact_before!r}"
         )
 
-        # Publish 1.1.0 on both manifest repos.
         scratch = tmp_path / "advance-scratch"
         scratch.mkdir()
         _advance_manifest_bare(scratch, exactsrc_bare, "1.1.0")
         _advance_manifest_bare(scratch, other_bare, "1.1.0")
 
-        # Run --refresh-lock-source exactsrc.  Exact pin ==1.0.0 must stay at 1.0.0.
         refresh_result = _run_kanon_install(project_dir, refresh_lock_source="exactsrc")
         _assert_install_ok(refresh_result, "--refresh-lock-source exactsrc")
 
         sha_exact_after = _resolved_sha(lock_path, "exactsrc")
 
-        # Exact pin must stay at the same SHA.
         assert sha_exact_after == sha_exact_before, (
             f"ERROR: exact-tag-pinned source 'exactsrc' (==1.0.0) changed SHA after "
             f"--refresh-lock-source -- a pin must stay pinned. "
@@ -449,7 +420,6 @@ class TestRlsExactVsRange:
         _, branchsrc_bare = _build_source_fixture(tmp_path / "branchsrc-fix", "branchsrc")
         _, exact_bare = _build_source_fixture(tmp_path / "exact-fix", "exact")
 
-        # Capture the branch tip SHA before advancing.
         sha_branch_v1 = _sha_from_manifest_bare(branchsrc_bare, "HEAD")
 
         project_dir = tmp_path / "project"
@@ -462,7 +432,6 @@ class TestRlsExactVsRange:
             ],
         )
 
-        # Baseline install.
         baseline = _run_kanon_install(project_dir)
         _assert_install_ok(baseline, f"baseline install (branch_ref={branch_ref!r})")
         lock_path = project_dir / ".kanon.lock"
@@ -473,12 +442,10 @@ class TestRlsExactVsRange:
             f"Baseline branchsrc SHA mismatch: expected {sha_branch_v1!r}, got {sha_branch_before!r}"
         )
 
-        # Advance the branch tip on the manifest bare repo.
         scratch = tmp_path / "advance-scratch"
         scratch.mkdir()
         sha_branch_v2 = _advance_manifest_branch(scratch, branchsrc_bare)
 
-        # Run --refresh-lock-source branchsrc.  Branch tip must advance.
         refresh_result = _run_kanon_install(project_dir, refresh_lock_source="branchsrc")
         _assert_install_ok(refresh_result, f"--refresh-lock-source branchsrc (branch_ref={branch_ref!r})")
 

@@ -26,11 +26,6 @@ from kanon_cli.commands.search import (
 from kanon_cli.constants import KANON_LIST_LIMIT
 
 
-# ---------------------------------------------------------------------------
-# VersionRow dataclass / named tuple tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestVersionRowStructure:
     """AC-FUNC-010: per-row data carries {name, version, ref, sha}."""
@@ -72,11 +67,6 @@ class TestVersionRowStructure:
         assert str(rows[0]) == "alpha@1.0.0"
 
 
-# ---------------------------------------------------------------------------
-# _sort_versions_newest_first
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSortVersionsNewestFirst:
     """AC-FUNC-004: versions ordered newest-first per packaging.version.Version."""
@@ -116,7 +106,7 @@ class TestSortVersionsNewestFirst:
         ref, ver, sha = result[0]
         assert ref == "refs/tags/1.0.0"
         assert isinstance(ver, Version)
-        # sha may be empty string in unit context -- just confirm it exists
+
         assert isinstance(sha, str)
 
     def test_prerelease_orders_before_release(self):
@@ -124,11 +114,6 @@ class TestSortVersionsNewestFirst:
         result = _sort_versions_newest_first(tags)
         version_strings = [str(v) for _, v, _ in result]
         assert version_strings == ["1.0.0", "1.0.0a1"]
-
-
-# ---------------------------------------------------------------------------
-# _filter_versions_by_constraint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -168,11 +153,6 @@ class TestFilterVersionsByConstraint:
         triples = self._make_triples(["1.0.0"])
         with pytest.raises((ValueError, SystemExit)):
             _filter_versions_by_constraint(triples, "notaconstraint")
-
-
-# ---------------------------------------------------------------------------
-# _build_all_versions_rows
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -222,11 +202,6 @@ class TestBuildAllVersionsRows:
         assert rows == []
 
 
-# ---------------------------------------------------------------------------
-# KANON_LIST_LIMIT constant
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonListLimitConstant:
     """AC-FUNC-002: KANON_LIST_LIMIT constant tests."""
@@ -265,11 +240,6 @@ class TestKanonListLimitConstant:
         finally:
             monkeypatch.delenv("KANON_LIST_LIMIT", raising=False)
             importlib.reload(constants)
-
-
-# ---------------------------------------------------------------------------
-# run_search mutual exclusion checks
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -341,11 +311,6 @@ class TestLimitNoLimitMutualExclusion:
         assert "mutually exclusive" in captured.err.lower() or "--limit" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# run_search --all-versions flag dispatch tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunListAllVersionsDispatch:
     """run_search dispatches to version walker when --all-versions is set."""
@@ -384,7 +349,7 @@ class TestRunListAllVersionsDispatch:
             mock_run.return_value = mock_ls_remote_result
             args = self._make_args()
             run_search(args)
-            # ls-remote should be called
+
             assert mock_run.called
 
     def test_all_versions_prints_rows_when_nonempty(self, capsys, tmp_path):
@@ -426,11 +391,6 @@ class TestRunListAllVersionsDispatch:
             assert result == 0
 
 
-# ---------------------------------------------------------------------------
-# register() -- flag registration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRegisterAllVersionsFlags:
     """AC-FUNC-001: flags appear on the list subparser."""
@@ -439,7 +399,7 @@ class TestRegisterAllVersionsFlags:
         root = argparse.ArgumentParser(prog="kanon")
         subparsers = root.add_subparsers()
         register(subparsers)
-        # Parse to list subparser via _subparsers hack
+
         return root
 
     @pytest.mark.parametrize("flag", ["-A", "--all"])

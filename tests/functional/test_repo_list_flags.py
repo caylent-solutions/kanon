@@ -53,10 +53,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo List Flags Test User"
 _GIT_USER_EMAIL = "repo-list-flags@example.com"
@@ -64,29 +60,25 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "list-flags-test-project"
 
-# Error exit code for argument-parsing errors.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-list-flags-repo-dir"
 
-# Inline-value suffix for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Separator between path and name in 'repo list' default output.
+
 _LIST_SEPARATOR = " : "
 
-# Boolean store_true flags from List._Options().
+
 _BOOL_STORE_TRUE_FLAGS_LOCAL: list[tuple[str, str]] = [
     ("-r", "short-regex"),
     ("--regex", "long-regex"),
@@ -100,7 +92,7 @@ _BOOL_STORE_TRUE_FLAGS_LOCAL: list[tuple[str, str]] = [
     ("--fullpath", "long-fullpath"),
 ]
 
-# Boolean store_true and store_false flags from _CommonOptions().
+
 _BOOL_STORE_TRUE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -116,14 +108,12 @@ _BOOL_STORE_FALSE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Combined list of all boolean flags for parametrize tests.
+
 _ALL_BOOL_FLAGS: list[tuple[str, str]] = (
     _BOOL_STORE_TRUE_FLAGS_LOCAL + _BOOL_STORE_TRUE_FLAGS_COMMON + _BOOL_STORE_FALSE_FLAGS_COMMON
 )
 
-# Long-form boolean flags used in AC-TEST-002 negative tests.
-# Short-form flags cannot use '--flag=value' syntax in optparse so only
-# long-form flags are included here.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--regex", "regex"),
     ("--all", "all"),
@@ -139,17 +129,11 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# A valid path value for --relative-to testing (current directory token).
+
 _RELATIVE_TO_VALID_VALUE = "."
 
-# A valid non-empty group string for --groups testing.
+
 _GROUPS_VALID_VALUE = "default"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/list.py
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -295,11 +279,6 @@ class TestRepoListFlagsValidValues:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for invalid or disallowed flag values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -451,11 +430,6 @@ class TestRepoListFlagsInvalidValues:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -625,11 +599,6 @@ class TestRepoListFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoListFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -796,7 +765,7 @@ class TestRepoListFlagsDocumentedBehavior:
         assert result.returncode == 0, (
             f"'kanon repo list --fullpath' exited {result.returncode}.\n  stderr: {result.stderr!r}"
         )
-        # The absolute checkout dir must appear as a prefix in the full path.
+
         assert str(checkout_dir) in result.stdout, (
             f"Expected absolute checkout dir {str(checkout_dir)!r} in '--fullpath' stdout.\n  stdout: {result.stdout!r}"
         )
@@ -914,8 +883,7 @@ class TestRepoListFlagsDocumentedBehavior:
         assert result.returncode == 0, (
             f"'kanon repo list --relative-to={checkout_dir}' exited {result.returncode}.\n  stderr: {result.stderr!r}"
         )
-        # With --relative-to pointing at checkout_dir, the relative path
-        # of the project worktree within checkout_dir equals the project path.
+
         assert _PROJECT_PATH in result.stdout, (
             f"Expected project path {_PROJECT_PATH!r} in '--relative-to' stdout.\n  stdout: {result.stdout!r}"
         )
@@ -949,11 +917,6 @@ class TestRepoListFlagsDocumentedBehavior:
         assert _PROJECT_PATH in result.stdout, (
             f"Expected project path {_PROJECT_PATH!r} in '--groups=all' stdout.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

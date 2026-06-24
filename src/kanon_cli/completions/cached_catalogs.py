@@ -35,11 +35,6 @@ from kanon_cli.constants import KANON_COMPLETION_ENABLED
 _COMPLETER_NAME = "__complete_cached_catalogs"
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _read_origin(origin_path: Path) -> str | None:
     """Read and validate origin.txt for a single catalog cache entry.
 
@@ -89,7 +84,6 @@ def _walk_catalogs(catalogs_dir: Path) -> tuple[list[str], list[str]]:
             continue
         origin_path = sha_dir / "origin.txt"
         if not origin_path.is_file():
-            # No origin.txt -- silently skip (spec: only origin.txt is read)
             continue
         try:
             value = _read_origin(origin_path)
@@ -104,11 +98,6 @@ def _walk_catalogs(catalogs_dir: Path) -> tuple[list[str], list[str]]:
             origins.append(value)
 
     return sorted(origins), malformed
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def complete(current_token: str) -> list[str]:
@@ -142,11 +131,6 @@ def complete(current_token: str) -> list[str]:
         )
 
     return [o for o in origins if o.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

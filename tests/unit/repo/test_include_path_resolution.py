@@ -26,10 +26,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 _MINIMAL_INCLUDED_XML = (
@@ -119,11 +115,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     return m
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Relative include resolves to manifest root (include_root)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRelativeIncludeResolvesToManifestRoot:
     """AC-TEST-001: A relative include name resolves relative to the manifest root.
@@ -173,7 +164,7 @@ class TestRelativeIncludeResolvesToManifestRoot:
         AC-TEST-001, AC-FUNC-001
         """
         repodir = _make_repo_dir(tmp_path)
-        # Place the included file in manifests/ -- the correct include_root.
+
         _write_included_manifest(repodir, "child.xml", _MINIMAL_INCLUDED_XML)
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="child.xml" />\n</manifest>\n'
@@ -252,11 +243,6 @@ class TestRelativeIncludeResolvesToManifestRoot:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Missing file raises a "doesn't exist" ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMissingIncludeFileRaisesError:
     """AC-TEST-002: An include referencing a non-existent file raises ManifestParseError.
@@ -278,7 +264,7 @@ class TestMissingIncludeFileRaisesError:
         AC-TEST-002, AC-FUNC-001
         """
         repodir = _make_repo_dir(tmp_path)
-        # Deliberately do NOT write any file named "absent.xml".
+
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="absent.xml" />\n</manifest>\n'
         )
@@ -397,11 +383,6 @@ class TestMissingIncludeFileRaisesError:
             pytest.fail(f"AC-TEST-002: expected no ManifestParseError when include file exists but got: {exc!r}")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: restrict_includes enforces path rules (no abs, no ..)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRestrictIncludesPathRules:
     """AC-TEST-003: restrict_includes enforces that include names are safe relative paths.
@@ -497,21 +478,16 @@ class TestRestrictIncludesPathRules:
         AC-TEST-003
         """
         repodir = _make_repo_dir(tmp_path)
-        # The primary manifest uses '../outside.xml' -- restrict_includes=False
-        # means _CheckLocalPath is skipped; we only hit the file-existence check.
+
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="../outside.xml" />\n</manifest>\n'
         )
         manifest_file = _write_primary_manifest(repodir, primary_xml)
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Must raise ManifestParseError (file not found), NOT ManifestInvalidPathError.
         with pytest.raises(ManifestParseError):
             m.Load()
 
-        # Verify the exception is NOT a ManifestInvalidPathError (path restriction check).
-        # ManifestInvalidPathError is a subclass of ManifestParseError, so we check the
-        # exact type to distinguish the file-not-found case from the path-restriction case.
         try:
             m2 = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
             m2.Load()
@@ -521,7 +497,7 @@ class TestRestrictIncludesPathRules:
                 "for '../' path (restrict_includes=False); expected ManifestParseError (file not found)"
             )
         except ManifestParseError:
-            pass  # Expected: file-not-found, not path restriction.
+            pass
 
     def test_git_directory_component_in_nested_include_raises(
         self,
@@ -629,9 +605,9 @@ class TestRestrictIncludesPathRules:
         AC-TEST-003, AC-FUNC-001
         """
         repodir = _make_repo_dir(tmp_path)
-        # Level 2: the actual content manifest.
+
         _write_included_manifest(repodir, "safe-content.xml", _MINIMAL_INCLUDED_XML)
-        # Level 1: nested include with safe name (restrict_includes=True applies here).
+
         level1_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="safe-content.xml" />\n</manifest>\n'
         )

@@ -56,11 +56,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _make_direct_checkout_plugin_repo(
     parent: pathlib.Path,
     name: str,
@@ -153,11 +148,6 @@ def _make_manifest_repo_no_linkfile(
     return clone_as_bare(work, bare)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestMarketplaceDirectCheckout:
     @pytest.mark.skipif(
@@ -220,15 +210,13 @@ class TestMarketplaceDirectCheckout:
             f"kanon install failed (exit {result.returncode})\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
 
-        # The marketplace entry must exist in CLAUDE_MARKETPLACES_DIR.
-        # The entry name is derived from the marketplace.json "name" field.
         marketplace_entry = marketplaces_dir / plugin_name
         assert marketplace_entry.exists(), (
             f"Expected marketplace entry at {marketplace_entry} after install.\n"
             f"CLAUDE_MARKETPLACES_DIR contents: {list(marketplaces_dir.iterdir())}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # The entry must point at a directory containing .claude-plugin/marketplace.json.
+
         manifest_json = marketplace_entry / ".claude-plugin" / "marketplace.json"
         assert manifest_json.is_file(), (
             f"marketplace.json not found at {manifest_json} -- entry does not point at a marketplace root"
@@ -263,8 +251,6 @@ class TestMarketplaceDirectCheckout:
         work_dir = tmp_path / "workspace"
         work_dir.mkdir()
 
-        # No marketplace_aliases: the bp dependency does not opt into the marketplace,
-        # so register_direct_checkout_marketplaces is never invoked for it.
         write_kanonenv(
             work_dir,
             sources=[("bp", mfst_bare.as_uri(), "main", manifest_filename)],
@@ -283,7 +269,7 @@ class TestMarketplaceDirectCheckout:
         assert result.returncode == 0, (
             f"kanon install failed (exit {result.returncode})\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # Marketplace dir should be empty -- no entries registered.
+
         mp_entries = list(marketplaces_dir.iterdir())
         assert mp_entries == [], f"Expected empty CLAUDE_MARKETPLACES_DIR but found: {mp_entries}"
 
@@ -301,7 +287,6 @@ class TestMarketplaceDirectCheckout:
         fix = tmp_path / "fixtures"
         fix.mkdir()
 
-        # A plain repo with no .claude-plugin/ at all.
         plain_name = "plain-package"
         plain_work = fix / f"{plain_name}.work"
         plain_bare = fix / f"{plain_name}.git"
@@ -354,7 +339,7 @@ class TestMarketplaceDirectCheckout:
             f"kanon install should exit 0 for a plain (no marketplace) entry; "
             f"got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # No entries should be created in CLAUDE_MARKETPLACES_DIR.
+
         mp_entries = list(marketplaces_dir.iterdir())
         assert mp_entries == [], f"Expected empty CLAUDE_MARKETPLACES_DIR for plain entry but found: {mp_entries}"
 

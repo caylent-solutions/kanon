@@ -29,72 +29,53 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-list-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-list-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-list-option-99"
 
-# Parametrize table for AC-TEST-002 tests.
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "unknown-flag-xyzzy"),
     (_UNKNOWN_FLAG_ALT_A, "not-a-real-list-flag"),
     (_UNKNOWN_FLAG_ALT_B, "bogus-list-option-99"),
 ]
 
-# Value-requiring option used in AC-TEST-003 primary test.
-# 'repo list' defines --groups / -g as an option requiring exactly one string
-# argument. Supplying it with no value triggers exit 2 with a "requires"
-# phrase in stderr from the optparse parser.
+
 _OPTION_REQUIRING_VALUE_PRIMARY = "--groups"
 _OPTION_REQUIRING_VALUE_ALT = "--relative-to"
 
-# Error message substring expected in stderr when a value-requiring option
-# is supplied without its argument (optparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Parametrize table for AC-TEST-003 value-requiring-option tests.
+
 _OPTIONS_REQUIRING_VALUE: list[tuple[str, str]] = [
     (_OPTION_REQUIRING_VALUE_PRIMARY, "groups-no-value"),
     (_OPTION_REQUIRING_VALUE_ALT, "relative-to-no-value"),
 ]
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The embedded repo tool includes 'repo list' in the Usage line.
+
 _HELP_USAGE_PHRASE = "repo list"
 
-# Documented option name that must appear in --help stdout.
-# Verifies the help text is specific to the 'list' subcommand.
+
 _HELP_DOCUMENTED_FLAG = "--groups"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" to stderr when the
-# .repo/manifest.xml file cannot be found.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename the embedded repo tool names in stderr for precondition
-# failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo list --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -243,11 +224,6 @@ class TestRepoListHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -425,11 +401,6 @@ class TestRepoListUnknownFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without argument produces exit 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoListMissingRequiredArg:
     """AC-TEST-003: Value-requiring option supplied without argument produces exit 2.
@@ -586,11 +557,6 @@ class TestRepoListMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoListPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -727,11 +693,6 @@ class TestRepoListPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

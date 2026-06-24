@@ -28,11 +28,6 @@ import pytest
 from kanon_cli.constants import KANON_DOCTOR_STALE_LOCK_AGE_HOURS, KANON_HOME_CACHE_DIR_MODE
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_namespace(**kwargs: object) -> argparse.Namespace:
     """Build a minimal Namespace for doctor_command tests.
 
@@ -49,7 +44,7 @@ def _make_namespace(**kwargs: object) -> argparse.Namespace:
         "strict_drift": False,
         "refresh_completion_cache": False,
         "prune_cache": False,
-        "catalog_source": object(),  # sentinel _UNSET equivalent
+        "catalog_source": object(),
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -95,11 +90,6 @@ def _set_mtime(path: pathlib.Path, dt: datetime.datetime) -> None:
     os.utime(str(path), (atime, mtime_ts))
 
 
-# ---------------------------------------------------------------------------
-# _refresh_completion_cache (subcheck 8)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRefreshCompletionCacheHelper:
     """Tests for the _refresh_completion_cache(cache_dir) helper."""
@@ -143,7 +133,7 @@ class TestRefreshCompletionCacheHelper:
         count = _refresh_completion_cache(cache_dir)
 
         assert count == n_files
-        # Directory must still exist and be empty.
+
         assert cache_dir.is_dir()
         remaining = list(cache_dir.iterdir())
         assert remaining == [], f"Expected empty dir after refresh; found {remaining}"
@@ -157,7 +147,7 @@ class TestRefreshCompletionCacheHelper:
         from kanon_cli.commands.doctor import _refresh_completion_cache
 
         cache_dir = tmp_path / "completion-cache"
-        cache_dir.mkdir(mode=0o755)  # wrong mode on purpose
+        cache_dir.mkdir(mode=0o755)
 
         _refresh_completion_cache(cache_dir)
 
@@ -197,15 +187,13 @@ class TestRefreshCompletionCacheHelper:
         cache_dir = tmp_path / "completion-cache"
         cache_dir.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
-        # Create a subdirectory with files inside the completion cache.
         subdir = cache_dir / "subdir"
         subdir.mkdir()
         (subdir / "nested1.json").write_text("data1", encoding="utf-8")
         (subdir / "nested2.json").write_text("data2", encoding="utf-8")
-        # Also a top-level file.
+
         (cache_dir / "top.json").write_text("top", encoding="utf-8")
 
-        # Must not raise OSError; must remove all 3 files and return count 3.
         count = _refresh_completion_cache(cache_dir)
 
         assert count == 3, f"Expected 3 files removed; got {count}"
@@ -217,10 +205,6 @@ class TestRefreshCompletionCacheHelper:
             f"Expected mode {oct(KANON_HOME_CACHE_DIR_MODE)} after refresh; got {oct(mode)}"
         )
 
-
-# ---------------------------------------------------------------------------
-# _prune_cache (subcheck 10)
-# ---------------------------------------------------------------------------
 
 _NOW = datetime.datetime(2025, 6, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
 _THRESHOLD_DAYS = 30
@@ -341,11 +325,6 @@ class TestPruneCacheHelper:
         assert len(list(cache_dir.iterdir())) == n_new
 
 
-# ---------------------------------------------------------------------------
-# _scan_stale_install_locks (subcheck 10 advisory)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestScanStaleInstallLocks:
     """Tests for the _scan_stale_install_locks helper."""
@@ -401,7 +380,6 @@ class TestScanStaleInstallLocks:
         """
         from kanon_cli.commands.doctor import _scan_stale_install_locks
 
-        # depth=3: tmp_path / a / b / c / .kanon-data / .kanon-install.lock
         deep_dir = tmp_path / "a" / "b" / "c" / ".kanon-data"
         deep_dir.mkdir(parents=True)
         lock_file = deep_dir / ".kanon-install.lock"
@@ -410,7 +388,6 @@ class TestScanStaleInstallLocks:
         stale_mtime = _NOW - datetime.timedelta(hours=2)
         _set_mtime(lock_file, stale_mtime)
 
-        # max_depth=2 -- the lock at depth 4 must NOT be found
         stale = list(_scan_stale_install_locks(tmp_path, max_depth=2, age_hours=1, now=_fixed_now(_NOW)))
 
         assert stale == [], f"Expected no results at max_depth=2; got {stale}"
@@ -442,11 +419,6 @@ class TestScanStaleInstallLocks:
         assert len(stale) == 2
         assert lock1 in stale
         assert lock2 in stale
-
-
-# ---------------------------------------------------------------------------
-# doctor_command wiring -- flag combinations (subchecks 8 + 10)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -503,7 +475,6 @@ class TestDoctorCommandCacheFlagWiring:
         cache_dir = self._make_cache_dir(tmp_path)
         completion_cache = cache_dir / "completion-cache"
 
-        # Populate two files in the completion cache.
         (completion_cache / "a.json").write_text("aa", encoding="utf-8")
         (completion_cache / "b.json").write_text("bb", encoding="utf-8")
 
@@ -649,17 +620,14 @@ class TestDoctorCommandCacheFlagWiring:
         cache_dir = self._make_cache_dir(tmp_path)
         completion_cache = cache_dir / "completion-cache"
 
-        # Old file in the completion cache -- should be wiped by refresh.
         completion_old = completion_cache / "comp_old.json"
         completion_old.write_bytes(b"z" * 50)
         _set_atime(completion_old, _OLD_ATIME)
 
-        # Old file at the top-level cache dir -- should be pruned.
         top_old = cache_dir / "top_old.json"
         top_old.write_bytes(b"w" * 30)
         _set_atime(top_old, _OLD_ATIME)
 
-        # New file at the top-level -- must survive.
         top_new = cache_dir / "top_new.json"
         top_new.write_bytes(b"v" * 20)
         _set_atime(top_new, _NEW_ATIME)
@@ -673,11 +641,10 @@ class TestDoctorCommandCacheFlagWiring:
         )
         doctor_command(args, now=_fixed_now(_NOW))
 
-        # Refresh wiped completion_cache subdir.
         assert list(completion_cache.iterdir()) == []
-        # Prune removed top_old.
+
         assert not top_old.exists()
-        # top_new survived.
+
         assert top_new.exists()
 
     def test_prune_flag_emits_stale_lock_advisory(
@@ -700,7 +667,6 @@ class TestDoctorCommandCacheFlagWiring:
         kanon_file = self._make_kanon_file(tmp_path)
         self._make_cache_dir(tmp_path)
 
-        # Create a stale install lock under cwd.
         lock_dir = tmp_path / "sub" / ".kanon-data"
         lock_dir.mkdir(parents=True)
         lock_file = lock_dir / ".kanon-install.lock"
@@ -715,7 +681,7 @@ class TestDoctorCommandCacheFlagWiring:
             kanon_file=str(kanon_file),
             prune_cache=True,
         )
-        # Inject a fixed 'now' aligned with _NOW so the mtime comparison is deterministic.
+
         doctor_command(args, now=_fixed_now(_NOW))
 
         assert lock_file.exists(), "doctor must NOT delete the stale lock file (advisory only)"
@@ -724,11 +690,6 @@ class TestDoctorCommandCacheFlagWiring:
         assert "Advisory: stale install lock found" in captured.err, (
             f"Expected stale-lock advisory in stderr; got {captured.err!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# _prune_cache -- error path (OSError on stat)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -753,7 +714,6 @@ class TestPruneCacheOSErrorHandling:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
 
-        # Create a file that will raise OSError on stat.
         bad_file = cache_dir / "unreadable.json"
         bad_file.write_text("x", encoding="utf-8")
         good_file = cache_dir / "good.json"
@@ -769,10 +729,8 @@ class TestPruneCacheOSErrorHandling:
 
         monkeypatch.setattr(pathlib.Path, "stat", _bad_stat)
 
-        # Should not raise; unreadable file is skipped with a WARN.
         count, total_bytes = _prune_cache(cache_dir, _THRESHOLD_DAYS, _fixed_now(_NOW))
 
-        # good_file was pruned (old atime); unreadable was skipped.
         assert count == 1
         assert total_bytes == 50
 
@@ -792,7 +750,6 @@ class TestPruneCacheOSErrorHandling:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
 
-        # Create two old files; one will fail on unlink.
         bad_file = cache_dir / "locked.json"
         bad_file.write_bytes(b"z" * 30)
         _set_atime(bad_file, _OLD_ATIME)
@@ -812,18 +769,12 @@ class TestPruneCacheOSErrorHandling:
 
         count, total_bytes = _prune_cache(cache_dir, _THRESHOLD_DAYS, _fixed_now(_NOW))
 
-        # good_file was pruned; locked file was skipped.
         assert count == 1
         assert total_bytes == 50
 
         captured = capsys.readouterr()
         assert "WARN:" in captured.err
         assert "locked" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# _scan_stale_install_locks -- error paths (OSError on stat/iterdir)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -892,17 +843,11 @@ class TestScanStaleInstallLocksOSErrorHandling:
 
         monkeypatch.setattr(pathlib.Path, "iterdir", _bad_iterdir)
 
-        # Should not raise even when iterdir fails on a subdir.
         stale = list(_scan_stale_install_locks(tmp_path, max_depth=4, age_hours=1, now=_fixed_now(_NOW)))
 
         assert stale == []
         captured = capsys.readouterr()
         assert "WARN:" in captured.err, f"Expected WARN in stderr for unreadable iterdir; got {captured.err!r}"
-
-
-# ---------------------------------------------------------------------------
-# doctor_command default now= fallback (line 794 coverage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -941,17 +886,12 @@ class TestDoctorCommandDefaultNow:
             prune_cache=True,
             refresh_completion_cache=False,
         )
-        # Do NOT pass now= -- this exercises the `if now is None:` branch at line 791-794.
+
         result = doctor_command(args)
 
         assert result == 0, f"doctor_command must return 0 (no errors); got {result!r}"
         captured = capsys.readouterr()
         assert "ERROR:" not in captured.err, f"Unexpected ERROR in stderr; got {captured.err!r}"
-
-
-# ---------------------------------------------------------------------------
-# register() -- new flags are wired into argparse
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -988,11 +928,6 @@ class TestDoctorRegisterCacheFlags:
         args = parser.parse_args(["doctor", "--refresh-completion-cache", "--prune-cache"])
         assert args.refresh_completion_cache is True
         assert args.prune_cache is True
-
-
-# ---------------------------------------------------------------------------
-# doctor_command -- OSError from _refresh_completion_cache returns 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

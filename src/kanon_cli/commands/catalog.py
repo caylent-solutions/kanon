@@ -69,14 +69,8 @@ from kanon_cli.core.manifest import collect_remote_url_findings
 from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name, find_catalog_entry_files
 from kanon_cli.core.url import canonicalize_repo_url
 
-# Alias for the XML parse error type from defusedxml to avoid importing from the
-# standard xml.etree.ElementTree (which triggers bandit B405).
+
 XMLParseError = ET.ParseError
-
-
-# ---------------------------------------------------------------------------
-# AuditFinding dataclass
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -96,19 +90,7 @@ class AuditFinding:
     remediation: str
 
 
-# ---------------------------------------------------------------------------
-# Check registry (T2-T7 populate this dict)
-# ---------------------------------------------------------------------------
-
-# Maps check-name to a callable accepting (target_path: pathlib.Path) and
-# returning a list[AuditFinding].  T1 ships with an empty registry;
-# subsequent tasks register their check functions here.
 AUDIT_CHECK_REGISTRY: dict[str, Callable[[pathlib.Path], list[AuditFinding]]] = {}
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _parse_check_subset(value: str) -> frozenset[str]:
@@ -172,10 +154,7 @@ def _resolve_audit_target(target: str) -> pathlib.Path:
         SystemExit: If the target is a local path that does not exist, does
             not contain a repo-specs/ subdirectory, or if a remote clone fails.
     """
-    # Determine whether this looks like a remote source.
-    # A remote source must contain '@' AND either '://' or another '@' before
-    # the last '@' (SSH-style: git@host:org/repo.git@ref).
-    # We use the same last-'@' split logic as core/catalog.py.
+
     is_remote = _looks_like_remote_source(target)
 
     if is_remote:
@@ -202,24 +181,19 @@ def _looks_like_remote_source(target: str) -> bool:
     Returns:
         True if the target should be treated as a remote git source.
     """
-    # Fast-path: no '@' at all means it cannot be a remote source.
+
     if "@" not in target:
         return False
 
-    # Find the last '@' -- that is the ref delimiter.
     idx = target.rfind("@")
     url_part = target[:idx]
 
-    # If the URL part contains '://' it is a scheme URL (https://, ssh://, etc.)
     if "://" in url_part:
         return True
 
-    # If the URL part itself contains '@' it is SSH shorthand (git@host:org/repo.git)
     if "@" in url_part:
         return True
 
-    # Otherwise the single '@' might just be a Windows path or unusual local path;
-    # do not treat as remote.
     return False
 
 
@@ -250,17 +224,12 @@ def _clone_audit_target(source: str) -> pathlib.Path:
         )
         sys.exit(1)
 
-    # Canonicalize the URL before hashing to ensure consistent cache keys.
     canonical_url = canonicalize_repo_url(url)
     cache_key = hashlib.sha256(f"{canonical_url}@{ref}".encode()).hexdigest()
 
-    # The catalog-audit clone cache lives under the shared KANON_HOME cache root
-    # (<KANON_HOME>/cache/catalog-audit/), resolved by the single cache_dir()
-    # helper so the audit cache shares the store with every other cache entry.
     audit_cache_root = cache_dir() / KANON_CATALOG_AUDIT_CACHE_SUBDIR
     clone_path = audit_cache_root / cache_key
 
-    # Reuse existing clone if it is fresh enough.
     if clone_path.exists():
         mtime = clone_path.stat().st_mtime
         age_seconds = time.time() - mtime
@@ -268,7 +237,6 @@ def _clone_audit_target(source: str) -> pathlib.Path:
             _check_repo_specs_dir(clone_path)
             return clone_path
 
-    # Create the cache directory with owner-only permissions (spec Section 3.6).
     audit_cache_root.mkdir(parents=True, exist_ok=True)
     audit_cache_root.chmod(KANON_HOME_CACHE_DIR_MODE)
 
@@ -365,11 +333,6 @@ def _format_findings(findings: list[AuditFinding], fmt: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Shared XML walker (used by metadata and source-name-derivation checks)
-# ---------------------------------------------------------------------------
-
-
 def _iter_entry_names(
     target_path: pathlib.Path,
 ) -> Iterator[tuple[pathlib.Path, str]]:
@@ -402,27 +365,19 @@ def _iter_entry_names(
         try:
             tree = ET.parse(xml_file)
         except XMLParseError:
-            # Malformed XML is the metadata check's responsibility (M003).
             continue
 
         root = cast("Element", tree.getroot())
         blocks = root.findall("catalog-metadata")
         if len(blocks) != 1:
-            # Missing or multiple blocks are the metadata check's responsibility.
             continue
 
         block = blocks[0]
         name_el = block.find("name")
         if name_el is None or not name_el.text or not name_el.text.strip():
-            # Missing or empty name is the metadata check's responsibility (M001).
             continue
 
         yield xml_file, name_el.text.strip()
-
-
-# ---------------------------------------------------------------------------
-# Metadata check (T2 -- soft-spot rule 1)
-# ---------------------------------------------------------------------------
 
 
 def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
@@ -462,11 +417,6 @@ def _check_metadata(target_path: pathlib.Path) -> list[AuditFinding]:
 AUDIT_CHECK_REGISTRY["metadata"] = _check_metadata
 
 
-# ---------------------------------------------------------------------------
-# Source-name-derivation check (T3 -- soft-spot rule 2)
-# ---------------------------------------------------------------------------
-
-
 def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFinding]:
     """Check every ``*-marketplace.xml`` under ``repo-specs/`` for soft-spot rule 2 issues.
 
@@ -489,13 +439,9 @@ def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFindin
     findings: list[AuditFinding] = []
 
     for xml_file, entry_name in _iter_entry_names(target_path):
-        # Suppress derive_source_name's stderr side-effect (it prints a raw WARNING
-        # when chars are outside [a-zA-Z0-9_-]). The structured S002 finding below
-        # already surfaces that information; the raw print would duplicate it.
         with contextlib.redirect_stderr(io.StringIO()):
             derived = derive_source_name(entry_name)
 
-        # Check 1: normalisation drift (S001).
         if derived != entry_name:
             findings.append(
                 AuditFinding(
@@ -513,7 +459,6 @@ def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFindin
                 )
             )
 
-        # Check 2: out-of-charset (S002).
         if not KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE.fullmatch(entry_name):
             findings.append(
                 AuditFinding(
@@ -536,11 +481,6 @@ def _check_source_name_derivation(target_path: pathlib.Path) -> list[AuditFindin
 
 
 AUDIT_CHECK_REGISTRY["source-name-derivation"] = _check_source_name_derivation
-
-
-# ---------------------------------------------------------------------------
-# Entry-name-uniqueness check (T4 -- soft-spot rule 3)
-# ---------------------------------------------------------------------------
 
 
 def _check_entry_name_uniqueness(target_path: pathlib.Path) -> list[AuditFinding]:
@@ -603,11 +543,6 @@ def _check_entry_name_uniqueness(target_path: pathlib.Path) -> list[AuditFinding
 
 
 AUDIT_CHECK_REGISTRY["entry-name-uniqueness"] = _check_entry_name_uniqueness
-
-
-# ---------------------------------------------------------------------------
-# Remote-URL check (T5 -- soft-spot rule 4)
-# ---------------------------------------------------------------------------
 
 
 def _check_remote_url(
@@ -673,11 +608,6 @@ def _check_remote_url_with_os_env(target_path: pathlib.Path) -> list[AuditFindin
 AUDIT_CHECK_REGISTRY["remote-url"] = _check_remote_url_with_os_env
 
 
-# ---------------------------------------------------------------------------
-# Tag-format check (T6 -- soft-spot rule 5; PEP 440 tag-name compliance)
-# ---------------------------------------------------------------------------
-
-
 def _check_tag_format(
     target_path: pathlib.Path,
     ls_remote_callable: "Callable[[pathlib.Path], str]",
@@ -720,30 +650,24 @@ def _check_tag_format(
         line = line.strip()
         if not line:
             continue
-        # Lines have the form: <sha>\trefs/tags/<tag-name>
+
         if "\t" not in line:
             continue
         _, ref = line.split("\t", 1)
         ref = ref.strip()
         if not ref.startswith("refs/tags/"):
             continue
-        # Peeled refs end in ^{} and represent the dereferenced commit for
-        # annotated tags.  Filtering them before parsing prevents false-positive
-        # T001 findings (the ^{} suffix is not a valid version string) and
-        # prevents duplicate findings for the underlying tag name.
+
         if ref.endswith("^{}"):
             continue
         tag_name = ref[len("refs/tags/") :]
         if not tag_name:
             continue
-        # Examine only the last /- delimited component.
+
         last_component = tag_name.rsplit("/", 1)[-1]
         try:
             parsed = Version(last_component)
-            # The tag component must equal its normalized PEP 440 form.
-            # Tags like "v1.0.0" parse but normalize to "1.0.0", which
-            # differs from the original; such tags are considered
-            # non-canonical and are flagged as unaddressable.
+
             if str(parsed) != last_component:
                 non_pep440_tags.append(tag_name)
         except InvalidVersion:
@@ -824,11 +748,6 @@ def _check_tag_format_with_subprocess(target_path: pathlib.Path) -> list[AuditFi
 AUDIT_CHECK_REGISTRY["tag-format"] = _check_tag_format_with_subprocess
 
 
-# ---------------------------------------------------------------------------
-# Legacy catalog/<name>/ directory detection (unconditional -- not selectable)
-# ---------------------------------------------------------------------------
-
-
 def _check_legacy_catalog_dir(
     target_path: pathlib.Path,
     version: str,
@@ -877,11 +796,6 @@ def _check_legacy_catalog_dir(
     ]
 
 
-# ---------------------------------------------------------------------------
-# audit_command entrypoint
-# ---------------------------------------------------------------------------
-
-
 def audit_command(args: argparse.Namespace) -> int:
     """Execute the kanon catalog audit subcommand.
 
@@ -918,8 +832,6 @@ def audit_command(args: argparse.Namespace) -> int:
         if check_fn is not None:
             findings.extend(check_fn(target_path))
 
-    # Unconditional legacy-catalog-dir check -- runs regardless of --check value
-    # and is not registered in AUDIT_CHECK_REGISTRY (not selectable via --check).
     findings.extend(_check_legacy_catalog_dir(target_path, _kanon_version))
 
     if args.format == KANON_CATALOG_AUDIT_FORMAT_JSON:
@@ -943,11 +855,6 @@ def audit_command(args: argparse.Namespace) -> int:
     if args.strict:
         return 1 if (errors or warns) else 0
     return 1 if errors else 0
-
-
-# ---------------------------------------------------------------------------
-# argparse registration
-# ---------------------------------------------------------------------------
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -974,7 +881,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
 
     _register_audit(catalog_subparsers)
 
-    # If no catalog subcommand is given, print help.
     def _catalog_help(args: argparse.Namespace) -> int:
         catalog_parser.print_help()
         return 2
@@ -1071,9 +977,7 @@ def _register_audit(
     )
 
     def _run_audit(args: argparse.Namespace) -> int:
-        # Normalize the check_subset attribute from the parsed --check value.
-        # _parse_check_subset is used as the argparse type function, so args.check
-        # already holds the frozenset; store it as check_subset for audit_command.
+
         args.check_subset = args.check
         return audit_command(args)
 

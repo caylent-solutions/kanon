@@ -36,7 +36,7 @@ class TestMissingCatalogSourceError:
             raise MissingCatalogSourceError()
 
     def test_carries_no_required_fields(self) -> None:
-        # Must be instantiable with no arguments (caller supplies message context)
+
         err = MissingCatalogSourceError()
         assert isinstance(err, MissingCatalogSourceError)
 
@@ -166,7 +166,6 @@ class TestCloneRemoteCatalog:
     def test_missing_catalog_dir_in_clone_exits(self, tmp_path: pathlib.Path) -> None:
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir(parents=True)
-        # No catalog/ directory inside repo
 
         with (
             patch("kanon_cli.core.catalog.subprocess.run") as mock_run,
@@ -279,11 +278,6 @@ class TestCloneRemoteCatalog:
         assert "v2.0.0" in cmd
 
 
-# ---------------------------------------------------------------------------
-# Tests for add_help=True on the 'catalog' and 'catalog audit' subparsers
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCatalogSubparserHelp:
     """The 'catalog' and 'catalog audit' subparsers have add_help=True and accept '-h'."""
@@ -336,11 +330,6 @@ class TestCatalogSubparserHelp:
                 )
                 return
         raise AssertionError("No 'audit' sub-subparser found under 'catalog'")
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_findings_payload helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -405,7 +394,7 @@ class TestResolveDefaultBranchPrecedence:
     def test_inline_ref_wins_over_flag_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An explicit inline @ref short-circuits the precedence verbatim."""
         monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "env-branch")
-        # No existence check / symref call should fire for a pinned inline ref.
+
         with patch("kanon_cli.core.catalog._list_branch_head") as mock_exists:
             with patch("kanon_cli.core.catalog._resolve_symref_default_branch") as mock_symref:
                 result = resolve_default_branch(_TEST_URL, inline_ref="v1.2.3", flag_value="flag-branch")

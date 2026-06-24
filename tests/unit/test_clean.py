@@ -27,9 +27,7 @@ _MINIMAL_KANONENV = (
     "KANON_SOURCE_build_GITBASE=https://example.com\n"
 )
 
-# Same minimal block, but with the 'build' dependency opting into marketplace
-# install via the per-dependency flag (spec Section 5.1 / FR-17). Used by the
-# clean tests that exercise the marketplace teardown path.
+
 _MINIMAL_KANONENV_MARKETPLACE = _MINIMAL_KANONENV + "KANON_SOURCE_build_MARKETPLACE=true\n"
 
 
@@ -173,20 +171,16 @@ class TestCleanSymlinkResolution:
         symlink_dir = tmp_path / "symlink_dir"
         symlink_dir.mkdir()
 
-        # Create the real .kanon file in real_project
         real_kanonenv = real_project / ".kanon"
         real_kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
 
-        # Create the symlink in symlink_dir pointing to the real .kanon
         symlink_kanonenv = symlink_dir / ".kanon"
         symlink_kanonenv.symlink_to(real_kanonenv)
 
-        # Fetched artifacts live in the shared store; a decoy dir sits beside the symlink.
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True)
-        (symlink_dir / ".packages").mkdir()  # should NOT be touched
+        (symlink_dir / ".packages").mkdir()
 
-        # Preconditions: verify symlink is set up correctly
         assert symlink_kanonenv.is_symlink(), "setup: .kanon in symlink_dir must be a symlink"
         assert symlink_kanonenv.resolve() == real_kanonenv, "setup: symlink must point to real .kanon"
         assert (store / ".packages").exists(), "setup: store/.packages must exist before clean()"
@@ -199,11 +193,6 @@ class TestCleanSymlinkResolution:
         assert (symlink_dir / ".packages").exists(), (
             ".packages/ beside the .kanon symlink must NOT be removed by clean()"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests for add_help=True on the 'clean' subparser
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -232,11 +221,6 @@ class TestCleanSubparserHelp:
         assert clean_parser.add_help is True, "clean subparser must have add_help=True so '-h' is accepted"
 
 
-# ---------------------------------------------------------------------------
-# AC-23: clean removes artifacts from the shared KANON_HOME store
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCleanKanonHomeStore:
     """clean() removes .packages/ and .kanon-data/ from the <KANON_HOME>/store."""
@@ -253,10 +237,9 @@ class TestCleanKanonHomeStore:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(_MINIMAL_KANONENV)
 
-        # Create artifacts under the store (as install would have)
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True)
-        # Also create decoy artifacts in cwd (should NOT be touched by clean)
+
         (cwd_dir / ".packages").mkdir()
         (cwd_dir / ".kanon-data").mkdir()
 
@@ -267,7 +250,7 @@ class TestCleanKanonHomeStore:
 
         assert not (store / ".packages").exists(), ".packages/ must be removed from the KANON_HOME store"
         assert not (store / ".kanon-data").exists(), ".kanon-data/ must be removed from the KANON_HOME store"
-        # Decoy artifacts in cwd must not be touched
+
         assert (cwd_dir / ".packages").exists(), ".packages/ in cwd must NOT be touched by clean"
         assert (cwd_dir / ".kanon-data").exists(), ".kanon-data/ in cwd must NOT be touched by clean"
 
@@ -286,7 +269,7 @@ class TestCleanKanonHomeStore:
         fake_home.mkdir()
         store = fake_home / ".kanon" / "store"
         monkeypatch.delenv("KANON_HOME", raising=False)
-        # Redirect Path.home() / expanduser by overriding HOME (and USERPROFILE on Windows).
+
         monkeypatch.setenv("HOME", str(fake_home))
         monkeypatch.setenv("USERPROFILE", str(fake_home))
         os.environ.pop("KANON_HOME", None)
@@ -323,7 +306,6 @@ class TestCleanKanonHomeStore:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(_MINIMAL_KANONENV)
 
-        # A published content-addressed entry (as install would have written).
         entry = store_entries_dir(store) / ("a" * 64)
         entry.mkdir(parents=True)
         (entry / "payload").write_text("data")
@@ -338,11 +320,6 @@ class TestCleanKanonHomeStore:
         assert not entry.exists(), "the content-addressed store entry must be pruned by clean"
         assert not store_entries_dir(store).exists(), "the store entries directory must be pruned by clean"
         assert store.exists(), "the store base directory must survive clean"
-
-
-# ---------------------------------------------------------------------------
-# clean(orphans=...) ledger-driven marketplace pruning
-# ---------------------------------------------------------------------------
 
 
 def _make_source(name: str, *, registered_marketplaces: list[str]) -> SourceEntry:
@@ -433,7 +410,6 @@ class TestCleanOrphansSourcePrune:
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
 
-        # .kanon declares only source B; the lock still records A and B.
         kanonenv = _write_kanon_sources(tmp_path, marketplace_dir, ["bravo"])
         (tmp_path / ".packages").mkdir()
 

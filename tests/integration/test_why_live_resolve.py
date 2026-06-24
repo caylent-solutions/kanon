@@ -62,10 +62,6 @@ from tests.integration.test_add_core import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Rich catalog builder for URL/path live-resolve tests
-# ---------------------------------------------------------------------------
-
 _RICH_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -152,11 +148,6 @@ def _create_catalog_with_project_and_include(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Module-scope synthetic catalog fixture shared across all live-resolve classes
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def _live_catalog(tmp_path_factory: pytest.TempPathFactory) -> dict:
     """Build a single synthetic catalog bare repo shared across the live-resolve classes.
@@ -189,11 +180,6 @@ def _live_catalog(tmp_path_factory: pytest.TempPathFactory) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner (mirrors test_add_core._run_kanon)
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -213,11 +199,6 @@ def _run_kanon(
         text=True,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Test: live-resolve path -- no .kanon.lock present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -246,7 +227,7 @@ class TestWhyLiveResolve:
         ``_live_resolve_tree`` raises ``NotImplementedError``, causing exit 1
         with the diagnostic "Live-resolution is not yet implemented".
         """
-        # -- Arrange: synthetic catalog with entry "foo" --
+
         catalog_dir = tmp_path / "catalog"
         bare_repo = _create_manifest_repo_with_tags(
             catalog_dir,
@@ -259,7 +240,6 @@ class TestWhyLiveResolve:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # -- Act: kanon add (no install, so no lockfile written) --
         add_result = _run_kanon(
             [
                 "add",
@@ -277,13 +257,11 @@ class TestWhyLiveResolve:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Assert: no .kanon.lock exists (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert lock_file.exists() is False, (
             f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
-        # -- Act: kanon why (live-resolve path) --
         why_result = _run_kanon(
             [
                 "why",
@@ -296,26 +274,18 @@ class TestWhyLiveResolve:
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from 'kanon why foo', got {why_result.returncode}.\n"
             f"stdout: {why_result.stdout!r}\n"
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: "foo" appears in stdout --
         assert "foo" in why_result.stdout, f"Expected 'foo' in stdout but got: {why_result.stdout!r}"
 
-        # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: lockfile-present path -- .kanon.lock present, bare kanon why (no --catalog-source)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -364,7 +334,6 @@ class TestWhyLockfilePresent:
         import os
         import subprocess as _subprocess
 
-        # -- Arrange: synthetic catalog with entry "foo" --
         catalog_dir = tmp_path / "catalog"
         bare_repo = _create_manifest_repo_with_tags(
             catalog_dir,
@@ -376,7 +345,6 @@ class TestWhyLockfilePresent:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # -- Act: kanon add (writes .kanon with the KANON_SOURCE_foo_* lines) --
         add_result = _run_kanon(
             [
                 "add",
@@ -392,7 +360,6 @@ class TestWhyLockfilePresent:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Act: bare kanon install (reads .kanon sources, writes .kanon.lock) --
         env = dict(os.environ)
         env.pop("KANON_CATALOG_SOURCES", None)
         install_result = _subprocess.run(
@@ -408,7 +375,6 @@ class TestWhyLockfilePresent:
             f"stderr: {install_result.stderr!r}"
         )
 
-        # -- Assert: .kanon.lock exists (lockfile-present path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert lock_file.exists(), (
             f"Expected .kanon.lock to exist after 'kanon install' but it was absent at "
@@ -417,13 +383,11 @@ class TestWhyLockfilePresent:
             f"install stderr: {install_result.stderr!r}"
         )
 
-        # -- Act: bare kanon why (lockfile-present path -- no --catalog-source) --
         why_result = _run_kanon(
             ["why", "foo"],
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from bare 'kanon why foo' (lockfile present), "
             f"got {why_result.returncode}.\n"
@@ -431,12 +395,10 @@ class TestWhyLockfilePresent:
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: "foo" appears in stdout --
         assert "foo" in why_result.stdout, (
             f"Expected 'foo' in stdout from 'kanon why foo' but got: {why_result.stdout!r}"
         )
 
-        # -- Assert: not-found diagnostic absent --
         not_found_diagnostic = "not found in resolved tree"
         assert not_found_diagnostic not in why_result.stdout, (
             f"'not found in resolved tree' appeared in stdout -- "
@@ -448,11 +410,6 @@ class TestWhyLockfilePresent:
             f"_build_tree_from_lockfile is not correctly indexing top-level sources.\n"
             f"stderr: {why_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: live-resolve path -- by catalog URL -- no .kanon.lock present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -505,7 +462,6 @@ class TestByUrlLiveResolve:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # -- Act: kanon add (no install, so no lockfile written) --
         add_result = _run_kanon(
             [
                 "add",
@@ -523,13 +479,11 @@ class TestByUrlLiveResolve:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
             f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
-        # -- Act: kanon why (live-resolve dispatcher path) --
         why_result = _run_kanon(
             [
                 "why",
@@ -542,7 +496,6 @@ class TestByUrlLiveResolve:
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from 'kanon why alpha' (live-resolve, by catalog URL), "
             f"got {why_result.returncode}.\n"
@@ -550,22 +503,15 @@ class TestByUrlLiveResolve:
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: source name alpha appears in stdout (chain rooted at owning entry) --
         assert "alpha" in why_result.stdout, (
             f"Expected 'alpha' in stdout (chain must be rooted at the source registered "
             f"via the catalog URL), but got: {why_result.stdout!r}"
         )
 
-        # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: live-resolve path -- by XML manifest path context -- no .kanon.lock present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -614,7 +560,6 @@ class TestByPathLiveResolve:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # -- Act: kanon add (no install, so no lockfile written) --
         add_result = _run_kanon(
             [
                 "add",
@@ -632,13 +577,11 @@ class TestByPathLiveResolve:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
             f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
-        # -- Act: kanon why (live-resolve dispatcher path) --
         why_result = _run_kanon(
             [
                 "why",
@@ -651,7 +594,6 @@ class TestByPathLiveResolve:
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from 'kanon why beta' (live-resolve, by XML-path source), "
             f"got {why_result.returncode}.\n"
@@ -659,23 +601,16 @@ class TestByPathLiveResolve:
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: source name beta appears in stdout (chain rooted at XML-path source) --
         assert "beta" in why_result.stdout, (
             f"Expected 'beta' in stdout (chain must be rooted at the source whose "
             f"marketplace manifest is at repo-specs/beta-marketplace.xml), "
             f"but got: {why_result.stdout!r}"
         )
 
-        # -- Assert: stub diagnostic absent from stdout --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: live-resolve path -- by project URL -- no .kanon.lock present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -732,7 +667,6 @@ class TestWhyLiveResolveByUrl:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # -- Act: kanon add (no install, so no lockfile written) --
         add_result = _run_kanon(
             [
                 "add",
@@ -750,13 +684,11 @@ class TestWhyLiveResolveByUrl:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
             f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
-        # -- Act: kanon why <project-url> (live-resolve dispatcher path) --
         why_result = _run_kanon(
             [
                 "why",
@@ -769,7 +701,6 @@ class TestWhyLiveResolveByUrl:
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from 'kanon why {project_url}' (live-resolve, by project URL), "
             f"got {why_result.returncode}.\n"
@@ -777,23 +708,16 @@ class TestWhyLiveResolveByUrl:
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: derived source name appears in stdout (chain names the owning entry) --
         assert entry_name in why_result.stdout, (
             f"Expected source name {entry_name!r} in stdout "
             f"(chain must be rooted at the source that declares the project), "
             f"but got: {why_result.stdout!r}"
         )
 
-        # -- Assert: stub diagnostic absent --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: live-resolve path -- by include XML path -- no .kanon.lock present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -848,7 +772,6 @@ class TestWhyLiveResolveByXmlPath:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # -- Act: kanon add (no install, so no lockfile written) --
         add_result = _run_kanon(
             [
                 "add",
@@ -866,13 +789,11 @@ class TestWhyLiveResolveByXmlPath:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # -- Assert: .kanon.lock is absent (live-resolve path confirmed) --
         lock_file = workspace / ".kanon.lock"
         assert not lock_file.exists(), (
             f"Expected .kanon.lock to be absent after 'kanon add' (no install ran), but found it at {lock_file}"
         )
 
-        # -- Act: kanon why <include-xml-path> (live-resolve dispatcher path) --
         why_result = _run_kanon(
             [
                 "why",
@@ -885,7 +806,6 @@ class TestWhyLiveResolveByXmlPath:
             cwd=workspace,
         )
 
-        # -- Assert: exits 0 --
         assert why_result.returncode == 0, (
             f"Expected exit 0 from 'kanon why {include_xml_path}' "
             f"(live-resolve, by include XML path), "
@@ -894,23 +814,16 @@ class TestWhyLiveResolveByXmlPath:
             f"stderr: {why_result.stderr!r}"
         )
 
-        # -- Assert: derived source name appears in stdout (chain names the owning entry) --
         assert entry_name in why_result.stdout, (
             f"Expected source name {entry_name!r} in stdout "
             f"(chain must be rooted at the source that owns the include), "
             f"but got: {why_result.stdout!r}"
         )
 
-        # -- Assert: stub diagnostic absent --
         stub_diagnostic = "Live-resolution is not yet implemented"
         assert stub_diagnostic not in why_result.stdout, (
             f"Stub diagnostic found in stdout -- live-resolve is still unimplemented.\nstdout: {why_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test: in-process -- _live_resolve_tree populates project + include children
-# ---------------------------------------------------------------------------
 
 
 _MOCK_SHA = "b" * 40
@@ -996,7 +909,6 @@ class TestLiveResolveTreeStructure:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # Write the .kanon file via kanon add subprocess (so the format is canonical).
         add_result = subprocess.run(
             [
                 sys.executable,
@@ -1019,8 +931,6 @@ class TestLiveResolveTreeStructure:
             f"stderr: {add_result.stderr!r}"
         )
 
-        # Patch _resolve_ref_to_sha in the why module's namespace so the
-        # in-process call does not attempt a real git ls-remote.
         mock_resolution = _RefResolution(sha=_MOCK_SHA, resolved_ref=_MOCK_REF)
         with patch(
             "kanon_cli.commands.why._resolve_ref_to_sha",
@@ -1028,7 +938,6 @@ class TestLiveResolveTreeStructure:
         ):
             tree = _live_resolve_tree(kanon_file, catalog_source_url)
 
-        # -- Assert: exactly one source node --
         assert len(tree.sources) == 1, (
             f"Expected 1 source node in live-resolve tree, got {len(tree.sources)}. "
             f"Source names: {[s.name for s in tree.sources]}"
@@ -1036,7 +945,6 @@ class TestLiveResolveTreeStructure:
 
         source_node = tree.sources[0]
 
-        # -- Assert: source node has children (project or include) --
         assert len(source_node.children) > 0, (
             f"Expected source node {source_node.name!r} to have project/include children "
             f"after _live_resolve_tree, but children list is empty. "
@@ -1047,20 +955,17 @@ class TestLiveResolveTreeStructure:
         project_nodes = [n for n in all_nodes if n.kind == "project"]
         include_nodes = [n for n in all_nodes if n.kind == "include"]
 
-        # -- Assert: at least one project node is present somewhere in the subtree --
         assert len(project_nodes) > 0, (
             f"Expected at least one project ChainNode under source {source_node.name!r}, "
             f"but found none. Children: {source_node.children!r}. "
             f"_match_by_url requires project nodes to resolve URL arguments."
         )
 
-        # -- Assert: project node has a non-empty url --
         for proj in project_nodes:
             assert proj.url, (
                 f"Project node {proj.name!r} has empty url; _match_by_url canonicalizes this url to find matches."
             )
 
-        # -- Assert: at least one include node is present (the XML has one <include>) --
         assert len(include_nodes) > 0, (
             f"Expected at least one include ChainNode under source {source_node.name!r}, "
             f"but found none. Children: {source_node.children!r}. "
@@ -1186,11 +1091,6 @@ class TestLiveResolveTreeStructure:
 
         with pytest.raises(ValueError, match="catalog_source"):
             _live_resolve_tree(kanon_file, "")
-
-
-# ---------------------------------------------------------------------------
-# Test: in-process -- _live_resolve_tree populates projects from ${VAR} fetch
-# ---------------------------------------------------------------------------
 
 
 _PLACEHOLDER_MANIFEST_TEMPLATE = textwrap.dedent("""\
@@ -1351,8 +1251,6 @@ class TestLiveResolveTreePlaceholder:
             f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
         )
 
-        # Override GITBASE to point at pkgs_dir so substitution yields a
-        # concrete project URL: file://<pkgs_dir>/<project_name>
         text = kanon_file.read_text()
         new_lines = []
         replaced = False

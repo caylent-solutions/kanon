@@ -67,9 +67,6 @@ def _run_install_with_fixture_sync(
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
     ):
-        # install is hermetic in 3.0.0: it takes no catalog source (it never
-        # resolves a remote catalog). The conftest autouse fixture mocks
-        # _resolve_ref_to_sha so source refs are resolved without network.
         install(
             kanonenv,
             lock_file_path=kanonenv.parent / ".kanon.lock",
@@ -93,19 +90,14 @@ class TestInstallIncludeCycleTriangle:
         pinned to ``base/home`` and the fixture XML files are pre-populated there
         so that when _walk_includes runs it finds the triangle cycle.
         """
-        # Write the .kanon file in the project dir.
+
         kanonenv = _write_kanonenv(base, manifest_path="a.xml")
 
-        # Pin KANON_HOME so the artifact store resolves under base.
         kanon_home = base / "home"
         kanon_home.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
         store = resolve_workspace_base_dir()
 
-        # Pre-populate the manifest checkout directory that install() will use.
-        # After real repo init + repo sync, manifests live at
-        # <store>/.kanon-data/sources/test/.repo/manifests/; pre-populate that
-        # path so _walk_includes finds the fixture files where the code expects.
         source_dir = store / ".kanon-data" / "sources" / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)

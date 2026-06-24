@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for skip-if-exists .bak semantics (replaces Bug 12 remove-then-recreate).
 
 The original Bug-12 fix introduced remove-then-recreate logic: on every run,
@@ -27,11 +13,6 @@ These tests verify the correct skip-if-exists contract:
 import pytest
 
 from kanon_cli.repo.subcmds.envsubst import Envsubst
-
-
-# ---------------------------------------------------------------------------
-# Replaced: existing .bak is preserved (not removed) on re-run
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -61,11 +42,6 @@ def test_existing_bak_not_overwritten_on_rerun(tmp_path):
         f"EnvSubst must NOT overwrite an existing .bak (skip-if-exists contract). "
         f"Expected {sentinel!r}, got {bak_path.read_bytes()!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# First run creates .bak when absent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

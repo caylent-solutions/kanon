@@ -1,17 +1,3 @@
-# Copyright 2019 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the git_command.py module."""
 
 import io
@@ -220,9 +206,6 @@ class GitCallUnitTest(unittest.TestCase):
         ver = git_command.git.version_tuple()
         self.assertIsNotNone(ver)
 
-        # We don't dive too deep into the values here to avoid having to update
-        # whenever git versions change.  We do check relative to this min
-        # version as this is what `repo` itself requires via MIN_GIT_VERSION.
         MIN_GIT_VERSION = (2, 10, 2)
         self.assertTrue(isinstance(ver.major, int))
         self.assertTrue(isinstance(ver.minor, int))
@@ -244,24 +227,21 @@ class UserAgentUnitTest(unittest.TestCase):
     def test_smoke_os(self):
         """Make sure UA OS setting returns something useful."""
         os_name = git_command.user_agent.os
-        # We can't dive too deep because of OS/tool differences, but we can
-        # check the general form.
+
         m = re.match(r"^[^ ]+$", os_name)
         self.assertIsNotNone(m)
 
     def test_smoke_repo(self):
         """Make sure repo UA returns something useful."""
         ua = git_command.user_agent.repo
-        # We can't dive too deep because of OS/tool differences, but we can
-        # check the general form.
+
         m = re.match(r"^git-repo/[^ ]+ ([^ ]+) git/[^ ]+ Python/[0-9.]+", ua)
         self.assertIsNotNone(m)
 
     def test_smoke_git(self):
         """Make sure git UA returns something useful."""
         ua = git_command.user_agent.git
-        # We can't dive too deep because of OS/tool differences, but we can
-        # check the general form.
+
         m = re.match(r"^git/[^ ]+ ([^ ]+) git-repo/[^ ]+", ua)
         self.assertIsNotNone(m)
 
@@ -324,9 +304,6 @@ class GitCommandErrorTest(unittest.TestCase):
         )
 
 
-# Additional comprehensive tests below
-
-
 @pytest.mark.unit
 class TestGitCommandExtended(unittest.TestCase):
     """Extended tests for GitCommand class."""
@@ -343,7 +320,6 @@ class TestGitCommandExtended(unittest.TestCase):
         mock.patch("subprocess.Popen", self.mock_popen).start()
         mock.patch.object(os.path, "realpath", side_effect=lambda x: x).start()
 
-        # Mock git version_tuple to avoid git command execution
         mock_version = wrapper.Wrapper().GitVersion(2, 28, 0, 0)
         mock.patch.object(git_command.git, "version_tuple", return_value=mock_version).start()
 
@@ -557,7 +533,6 @@ class TestGetEventTargetPath(unittest.TestCase):
             mock_instance.Wait.return_value = 1
             mock_git_cmd.return_value = mock_instance
 
-            # Clear cache
             git_command.GetEventTargetPath.cache_clear()
             result = git_command.GetEventTargetPath()
             self.assertIsNone(result)
@@ -570,7 +545,6 @@ class TestGetEventTargetPath(unittest.TestCase):
             mock_instance.stdout = "/path/to/trace\n"
             mock_git_cmd.return_value = mock_instance
 
-            # Clear cache
             git_command.GetEventTargetPath.cache_clear()
             result = git_command.GetEventTargetPath()
             self.assertEqual(result, "/path/to/trace")

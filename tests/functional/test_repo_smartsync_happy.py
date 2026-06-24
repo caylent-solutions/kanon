@@ -72,24 +72,14 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
-# Phrase expected in stdout at the start of a successful smartsync when a
-# manifest server is configured.
 _MANIFEST_SERVER_PHRASE = "Using manifest server"
 
-# Sentinel for detecting empty output strings.
+
 _EMPTY_OUTPUT = ""
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT_CODE = 0
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo smartsync with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -218,11 +208,6 @@ class TestRepoSmartSyncHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo smartsync has a happy-path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSmartSyncPositionalArgHappyPath:
     """AC-TEST-002: happy-path tests for the positional arguments of 'repo smartsync'.
@@ -296,11 +281,6 @@ class TestRepoSmartSyncPositionalArgHappyPath:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSmartSyncChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for 'kanon repo smartsync'.
@@ -338,14 +318,6 @@ class TestRepoSmartSyncChannelDiscipline:
         tmp_path = tmp_path_factory.mktemp("smartsync_channel")
         checkout_dir, repo_dir, rpc_server = _build_smartsync_state(tmp_path)
 
-        # The credentials-lookup notice (`No credentials found for
-        # <host> in .netrc`) is only emitted when `~/.netrc` opens
-        # successfully but lacks an entry for the manifest-server host.
-        # When `HOME` points at a fresh tmp dir with no `.netrc`,
-        # `netrc.netrc()` raises OSError and the lookup branch is
-        # skipped silently. Seed an empty `.netrc` in `HOME` so the
-        # netrc.netrc() succeeds and the no-entry branch runs,
-        # producing the documented stderr line.
         netrc_seed = pathlib.Path(os.environ["HOME"]) / ".netrc"
         netrc_seed.parent.mkdir(parents=True, exist_ok=True)
         netrc_seed.touch(exist_ok=True)

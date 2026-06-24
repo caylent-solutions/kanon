@@ -22,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_remote_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -127,11 +123,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in manifest.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Parse + round-trip
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-# Root of the kanon source package relative to this test file's location.
+
 _SRC_ROOT = Path(__file__).parent.parent.parent / "src" / "kanon_cli"
 
 
@@ -100,19 +100,16 @@ class TestSrcNoHardcodedOrgValues:
     third-party tool and is maintained separately.
     """
 
-    # Patterns that must not appear in first-party kanon source files.
     _PROHIBITED_PATTERNS = [
         "review/caylent-claude",
         "caylent-private",
     ]
 
-    # Subdirectories of src/kanon_cli/ that are first-party kanon code.
-    # The embedded 'repo' directory is vendored and excluded from this scan.
     _FIRST_PARTY_DIRS = [
         _SRC_ROOT / "catalog",
         _SRC_ROOT / "core",
     ]
-    # First-party individual files (top-level in src/kanon_cli/).
+
     _FIRST_PARTY_FILES = list((_SRC_ROOT).glob("*.py"))
 
     @pytest.mark.parametrize("pattern", _PROHIBITED_PATTERNS)

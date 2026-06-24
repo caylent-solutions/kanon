@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T2: undefined env vars silently preserved.
 
 Bug reference: E0-F6-S2-T2 / Bug 6 -- after expandvars() processes an XML
@@ -56,10 +42,6 @@ from kanon_cli.repo.subcmds import envsubst as envsubst_module
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# XML fixtures
-# ---------------------------------------------------------------------------
-
 _MANIFEST_WITH_UNDEFINED_VARS = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -83,11 +65,6 @@ _MANIFEST_SINGLE_UNDEFINED = """\
   <remote name="fallback" fetch="${UNDEFINED_BUG6_SINGLE}" />
 </manifest>
 """
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_cmd() -> Envsubst:
@@ -118,11 +95,6 @@ def _env_without(*excluded_vars: str) -> dict:
         A copy of os.environ with the excluded variables removed.
     """
     return {k: v for k, v in os.environ.items() if k not in excluded_vars}
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- regression: WARNING logged for each unresolved variable
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -193,11 +165,6 @@ def test_regression_warning_logged_for_each_unresolved_variable(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- exact bug condition: EnvSubst() must not silently pass
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_exact_bug_condition_no_silent_pass_on_undefined_vars(
     tmp_path: pytest.TempPathFactory,
@@ -252,11 +219,6 @@ def test_regression_exact_bug_condition_no_silent_pass_on_undefined_vars(
         "Restore the _collect_unresolved_vars() call and the WARNING log in "
         "envsubst.py EnvSubst() to prevent Bug 6 from recurring."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- passes against the current fixed code
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -350,11 +312,6 @@ def test_regression_fixed_code_behavior(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guards present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_unresolved_vars_guard_present_in_envsubst_source() -> None:
     """AC-FUNC-001: The unresolved-variable guard is present in EnvSubst() source.
@@ -399,11 +356,6 @@ def test_regression_unresolved_vars_guard_present_in_envsubst_source() -> None:
         "remaining ${VAR_NAME} patterns that expandvars() could not resolve. "
         "Restore the constant to prevent Bug 6 from recurring."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

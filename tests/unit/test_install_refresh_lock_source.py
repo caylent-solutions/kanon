@@ -42,10 +42,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture content
-# ---------------------------------------------------------------------------
-
 _VALID_SHA_A = "a" * 40
 _VALID_SHA_B = "b" * 40
 
@@ -132,11 +128,6 @@ def _write_lockfile_file(
     return lock_path
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture for .kanon file and lockfile with two sources
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def two_source_setup(tmp_path: pathlib.Path):
     """Set up .kanon and .kanon.lock with sources alpha and beta."""
@@ -162,11 +153,6 @@ def two_source_setup(tmp_path: pathlib.Path):
     }
 
 
-# ===========================================================================
-# AC-FUNC-001: InstallState.REFRESH_LOCK_SOURCE enum value exists
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRefreshLockSourceInstallState:
     """AC-FUNC-001: REFRESH_LOCK_SOURCE enum value is present on InstallState."""
@@ -190,11 +176,6 @@ class TestRefreshLockSourceInstallState:
             assert InstallState.REFRESH_LOCK_SOURCE is not other
 
 
-# ===========================================================================
-# AC-FUNC-001 / AC-FUNC-002: _resolve_source_name resolution
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestResolveSourceName:
     """Tests for _resolve_source_name two-step resolution."""
@@ -213,9 +194,7 @@ class TestResolveSourceName:
     def test_resolve_by_catalog_entry_name_via_derive(self, tmp_path: pathlib.Path) -> None:
         """AC-FUNC-002: name matching via derive_source_name resolves to correct entry."""
         kanon_path = _write_kanon(tmp_path)
-        # 'Alpha-Tool' normalises via derive_source_name to 'alpha_tool'
-        # but our source name is 'alpha', so we need a source named 'alpha_tool'
-        # to demonstrate the derive path.
+
         kanon_content = """\
 GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
@@ -236,7 +215,6 @@ KANON_SOURCE_beta_GITBASE=https://example.com
         beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git")
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
 
-        # 'Alpha-Tool' normalises to 'alpha_tool' via derive_source_name
         result = _resolve_source_name("Alpha-Tool", lockfile)
         assert result.name == "alpha_tool"
 
@@ -253,7 +231,7 @@ KANON_SOURCE_beta_GITBASE=https://example.com
         err = exc_info.value
         err_str = str(err)
         assert "nonexistent" in err_str
-        # Error must list known source names
+
         assert "alpha" in err_str
         assert "beta" in err_str
 
@@ -262,7 +240,7 @@ KANON_SOURCE_beta_GITBASE=https://example.com
         [
             ("alpha", "alpha"),
             ("beta", "beta"),
-            ("ALPHA", "alpha"),  # derive_source_name lowercases
+            ("ALPHA", "alpha"),
         ],
     )
     def test_resolve_parametrised_by_name_and_derive(
@@ -279,11 +257,6 @@ KANON_SOURCE_beta_GITBASE=https://example.com
 
         result = _resolve_source_name(name, lockfile)
         assert result.name == expected_source_name
-
-
-# ===========================================================================
-# AC-FUNC-003: UnknownSourceError diagnostic payload
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -320,11 +293,6 @@ class TestUnknownSourceError:
         assert "foo" in err_str
         assert "alpha" in err_str
         assert "beta" in err_str
-
-
-# ===========================================================================
-# AC-FUNC-004: --refresh-lock and --refresh-lock-source are mutually exclusive
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -374,18 +342,9 @@ class TestRefreshLockMutualExclusion:
         subparsers = parser.add_subparsers()
         install_cmd.register(subparsers)
 
-        # --refresh-lock alone should still work
         args = parser.parse_args(["install", "--refresh-lock"])
         assert args.refresh_lock is True
         assert args.refresh_lock_source is None
-
-
-# ===========================================================================
-# AC-FUNC-005: --refresh-lock-source is hermetic -- it re-resolves from the
-# committed .kanon and ignores a populated KANON_CATALOG_SOURCES env var
-# (spec Section 4.3 / FR-14); the install subparser does not accept
-# --catalog-source.
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -417,7 +376,6 @@ class TestRefreshLockSourceHermeticCatalogIgnored:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            # The env var must not abort the partial refresh.
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
@@ -428,7 +386,7 @@ class TestRefreshLockSourceHermeticCatalogIgnored:
 
         new_lf = read_lockfile(lock_path)
         alpha_new = next(e for e in new_lf.sources if e.name == "alpha")
-        # alpha was refreshed from .kanon; the ignored env-var URL is not used.
+
         assert alpha_new.resolved_sha == new_alpha_sha
         assert alpha_new.url == "https://git.example.com/alpha.git"
         lock_text = lock_path.read_text(encoding="utf-8")
@@ -453,11 +411,6 @@ class TestRefreshLockSourceHermeticCatalogIgnored:
                 ]
             )
         assert exc_info.value.code != 0
-
-
-# ===========================================================================
-# AC-FUNC-006: info-line for REFRESH_LOCK_SOURCE
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -516,11 +469,6 @@ class TestEmitInstallStateRefreshLockSource:
         assert "lockfile rebuilt from .kanon (1 sources, 2 projects)" in captured.out
 
 
-# ===========================================================================
-# AC-FUNC-007: _merge_partial_lockfile preserves non-refreshed sources byte-for-byte
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestMergePartialLockfile:
     """AC-FUNC-007: _merge_partial_lockfile replaces exactly one source entry."""
@@ -543,11 +491,9 @@ class TestMergePartialLockfile:
             attributed_marketplaces={},
         )
 
-        # The refreshed source has the new SHA
         refreshed = next(e for e in merged.sources if e.name == "alpha")
         assert refreshed.resolved_sha == new_alpha_sha
 
-        # The preserved source keeps its SHA/url (ledger reset is asserted separately)
         preserved = next(e for e in merged.sources if e.name == "beta")
         assert preserved.resolved_sha == beta_old.resolved_sha
         assert preserved.url == beta_old.url
@@ -562,7 +508,7 @@ class TestMergePartialLockfile:
         forward a stale per-source ledger.
         """
         kanon_path = _write_kanon(tmp_path)
-        # Seed stale per-source ledgers so we can prove they are replaced.
+
         alpha_old = _make_source_entry(name="alpha", sha=_VALID_SHA_A)
         alpha_old.registered_marketplaces = ["stale-alpha-mp"]
         beta_old = _make_source_entry(name="beta", sha=_VALID_SHA_B)
@@ -616,8 +562,6 @@ class TestMergePartialLockfile:
         old_lockfile = _make_lockfile(kanon_path, [alpha_old, beta_old])
         old_hash = old_lockfile.kanon_hash
 
-        # Compute a fresh hash (same .kanon content -- hashes equal in this case,
-        # but the point is we pass a fresh hash and it is recorded)
         new_kanon_hash = compute_kanon_hash(kanon_path)
         alpha_new = _make_source_entry(name="alpha", sha="f" * 40)
 
@@ -629,11 +573,11 @@ class TestMergePartialLockfile:
         )
 
         assert merged.kanon_hash == new_kanon_hash
-        # Verify the hash is actually a valid sha256: prefixed value
+
         assert merged.kanon_hash.startswith("sha256:")
         assert len(merged.kanon_hash) == 71
-        # In this test old_hash == new_kanon_hash (same .kanon content), which is fine
-        _ = old_hash  # used to suppress lint warning
+
+        _ = old_hash
 
     def test_merge_preserves_top_level_metadata_and_has_no_catalog(self, tmp_path: pathlib.Path) -> None:
         """_merge_partial_lockfile preserves the v4 top-level metadata and emits no [catalog] block.
@@ -681,11 +625,6 @@ class TestMergePartialLockfile:
             )
 
 
-# ===========================================================================
-# AC-FUNC-001/AC-FUNC-007: install() accepts refresh_lock_source kwarg
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestInstallRefreshLockSourceKwarg:
     """install() accepts refresh_lock_source keyword argument."""
@@ -720,7 +659,6 @@ class TestInstallRefreshLockSourceKwarg:
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
         lock_path = _write_lockfile_file(tmp_path, lockfile)
 
-        # The new SHA that the refresh will resolve to
         new_alpha_sha = "e" * 40
         mock_ref = _RefResolution(sha=new_alpha_sha, resolved_ref="refs/heads/main")
 
@@ -743,10 +681,8 @@ class TestInstallRefreshLockSourceKwarg:
         alpha_new = next(e for e in new_lf.sources if e.name == "alpha")
         beta_new = next(e for e in new_lf.sources if e.name == "beta")
 
-        # alpha is refreshed with the new SHA
         assert alpha_new.resolved_sha == new_alpha_sha
 
-        # beta is preserved byte-for-byte (excluding kanon_hash / generated_at at the top level)
         assert beta_new.resolved_sha == _VALID_SHA_B
         assert beta_new.url == beta_entry.url
         assert beta_new.ref_spec == beta_entry.ref_spec
@@ -803,8 +739,6 @@ class TestInstallRefreshLockSourceKwarg:
         captured = capsys.readouterr()
         assert "lockfile partially rebuilt" in captured.out
         assert "alpha" in captured.out
-        # refreshed_count == 1: the alpha top-level source entry was re-resolved.
-        # preserved_count == 1: the beta top-level source entry was kept as-is.
-        # Singular form "project" is used for count == 1.
+
         assert "1 project refreshed" in captured.out
         assert "1 project preserved" in captured.out

@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Comprehensive unit tests for project.py to boost code coverage."""
 
 import os
@@ -37,7 +23,6 @@ class TestLwrite:
         content = "line1\nline2\nline3"
         project._lwrite(str(target), content)
 
-        # Read in binary mode to verify line endings
         with open(target, "rb") as f:
             data = f.read()
         assert data == b"line1\nline2\nline3"
@@ -62,7 +47,6 @@ class TestLwrite:
             with pytest.raises(OSError):
                 project._lwrite(str(target), "content")
 
-            # Lock file should be removed
             assert not lock_file.exists()
 
 
@@ -213,7 +197,6 @@ class TestCopyFile:
         dest_file = topdir / "dest.txt"
         dest_file.write_text("old content")
 
-        # Make sure the dest file timestamp is older
         import time
 
         time.sleep(0.01)
@@ -350,9 +333,8 @@ class TestDownloadedChange:
 
         dc = project.DownloadedChange(mock_project, "base", "change_id", "ps_id", "commit")
 
-        # First call
         commits1 = dc.commits
-        # Second call should use cache
+
         commits2 = dc.commits
 
         assert commits1 == commits2
@@ -384,7 +366,6 @@ class TestReviewableBranch:
 
         rb = project.ReviewableBranch(mock_project, mock_branch, "base")
 
-        # Should return empty list when base doesn't exist
         commits = rb.commits
         assert commits == []
 
@@ -685,7 +666,7 @@ class TestProjectMethods:
         proj.work_git.update_index = mock.MagicMock()
         proj.work_git.DiffZ = mock.MagicMock(return_value={})
         proj.work_git.LsOthers = mock.MagicMock(return_value=[])
-        # Detached HEAD (not refs/heads/...)
+
         proj.work_git.GetHead = mock.MagicMock(return_value="1234567890abcdef")
         proj.IsRebaseInProgress = mock.MagicMock(return_value=False)
 
@@ -774,7 +755,6 @@ class TestProjectMethods:
         with mock.patch("kanon_cli.repo.project.GitCommand", return_value=mock_git_cmd) as mock_cmd:
             proj.PrintWorkTreeDiff(absolute_paths=True)
 
-        # Check that absolute path options were added to command
         call_args = mock_cmd.call_args[0][1]
         assert any("--src-prefix" in arg for arg in call_args)
 
@@ -782,12 +762,10 @@ class TestProjectMethods:
         """Test _ExtractArchive succeeds."""
         proj = self._make_project()
 
-        # Create a simple tar file
         tar_path = tmp_path / "test.tar"
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
 
-        # Create a file to tar
         test_file = tmp_path / "test.txt"
         test_file.write_text("content")
 
@@ -1108,7 +1086,6 @@ class TestProjectGetUploadableBranches:
         """Test GetUploadableBranches when no branches are ready."""
         proj = self._make_project()
 
-        # Mock GetBranch to return a branch with LocalMerge=None
         mock_branch = mock.MagicMock()
         mock_branch.LocalMerge = None
         proj.config.GetBranch = mock.MagicMock(return_value=mock_branch)
@@ -1308,7 +1285,6 @@ class TestProjectPrintWorkTreeStatusDetailed:
         proj = self._make_project()
         proj.work_git.update_index = mock.MagicMock()
 
-        # Mock a renamed file in diff-index
         mock_file_info = mock.MagicMock()
         mock_file_info.status = "R"
         mock_file_info.src_path = "old_file.txt"
@@ -1332,7 +1308,6 @@ class TestProjectPrintWorkTreeStatusDetailed:
         proj = self._make_project()
         proj.work_git.update_index = mock.MagicMock()
 
-        # File is both in index and has working tree changes
         mock_index_info = mock.MagicMock()
         mock_index_info.status = "M"
         mock_index_info.src_path = None
@@ -1343,7 +1318,7 @@ class TestProjectPrintWorkTreeStatusDetailed:
         def mock_diffz(cmd, *args):
             if "diff-index" in cmd:
                 return {"file.txt": mock_index_info}
-            else:  # diff-files
+            else:
                 return {"file.txt": mock_working_info}
 
         proj.work_git.DiffZ = mock.MagicMock(side_effect=mock_diffz)
@@ -1729,7 +1704,7 @@ class TestProjectCleanPublishedCache:
 
         all_refs = {
             "refs/heads/main": "sha123",
-            "refs/published/feature": "sha456",  # Stale - no corresponding head
+            "refs/published/feature": "sha456",
         }
 
         with mock.patch.object(

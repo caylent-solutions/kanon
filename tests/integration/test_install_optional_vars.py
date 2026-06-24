@@ -23,11 +23,6 @@ from kanon_cli.core.install import install
 from kanon_cli.core.kanonenv import parse_kanonenv
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
     """Write a .kanon file in directory with the given content and return its path.
 
@@ -65,11 +60,6 @@ def _minimal_source_block(name: str = "primary", *, marketplace: bool = False) -
     if marketplace:
         block += f"KANON_SOURCE_{name}_MARKETPLACE=true\n"
     return block
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 + AC-FUNC-001: GITBASE env var takes precedence over .kanon value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -132,7 +122,7 @@ class TestGitbaseEnvOverride:
             _minimal_source_block(),
         )
         result = parse_kanonenv(kanonenv)
-        # GITBASE is not in the file, so it must not appear in globals
+
         assert "GITBASE" not in result["globals"], (
             "GITBASE set only in env (not in .kanon file) must not appear in parsed globals"
         )
@@ -201,11 +191,6 @@ class TestGitbaseEnvOverride:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: KANON_MARKETPLACE_INSTALL=true triggers marketplace install
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestMarketplaceInstallTrueFromFile:
     """AC-TEST-002: KANON_MARKETPLACE_INSTALL=true (from .kanon) triggers install path."""
@@ -267,11 +252,6 @@ class TestMarketplaceInstallTrueFromFile:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         mock_mp.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: KANON_MARKETPLACE_INSTALL=false skips marketplace path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -346,11 +326,6 @@ class TestMarketplaceInstallFalseFromFile:
                 "overrides file value of true"
             ),
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: CLAUDE_MARKETPLACES_DIR defaults correctly when unset
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -442,11 +417,6 @@ class TestClaudeMarketplacesDirDefault:
             "CLI handler must fail when CLAUDE_MARKETPLACES_DIR is only in env (not in .kanon file) "
             "because env-override only applies to keys present in the file"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

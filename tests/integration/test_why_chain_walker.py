@@ -32,26 +32,17 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
-
 _SOURCE_NAME = "FOO"
 _PROJECT_NAME = "baz"
 _PROJECT_URL = "https://github.com/org/baz"
 _INCLUDE_NAME = "bar"
 _INCLUDE_PATH = "repo-specs/bar.xml"
 
-# Fixed SHAs used throughout the fixture -- 40 hex chars each
+
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
 _KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -64,11 +55,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: this test does not install anything -- no git calls needed."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture: .kanon and .kanon.lock in a tmp directory
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -145,11 +131,6 @@ def why_fixture(tmp_path: pathlib.Path):
         "include_path": _INCLUDE_PATH,
         "source_name": _SOURCE_NAME,
     }
-
-
-# ---------------------------------------------------------------------------
-# End-to-end tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -298,37 +279,30 @@ class TestWhyChainWalkerIntegration:
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
         assert len(lines) == 3, f"Expected annotation + alias-render + chain line (3 lines), got: {lines!r}"
 
-        # Line 0 is the match annotation
         annotation_line = lines[0]
         assert annotation_line.startswith("matched "), (
             f"First line must be the match annotation, got: {annotation_line!r}"
         )
 
-        # Line 1 is the alias-render: "<alias> -> <name> from <url>@<ref>"
         alias_render_line = lines[1]
         assert alias_render_line.startswith(f"{_SOURCE_NAME} -> "), (
             f"Second line must be the alias-render for {_SOURCE_NAME!r}, got: {alias_render_line!r}"
         )
 
-        # Line 2 is the chain
         chain_line = lines[2]
 
-        # Source at start
         assert chain_line.startswith(_SOURCE_NAME), f"Chain must start with '{_SOURCE_NAME}', got: {chain_line!r}"
 
-        # Include node segment: <include-path>@<include-sha>
         expected_include_segment = f"{_INCLUDE_PATH}@{why_fixture['include_sha']}"
         assert expected_include_segment in chain_line, (
             f"Chain line must contain include-node segment '{expected_include_segment}', got: {chain_line!r}"
         )
 
-        # Project name with its SHA at end
         expected_project_segment = f"{_PROJECT_NAME}@{_PROJECT_SHA}"
         assert chain_line.endswith(expected_project_segment), (
             f"Chain must end with '{expected_project_segment}', got: {chain_line!r}"
         )
 
-        # Full chain shape: FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         expected_chain = (
             f"{_SOURCE_NAME} -> {_INCLUDE_PATH}@{why_fixture['include_sha']} -> {_PROJECT_NAME}@{_PROJECT_SHA}"
         )

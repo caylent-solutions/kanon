@@ -27,11 +27,6 @@ import pytest
 from tests.integration.test_why_live_resolve import _create_catalog_with_project_and_include
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -54,11 +49,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture builder
-# ---------------------------------------------------------------------------
 
 
 def _build_catalog_and_workspace(
@@ -128,11 +118,6 @@ def _build_catalog_and_workspace(
 
     root_manifest_path = f"repo-specs/{entry_name}-marketplace.xml"
     return catalog_source_url, workspace, kanon_file, root_manifest_path
-
-
-# ---------------------------------------------------------------------------
-# Operator-path scenario tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

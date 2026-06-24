@@ -28,10 +28,6 @@ from typing import Iterable
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Repository root resolution
-# ---------------------------------------------------------------------------
-
 
 def _find_repo_root() -> pathlib.Path:
     """Walk parents of this file upward until an ancestor containing ``pyproject.toml`` is found.
@@ -54,14 +50,9 @@ def _find_repo_root() -> pathlib.Path:
 
 _REPO_ROOT: pathlib.Path = _find_repo_root()
 
-# ---------------------------------------------------------------------------
-# _PATTERN_LITERALS_BLOCK -- all banned pattern literals are confined here.
-# The self-inspection test enforces that they appear nowhere else in this file.
-# ---------------------------------------------------------------------------
 
-# BEGIN _PATTERN_LITERALS_BLOCK
+_PATTERN_LITERALS_BLOCK_BEGIN = "_PATTERN_LITERALS_BLOCK_BEGIN_SENTINEL"
 
-# Forbidden CLI patterns (regex -- word boundary + trailing whitespace).
 FORBIDDEN_CLI_PATTERNS: list[str] = [
     r"\bgh\s+",
     r"\bglab\s+",
@@ -71,7 +62,7 @@ FORBIDDEN_CLI_PATTERNS: list[str] = [
     r"az\s+repos",
 ]
 
-# Forbidden hostname patterns (regex).
+
 FORBIDDEN_HOST_PATTERNS: list[str] = [
     r"api\.github\.com",
     r"gitlab\.com/api",
@@ -79,16 +70,13 @@ FORBIDDEN_HOST_PATTERNS: list[str] = [
     r"dev\.azure\.com/_apis",
 ]
 
-# END _PATTERN_LITERALS_BLOCK
+_PATTERN_LITERALS_BLOCK_END = "_PATTERN_LITERALS_BLOCK_END_SENTINEL"
+
 
 _ALL_PATTERNS: list[str] = FORBIDDEN_CLI_PATTERNS + FORBIDDEN_HOST_PATTERNS
 
-# Remediation line appended to every failure message.
-_REMEDIATION = "Remediation: remove the provider-specific reference from src/ before merging this branch."
 
-# ---------------------------------------------------------------------------
-# Data class for scan findings
-# ---------------------------------------------------------------------------
+_REMEDIATION = "Remediation: remove the provider-specific reference from src/ before merging this branch."
 
 
 @dataclass
@@ -107,11 +95,6 @@ class Finding:
             f"matched pattern '{self.pattern}' in line: {self.line_text!r}\n"
             f"{_REMEDIATION}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Private helper
-# ---------------------------------------------------------------------------
 
 
 def _scan_lines(lines: Iterable[str], path: str) -> list[Finding]:
@@ -140,17 +123,6 @@ def _scan_lines(lines: Iterable[str], path: str) -> list[Finding]:
     return findings
 
 
-# ---------------------------------------------------------------------------
-# Parametrized positive cases -- forbidden CLI patterns
-#
-# Sample lines are defined without repeating the pattern regex strings so that
-# the banned literal substrings appear only in _PATTERN_LITERALS_BLOCK and
-# _SELF_INSPECTION_LITERALS (the self-inspection test enforces this).
-# The sample lines contain matching invocations (the text that would appear
-# in real provider shellouts), not the regex patterns themselves.
-# ---------------------------------------------------------------------------
-
-# One sample line per FORBIDDEN_CLI_PATTERNS entry, in the same order.
 _CLI_SAMPLE_LINES: list[str] = [
     "gh repo list",
     "glab repo list",
@@ -176,13 +148,6 @@ def test_scan_lines_detects_forbidden_cli_pattern(pattern: str, line: str) -> No
     assert matched[0].path == "src/example.py"
 
 
-# ---------------------------------------------------------------------------
-# Parametrized positive cases -- forbidden hostname patterns
-#
-# Sample lines are defined without repeating the pattern regex strings.
-# ---------------------------------------------------------------------------
-
-# One sample line per FORBIDDEN_HOST_PATTERNS entry, in the same order.
 _HOST_SAMPLE_LINES: list[str] = [
     "url = 'https://api.github.com/repos'",
     "url = 'https://gitlab.com/api/v4/projects'",
@@ -206,15 +171,6 @@ def test_scan_lines_detects_forbidden_hostname_pattern(pattern: str, line: str) 
     assert matched[0].path == "src/example.py"
 
 
-# ---------------------------------------------------------------------------
-# Negative word-boundary cases
-#
-# Each case is (index-into-FORBIDDEN_CLI_PATTERNS, non-matching word).
-# The pattern is retrieved from FORBIDDEN_CLI_PATTERNS by index at runtime so
-# the literal pattern string does not appear outside _PATTERN_LITERALS_BLOCK.
-# ---------------------------------------------------------------------------
-
-# (pattern_index, non_matching_word) -- pattern retrieved from FORBIDDEN_CLI_PATTERNS[idx].
 _NEGATIVE_WORD_BOUNDARY_RAW: list[tuple[int, str]] = [
     (0, "right"),
     (0, "weight"),
@@ -239,11 +195,6 @@ def test_scan_lines_word_boundary_no_false_positive(pattern: str, word: str) -> 
     assert matched == [], f"False positive: pattern {pattern!r} matched word {word!r} unexpectedly; findings: {matched}"
 
 
-# ---------------------------------------------------------------------------
-# Clean line produces no findings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_scan_lines_clean_line_returns_no_findings() -> None:
     """A line with no forbidden content produces no findings."""
@@ -251,15 +202,10 @@ def test_scan_lines_clean_line_returns_no_findings() -> None:
     assert findings == []
 
 
-# ---------------------------------------------------------------------------
-# Multi-line correct line-number reporting
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_scan_lines_reports_correct_line_number() -> None:
     """``_scan_lines`` reports the 1-based line number of the hit, not the first line."""
-    # Use the first CLI pattern (index 0) -- the gh pattern -- with a matching sample line.
+
     gh_pattern = FORBIDDEN_CLI_PATTERNS[0]
     lines = [
         "import os",
@@ -272,15 +218,10 @@ def test_scan_lines_reports_correct_line_number() -> None:
     assert matching[0].line_number == 2
 
 
-# ---------------------------------------------------------------------------
-# Finding message format
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_finding_message_contains_path_lineno_pattern_and_remediation() -> None:
     """``Finding.message()`` includes the file path, line number, pattern, and remediation."""
-    # Use the first CLI pattern (index 0) retrieved from the constants block.
+
     gh_pattern = FORBIDDEN_CLI_PATTERNS[0]
     finding = Finding(
         path="src/example.py",
@@ -293,11 +234,6 @@ def test_finding_message_contains_path_lineno_pattern_and_remediation() -> None:
     assert "42" in msg
     assert gh_pattern in msg
     assert _REMEDIATION in msg
-
-
-# ---------------------------------------------------------------------------
-# Tree-scan integration test: src/**/*.py must have zero findings
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -325,15 +261,10 @@ def test_no_forbidden_pattern_in_src_tree() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Self-inspection: banned literals must only appear inside _PATTERN_LITERALS_BLOCK
-# ---------------------------------------------------------------------------
+_BLOCK_START_MARKER = f'_PATTERN_LITERALS_BLOCK_BEGIN = "{_PATTERN_LITERALS_BLOCK_BEGIN}"'
+_BLOCK_END_MARKER = f'_PATTERN_LITERALS_BLOCK_END = "{_PATTERN_LITERALS_BLOCK_END}"'
 
-_BLOCK_START_MARKER = "# BEGIN _PATTERN_LITERALS_BLOCK"
-_BLOCK_END_MARKER = "# END _PATTERN_LITERALS_BLOCK"
 
-# The raw string tokens as they appear literally in this source file --
-# used only by the self-inspection test below.
 _SELF_INSPECTION_LITERALS: list[str] = [
     "gh\\s+",
     "glab\\s+",
@@ -352,16 +283,16 @@ _SELF_INSPECTION_LITERALS: list[str] = [
 def test_module_source_literals_only_in_pattern_block() -> None:
     """Banned pattern literals appear only inside the ``_PATTERN_LITERALS_BLOCK`` region.
 
-    Reads this module's own source, locates the region delimited by
-    ``# BEGIN _PATTERN_LITERALS_BLOCK`` and ``# END _PATTERN_LITERALS_BLOCK``,
-    and asserts that every banned literal string appears only within that region
-    (or in this self-inspection test's own ``_SELF_INSPECTION_LITERALS`` list)
-    and not in any other part of the file.
+    Reads this module's own source, locates the region delimited by the
+    ``_PATTERN_LITERALS_BLOCK_BEGIN`` and ``_PATTERN_LITERALS_BLOCK_END``
+    sentinel-constant definition lines, and asserts that every banned literal
+    string appears only within that region (or in this self-inspection test's
+    own ``_SELF_INSPECTION_LITERALS`` list) and not in any other part of the
+    file.
     """
     source = pathlib.Path(__file__).read_text(encoding="utf-8")
     lines = source.splitlines()
 
-    # Locate the block boundaries -- match only actual comment lines (stripped to start with #).
     block_start: int | None = None
     block_end: int | None = None
     for idx, line in enumerate(lines):
@@ -375,7 +306,6 @@ def test_module_source_literals_only_in_pattern_block() -> None:
     assert block_end is not None, f"Marker {_BLOCK_END_MARKER!r} not found in module source"
     assert block_start < block_end, "Block start marker must precede block end marker"
 
-    # Locate the self-inspection list boundaries (lines containing _SELF_INSPECTION_LITERALS).
     self_inspect_start: int | None = None
     self_inspect_end: int | None = None
     for idx, line in enumerate(lines):
@@ -391,13 +321,13 @@ def test_module_source_literals_only_in_pattern_block() -> None:
     violations: list[str] = []
     for lineno, line in enumerate(lines):
         stripped = line.strip()
-        # Skip comment lines.
+
         if stripped.startswith("#"):
             continue
-        # Skip lines inside the pattern literals block.
+
         if block_start <= lineno <= block_end:
             continue
-        # Skip lines inside the self-inspection literals list.
+
         if self_inspect_start <= lineno <= self_inspect_end:
             continue
         for literal in _SELF_INSPECTION_LITERALS:

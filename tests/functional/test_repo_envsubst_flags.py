@@ -55,61 +55,47 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded domain literals extracted here;
-# no inline literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Envsubst Flags Test User"
 _GIT_USER_EMAIL = "repo-envsubst-flags@example.com"
 _PROJECT_PATH = "envsubst-flags-test-project"
 
-# CLI token for the envsubst subcommand.
+
 _CLI_TOKEN_ENVSUBST = "envsubst"
 
-# Composed CLI command phrase for diagnostic messages (no inline literals).
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_ENVSUBST}"
 
-# Expected exit code for all successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Argument-parsing error exit code (optparse exits 2 for invalid flag usage).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in negative tests that fail at parse time.
-# Boolean-with-inline-value negative tests are rejected before repo discovery.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-envsubst-flags-repo-dir"
 
-# Inline-value suffix for negative tests on boolean (store_true/store_false) flags.
-# optparse exits 2 with '--<flag> option does not take a value' when a boolean
-# flag is supplied with an inline '=value' suffix.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Canonical optparse phrase emitted when a boolean flag receives an inline value.
+
 _OPTPARSE_NO_VALUE_PHRASE = "does not take a value"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# Hidden git-repo metadata directory and manifest path sub-constants.
-# All path fragments are composed from these tokens -- no hardcoded substrings.
-# ---------------------------------------------------------------------------
 
 _DOT_REPO = ".repo"
 _MANIFEST_DIR = "manifests"
 _MANIFEST_FILENAME = "default.xml"
 
-# Composed path fragment that must appear in stdout when envsubst scans the
-# .repo/manifests directory and finds the default manifest XML file.
+
 _MANIFEST_PATH_FRAGMENT = f"{_DOT_REPO}/{_MANIFEST_DIR}/{_MANIFEST_FILENAME}"
 
-# Dict-repr phrase constants for output_mode and manifest option assertions.
-# Envsubst.Execute() prints the options namespace as a dict repr; these
-# constants capture the exact key-value substring to assert against.
+
 _OUTPUT_MODE_TRUE = "'output_mode': True"
 _OUTPUT_MODE_FALSE = "'output_mode': False"
 _OUTPUT_MODE_NONE = "'output_mode': None"
@@ -117,30 +103,20 @@ _OUTER_MANIFEST_TRUE = "'outer_manifest': True"
 _OUTER_MANIFEST_FALSE = "'outer_manifest': False"
 _THIS_MANIFEST_ONLY_TRUE = "'this_manifest_only': True"
 
-# ---------------------------------------------------------------------------
-# CLI flag token constants for _CommonOptions() flags.
-# These cover both Logging options and Multi-manifest options.
-# ---------------------------------------------------------------------------
 
-# Logging option flags (store_true / store_false, dest=output_mode).
 _CLI_FLAG_VERBOSE_SHORT = "-v"
 _CLI_FLAG_VERBOSE_LONG = "--verbose"
 _CLI_FLAG_QUIET_SHORT = "-q"
 _CLI_FLAG_QUIET_LONG = "--quiet"
 
-# Multi-manifest option flags (store_true / store_false).
+
 _CLI_FLAG_OUTER_MANIFEST = "--outer-manifest"
 _CLI_FLAG_NO_OUTER_MANIFEST = "--no-outer-manifest"
 _CLI_FLAG_THIS_MANIFEST_ONLY = "--this-manifest-only"
 _CLI_FLAG_NO_THIS_MANIFEST_ONLY = "--no-this-manifest-only"
 _CLI_FLAG_ALL_MANIFESTS = "--all-manifests"
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables.
-# ---------------------------------------------------------------------------
 
-# AC-TEST-001: All boolean flags (store_true and store_false) that must be
-# accepted without argument-parsing error (exit != 2).
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_VERBOSE_SHORT, "short-verbose"),
     (_CLI_FLAG_VERBOSE_LONG, "long-verbose"),
@@ -156,9 +132,7 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_ALL_MANIFESTS, "all-manifests"),
 ]
 
-# AC-TEST-002: Long-form boolean flags used in negative tests.
-# Short-form flags (-v, -q) do not support '--flag=value' inline syntax
-# in optparse, so only long-form flags are included here.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_VERBOSE_LONG, "verbose"),
     (_CLI_FLAG_QUIET_LONG, "quiet"),
@@ -168,11 +142,6 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_NO_THIS_MANIFEST_ONLY, "no-this-manifest-only"),
     (_CLI_FLAG_ALL_MANIFESTS, "all-manifests"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Shared setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_envsubst_flags_repo(
@@ -199,12 +168,6 @@ def _setup_envsubst_flags_repo(
         git_user_email=_GIT_USER_EMAIL,
         project_path=_PROJECT_PATH,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/envsubst.py
-# (Also partially covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -468,11 +431,6 @@ class TestRepoEnvsubstFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with invalid (inline) values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts enumerated values has a negative test.
@@ -555,11 +513,6 @@ class TestRepoEnvsubstFlagsInvalidValues:
             f"Expected flag {flag!r} in stderr for '{bad_token}' error.\n  stderr: {result.stderr!r}"
         )
         assert bad_token not in result.stdout, f"Bad token {bad_token!r} leaked to stdout.\n  stdout: {result.stdout!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -678,11 +631,6 @@ class TestRepoEnvsubstFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -780,11 +728,6 @@ class TestRepoEnvsubstFlagsDocumentedBehavior:
             f"'{_CLI_COMMAND_PHRASE} {_CLI_FLAG_ALL_MANIFESTS}'.\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

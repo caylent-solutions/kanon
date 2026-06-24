@@ -9,8 +9,7 @@ from collections.abc import Generator
 
 import pytest
 
-# Method names whose bare (encoding-less) callsites the utf-8 encoding sweep
-# (AC-12 / FR-38) forbids in kanon's own source.
+
 _TEXT_IO_METHODS = ("read_text", "write_text")
 
 
@@ -50,9 +49,6 @@ def bare_text_io_calls(source_path: pathlib.Path) -> list[tuple[int, str]]:
     return bare
 
 
-# Minimal valid .kanon content used across integration and functional tests.
-# Alias-keyed per-dependency block (spec Section 5.1): every required suffix
-# (_URL, _REF, _PATH, _NAME, _GITBASE) must be present for the source to parse.
 MINIMAL_KANONENV = (
     "KANON_SOURCE_s_URL=https://example.com/s.git\n"
     "KANON_SOURCE_s_REF=main\n"
@@ -61,16 +57,7 @@ MINIMAL_KANONENV = (
     "KANON_SOURCE_s_GITBASE=https://example.com\n"
 )
 
-# Default catalog source used by tests that need a catalog source but are not
-# exercising catalog-resolution logic. Uses an RFC 2606 reserved example.com
-# domain so no real network request is ever attempted.  The autouse
-# _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCES after every
-# test; the catalog-querying commands (add / list / outdated / why) read this
-# value from --catalog-source or the env var.  ``kanon install`` is hermetic and
-# ignores it.  Tests that need this value must either:
-#   (a) set KANON_CATALOG_SOURCES via monkeypatch.setenv before calling code
-#       that reads the env var, or
-#   (b) request the opt-in _set_default_catalog_source fixture.
+
 DEFAULT_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 
 
@@ -117,11 +104,7 @@ def write_manifest_for_sync(directory: pathlib.Path, sub_path: str = "repo-specs
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SRC_DIR = _REPO_ROOT / "src"
 
-# Disable kanon_cli.repo tracing for all tests. Tracing defaults to ON and
-# writes to <cwd>/TRACE_FILE, which races across tests, grows unbounded, and
-# breaks any test whose cwd is the repo root. Tests never need tracing; setting
-# REPO_TRACE=0 at conftest import time (before any kanon_cli.repo import) turns
-# it off at the module level so every Trace() call short-circuits.
+
 os.environ.setdefault("REPO_TRACE", "0")
 
 
@@ -266,11 +249,6 @@ def _write_lockfile(
     return lock_path
 
 
-# ---------------------------------------------------------------------------
-# Doctor consistency test helpers (shared between unit and integration tests)
-# ---------------------------------------------------------------------------
-
-#: Minimal valid .kanon content used by doctor unit tests.
 DOCTOR_MINIMAL_KANON_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
     "KANON_SOURCE_src_REF=main\n"

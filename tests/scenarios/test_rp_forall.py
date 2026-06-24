@@ -130,7 +130,7 @@ class TestRPForall:
             f"repo forall REPO_COUNT exited {forall_result.returncode}\n"
             f"stdout={forall_result.stdout!r}\nstderr={forall_result.stderr!r}"
         )
-        # REPO_COUNT should appear once per project; all occurrences equal expected.
+
         actual_counts = [line.strip() for line in forall_result.stdout.splitlines() if line.strip().isdigit()]
         assert actual_counts, f"No numeric REPO_COUNT lines found in output: {forall_result.stdout!r}"
         for count in actual_counts:

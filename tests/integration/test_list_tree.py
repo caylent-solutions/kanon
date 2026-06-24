@@ -27,10 +27,6 @@ import pytest
 from kanon_cli.constants import KANON_TREE_NO_FILTER_THRESHOLD
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants and utilities (independent copies, not shared)
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -134,19 +130,9 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Helper: generate N distinct entry names
-# ---------------------------------------------------------------------------
-
-
 def _entry_names(count: int) -> list[str]:
     """Return ``count`` distinct entry names formatted as 'entry-NNN'."""
     return [f"entry-{i:03d}" for i in range(count)]
-
-
-# ---------------------------------------------------------------------------
-# Scenario 1: smaller-than-threshold (3 entries)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -178,7 +164,7 @@ class TestListTreeBelowThreshold:
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        # Each entry produces one root line (max-depth 0 = root only)
+
         entry_lines = [ln for ln in lines if ln.startswith("entry ")]
         assert len(entry_lines) == 3, (
             f"Expected 3 'entry ...' root lines for 3-entry catalog; got {len(entry_lines)}: {lines!r}"
@@ -189,18 +175,12 @@ class TestListTreeBelowThreshold:
         bare = _create_manifest_repo(tmp_path, _entry_names(3), dir_suffix="small-no-filter")
         catalog_source = f"file://{bare}@main"
 
-        # No filter flags passed; catalog size is below threshold so guardrail must not fire
         result = _run_kanon(
             ["search", "--tree", "--max-depth", "0", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert result.returncode == 0, f"Guardrail fired unexpectedly for 3-entry catalog.\n  stderr: {result.stderr!r}"
         assert "ERROR:" not in result.stderr, f"No ERROR: expected for 3-entry catalog; got: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# Scenario 2: exactly-threshold entries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -234,11 +214,7 @@ class TestListTreeAtThreshold:
         assert "ERROR:" not in result.stderr, f"No ERROR: expected at exactly {count} entries; got: {result.stderr!r}"
 
 
-# ---------------------------------------------------------------------------
-# Scenario 3: larger-than-threshold (AC-TEST-002, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
-
-_OVER_THRESHOLD = KANON_TREE_NO_FILTER_THRESHOLD + 5  # 25 when threshold is 20
+_OVER_THRESHOLD = KANON_TREE_NO_FILTER_THRESHOLD + 5
 
 
 @pytest.mark.integration

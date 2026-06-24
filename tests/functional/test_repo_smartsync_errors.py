@@ -43,75 +43,58 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals must appear here only.
-# No inline literals in test bodies, f-string diagnostics, or parametrize
-# data tuples.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path component used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-smartsync-errors-repo-dir"
 
-# CLI flag for the help option.
+
 _CLI_FLAG_HELP = "--help"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-smartsync-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-smartsync-option-99"
 
-# Named option exercised in AC-TEST-003: requires exactly one argument value.
-# Supplying it without a value triggers exit 2 with "option requires 1 argument".
-# 'repo smartsync' does not have required positional arguments; the exit-2 path
-# is reached via named options with required values supplied without those values.
+
 _OPTION_REQUIRING_VALUE = "--manifest-name"
 _OPTION_REQUIRING_VALUE_ALT_A = "--jobs-network"
 _OPTION_REQUIRING_VALUE_ALT_B = "--jobs-checkout"
 
-# Error message substring expected in stderr when an option is supplied
-# without its required value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires 1 argument"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The smartsync help header contains "repo smartsync".
+
 _HELP_USAGE_PHRASE = "repo smartsync"
 
-# Flag expected to be documented in --help output (AC-TEST-001 detail assertion).
+
 _HELP_DOCUMENTED_FLAG = "--fail-fast"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" to stderr.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename expected in the stderr error message for AC-TEST-004.
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Parametrize data for AC-TEST-002: (bad_flag, test_id)
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary-unknown-flag"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a-not-real-flag"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b-bogus-option"),
 ]
 
-# Parametrize data for AC-TEST-003: (option_flag, test_id)
+
 _OPTIONS_REQUIRING_VALUE: list[tuple[str, str]] = [
     (_OPTION_REQUIRING_VALUE, "manifest-name"),
     (_OPTION_REQUIRING_VALUE_ALT_A, "jobs-network"),
     (_OPTION_REQUIRING_VALUE_ALT_B, "jobs-checkout"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo smartsync --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -237,11 +220,6 @@ class TestRepoSmartSyncHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -372,11 +350,6 @@ class TestRepoSmartSyncUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Named option without its required value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -520,11 +493,6 @@ class TestRepoSmartSyncMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSmartSyncPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -640,11 +608,6 @@ class TestRepoSmartSyncPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

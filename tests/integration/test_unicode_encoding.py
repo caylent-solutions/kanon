@@ -23,11 +23,6 @@ from kanon_cli.core.xml_validator import validate_manifest
 from kanon_cli.version import resolve_version
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
     """Write a .kanon file with UTF-8 encoding and return its absolute path.
 
@@ -109,11 +104,6 @@ def _install_patched(kanonenv: pathlib.Path) -> None:
         install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Unicode branch name in .kanon REVISION works
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestUnicodeBranchRevision:
     """AC-TEST-001: Unicode branch names in KANON_SOURCE_*_REF are parsed correctly.
@@ -191,11 +181,6 @@ class TestUnicodeBranchRevision:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unicode tag revision resolves correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestUnicodeTagResolution:
     """AC-TEST-002: Unicode tag revision values pass through resolve_version correctly.
@@ -254,11 +239,6 @@ class TestUnicodeTagResolution:
             tags = _list_tags("https://example.com/repo.git")
 
         assert unicode_tag in tags, f"Unicode tag {unicode_tag!r} must appear in parsed ls-remote output"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Unicode path in manifest parses and installs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -333,18 +313,13 @@ class TestUnicodeManifestPath:
             "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = tmp_path / ".kanon"
-        # Write with explicit BOM prefix (UTF-8 BOM = 0xEF, 0xBB, 0xBF)
+
         kanonenv.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
         result = parse_kanonenv(kanonenv.resolve())
         assert result["sources"]["s"]["path"] == "m.xml", (
             "BOM-prefixed .kanon file must be parsed without BOM corruption"
         )
         assert result["sources"]["s"]["ref"] == "main"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Unicode project name in XML parses and installs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -399,7 +374,7 @@ class TestUnicodeXmlProjectName:
         """)
         manifest_file = _write_xml_manifest(tmp_path / "repo-specs" / "manifest.xml", manifest_xml)
         errors = validate_manifest(manifest_file, tmp_path)
-        # The name attribute is present and non-empty; no "missing attribute" error.
+
         missing_name_errors = [e for e in errors if "'name'" in e and "missing" in e]
         assert missing_name_errors == [], (
             f"Unicode project name must not be treated as missing; got: {missing_name_errors}"
@@ -423,11 +398,6 @@ class TestUnicodeXmlProjectName:
         assert errors == [], (
             f"Manifest with UTF-8 encoding declaration and Unicode name must pass validation; got: {errors}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: UTF-8 end-to-end throughout the CLI and parser
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -511,11 +481,6 @@ class TestUtf8EndToEnd:
             f"Sources must be sorted alphabetically; got {result['KANON_SOURCES']!r}"
         )
         assert result["sources"]["alpha"]["ref"] == "feature/été"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

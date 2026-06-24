@@ -23,16 +23,8 @@ import pytest
 
 from kanon_cli.core.install import aggregate_symlinks
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _NUM_STABILITY_RUNS = 3
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_source_package(base_dir: pathlib.Path, source_name: str, pkg_name: str) -> pathlib.Path:
@@ -65,11 +57,6 @@ def _make_source_packages(
     for source_name, pkg_names in packages_by_source.items():
         for pkg_name in pkg_names:
             _make_source_package(base_dir, source_name, pkg_name)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: MS-01 class -- two sources with distinct packages aggregate correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -166,15 +153,9 @@ class TestMS01TwoSourcesDistinctPackages:
             {source_alpha: [f"pkg-{source_alpha}"], source_bravo: [f"pkg-{source_bravo}"]},
         )
 
-        # Must not raise
         owners = aggregate_symlinks([source_alpha, source_bravo], tmp_path)
 
         assert len(owners) == 2, f"Both packages must be registered; got {len(owners)} entries: {owners}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: CD-01/CD-02 class -- colliding paths raise ValueError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -267,11 +248,6 @@ class TestCD01CD02ConflictingPathsCollisionError:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: source priority order is respected
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSourcePriorityOrder:
     """AC-TEST-003: source priority order is respected.
@@ -340,11 +316,6 @@ class TestSourcePriorityOrder:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: aggregation is stable across re-runs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAggregationStabilityAcrossReRuns:
     """AC-TEST-004: aggregation is stable across re-runs.
@@ -363,7 +334,7 @@ class TestAggregationStabilityAcrossReRuns:
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
         aggregate_symlinks(["alpha", "bravo"], tmp_path)
-        # Second run must not raise
+
         aggregate_symlinks(["alpha", "bravo"], tmp_path)
 
     def test_symlinks_are_valid_after_second_run(self, tmp_path: pathlib.Path) -> None:

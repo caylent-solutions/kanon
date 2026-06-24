@@ -32,7 +32,7 @@ from kanon_cli.core.lockfile import Lockfile, SourceEntry, write_lockfile
 
 from tests.functional.conftest import _run_kanon
 
-# -- Token / filename constants (no inline magic literals in the test bodies) --
+
 _VALIDATE = "validate"
 _MARKETPLACE = "marketplace"
 _METADATA = "metadata"
@@ -87,11 +87,6 @@ def _make_catalog_repo(tmp_path, xml_body: str):
     return repo_root
 
 
-# ---------------------------------------------------------------------------
-# Leg 1: exact-tag <project revision> accept / reject
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestExactTagRevisionJourney:
     """AC-54 leg 1: exact-only <project revision> accept/reject via the real CLI."""
@@ -139,11 +134,6 @@ class TestExactTagRevisionJourney:
         )
 
 
-# ---------------------------------------------------------------------------
-# Leg 2: <catalog-metadata><version> enforcement
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestCatalogVersionEnforcementJourney:
     """AC-54 leg 2: catalog metadata <version> enforcement via the real CLI."""
@@ -173,11 +163,6 @@ class TestCatalogVersionEnforcementJourney:
             f"AC-54: the metadata error must name the missing <version> field.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Leg 3: kanon validate lockfile drift
-# ---------------------------------------------------------------------------
 
 
 def _write_kanon(directory, sources):
@@ -253,7 +238,7 @@ class TestLockfileDriftJourney:
                 _BETA: {"url": "https://example.com/beta.git", "ref": _REF_PINNED, "path": "p2"},
             },
         )
-        # Lock omits the BETA alias -> alias-set drift.
+
         _write_lock(tmp_path, [_source_entry(_ALPHA, _REF_PINNED)])
 
         result = _run_kanon(_VALIDATE, _LOCKFILE, cwd=tmp_path)
@@ -271,7 +256,7 @@ class TestLockfileDriftJourney:
             tmp_path,
             {_ALPHA: {"url": "https://example.com/alpha.git", "ref": _REF_PINNED, "path": "p1"}},
         )
-        # Lock carries a different ref_spec for ALPHA -> ref-spec drift.
+
         _write_lock(tmp_path, [_source_entry(_ALPHA, _REF_DRIFTED)])
 
         result = _run_kanon(_VALIDATE, _LOCKFILE, cwd=tmp_path)

@@ -20,18 +20,9 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Envsubst Test User"
 _GIT_USER_EMAIL = "envsubst-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -163,11 +154,6 @@ def _read_manifest(workspace: pathlib.Path, filename: str = _MANIFEST_FILENAME) 
         File contents as a string.
     """
     return (workspace / ".repo" / "manifests" / filename).read_text(encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -466,7 +452,6 @@ def test_missing_variable_left_as_placeholder(tmp_path: pathlib.Path) -> None:
     )
     workspace = _make_workspace_with_manifest(tmp_path, manifest_xml)
 
-    # Ensure the variable is not set in the environment
     env_before = os.environ.pop("KANON_MISSING_VAR_ZXCVB", None)
     try:
         repo_pkg.repo_envsubst(str(workspace), {})

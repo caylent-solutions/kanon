@@ -27,16 +27,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Marketplace XML template matching the shape used by _create_manifest_repo_with_tags
-# in test_add_core.py (spec §3.1).  All recommended fields are populated to
-# suppress recommended-field warnings on stderr.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -53,11 +47,7 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Six catalog entries used by the shared fixture.
-# Naming conventions chosen so that:
-#   - regex ``^alpha`` matches alpha-core and alpha-utils (2 entries)
-#   - positional substring ``beta`` matches beta-svc (1 entry)
-#   - ``--match-fields name`` + substring ``alpha`` matches alpha-core and alpha-utils (2 entries)
+
 _SIX_ENTRY_NAMES: list[str] = [
     "alpha-core",
     "alpha-utils",
@@ -67,13 +57,8 @@ _SIX_ENTRY_NAMES: list[str] = [
     "epsilon-pkg",
 ]
 
-# One PEP 440-valid tag applied to the initial commit.
+
 _CATALOG_TAG = "1.0.0"
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers (self-contained copy matching test_add_core.py §3.1)
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -163,11 +148,6 @@ def _create_manifest_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Module-scope shared fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def six_entry_synthetic_catalog(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     """Build a 6-entry synthetic catalog once and share it across all 9 tests.
@@ -181,11 +161,6 @@ def six_entry_synthetic_catalog(tmp_path_factory: pytest.TempPathFactory) -> pat
         entry_names=_SIX_ENTRY_NAMES,
         tags=[_CATALOG_TAG],
     )
-
-
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon(
@@ -210,11 +185,6 @@ def _run_kanon(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# 9-variant composition test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -273,7 +243,7 @@ class TestListSyntheticCatalogVariants:
         result = _run_kanon(["search", "--detail", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        # Name-header lines are non-indented, non-empty lines.
+
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
         assert len(header_lines) == 6, (
             f"Expected 6 name-header lines in --detail output; got {len(header_lines)}.\n  headers: {header_lines!r}"
@@ -281,7 +251,7 @@ class TestListSyntheticCatalogVariants:
         assert sorted(header_lines) == sorted(_SIX_ENTRY_NAMES), (
             f"Header names do not match expected entry names.\n  headers: {header_lines!r}"
         )
-        # Each detail record has 4 indented field lines: display-name, description, version, type.
+
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
         assert len(indented_lines) == 6 * 4, (
             f"Expected {6 * 4} indented field lines (6 entries x 4 fields); got {len(indented_lines)}."
@@ -302,7 +272,7 @@ class TestListSyntheticCatalogVariants:
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
         assert len(lines) == 6, f"Expected 6 tree root lines (one per entry); got {len(lines)}.\n  lines: {lines!r}"
-        # Every line must begin with 'entry ' (the tree root-node prefix).
+
         for line in lines:
             assert line.startswith("entry "), f"Expected tree root line to start with 'entry '; got: {line!r}"
 
@@ -322,7 +292,7 @@ class TestListSyntheticCatalogVariants:
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
         assert len(lines) == 6, f"Expected 6 root lines with --max-depth 1; got {len(lines)}.\n  lines: {lines!r}"
-        # With max-depth 1, no project-level (+--) or continuation (|  ) lines appear.
+
         for line in lines:
             assert not line.startswith("+--") and not line.startswith("|"), (
                 f"Unexpected child-node line at max-depth 1: {line!r}"
@@ -341,7 +311,7 @@ class TestListSyntheticCatalogVariants:
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
-        # alpha-core and alpha-utils start with 'alpha' in their name field.
+
         assert len(lines) == 2, f"Expected 2 entries matching '^alpha'; got {len(lines)}.\n  lines: {lines!r}"
         for name in lines:
             assert name.startswith("alpha"), f"Entry {name!r} does not start with 'alpha' -- regex filter leaked."

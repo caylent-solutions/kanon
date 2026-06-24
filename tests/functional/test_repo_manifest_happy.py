@@ -38,9 +38,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Manifest Happy Test User"
 _GIT_USER_EMAIL = "repo-manifest-happy@example.com"
@@ -48,56 +45,48 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "manifest-happy-test-project"
 _MANIFEST_FILENAME = "default.xml"
 
-# CLI token for the manifest subcommand.
+
 _CLI_TOKEN_MANIFEST = "manifest"
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Composed CLI command phrase for diagnostic messages.
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_MANIFEST}"
 
-# String that must appear in the default (XML) output.
-# The canonical manifest XML always starts with the XML declaration.
+
 _XML_DECLARATION_FRAGMENT = "<?xml"
 
-# String that must appear in the JSON output (--format=json).
+
 _JSON_MANIFEST_KEY = "manifest"
 
-# Flag to select JSON output format.
+
 _FLAG_FORMAT_JSON = "--format=json"
 
-# Flag to enable human-readable (pretty) output.
+
 _FLAG_PRETTY = "--pretty"
 
-# Flag to suppress inclusion of local manifests.
+
 _FLAG_NO_LOCAL_MANIFESTS = "--no-local-manifests"
 
-# Output file flag token (value supplied at test time).
+
 _FLAG_OUTPUT_FILE = "-o"
 
-# Output file name used in file-output tests.
+
 _OUTPUT_FILE_NAME = "exported-manifest.xml"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Parametrized invocation forms for AC-TEST-002.
-# Each entry is a tuple of extra CLI tokens passed after 'manifest'.
-# The default (no flags) form is covered by TestRepoManifestHappyPathDefaultArgs.
+
 _INVOCATION_FORMS = [
     pytest.param((_FLAG_FORMAT_JSON,), id="format-json"),
     pytest.param((_FLAG_FORMAT_JSON, _FLAG_PRETTY), id="format-json-pretty"),
     pytest.param((_FLAG_NO_LOCAL_MANIFESTS,), id="no-local-manifests"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Shared setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_manifest_repo(
@@ -126,11 +115,6 @@ def _setup_manifest_repo(
         project_path=_PROJECT_PATH,
         manifest_filename=_MANIFEST_FILENAME,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo manifest with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -215,11 +199,6 @@ class TestRepoManifestHappyPathDefaultArgs:
         assert len(result.stdout) > 0, (
             f"'{_CLI_COMMAND_PHRASE}' produced empty stdout.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every invocation form of 'repo manifest' has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -368,11 +347,6 @@ class TestRepoManifestOutputFileForm:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

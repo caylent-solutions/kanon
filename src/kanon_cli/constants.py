@@ -26,45 +26,25 @@ def _env_int(var: str, default: int) -> int:
         raise SystemExit(f"ERROR: {var} must be an integer; got {raw!r}")
 
 
-# -- Exit codes --
-# Reserved exit code for deprecated-invocation paths.
-# 0 = success, 1 = runtime/usage error, 2 = argparse usage error, 3 = deprecated invocation.
 EXIT_CODE_DEPRECATED = 3
 
-# -- Marketplace validation --
+
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
 
-# Environment variable that makes the <project revision> existence check
-# mandatory (a CI/gate flag). When set to "1", a revision whose existence cannot
-# be confirmed -- because the manifest's remote is unreachable or offline --
-# becomes a hard validation ERROR instead of degrading to a format-only WARN
-# (spec Section 4.5: "a CI/gate flag makes existence mandatory"). Read at
-# validation time; absent or any value other than "1" leaves the offline-degrade
-# behaviour in place so local/offline developer runs are not blocked.
+
 REVISION_EXISTENCE_REQUIRED_ENV_VAR = "KANON_VALIDATE_REQUIRE_EXISTENCE"
 
-# Legacy SemVer-floored revision regexes. These are NO LONGER the marketplace
-# validator's version grammar: the validator now parses the trailing component
-# of a refs/tags/<path>/<version> tag as full PEP 440 via
-# kanon_cli.version.is_pep440_version / packaging.specifiers.SpecifierSet (spec
-# Section 4.5 / FR-23, no \d+\.\d+\.\d+ floor). They are retained only as
-# compiled-regex smoke-test data referenced by the integration suite.
+
 REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
 CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 
-# -- Version resolution --
+
 PEP440_OPERATORS = ("~=", ">=", "<=", "!=", "==", ">", "<")
-# Maximum number of non-PEP-440 tag names to include in a loud error message.
-# Keeps error output bounded when a prefix matches many malformed tags.
+
+
 TAG_ERROR_DISPLAY_CAP = 10
 
-# -- kanonenv parsing --
-# Alias-keyed .kanon per-dependency block (spec Section 5.1 / FR-5, FR-6).
-# Each dependency is one block keyed by a local alias. Every suffix below is a
-# required part of a complete source block; a partial block (any required key
-# missing) fails fast with no silent default. The optional `_MARKETPLACE` flag
-# (absence == false) is auto-detected and written by `kanon add` (spec Section
-# 4.2 / FR-17) and is not a required member of the parsed source group.
+
 SOURCE_PREFIX = "KANON_SOURCE_"
 SOURCE_URL_SUFFIX = "_URL"
 SOURCE_REF_SUFFIX = "_REF"
@@ -85,70 +65,40 @@ SUFFIX_TO_KEY = {
     SOURCE_NAME_SUFFIX: "name",
     SOURCE_GITBASE_SUFFIX: "gitbase",
 }
-# Optional per-dependency marketplace-install flag suffix (spec Section 5.1 /
-# FR-17). It is NOT a member of the required ``SOURCE_SUFFIXES`` block: absence
-# means false, ``=true`` is written explicitly, and a hand-written ``=false`` is
-# tolerated on read but never emitted by kanon. The flag is parsed into the
-# per-source group under ``SOURCE_MARKETPLACE_KEY`` and excluded from the source
-# triple used for hashing (only _URL/_REF/_PATH contribute to the kanon_hash).
+
+
 SOURCE_MARKETPLACE_SUFFIX = "_MARKETPLACE"
 SOURCE_MARKETPLACE_KEY = "marketplace"
-# Canonical string value written for an enabled per-dependency marketplace flag.
-# kanon only ever emits the enabled value; disabling is represented by the line's
-# absence (spec Section 4.4 / 5.1), so there is no companion "false" literal.
+
+
 MARKETPLACE_FLAG_TRUE = "true"
-# The ``<catalog-metadata><type>`` value that marks a catalog entry as a Claude
-# marketplace (spec Section 4.2 / FR-17). ``kanon add`` auto-detects this type
-# and writes ``KANON_SOURCE_<alias>_MARKETPLACE=true`` for the added dependency.
+
+
 CATALOG_TYPE_CLAUDE_MARKETPLACE = "claude-marketplace"
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
-# -- Shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15, FR-16) --
-# Name of the environment variable that overrides the shared kanon home root.
-# The home root is the single content-addressed location under which all fetched
-# data lives (the store + the completion / catalog-audit cache + logs), deduped
-# across projects. Precedence: --home/--store-dir flag > KANON_HOME env > default.
-# An unwritable resolved home fails fast with an actionable message -- there is no
-# silent relocation. Subsumes the two removed location env vars (the former
-# per-workspace artifact-dir override and the per-user cache-dir override).
+
 KANON_HOME_ENV_VAR = "KANON_HOME"
 
-# Default kanon home directory name relative to the user home directory. The
-# absolute default is derived at runtime as ``Path.home() / KANON_HOME_DIR_NAME``
-# (never a hard-coded absolute path); resolve_kanon_home() performs the join so
-# the value honours the caller's real home directory.
+
 KANON_HOME_DIR_NAME = ".kanon"
 
-# Subdirectory under the resolved KANON_HOME root that holds the content-addressed
-# artifact base (the .packages/ and .kanon-data/ trees produced by install/clean).
-# Spec Section 8 store.
+
 KANON_HOME_STORE_SUBDIR = "store"
 
-# Subdirectory under the store base that holds the immutable content-addressed
-# store entries (one directory per content address). install publishes each
-# entry here via temp-then-rename; clean prunes this tree. Spec Section 3.5.
+
 KANON_HOME_STORE_ENTRIES_SUBDIR = "entries"
 
-# Subdirectory under the store base that holds the per-entry lock roots. Each
-# content address gets its own lock root so concurrent publishes of distinct
-# entries never serialise against one another (spec Section 3.5 per-entry lock).
+
 KANON_HOME_STORE_LOCKS_SUBDIR = ".locks"
 
-# Subdirectory under the store base into which an entry's content is materialized
-# before the atomic rename into its final content-addressed path. Living inside
-# the store guarantees the rename is same-filesystem (atomic). Spec Section 3.5.
+
 KANON_HOME_STORE_TMP_SUBDIR = ".tmp"
 
-# The single .gitignore entry that ignores the whole store. The store is a cache
-# of fetched artifacts that must never be committed; this entry is added to the
-# store's .gitignore safety net only when the resolved KANON_HOME store sits
-# inside a git working tree (spec Section 3.5 conditional .gitignore). The bare
-# "*" pattern ignores every path under the store directory.
+
 KANON_HOME_STORE_GITIGNORE_ENTRY = "*"
 
-# Subdirectory under the resolved KANON_HOME root that holds the shell-completion
-# and catalog-audit caches. Spec Section 4.1 / Section 7.3 (cache moves under
-# ~/.kanon/cache).
+
 KANON_HOME_CACHE_SUBDIR = "cache"
 
 
@@ -177,41 +127,24 @@ def resolve_kanon_home() -> pathlib.Path:
     return pathlib.Path.home() / KANON_HOME_DIR_NAME
 
 
-# -- Catalog --
-# Name of the environment variable holding the plural catalog discovery set:
-# a newline-delimited list of `url[@ref]` entries (spec Section 6 / Section 7.1
-# / FR-9). Identical entries are deduplicated preserving first-seen order; a
-# malformed entry fails fast. Replaces the singular env var removed in 3.0.0.
 CATALOG_SOURCES_ENV_VAR = "KANON_CATALOG_SOURCES"
 
-# -- Catalog default-branch precedence (spec Section 6 / Section 7.1 / FR-26 / FR-27) --
-# Name of the environment variable that supplies the default branch used when a
-# catalog source entry / command omits an inline `@ref`. Default `main`. When set
-# to the literal `auto` (CATALOG_DEFAULT_BRANCH_AUTO), the default branch is
-# resolved per-remote via `git ls-remote --symref <url> HEAD`.
+
 CATALOG_DEFAULT_BRANCH_ENV_VAR = "KANON_CATALOG_DEFAULT_BRANCH"
 
-# Fallback default branch when neither an inline `@ref`, a
-# `--catalog-default-branch` flag value, nor CATALOG_DEFAULT_BRANCH_ENV_VAR is
-# supplied (spec Section 6 precedence step 3; Section 7.1 default `main`).
+
 CATALOG_DEFAULT_BRANCH_DEFAULT = "main"
 
-# Literal default-branch sentinel that triggers per-remote HEAD-symref resolution
-# via `git ls-remote --symref` (spec Section 6 precedence step 4; Section 7.1).
+
 CATALOG_DEFAULT_BRANCH_AUTO = "auto"
 
-# The `git ls-remote --symref` advertises the remote HEAD target on a line of the
-# form `ref: refs/heads/<branch>\tHEAD`. This is the literal `refs/heads/` prefix
-# stripped from the advertised symref target to recover the bare branch name.
+
 SYMREF_HEADS_PREFIX = "refs/heads/"
 
-# The leading token of the symref-advertisement line emitted by
-# `git ls-remote --symref <url> HEAD` (e.g. `ref: refs/heads/main\tHEAD`).
+
 SYMREF_LINE_PREFIX = "ref: "
 
-# Actionable error emitted when `auto` default-branch resolution finds no HEAD
-# symref advertised by the remote (spec Section 6 symref-absent error, verbatim).
-# Call with .format(url=<remote-url>) to produce the final error string.
+
 CATALOG_DEFAULT_BRANCH_SYMREF_ABSENT_ERROR_TEMPLATE = (
     "ERROR: cannot resolve the default branch for {url}: the remote did not\n"
     "advertise a HEAD symref (ls-remote --symref returned no 'ref: refs/heads/...'\n"
@@ -219,24 +152,17 @@ CATALOG_DEFAULT_BRANCH_SYMREF_ABSENT_ERROR_TEMPLATE = (
     "explicit branch, or pin @<ref> on the source."
 )
 
-# Yellow WARN announcing the branch chosen by the default-branch precedence for a
-# defaulted source (spec Section 6: "announced with a yellow WARN"). Emitted once
-# per defaulted source per invocation, to stderr only. Call with
-# .format(url=<remote-url>, branch=<resolved-branch>).
+
 CATALOG_DEFAULT_BRANCH_WARN_TEMPLATE = (
     "WARNING: no ref pinned for {url}; using default branch '{branch}'. "
     "Pin @<ref> on the source to silence this warning."
 )
 
-# ANSI SGR escape sequences used to render the yellow default-branch WARN. Color
-# is suppressed when constants._NO_COLOR_ACTIVE is True (the --no-color flag or a
-# non-empty NO_COLOR env var, per the no-color.org convention).
+
 ANSI_YELLOW = "\033[33m"
 ANSI_RESET = "\033[0m"
 
-# -- List command error and notice strings --
-# Canonical missing-catalog error template (spec Section 4 header, verbatim).
-# Call with .format(command=<command-name>) to produce the final error string.
+
 MISSING_CATALOG_ERROR_TEMPLATE = (
     "ERROR: {command} requires a catalog source.\n"
     "Provide one of:\n"
@@ -250,67 +176,48 @@ MISSING_CATALOG_ERROR_TEMPLATE = (
     "See docs/configuration.md for the full configuration reference."
 )
 
-# Stderr note emitted when the manifest repo contains zero marketplace XML files.
-# Spec Section 4.1: "manifest repo contains 0 entries".
+
 LIST_EMPTY_CATALOG_NOTE = "manifest repo contains 0 entries"
 
-# Stderr note emitted by `kanon search` when, across every configured source, no
-# matching catalog entry was found (after the optional name/regex filter).
-# Spec Section 4.1: "Empty result -> exit 0, 'no matches'."
+
 SEARCH_NO_MATCHES_NOTE = "no matches"
 
-# Stderr warning template emitted by `kanon search` when a configured catalog
-# source is unreachable. The whole search is NOT hard-failed: the source is
-# skipped and the remaining sources are still searched (spec Section 4.1 /
-# FLAG-B "skip + warn"). Call with .format(source=<url>@<ref>, reason=<detail>).
+
 SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE = "WARNING: skipping unreachable catalog source {source}: {reason}"
 
-# -- Configuration file --
+
 KANONENV_FILENAME = ".kanon"
 
-# -- Embedded repo tool --
+
 REPO_RESTART_RETRIES_DEFAULT = 3
 
-# -- Repo CLI --
+
 KANON_REPO_DIR_ENV = "KANON_REPO_DIR"
 KANONENV_REPO_DIR_DEFAULT = ".repo"
 
-# -- Selfupdate embedded mode --
+
 SELFUPDATE_EMBEDDED_MESSAGE = "selfupdate is not available -- upgrade kanon-cli instead: pipx upgrade kanon-cli"
 
-# -- Update-available alert (spec Section 7.1 / Section 7.3 / FR-29) --
-# The published PyPI project name and the JSON metadata endpoint queried for the
-# latest released version. The endpoint is the locked source value; it is defined
-# here (never inlined in update_check.py) so no URL literal lives in source code.
+
 KANON_PYPI_PROJECT_NAME = "kanon-cli"
 KANON_PYPI_JSON_URL = "https://pypi.org/pypi/kanon-cli/json"
 
-# The exact upgrade command surfaced by the update alert. It is always
-# ``pipx upgrade kanon-cli`` (spec Section 7.1); defined here so the literal is
-# not duplicated across the alert template and the module.
+
 KANON_UPDATE_UPGRADE_COMMAND = "pipx upgrade kanon-cli"
 
-# Name of the environment variable that, when set to "1", skips the update check
-# entirely (spec Section 7.1: KANON_SKIP_UPDATE_CHECK=1). Any value other than
-# "1" leaves the check enabled.
+
 KANON_SKIP_UPDATE_CHECK_ENV = "KANON_SKIP_UPDATE_CHECK"
 
-# Sentinel value of KANON_SKIP_UPDATE_CHECK that disables the update check.
+
 KANON_SKIP_UPDATE_CHECK_TRUE = "1"
 
-# TTL in seconds for the cached PyPI latest-version lookup (spec Section 7.1,
-# default 86400 / 24h). A cached entry within this age is reused without a
-# network call; a stale entry triggers a detached background refresh while the
-# foreground command serves the last cached value. Routed through _env_int so the
-# value is env-overridable and never a hard-coded literal in update_check.py.
+
 KANON_UPDATE_CHECK_TTL_ENV = "KANON_UPDATE_CHECK_TTL"
 KANON_UPDATE_CHECK_TTL: int = _env_int(KANON_UPDATE_CHECK_TTL_ENV, 86400)
 if KANON_UPDATE_CHECK_TTL <= 0:
     raise SystemExit(f"ERROR: {KANON_UPDATE_CHECK_TTL_ENV} must be a positive integer; got {KANON_UPDATE_CHECK_TTL}")
 
-# Connect timeout (seconds) for the PyPI lookup (spec Section 7.1, default 2s).
-# Env-overridable via KANON_UPDATE_CONNECT_TIMEOUT; routed through _env_int so no
-# timeout literal lives in update_check.py.
+
 KANON_UPDATE_CONNECT_TIMEOUT_ENV = "KANON_UPDATE_CONNECT_TIMEOUT"
 KANON_UPDATE_CONNECT_TIMEOUT: int = _env_int(KANON_UPDATE_CONNECT_TIMEOUT_ENV, 2)
 if KANON_UPDATE_CONNECT_TIMEOUT <= 0:
@@ -318,8 +225,7 @@ if KANON_UPDATE_CONNECT_TIMEOUT <= 0:
         f"ERROR: {KANON_UPDATE_CONNECT_TIMEOUT_ENV} must be a positive integer; got {KANON_UPDATE_CONNECT_TIMEOUT}"
     )
 
-# Read timeout (seconds) for the PyPI lookup (spec Section 7.1, default 3s).
-# Env-overridable via KANON_UPDATE_READ_TIMEOUT; routed through _env_int.
+
 KANON_UPDATE_READ_TIMEOUT_ENV = "KANON_UPDATE_READ_TIMEOUT"
 KANON_UPDATE_READ_TIMEOUT: int = _env_int(KANON_UPDATE_READ_TIMEOUT_ENV, 3)
 if KANON_UPDATE_READ_TIMEOUT <= 0:
@@ -327,10 +233,7 @@ if KANON_UPDATE_READ_TIMEOUT <= 0:
         f"ERROR: {KANON_UPDATE_READ_TIMEOUT_ENV} must be a positive integer; got {KANON_UPDATE_READ_TIMEOUT}"
     )
 
-# Maximum number of response-body bytes read from the PyPI endpoint before the
-# lookup is abandoned (spec Section 7.1, default 200KB = 204800 bytes). An
-# oversized body yields no alert and no error (graceful-fail). Env-overridable via
-# KANON_UPDATE_BODY_SIZE_CAP; routed through _env_int so the cap is not a literal.
+
 KANON_UPDATE_BODY_SIZE_CAP_ENV = "KANON_UPDATE_BODY_SIZE_CAP"
 KANON_UPDATE_BODY_SIZE_CAP: int = _env_int(KANON_UPDATE_BODY_SIZE_CAP_ENV, 200 * 1024)
 if KANON_UPDATE_BODY_SIZE_CAP <= 0:
@@ -338,54 +241,36 @@ if KANON_UPDATE_BODY_SIZE_CAP <= 0:
         f"ERROR: {KANON_UPDATE_BODY_SIZE_CAP_ENV} must be a positive integer; got {KANON_UPDATE_BODY_SIZE_CAP}"
     )
 
-# Subdirectory under the resolved KANON_HOME cache directory that holds the
-# update-check cache entry. The entry reuses the completions/cache.py TTL layout
-# (a versions.txt-style value file plus a fetched_at.txt freshness sidecar).
+
 KANON_UPDATE_CHECK_CACHE_SUBDIR = "update-check"
 
-# Filename within the update-check cache entry holding the last looked-up latest
-# PyPI version string (one line). Reuses the completions/cache.py entries layout.
+
 KANON_UPDATE_CHECK_VERSION_FILENAME = "latest.txt"
 
-# ANSI SGR escape sequence used to render the bright update alert. Color is
-# applied only when stderr is a TTY and NO_COLOR is unset (spec Section 7.3);
-# the reset sequence ANSI_RESET (defined above) closes the colored span.
+
 ANSI_BRIGHT_CYAN = "\033[1;36m"
 
-# Alert template emitted to stderr when a newer kanon-cli version is available
-# (spec Section 7.1 / Section 7.3 / FR-29). Call with
-# .format(latest=<version>, current=<version>, command=<upgrade-command>) to
-# produce the final message. The alert names the available version and the
-# upgrade command; it is colored only on a TTY with NO_COLOR unset.
+
 KANON_UPDATE_ALERT_TEMPLATE = (
     "A new release of kanon-cli is available: {current} -> {latest}.\nRun '{command}' to upgrade."
 )
 
-# -- git ls-remote retry --
+
 GIT_RETRY_COUNT_ENV_VAR = "KANON_GIT_RETRY_COUNT"
 GIT_RETRY_DELAY_ENV_VAR = "KANON_GIT_RETRY_DELAY"
 GIT_RETRY_COUNT_DEFAULT = 3
 GIT_RETRY_DELAY_DEFAULT = 1
-# Patterns in ls-remote stderr that indicate authentication errors.
-# These errors must not be retried to avoid credential lockouts.
+
+
 GIT_AUTH_ERROR_PATTERNS = ("Authentication", "Permission denied")
 
-# -- git ls-remote per-attempt timeout --
-# Timeout in seconds applied to each individual git ls-remote subprocess call.
-# Used by both kanon doctor (subchecks 4, 5, 11) and kanon install
-# (_check_sha_reachable, _resolve_ref_to_sha, _collect_branch_drift_reports).
-# Override via the KANON_GIT_LS_REMOTE_TIMEOUT environment variable.
+
 KANON_GIT_LS_REMOTE_TIMEOUT: int = _env_int("KANON_GIT_LS_REMOTE_TIMEOUT", 30)
 
-# -- Install concurrency lock --
-# File name for the per-project exclusive lock that serializes concurrent installs.
+
 INSTALL_LOCK_FILENAME = ".kanon-install.lock"
 
-# Acquisition timeout (in seconds) for the workspace lock taken by
-# kanon_workspace_lock (kanon install / add / remove / doctor mutations).
-# On expiry the acquisition fails fast with an actionable stale-lock-recovery
-# message (pid/host/timestamp); blocking is kernel-level, never a poll-sleep.
-# Overridable via the KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS environment variable.
+
 KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS: int = _env_int("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", 30)
 if KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS <= 0:
     raise SystemExit(
@@ -393,13 +278,10 @@ if KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS <= 0:
         f"got {KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS}"
     )
 
-# -- Doctor command --
-# Subdirectory name under .kanon-data/ where completion-cache files are stored.
+
 KANON_COMPLETION_CACHE_DIR = "completion-cache"
 
-# Number of recent lines to display from the completion-errors log during
-# `kanon doctor` subcheck 7. Overridable via the
-# KANON_COMPLETION_ERRORS_REPORT_LIMIT environment variable.
+
 KANON_COMPLETION_ERRORS_REPORT_LIMIT: int = _env_int("KANON_COMPLETION_ERRORS_REPORT_LIMIT", 5)
 if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
     raise SystemExit(
@@ -407,50 +289,31 @@ if KANON_COMPLETION_ERRORS_REPORT_LIMIT <= 0:
         f"got {KANON_COMPLETION_ERRORS_REPORT_LIMIT}"
     )
 
-# TTL in seconds for shell-completion cache entries.
-# Completers skip a remote fetch when the cached fetched_at is within this age.
-# Section 11.4 lifecycle header.
+
 KANON_COMPLETION_CACHE_TTL = 300
 
-# Timeout in seconds applied to each kanon __complete_* subprocess call.
-# Preamble helpers pass this to timeout(1) (or rely on kanon's internal limit).
-# Section 11.6 configuration recap.
+
 KANON_COMPLETION_TIMEOUT = 2
 
-# When 1, the completion background-refresh subprocess is spawned after a
-# stale-but-present cache read to refresh asynchronously. Section 11.4.
+
 KANON_COMPLETION_REFRESH_BG = 1
 
-# Environment variable name that controls the background-refresh behavior.
-# Set to "0" to disable background refresh (the stale cache is still returned
-# but no forked child updates it). Any non-integer or zero value disables the
-# feature. Section 11.6.
+
 KANON_COMPLETION_REFRESH_BG_ENV = "KANON_COMPLETION_REFRESH_BG"
 
-# When 1, dynamic completion lookups are enabled. Set to 0 to disable all
-# kanon __complete_* calls globally. Section 11.6.
+
 KANON_COMPLETION_ENABLED = 1
 
-# Coalescing window in seconds for accessed_at updates.
-# A read that occurs within this many seconds of the last update does not
-# rewrite accessed_at, to bound I/O under rapid Tab-pressing. Section 11.4.
+
 KANON_ACCESSED_AT_COALESCE_SEC = 60
 
-# Name of the environment variable that overrides the completion-errors log
-# path. When unset, the log is written under the resolved cache directory
-# (KANON_HOME/cache) as completion-errors.log.
+
 KANON_COMPLETION_LOG_ENV = "KANON_COMPLETION_LOG"
 
-# Filename of the completion-errors log within the cache directory.
-# Doctor subcheck 7 reads the last KANON_COMPLETION_ERRORS_REPORT_LIMIT lines
-# from this file when it exists.
+
 KANON_COMPLETION_ERRORS_LOG_FILENAME = "completion-errors.log"
 
-# Candidate paths for statically-installed shell completion scripts.
-# Each entry is a (shell, path) pair. Doctor subcheck 9 iterates these pairs
-# and checks files that exist on disk against a freshly generated script.
-# Home-directory paths are expanded via os.path.expanduser() at import time;
-# system-wide paths are used verbatim. Extend this tuple to support additional shells.
+
 KANON_STATIC_COMPLETION_SEARCH_PATHS: tuple[tuple[str, str], ...] = (
     ("bash", os.path.expanduser("~/.local/share/bash-completion/completions/kanon")),
     ("bash", "/etc/bash_completion.d/kanon"),
@@ -459,33 +322,22 @@ KANON_STATIC_COMPLETION_SEARCH_PATHS: tuple[tuple[str, str], ...] = (
     ("zsh", "/usr/share/zsh/vendor-completions/_kanon"),
 )
 
-# Warning text template for a stale static completion script (subcheck 9).
-# Call with .format(shell_name=<shell>, path=<path>) to produce the final message.
-# The placeholder is named shell_name rather than shell to avoid the bandit B604
-# false positive that flags any .format() with a keyword arg named "shell" as
-# a potential shell-injection issue -- which it is not here.
+
 KANON_STALE_COMPLETION_SCRIPT_WARNING = (
     "Stale {shell_name} completion script: {path} does not match the output of "
     "'kanon completion {shell_name}'. Re-run 'kanon completion {shell_name} > {path}' "
     "to update it."
 )
 
-# -- Doctor cache management (subchecks 8 + 10) --
-# Permission bits for the completion-cache directory, enforcing owner-only
-# access as required by spec Section 3.6 (trust model / credential isolation).
+
 KANON_HOME_CACHE_DIR_MODE = 0o700
 
-# Age threshold in days for the cache prune operation (subcheck 10).
-# Files whose atime is older than this many days are removed by
-# 'kanon doctor --prune-cache'. Overridable via KANON_CACHE_PRUNE_AGE_DAYS.
+
 KANON_CACHE_PRUNE_AGE_DAYS: int = _env_int("KANON_CACHE_PRUNE_AGE_DAYS", 30)
 if KANON_CACHE_PRUNE_AGE_DAYS <= 0:
     raise SystemExit(f"ERROR: KANON_CACHE_PRUNE_AGE_DAYS must be a positive integer; got {KANON_CACHE_PRUNE_AGE_DAYS}")
 
-# Maximum directory depth for the stale install-lock scan (subcheck 10).
-# The scan walks .kanon-data/.kanon-install.lock files under the current
-# working directory but stops at this depth to bound filesystem traversal.
-# Overridable via KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH.
+
 KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH: int = _env_int("KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH", 4)
 if KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH <= 0:
     raise SystemExit(
@@ -493,19 +345,14 @@ if KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH <= 0:
         f"got {KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH}"
     )
 
-# Age threshold in hours beyond which a .kanon-install.lock file is considered
-# stale (subcheck 10 advisory). Doctor does NOT delete stale locks; it only
-# reports them. Overridable via KANON_DOCTOR_STALE_LOCK_AGE_HOURS.
+
 KANON_DOCTOR_STALE_LOCK_AGE_HOURS: int = _env_int("KANON_DOCTOR_STALE_LOCK_AGE_HOURS", 1)
 if KANON_DOCTOR_STALE_LOCK_AGE_HOURS <= 0:
     raise SystemExit(
         f"ERROR: KANON_DOCTOR_STALE_LOCK_AGE_HOURS must be a positive integer; got {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}"
     )
 
-# Maximum number of characters from the first line of stderr to include in a
-# remote-reachability warning finding (subcheck 11). Keeps error output bounded
-# when a git server returns a long diagnostics message.
-# Overridable via the KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS environment variable.
+
 KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS: int = _env_int("KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS", 160)
 if KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS <= 0:
     raise SystemExit(
@@ -513,190 +360,112 @@ if KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS <= 0:
         f"got {KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS}"
     )
 
-# Environment variable name for the git ls-remote / resolve timeout (seconds).
-# Used by kanon doctor subchecks 4 (branch drift) and 5 (dangling SHA).
+
 _KANON_RESOLVE_TIMEOUT_ENV = "KANON_RESOLVE_TIMEOUT"
 
-# Default timeout (in seconds) for git ls-remote calls made by kanon doctor.
+
 _KANON_RESOLVE_TIMEOUT_DEFAULT = 30
 
-# -- Color / TTY output --
-# Environment variable name that suppresses ANSI color output when non-empty,
-# following the https://no-color.org convention.
+
 NO_COLOR_ENV = "NO_COLOR"
-# Runtime flag mutated by _apply_global_flags (kanon_cli.core.cli_args) when
-# --no-color is passed or NO_COLOR env var is non-empty. All formatter helpers
-# read this flag before emitting ANSI escape sequences.
+
+
 _NO_COLOR_ACTIVE: bool = False
 
-# -- Shell-completion output sanitization (spec Section 11.3) --
-# Maximum byte length for a safe catalog entry name emitted by __complete_* subcommands.
-# Names longer than this value are excluded from completion output.
+
 COMPLETION_MAX_ENTRY_LEN = 128
 
-# Characters that are not permitted in a catalog entry name emitted to stdout.
-# Shell-special chars, whitespace, and control characters are forbidden
-# per spec Section 11.3 "Output sanitization".
+
 COMPLETION_UNSAFE_CHARS: frozenset[str] = frozenset(" \t\n\r;|&$`")
 
-# Shell metacharacters forbidden in completion candidates (spec Section 11.3,
-# Section 3.6 trust model).  Any entry containing one of these characters is
-# dropped by sanitize_entries() and logged to completion-errors.log.
-# Closed set: pipe, ampersand, semicolon, less-than, greater-than, open-paren,
-# close-paren, open-brace, close-brace, dollar, backtick, backslash,
-# double-quote, single-quote.
+
 SHELL_METACHARS: frozenset[str] = frozenset("|&;<>(){}$`\\\"'")
 
-# -- Source-name derivation (soft-spot rule 2) --
-# Pattern matching the full recommended character set for catalog entry names.
-# Characters outside this set in an entry name trigger a shell-quoting warning.
+
 RECOMMENDED_CHAR_RE = re.compile(r"^[a-zA-Z0-9_-]*$")
 
-# Compiled regex for the allowed catalog entry-name character set.
-# Alias of RECOMMENDED_CHAR_RE -- both enforce the same character set
-# [a-zA-Z0-9_-]. Used by _check_source_name_derivation in catalog.py to flag
-# entry names that contain characters outside this set. These characters are
-# legal but unusual; the warning helps authors spot accidental whitespace, dots,
-# or non-ASCII before they propagate into shell variable names.
-# Defined here (not inline in catalog.py) so the rule is testable data.
+
 KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE = RECOMMENDED_CHAR_RE
 
-# -- kanon search --tree threshold guardrail --
-# Maximum number of catalog entries allowed before the threshold guardrail
-# requires the operator to supply a filter (positional substring, --regex,
-# --max-depth 0) or override with --no-filter-required.
-# Overridable via the KANON_TREE_NO_FILTER_THRESHOLD environment variable.
+
 KANON_TREE_NO_FILTER_THRESHOLD: int = _env_int("KANON_TREE_NO_FILTER_THRESHOLD", 20)
 
-# -- kanon search -A/--all version-walk cap --
-# Maximum number of catalog versions walked when -A/--all is given and
-# neither --limit N nor --no-limit is explicitly passed.
-# Overridable via the KANON_LIST_LIMIT environment variable.
+
 KANON_LIST_LIMIT: int = _env_int("KANON_LIST_LIMIT", 50)
 
-# -- kanon search concurrent multi-source enumeration --
-# Upper bound on the number of worker threads used to enumerate catalog version
-# tags across the configured sources concurrently (spec Section 4.1 / FR-25).
-# The effective worker count is min(this value, number of sources). Must be a
-# positive integer; overridable via the KANON_SEARCH_MAX_WORKERS environment
-# variable (no hard-coded value baked into the enumeration code path).
+
 KANON_SEARCH_MAX_WORKERS: int = _env_int("KANON_SEARCH_MAX_WORKERS", 8)
 if KANON_SEARCH_MAX_WORKERS <= 0:
     raise ValueError(f"ERROR: KANON_SEARCH_MAX_WORKERS must be a positive integer; got {KANON_SEARCH_MAX_WORKERS}")
 
-# -- kanon add --
-# Environment variable name for the destination .kanon file path.
-# CLI flag --kanon-file takes precedence when both are set.
+
 KANON_KANON_FILE_ENV = "KANON_KANON_FILE"
 
-# -- kanon lock --
-# Environment variable name for the operator-override lockfile path.
-# When set, kanon reads/writes the lockfile at this path instead of the
-# default derived from --kanon-file. CLI flag --lock-file takes precedence.
+
 KANON_LOCK_FILE = "KANON_LOCK_FILE"
 
-# -- HTTPS enforcement (spec Section 4.7 / Section 3.6 trust model) --
-# When set to "1", disables the insecure-remote-URL security check in
-# kanon install. All remote URL schemes (HTTP, file://, git://, etc.) are
-# accepted without error. Any value other than "1" is treated as unset.
-# See docs/configuration.md for the security rationale.
+
 KANON_ALLOW_INSECURE_REMOTES = "KANON_ALLOW_INSECURE_REMOTES"
 
-# Default destination .kanon file path when neither --kanon-file nor
-# KANON_KANON_FILE are set.
+
 KANON_KANON_FILE_DEFAULT = "./.kanon"
 
-# Standard-header line values written to a newly-created .kanon file.
-# These match the template in src/kanon_cli/catalog/kanon/.kanon verbatim.
-# The former global ``KANON_MARKETPLACE_INSTALL`` header line has been removed
-# (spec Section 0 item 8 / FR-17): marketplace install is now a per-dependency,
-# auto-detected ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (see
-# ``SOURCE_MARKETPLACE_SUFFIX`` above), not a single global header field.
+
 KANON_HEADER_GITBASE = "GITBASE=<YOUR_GIT_ORG_BASE_URL>"
 KANON_HEADER_CLAUDE_MARKETPLACES_DIR = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
 
-# -- kanon outdated revision normalization (DEFECT-007 fix) --
-# Individual git ref prefix constants for all recognized prefix forms.
-# These are the canonical string values; all code in outdated.py and elsewhere
-# must reference these constants rather than inline string literals.
+
 REVISION_REF_PREFIX_TAGS = "refs/tags/"
 REVISION_REF_PREFIX_HEADS = "refs/heads/"
 REVISION_REF_PREFIX_REMOTES = "refs/remotes/origin/"
 
-# Ordered tuple of git ref prefixes that 'kanon outdated' recognizes and strips
-# before classifying a REVISION as a PEP 440 version or a branch name.
-# Order matters: refs/remotes/origin/ is checked before refs/heads/ and
-# refs/tags/ so that longer prefixes are consumed first.
+
 REVISION_REF_PREFIXES: tuple[str, ...] = (
     REVISION_REF_PREFIX_REMOTES,
     REVISION_REF_PREFIX_HEADS,
     REVISION_REF_PREFIX_TAGS,
 )
 
-# Classification token returned by _normalize_revision_for_constraint when the
-# bare ref (after prefix stripping) is a valid PEP 440 version.
+
 REVISION_CLASSIFICATION_VERSION = "version"
 
-# Classification token returned by _normalize_revision_for_constraint when the
-# bare ref is from a branch-shaped prefix (refs/heads/ or refs/remotes/origin/).
+
 REVISION_CLASSIFICATION_BRANCH = "branch"
 
-# -- kanon outdated --
-# Environment variable name that controls the output format for 'kanon outdated'.
-# The CLI flag --format takes precedence when both are set.
-# Supported values: "table" (default). Extended to "table","json" in T4.
+
 KANON_OUTDATED_FORMAT = "KANON_OUTDATED_FORMAT"
 
-# Default output format for 'kanon outdated' when neither --format nor
-# KANON_OUTDATED_FORMAT are set.
+
 KANON_OUTDATED_FORMAT_DEFAULT = "table"
 
-# JSON format name for 'kanon outdated --format json'.
+
 KANON_OUTDATED_FORMAT_JSON = "json"
 
-# JSON format name for 'kanon why --format json'.
+
 KANON_WHY_FORMAT_JSON = "json"
 
-# -- kanon outdated JSON output --
-# Indentation level (in spaces) used by json.dumps when --format json is selected.
-# Controls pretty-print depth without requiring source edits.
-# Overridable via the KANON_OUTDATED_JSON_INDENT environment variable.
+
 KANON_OUTDATED_JSON_INDENT: int = _env_int("KANON_OUTDATED_JSON_INDENT", 2)
 
-# -- Branch-pinned SHA truncation (spec Section 4.4) --
-# Number of leading hex characters used for the short-SHA display in the
-# 'kanon outdated' table for branch-pinned and SHA-pinned sources.
-# Matches git's default short-SHA convention.
+
 BRANCH_SHA_TRUNCATION_LENGTH = 12
 
-# Lengths (in hex chars) of the two SHA hash types accepted as REVISION values.
-# SHA-1 produces a 40-character hex string; SHA-256 produces a 64-character hex
-# string. Both are recognised as "SHA-pinned" by _classify_revision_shape.
+
 SHA1_HEX_LENGTH = 40
 SHA256_HEX_LENGTH = 64
 
-# -- kanon why --
-# Environment variable name that controls the output format for 'kanon why'.
-# The CLI flag --format takes precedence when both are set.
-# Supported values: "text" (default). Extended to "text","json" in T4.
+
 KANON_WHY_FORMAT = "KANON_WHY_FORMAT"
 
-# Default output format for 'kanon why' when neither --format nor
-# KANON_WHY_FORMAT are set.
+
 KANON_WHY_FORMAT_DEFAULT = "text"
 
-# -- kanon why JSON output --
-# Indentation level (in spaces) used by json.dumps when --format json is selected.
-# Controls pretty-print depth without requiring source edits.
-# Overridable via the KANON_WHY_JSON_INDENT environment variable.
+
 KANON_WHY_JSON_INDENT: int = _env_int("KANON_WHY_JSON_INDENT", 2)
 if KANON_WHY_JSON_INDENT < 0:
     raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {KANON_WHY_JSON_INDENT}")
 
-# -- kanon catalog audit --
-# The five valid subset names for the --check flag of kanon catalog audit.
-# These are the only values accepted individually or in comma-separated combination.
-# The special value "all" expands to this full set at parse time.
+
 KANON_CATALOG_AUDIT_VALID_CHECKS: frozenset[str] = frozenset(
     {
         "metadata",
@@ -707,9 +476,7 @@ KANON_CATALOG_AUDIT_VALID_CHECKS: frozenset[str] = frozenset(
     }
 )
 
-# Cache TTL (in seconds) for cloned catalog-audit target repos.
-# A cached clone is reused if its mtime is within this many seconds of now.
-# Overridable via the KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS environment variable.
+
 KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS: int = _env_int("KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS", 3600)
 if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
     raise SystemExit(
@@ -717,25 +484,19 @@ if KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS <= 0:
         f"got {KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS}"
     )
 
-# Subdirectory name under the resolved cache directory for catalog-audit cloned
-# repos. Full path: <KANON_HOME>/cache/catalog-audit/<sha256-of-canonicalized-url-at-ref>/
+
 KANON_CATALOG_AUDIT_CACHE_SUBDIR = "catalog-audit"
 
-# Environment variable name that controls the output format for 'kanon catalog audit'.
-# The CLI flag --format takes precedence when both are set.
-# Supported values: "text" (default), "json".
+
 KANON_CATALOG_AUDIT_FORMAT_ENV = "KANON_CATALOG_AUDIT_FORMAT"
 
-# Default output format for 'kanon catalog audit' when neither --format nor
-# KANON_CATALOG_AUDIT_FORMAT are set.
+
 KANON_CATALOG_AUDIT_FORMAT_DEFAULT = "text"
 
-# JSON format name for 'kanon catalog audit --format json'.
+
 KANON_CATALOG_AUDIT_FORMAT_JSON = "json"
 
-# -- kanon catalog audit metadata check field lists --
-# REQUIRED fields: missing or whitespace-only triggers an ERROR finding.
-# Defined here so they are testable data, not inline literals in catalog.py.
+
 KANON_CATALOG_METADATA_REQUIRED_FIELDS: tuple[str, ...] = (
     "name",
     "display-name",
@@ -743,8 +504,7 @@ KANON_CATALOG_METADATA_REQUIRED_FIELDS: tuple[str, ...] = (
     "version",
 )
 
-# RECOMMENDED fields: missing any triggers a WARN finding per file.
-# Defined here so they are testable data, not inline literals in catalog.py.
+
 KANON_CATALOG_METADATA_RECOMMENDED_FIELDS: tuple[str, ...] = (
     "type",
     "owner-name",
@@ -752,12 +512,7 @@ KANON_CATALOG_METADATA_RECOMMENDED_FIELDS: tuple[str, ...] = (
     "keywords",
 )
 
-# -- kanon catalog audit tag-format check (soft-spot rule 5) --
-# Maximum number of non-PEP-440 tag WARN findings emitted per check run.
-# When the actual count of non-PEP-440 tags exceeds this limit, only the
-# first KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT findings are emitted per-tag;
-# a single additional summary WARN names the remaining count.
-# Overridable via the KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT environment variable.
+
 KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT: int = _env_int("KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT", 50)
 if KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT <= 0:
     raise SystemExit(
@@ -765,66 +520,46 @@ if KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT <= 0:
         f"got {KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT}"
     )
 
-# Summary-text template for the tag-format check when the number of non-PEP-440
-# tags exceeds KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT.
-# Call with .format(remaining=<count>) to produce the final summary message.
+
 KANON_CATALOG_AUDIT_TAG_FORMAT_SUMMARY_TEMPLATE = (
     "{remaining} additional non-PEP-440 tag(s) not listed above. "
     "Run 'kanon catalog audit --check tag-format' for the full list."
 )
 
-# Strict-mode summary template for kanon catalog audit --strict.
-# Emitted to stderr when --strict is active and at least one WARN finding exists.
-# Call with .format(count=<warning-count>) to produce the final summary line.
-# Spec source: spec Section 4.8 (--strict flag).
+
 KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE = "strict mode: {count} warning(s) treated as errors"
 
-# Warning message template for the legacy catalog/<name>/ directory detection.
-# Emitted unconditionally by audit_command when a catalog/ subdirectory is found
-# containing at least one immediate child directory in the audit target.
-# Call with .format(version=<kanon-version>) to produce the final message.
-# Spec source: spec Section 4.8.
+
 KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
     "Legacy catalog/ directory detected; this directory is unused by "
     "kanon >= {version} and should be deleted; "
     "see docs/migration-to-add.md"
 )
 
-# -- Doctor subcheck Finding severity tokens (DEFECT-012 fix) --
-# Canonical severity identifiers used by the Finding dataclass validator.
-# All three values are checked by Finding.__post_init__; any other value raises ValueError.
+
 FINDING_SEVERITY_OK = "ok"
 FINDING_SEVERITY_FAIL = "fail"
 FINDING_SEVERITY_INFO = "info"
 
-# Prefix tokens printed by the doctor dispatcher for each Finding severity level.
-# Format: "[ok] <name>", "[fail] <name>: <reason>", "[info] <name>" (or with reason).
+
 FINDING_PREFIX_OK = "[ok]"
 FINDING_PREFIX_FAIL = "[fail]"
 FINDING_PREFIX_INFO = "[info]"
 
-# -- kanon why scope tags (DEFECT-009 fix) --
-# Scope tag applied to lockfile index entries that originate from top-level
-# [[sources]] entries (i.e. not transitively included via [[sources.includes]]).
+
 WHY_SCOPE_TOP_LEVEL = "top_level"
 
-# Scope tag applied to lockfile index entries that originate from transitive
-# [[sources.includes]] entries (i.e. pulled in by a top-level source's manifest).
+
 WHY_SCOPE_TRANSITIVE = "transitive"
 
-# -- kanon why closest-match suggestion thresholds --
-# Maximum Levenshtein edit distance for a candidate to be considered a close
-# match during not-found suggestion. Only candidates with distance <= this
-# value are eligible. Overridable via the KANON_WHY_SUGGEST_MAX_DISTANCE env var.
+
 KANON_WHY_SUGGEST_MAX_DISTANCE: int = _env_int("KANON_WHY_SUGGEST_MAX_DISTANCE", 3)
 if KANON_WHY_SUGGEST_MAX_DISTANCE < 0:
     raise SystemExit(
         f"ERROR: KANON_WHY_SUGGEST_MAX_DISTANCE must be a non-negative integer; got {KANON_WHY_SUGGEST_MAX_DISTANCE}"
     )
 
-# Maximum number of close-match suggestions to include in the not-found error
-# message. Suggestions are sorted ascending by (distance, value) and truncated
-# to this count. Overridable via the KANON_WHY_SUGGEST_TOP_N env var.
+
 KANON_WHY_SUGGEST_TOP_N: int = _env_int("KANON_WHY_SUGGEST_TOP_N", 3)
 if KANON_WHY_SUGGEST_TOP_N < 0:
     raise SystemExit(f"ERROR: KANON_WHY_SUGGEST_TOP_N must be a non-negative integer; got {KANON_WHY_SUGGEST_TOP_N}")

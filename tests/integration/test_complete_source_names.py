@@ -16,11 +16,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanon(path: Path, content: str) -> None:
     """Write content to path with mode 0600 (owner-read/write only)."""
     path.write_text(content)
@@ -36,9 +31,7 @@ def _run_complete(
     """Invoke `kanon __complete_source_names_in_kanon <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_KANON_FILE"] = str(kanon_path)
-    # The source-names completer does not touch the catalog cache; KANON_HOME
-    # only isolates cache resolution under <KANON_HOME>/cache. Every log path in
-    # these tests is set explicitly via KANON_COMPLETION_LOG.
+
     env["KANON_HOME"] = str(cache_dir)
     env["KANON_COMPLETION_ENABLED"] = "1"
     if extra_env:
@@ -49,11 +42,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-CYCLE-001
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -120,7 +108,7 @@ class TestCompleteSourceNamesSubprocess:
         )
         assert result.returncode == 0
         assert result.stdout == ""
-        # Log must not be written when disabled
+
         assert not log_path.exists()
 
     def test_hidden_subcommand_not_in_help(self, tmp_path: Path) -> None:
@@ -142,7 +130,7 @@ class TestCompleteSourceNamesSubprocess:
             "KANON_SOURCE_baz_URL=https://example.com/baz\n",
         )
         log_path = tmp_path / "completion-errors.log"
-        # First invocation -- confirm all three sources
+
         result_full = _run_complete(
             kanon,
             tmp_path,
@@ -151,10 +139,8 @@ class TestCompleteSourceNamesSubprocess:
         assert result_full.returncode == 0
         assert result_full.stdout == "bar\nbaz\nfoo\n"
 
-        # Truncate the fixture (empty file -- no KANON_SOURCE_*_URL keys)
         _write_kanon(kanon, "")
 
-        # Second invocation -- empty stdout, log entry for ValueError
         result_empty = _run_complete(
             kanon,
             tmp_path,

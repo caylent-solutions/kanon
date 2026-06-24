@@ -21,10 +21,6 @@ from kanon_cli.core.install import resolve_workspace_base_dir
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _SOURCE_URL_TEMPLATE = "https://example.com/{name}.git"
 
 
@@ -109,11 +105,6 @@ def _populate_source_package(
     pkg_dir = store / ".kanon-data" / "sources" / source_name / ".packages" / package_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / "README.md").write_text(f"# {package_name}\n")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: parse failure in .kanon exits 1 with parse error message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -241,11 +232,6 @@ class TestParseFailureExitsOne:
         assert "Error" not in captured.out, (
             f"Error must not appear on stdout (AC-CHANNEL-001); got stdout={captured.out!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: git sync failure exits 1 with actionable message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -403,11 +389,6 @@ class TestGitSyncFailureExitsOne:
         assert exc_info.value.code == 1, (
             f"install must exit 1 for error {error_message!r}; got code {exc_info.value.code}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: duplicate path collision across sources exits 1 with diagnostic
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

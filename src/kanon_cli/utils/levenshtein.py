@@ -36,21 +36,18 @@ def levenshtein_distance(a: str, b: str) -> int:
     Returns:
         The Levenshtein edit distance as a non-negative integer.
     """
-    # Base cases: one string is empty.
+
     if len(a) == 0:
         return len(b)
     if len(b) == 0:
         return len(a)
 
-    # Ensure `a` is the shorter string to minimise memory use for the DP row.
     if len(a) > len(b):
         a, b = b, a
 
     len_a = len(a)
     len_b = len(b)
 
-    # Two-row DP: previous row and current row.
-    # previous[j] = edit distance between a[:i] and b[:j].
     previous = list(range(len_b + 1))
     current = [0] * (len_b + 1)
 
@@ -62,9 +59,9 @@ def levenshtein_distance(a: str, b: str) -> int:
             else:
                 cost = 1
             current[j] = min(
-                previous[j] + 1,  # deletion from a
-                current[j - 1] + 1,  # insertion into a
-                previous[j - 1] + cost,  # substitution
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + cost,
             )
         previous, current = current, previous
 

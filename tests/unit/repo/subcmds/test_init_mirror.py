@@ -24,10 +24,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Test-scoped constants -- no literals embedded inside assertions.
-# ---------------------------------------------------------------------------
-
 _MANIFEST_ORIGIN_URL = "https://localhost:0/manifest"
 _MANIFEST_XML_MINIMAL = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -38,11 +34,6 @@ _MANIFEST_XML_MINIMAL = (
 )
 _URL_WITH_GIT_SUFFIX = "file:///tmp/test-repo/.git"
 _URL_WITHOUT_GIT_SUFFIX = "file:///tmp/test-repo"
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def _make_manifest(tmpdir: str) -> manifest_xml.XmlManifest:
@@ -72,11 +63,6 @@ def _mock_project(url: "str | None") -> mock.MagicMock:
     return project
 
 
-# ---------------------------------------------------------------------------
-# Test cases
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAddMetaProjectMirrorNoneUrl(unittest.TestCase):
     """Case (a): m_url is None -- guard must prevent AttributeError."""
@@ -92,10 +78,9 @@ class TestAddMetaProjectMirrorNoneUrl(unittest.TestCase):
     def test_none_url_does_not_raise(self) -> None:
         """_AddMetaProjectMirror must not raise when remote URL is None."""
         project = _mock_project(None)
-        # Before the fix this raises AttributeError; after the fix it returns
-        # silently without adding any project entry.
+
         self._manifest._AddMetaProjectMirror(project)
-        # Confirm no spurious project was registered.
+
         self.assertNotIn(None, self._manifest._projects)
 
     @pytest.mark.unit
@@ -122,16 +107,12 @@ class TestAddMetaProjectMirrorNonGitUrl(unittest.TestCase):
     def test_non_git_url_does_not_raise_attribute_error(self) -> None:
         """_AddMetaProjectMirror must not raise AttributeError for a non-/.git URL."""
         project = _mock_project(_URL_WITHOUT_GIT_SUFFIX)
-        # The call should not raise AttributeError; it may raise other errors
-        # due to the mocked project not having a real git config, but the
-        # None-guard itself must not block this path.
+
         try:
             self._manifest._AddMetaProjectMirror(project)
         except AttributeError as exc:
             self.fail(f"_AddMetaProjectMirror raised AttributeError for a non-None URL: {exc}")
         except Exception:
-            # Other exceptions from deeper mirror logic are acceptable;
-            # we only care that AttributeError is not raised by the guard.
             pass
 
     @pytest.mark.unit
@@ -190,6 +171,4 @@ def test_add_meta_project_mirror_no_attribute_error(
     except AttributeError as exc:
         pytest.fail(f"_AddMetaProjectMirror raised AttributeError for URL={url!r}: {exc}")
     except Exception:
-        # Other exceptions from deeper mirror logic are acceptable; the guard
-        # must ensure AttributeError is not raised.
         pass

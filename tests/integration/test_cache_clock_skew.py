@@ -23,11 +23,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _sha256(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
@@ -41,12 +36,11 @@ def _run_complete(
     """Invoke `kanon __complete_catalog_entries <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_CATALOG_SOURCES"] = catalog_source
-    # cache_dir() resolves to <KANON_HOME>/cache; point KANON_HOME at the
-    # parent so the resolved cache equals the seeded cache_dir.
+
     env["KANON_HOME"] = str(cache_dir.parent)
-    # Disable background refresh so any miss would trigger inline fetch (and fail).
+
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
-    # Use a very short timeout so if a fetch is attempted, it fails quickly.
+
     env["KANON_COMPLETION_TIMEOUT"] = "1"
     if extra_env:
         env.update(extra_env)
@@ -56,11 +50,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -80,24 +69,19 @@ class TestCacheClockSkew:
         - Subprocess exits 0.
         - No git clone is attempted (if it were, it would fail and return empty).
         """
-        # Use an unreachable URL so any real fetch attempt would fail.
-        # The URL must parse as a valid catalog source.
+
         catalog_url = "file:///nonexistent-repo-path-that-does-not-exist"
         catalog_ref = "main"
         catalog_source = f"{catalog_url}@{catalog_ref}"
 
-        # Build the cache directory structure matching catalog_entry_dir() logic.
         cache_root = tmp_path / "cache"
         key = f"{catalog_url}@{catalog_ref}"
         sha = _sha256(key)
         entry_dir = cache_root / "catalogs" / sha
         entry_dir.mkdir(parents=True)
 
-        # Seed the cache with known entries.
         (entry_dir / "index.txt").write_text("alpha\nbeta\n")
 
-        # Use a far-future epoch -- this simulates clock skew (fetched_at > now).
-        # The classify() rule is: fetched_at > now => FRESH.
         future_epoch = 9_999_999_999
         (entry_dir / "fetched_at.txt").write_text(str(future_epoch))
 

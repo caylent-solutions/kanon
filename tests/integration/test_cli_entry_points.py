@@ -17,11 +17,6 @@ import pytest
 from kanon_cli.cli import build_parser, main
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: CLI entry points integration tests (14 tests)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestParserConstruction:
     """Verify the argument parser registers all expected subcommands."""
@@ -76,18 +71,14 @@ class TestParserConstruction:
         assert args.validate_command == "marketplace"
 
     def test_bootstrap_subcommand_not_registered(self) -> None:
-        # 'bootstrap' was removed in a major release. It is no longer a
-        # registered subcommand, so argparse rejects it as an invalid choice
-        # and exits 2 (the argparse usage-error code).
+
         parser = build_parser()
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["bootstrap", "kanon"])
         assert exc_info.value.code == 2
 
     def test_list_subcommand_not_registered(self) -> None:
-        # 'list' was renamed to 'search' in the 3.0.0 release. The old token is
-        # no longer a registered subcommand, so argparse rejects it as an
-        # invalid choice and exits 2 (the argparse usage-error code).
+
         parser = build_parser()
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["list"])

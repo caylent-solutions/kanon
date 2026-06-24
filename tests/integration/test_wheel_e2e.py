@@ -26,9 +26,6 @@ from collections.abc import Generator
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 REPO_ROOT = pathlib.Path(__file__).parents[2]
 """Root of the kanon repository (2 levels up from tests/integration/)."""
@@ -40,7 +37,7 @@ _GIT_USER_NAME = "Wheel E2E Test User"
 _GIT_USER_EMAIL = "wheel-e2e@example.com"
 _MANIFEST_FILENAME = "default.xml"
 
-# Expected Python files in kanon_cli/repo/ (root level, excluding __init__.py)
+
 _ROOT_REPO_PYTHON_FILES = [
     "color.py",
     "command.py",
@@ -69,7 +66,7 @@ _ROOT_REPO_PYTHON_FILES = [
     "wrapper.py",
 ]
 
-# Expected Python files in kanon_cli/repo/subcmds/
+
 _SUBCMD_PYTHON_FILES = [
     "__init__.py",
     "abandon.py",
@@ -100,7 +97,7 @@ _SUBCMD_PYTHON_FILES = [
     "upload.py",
 ]
 
-# Non-Python runtime files relative to kanon_cli/repo/
+
 _NON_PYTHON_RUNTIME_FILES = [
     "repo",
     "git_ssh",
@@ -108,11 +105,6 @@ _NON_PYTHON_RUNTIME_FILES = [
     "hooks/pre-auto-gc",
     "requirements.jsonc",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _run_subprocess(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess:
@@ -242,7 +234,7 @@ def _make_manifest_repo(base: pathlib.Path, fetch_base_url: str) -> pathlib.Path
     Returns:
         Absolute path to the bare manifest repository.
     """
-    # Create a content repo that the manifest will reference
+
     content_work = base / "content-work"
     content_work.mkdir(parents=True)
     _git(["init", "-b", "main"], cwd=content_work)
@@ -255,7 +247,6 @@ def _make_manifest_repo(base: pathlib.Path, fetch_base_url: str) -> pathlib.Path
     content_bare = base / "content-bare"
     _git(["clone", "--bare", str(content_work), str(content_bare)], cwd=base)
 
-    # Create a manifest repo referencing the content bare repo
     manifest_work = base / "manifest-work"
     manifest_work.mkdir(parents=True)
     _git(["init", "-b", "main"], cwd=manifest_work)
@@ -296,11 +287,6 @@ def _wheel_entry_names(wheel_path: pathlib.Path) -> set[str]:
             return set(whl.namelist())
     except zipfile.BadZipFile as exc:
         raise RuntimeError(f"Cannot open wheel {wheel_path} as a zip archive: {exc}") from exc
-
-
-# ---------------------------------------------------------------------------
-# Module-scoped fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -344,11 +330,6 @@ def installed_venv(built_wheel_path: pathlib.Path) -> Generator[pathlib.Path, No
         yield python
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: test_wheel_install_and_repo_init
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_wheel_install_and_repo_init(
     installed_venv: pathlib.Path,
@@ -375,7 +356,6 @@ def test_wheel_install_and_repo_init(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    # Script executed inside the isolated venv to run repo_init
     run_script = (
         "import kanon_cli.repo as repo\n"
         f"repo.repo_init(\n"
@@ -402,11 +382,6 @@ def test_wheel_install_and_repo_init(
         f"Expected .repo/manifests/ at {manifests_dir} after repo_init but it was not "
         f"created. .repo/ contents: {sorted(str(p) for p in repo_dot_dir.iterdir())!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: test_wheel_contains_all_repo_files
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -451,11 +426,6 @@ def test_wheel_contains_all_repo_files(built_wheel_path: pathlib.Path) -> None:
         f"Check [tool.hatch.build.targets.wheel] packages includes 'src/kanon_cli/repo/subcmds' "
         f"in pyproject.toml. Wheel contains {len(entry_names)} entries."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: test_wheel_repo_non_python_files_present
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

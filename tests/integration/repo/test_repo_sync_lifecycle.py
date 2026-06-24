@@ -20,11 +20,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo.main import run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising on non-zero exit."""
     result = subprocess.run(
@@ -172,11 +167,6 @@ def _create_manifest_repo_with_version_constraint(
     return bare_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
     """AC-CYCLE-001: repo_init() then repo_sync() clones projects from manifest.
@@ -189,9 +179,7 @@ def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
     repos_base.mkdir()
 
     _create_content_repo(repos_base)
-    # The manifest fetch URL is the parent directory of the bare repo.
-    # repo uses fetch + project name to compose the clone URL, so the
-    # fetch base must be the directory containing the bare repo directory.
+
     fetch_base = f"file://{repos_base}"
     manifest_bare = _create_manifest_repo(repos_base, fetch_base)
 
@@ -201,7 +189,6 @@ def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
     manifest_url = f"file://{manifest_bare}"
     repo_dot_dir = str(workspace / ".repo")
 
-    # Run repo init to set up the .repo directory.
     run_from_args(
         [
             "init",
@@ -221,10 +208,8 @@ def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
         f"Expected .repo/ directory at {repo_dot_path} after repo init, but it was not created."
     )
 
-    # Run repo sync via the public API.
     repo_pkg.repo_sync(repo_dir=str(workspace))
 
-    # Verify the project directory was created by repo sync.
     project_dir = workspace / "content-repo"
     assert project_dir.is_dir(), (
         f"Expected project directory {project_dir} to exist after repo_sync(), "
@@ -232,7 +217,6 @@ def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
         f"Workspace contents: {list(workspace.iterdir())!r}"
     )
 
-    # Verify the committed file from the content repo is present.
     readme = project_dir / "README.md"
     assert readme.is_file(), (
         f"Expected {readme} to exist inside the cloned project directory, "
@@ -243,11 +227,6 @@ def test_repo_init_then_sync_clones_project(tmp_path: pathlib.Path) -> None:
     assert "content-repo" in readme_content, (
         f"Expected 'content-repo' to appear in {readme} but got: {readme_content!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-002 (E0-F7-S1-T2): version constraint lifecycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -276,10 +255,8 @@ def test_version_constraint_lifecycle_selects_correct_tag(tmp_path: pathlib.Path
     versions = ["1.0.0", "1.1.0", "2.0.0"]
     bare_dir = _create_versioned_content_repo(repos_base, versions)
 
-    # The fetch URL in the manifest is the parent of the bare repo directory
-    # so that repo can compose the clone URL as fetch + project_name.
     fetch_base = f"file://{repos_base}"
-    project_name = bare_dir.name  # "versioned-bare"
+    project_name = bare_dir.name
 
     manifest_bare = _create_manifest_repo_with_version_constraint(
         repos_base,

@@ -23,10 +23,6 @@ from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in source files)
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
@@ -37,11 +33,6 @@ _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_NAME=src\n"
     "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon_subprocess(
@@ -96,11 +87,6 @@ def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     return kanonenv
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: readonly parent directory exits 1 with actionable error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestReadonlyParentDirectory:
     """AC-TEST-001: install into a read-only parent directory exits 1 with an
@@ -129,7 +115,6 @@ class TestReadonlyParentDirectory:
         finally:
             tmp_path.chmod(0o755)
 
-        # The error message must begin with 'Error:' for it to be an actionable message.
         stderr_lines = result.stderr.splitlines()
         error_lines = [line for line in stderr_lines if line.startswith("Error:")]
         assert error_lines, f"Expected at least one line starting with 'Error:' on stderr. Got stderr={result.stderr!r}"
@@ -190,11 +175,6 @@ class TestReadonlyParentDirectory:
         assert not stdout_error_lines, (
             f"Error text leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: missing parent directory exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -262,11 +242,6 @@ class TestMissingParentDirectory:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: symlinked .kanon is followed correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSymlinkedKanonFile:
     """AC-TEST-003: when the .kanon path is a symlink, the CLI resolves it and
@@ -281,9 +256,8 @@ class TestSymlinkedKanonFile:
         symlink_kanon = tmp_path / "link_to_kanon"
         symlink_kanon.symlink_to(kanonenv)
 
-        # symlink.is_file() must return True for a symlink to an existing regular file.
         assert symlink_kanon.is_file(), f"Expected symlink {symlink_kanon} to report is_file()=True"
-        # The resolved path must equal the real file.
+
         assert symlink_kanon.resolve() == kanonenv.resolve(), (
             f"Expected symlink to resolve to {kanonenv}, got {symlink_kanon.resolve()}"
         )
@@ -317,13 +291,11 @@ class TestSymlinkedKanonFile:
                 lock_file_path=symlink_kanon.parent / ".kanon.lock",
             )
 
-        # .kanon-data/ must be created under the shared store, not beside the
-        # symlink and not beside the real .kanon file.
         assert (store_base / ".kanon-data").is_dir(), (
             f".kanon-data/ expected under the shared store at {store_base}, but was not found.\n"
             f"Contents of store_base: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-        # The resolved (real) .kanon file must survive in the real project dir.
+
         assert kanonenv.is_file(), ".kanon must remain in the real project dir after install via symlink"
         assert not (symlink_dir / ".kanon-data").exists(), ".kanon-data/ must not be created next to the symlink."
         assert not (real_dir / ".kanon-data").exists(), (
@@ -348,7 +320,6 @@ class TestSymlinkedKanonFile:
 
         result = _run_kanon_subprocess("install", str(symlink_kanon))
 
-        # The error must NOT be a "file not found" error -- the symlink is valid.
         assert ".kanon file not found" not in result.stderr, (
             f"install must not report '.kanon file not found' for a valid symlink. Got stderr={result.stderr!r}"
         )
@@ -381,11 +352,6 @@ class TestSymlinkedKanonFile:
         assert not (store_base / ".kanon-data").exists(), (
             ".kanon-data/ must be removed from the shared store after clean via symlink"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: paths with spaces work throughout install/clean/validate
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -512,7 +478,6 @@ class TestPathsWithSpaces:
         spaced_dir = tmp_path / "my project with spaces"
         spaced_dir.mkdir()
         nonexistent_kanon = spaced_dir / ".kanon"
-        # Do NOT create the .kanon file -- it must be missing.
 
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 

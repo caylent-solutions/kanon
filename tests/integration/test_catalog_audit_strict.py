@@ -42,7 +42,7 @@ def _run_kanon(
 def _fixture_dir() -> pathlib.Path:
     """Return the path to the broken-soft-spot-2 fixture directory (warnings-only)."""
     here = pathlib.Path(__file__).parent
-    # tests/integration/ -> tests/fixtures/catalog/broken-soft-spot-2/
+
     return here.parent / "fixtures" / "catalog" / "broken-soft-spot-2"
 
 
@@ -105,11 +105,10 @@ class TestCatalogAuditStrictSubprocess:
         """The strict-mode summary names the warning count (>= 1 for the broken fixture)."""
         fixture = _fixture_dir()
         result = _run_kanon(["catalog", "audit", str(fixture), "--check", "source-name-derivation", "--strict"])
-        # The fixture produces at least 3 warnings (one per file); the count must appear
+
         stderr = result.stderr
         assert "strict mode" in stderr, f"No strict-mode summary found in stderr: {stderr!r}"
-        # Extract the warning count from the summary line using the template pattern
-        # KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE = "strict mode: {count} warning(s) treated as errors"
+
         assert "warning(s)" in stderr, f"Expected 'warning(s)' in strict-mode summary. stderr: {stderr!r}"
 
     def test_warn_prefix_still_present_in_stdout_under_strict(self) -> None:
@@ -138,11 +137,10 @@ class TestCatalogAuditStrictSubprocess:
         Counts warnings produced by the fixture and verifies the template is used.
         """
         fixture = _fixture_dir()
-        # First run without strict to count warnings
+
         result_no_strict = _run_kanon(["catalog", "audit", str(fixture), "--check", "source-name-derivation"])
         warn_count = result_no_strict.stdout.count("WARN:")
 
-        # Now run with strict to check summary
         result_strict = _run_kanon(["catalog", "audit", str(fixture), "--check", "source-name-derivation", "--strict"])
         expected_summary = KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE.format(count=warn_count)
         assert expected_summary in result_strict.stderr, (

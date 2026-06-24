@@ -29,14 +29,13 @@ def test_smoke_all_fixtures_available(mock_manifest_xml, mock_project_config):
           returns a dict
     Spec: Plan: Test harness
     """
-    # mock_manifest_xml should return a path to an existing XML file
+
     assert os.path.isfile(mock_manifest_xml), (
         f"mock_manifest_xml must return an existing file path: {mock_manifest_xml}"
     )
     tree = ET.parse(mock_manifest_xml)
     assert tree.getroot().tag == "manifest", "mock_manifest_xml file must contain a <manifest> root element"
 
-    # mock_project_config should return a dict with standard keys
     assert isinstance(mock_project_config, dict), (
         f"mock_project_config must return a dict, got {type(mock_project_config)}"
     )
@@ -76,7 +75,7 @@ def test_make_clean_removes_artifacts(repo_root, subprocess_timeout):
     Then: __pycache__, .pytest_cache, .ruff_cache, .coverage are removed
     Spec: Plan: Clean target
     """
-    # Run a few unit tests to create cache artifacts
+
     setup_result = subprocess.run(
         [sys.executable, "-m", "pytest", "-m", "unit", "-q", "--tb=short"],
         cwd=repo_root,
@@ -88,7 +87,6 @@ def test_make_clean_removes_artifacts(repo_root, subprocess_timeout):
         f"Setup step failed: pytest exited {setup_result.returncode}.\nstderr: {setup_result.stderr[-500:]}"
     )
 
-    # Now clean
     result = subprocess.run(
         ["make", "clean"],
         cwd=repo_root,
@@ -98,7 +96,6 @@ def test_make_clean_removes_artifacts(repo_root, subprocess_timeout):
     )
     assert result.returncode == 0, f"make clean failed: {result.stderr}"
 
-    # Verify key artifacts are gone
     artifacts = [".pytest_cache", ".ruff_cache", ".coverage"]
     for artifact in artifacts:
         artifact_path = os.path.join(repo_root, artifact)

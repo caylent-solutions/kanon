@@ -32,88 +32,68 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-status-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-status-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-status-option-99"
 
-# Parametrize table for AC-TEST-002 tests.
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "unknown-flag-xyzzy"),
     (_UNKNOWN_FLAG_ALT_A, "not-a-real-status-flag"),
     (_UNKNOWN_FLAG_ALT_B, "bogus-status-option-99"),
 ]
 
-# Value-requiring option used in AC-TEST-003 primary test.
-# 'repo status' passes --jobs through to the parallel execution runner;
-# the optparse parser requires exactly one argument for --jobs. Supplying
-# it with no value triggers exit 2 with '--jobs option requires 1 argument'.
+
 _OPTION_REQUIRING_VALUE = "--jobs"
 
-# Error message substring expected in stderr when a value-requiring option
-# is supplied without its argument (optparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Boolean flag with unexpected inline value for AC-TEST-003 secondary test.
-# 'repo status' defines --orphans as a boolean store_true flag; the optparse
-# parser rejects '--orphans=unexpected' because boolean flags cannot accept
-# an inline value, producing exit 2 with '--orphans option does not take a
-# value'.
+
 _BOOL_FLAG_WITH_VALUE = "--orphans=unexpected"
 _BOOL_FLAG_BASE_NAME = "--orphans"
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Parametrize table for AC-TEST-003 boolean-flag-with-value tests.
+
 _BOOL_FLAGS_WITH_VALUE: list[tuple[str, str]] = [
     (_BOOL_FLAG_WITH_VALUE, "orphans-with-value"),
 ]
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The embedded repo tool writes "repo status" in its Usage line.
+
 _HELP_USAGE_PHRASE = "repo status"
 
-# Flag mentioned in the --help output to confirm subcommand-specific help.
+
 _HELP_ORPHANS_OPTION = "--orphans"
 
-# Phrase expected in stderr when .repo/manifest.xml is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file name that must appear in the stderr message for AC-TEST-004.
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# CLI token constants.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_STATUS = "status"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_HELP = "--help"
 
-# Composed CLI command phrase for diagnostic messages.
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_STATUS}"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper (DRY extraction for _is_deterministic tests).
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -160,11 +140,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo status --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -242,11 +217,6 @@ class TestRepoStatusHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, [_CLI_FLAG_HELP], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -329,12 +299,6 @@ class TestRepoStatusUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Closest exit-2 path -- missing required option value or
-#              boolean flag with inline value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -464,11 +428,6 @@ class TestRepoStatusMissingRequiredPositional:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStatusPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -590,11 +549,6 @@ class TestRepoStatusPreconditionFailure:
             _EXIT_PRECONDITION_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

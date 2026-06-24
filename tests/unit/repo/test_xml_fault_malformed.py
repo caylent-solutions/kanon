@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for XML fault injection: malformed and encoding scenarios.
 
 Covers:
@@ -34,10 +20,6 @@ import xml.dom.minidom
 from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
-
-# ---------------------------------------------------------------------------
-# Shared setup helpers (mirrors pattern in test_xml_manifest_happy.py)
-# ---------------------------------------------------------------------------
 
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
@@ -104,11 +86,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- malformed XML (unclosed tag) produces actionable error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -183,10 +160,6 @@ class TestMalformedXmlUnclosedTag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- XXE / entity expansion is blocked or bounded
-# ---------------------------------------------------------------------------
-
 _MAX_EXPANDED_ENTITY_CHARS = 10_000
 """Upper bound on the total character count permitted after entity expansion.
 
@@ -239,12 +212,10 @@ class TestXxeEntityExpansion:
             "</manifest>\n"
         )
 
-        # Parse directly via minidom -- the parser must not read the sentinel file.
         doc = xml.dom.minidom.parseString(xxe_xml.encode("utf-8"))
         notices = doc.getElementsByTagName("notice")
         assert notices, "Expected <notice> element in parsed document"
 
-        # The notice text must not contain the sentinel content from the file.
         notice_text = notices[0].firstChild.nodeValue if notices[0].firstChild else ""
         assert sentinel_content not in notice_text, (
             f"External SYSTEM entity was resolved: sentinel content "
@@ -265,8 +236,7 @@ class TestXxeEntityExpansion:
 
         AC-TEST-002
         """
-        # Three-level expansion: lol3 -> 5x lol2 -> 10x lol -> "lol"
-        # Total chars: len("lol") * 10 * 5 = 150 characters -- well bounded.
+
         entity_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<!DOCTYPE manifest [\n"
@@ -281,7 +251,6 @@ class TestXxeEntityExpansion:
             "</manifest>\n"
         )
 
-        # Parse directly via minidom to verify expansion is bounded.
         doc = xml.dom.minidom.parseString(entity_xml.encode("utf-8"))
         notices = doc.getElementsByTagName("notice")
         assert notices, "Expected <notice> element in parsed document"
@@ -292,11 +261,6 @@ class TestXxeEntityExpansion:
             f"which exceeds the safety limit of {_MAX_EXPANDED_ENTITY_CHARS}. "
             "The parser must bound entity expansion to prevent DoS."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- CDATA sections are preserved through parse and serialize
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -407,11 +371,6 @@ class TestCdataPreservation:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004 -- bad encoding declaration surfaces clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBadEncodingDeclaration:
     """Verify that a bad encoding declaration raises ManifestParseError.
@@ -451,8 +410,6 @@ class TestBadEncodingDeclaration:
         """
         repodir = _make_repo_dir(tmp_path)
 
-        # UTF-8 declaration with a Latin-1 byte (0xe9 = 'e with acute') that
-        # is not valid UTF-8.
         bad_bytes = b'<?xml version="1.0" encoding="UTF-8"?><manifest><notice>caf\xe9</notice></manifest>'
         manifest_file = _write_manifest_bytes(repodir, bad_bytes)
 
@@ -487,11 +444,6 @@ class TestBadEncodingDeclaration:
 
         with pytest.raises(ManifestParseError):
             _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Parser resilience: malformed and malicious XML
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

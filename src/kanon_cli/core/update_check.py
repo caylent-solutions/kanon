@@ -71,16 +71,8 @@ from kanon_cli.completions.cache import (
 )
 from kanon_cli.completions.cache import classify as _classify_freshness
 
-# Prefix used by every hidden shell-completion subcommand registered on the
-# top-level parser (e.g. ``__complete_catalog_entries``). The update check is
-# skipped for any invocation whose resolved command starts with this prefix so
-# Tab-completion output stays clean (spec Section 7.1 skip conditions).
+
 _COMPLETER_COMMAND_PREFIX = "__complete"
-
-
-# ---------------------------------------------------------------------------
-# Installed-version + editable-install probes (injectable seams)
-# ---------------------------------------------------------------------------
 
 
 def installed_version() -> str:
@@ -118,7 +110,6 @@ def is_editable_install() -> bool:
     try:
         dist = metadata.distribution(constants.KANON_PYPI_PROJECT_NAME)
     except metadata.PackageNotFoundError:
-        # No installed distribution: this is a running-from-source invocation.
         return True
 
     raw = dist.read_text("direct_url.json")
@@ -127,18 +118,11 @@ def is_editable_install() -> bool:
     try:
         direct_url = json.loads(raw)
     except json.JSONDecodeError:
-        # Unparseable metadata: do not claim editable; fall through to a normal
-        # install so a corrupt sidecar never silently suppresses the alert.
         return False
     dir_info = direct_url.get("dir_info")
     if not isinstance(dir_info, dict):
         return False
     return bool(dir_info.get("editable", False))
-
-
-# ---------------------------------------------------------------------------
-# Skip-condition gate (fail-fast, before any network or cache I/O)
-# ---------------------------------------------------------------------------
 
 
 def should_skip(
@@ -187,11 +171,6 @@ def should_skip(
     return False
 
 
-# ---------------------------------------------------------------------------
-# PyPI lookup (injectable network seam)
-# ---------------------------------------------------------------------------
-
-
 def fetch_latest_version(
     *,
     url: str = constants.KANON_PYPI_JSON_URL,
@@ -233,15 +212,8 @@ def fetch_latest_version(
             agent_version = "source"
         user_agent = f"{constants.KANON_PYPI_PROJECT_NAME}/{agent_version}"
 
-    # urllib exposes a single socket timeout rather than split connect/read
-    # phases; use the larger of the two so neither phase is starved below its
-    # configured budget. Both values are env-driven (never hard-coded here).
     socket_timeout = max(connect_timeout, read_timeout)
 
-    # Validate the scheme up front so urlopen is never asked to fetch over an
-    # unauthenticated channel (defence in depth: the endpoint constant is HTTPS).
-    # A non-HTTPS URL is a skip (None), not a raised error, to honour the
-    # graceful-fail contract.
     if not url.lower().startswith("https://"):
         return None
 
@@ -255,13 +227,9 @@ def fetch_latest_version(
         with urllib.request.urlopen(request, timeout=socket_timeout) as response:
             body = response.read(body_size_cap + 1)
     except (urllib.error.URLError, OSError, ValueError):
-        # URLError covers HTTP errors, DNS failures, and socket timeouts; OSError
-        # covers lower-level socket issues; ValueError covers a malformed URL.
-        # All are best-effort lookup failures: return None (graceful-fail).
         return None
 
     if len(body) > body_size_cap:
-        # Oversized body: abandon the lookup (spec Section 7.1 size cap).
         return None
 
     try:
@@ -276,11 +244,6 @@ def fetch_latest_version(
     if not isinstance(version, str) or not version:
         return None
     return version
-
-
-# ---------------------------------------------------------------------------
-# Cache (reuses completions/cache.py TTL primitives)
-# ---------------------------------------------------------------------------
 
 
 def _cache_entry_dir() -> Path:
@@ -348,11 +311,6 @@ def _refresh_cache() -> None:
     write_cached_version(latest, int(time.time()))
 
 
-# ---------------------------------------------------------------------------
-# Alert rendering
-# ---------------------------------------------------------------------------
-
-
 def _is_newer(latest: str, current: str) -> bool:
     """Return True when ``latest`` is a strictly newer PEP 440 version than ``current``.
 
@@ -418,11 +376,6 @@ def _should_colorize(stream: TextIO, environ: "dict[str, str]") -> bool:
     return bool(isatty and isatty())
 
 
-# ---------------------------------------------------------------------------
-# Public entry point (called from cli.main before dispatch)
-# ---------------------------------------------------------------------------
-
-
 def maybe_alert_update(
     args: argparse.Namespace,
     command: str | None,
@@ -457,20 +410,15 @@ def maybe_alert_update(
     try:
         current = installed_version()
     except metadata.PackageNotFoundError:
-        # No installed distribution: cannot compare. should_skip already treats
-        # this as editable/dev, so this is only reachable if the probe is stubbed;
-        # bail out without alerting.
         return
 
     latest, freshness = read_cached_version(current_epoch, constants.KANON_UPDATE_CHECK_TTL)
 
     if freshness is Freshness.MISSING:
-        # Cold cache: a single inline lookup so the first run can still alert.
         latest = fetch_latest_version()
         if latest is not None:
             write_cached_version(latest, current_epoch)
     elif freshness is Freshness.STALE:
-        # Serve the stale value now; refresh asynchronously without blocking.
         fork_background_refresh(_refresh_cache)
 
     if latest is None:

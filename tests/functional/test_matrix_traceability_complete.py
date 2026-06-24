@@ -34,11 +34,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Path resolution (runtime, no hard-coded absolute paths)
-# ---------------------------------------------------------------------------
-
-
 def _project_root() -> Path:
     """Return the kanon project root by walking up from this file's location.
 
@@ -89,10 +84,8 @@ def _resolve_matrix_path(project_root: Path) -> Path:
 
     workspace_env = os.environ.get("DEVBENCH_WORKSPACE_ROOT")
     if workspace_env:
-        # DEVBENCH_WORKSPACE_ROOT is the devbench workspace; test-fixtures
-        # lives one level above it at the rpm-migration root.
         candidates.append(Path(workspace_env).resolve().parent / "test-fixtures" / matrix_filename)
-    # Layout-derived: workspace root is one level above the kanon project root.
+
     candidates.append(project_root.parent / "test-fixtures" / matrix_filename)
 
     for candidate in candidates:
@@ -135,32 +128,21 @@ def _resolve_traceability_doc(project_root: Path) -> Path:
     return doc_path
 
 
-# ---------------------------------------------------------------------------
-# Matrix / doc parsers
-# ---------------------------------------------------------------------------
-
-# Pattern for scenario rows in the findings-rerun matrix.
-# Matches lines like: | 1 | per-entry / builders-plugins | lifecycle | FAIL | ...
 _MATRIX_ROW_PATTERN = re.compile(r"^\|\s*(?P<num>\d+)\s*\|\s*(?P<scenario>[^|]+?)\s*\|\s*(?P<type>[^|]+?)\s*\|")
 
-# Pattern for traceability doc rows.
-# Matches lines like: | 1 | ... | ... | ... | `tests/...::TestX::test_y`, `...` |
+
 _DOC_ROW_PATTERN = re.compile(
     r"^\|\s*(?P<num>\d+)\s*\|\s*(?P<scenario>[^|]+?)\s*\|\s*(?P<type>[^|]+?)\s*"
     r"\|\s*(?P<result>[^|]+?)\s*\|\s*(?P<covered_by>[^|]*?)\s*\|"
 )
 
-# Sentinel token used when a row is acknowledged as manual-only (no automated test).
+
 _MANUAL_ONLY_ANNOTATION = "manual-only"
 
-# Spec-anchored row count for the 2026-05-30 findings-rerun matrix (spec Section 4 EPIC E52).
-# The 2026-05-30 matrix uses grouped rows (| 20-26 |, | 37-45 |, | 46-52 |, | 53-59 |) for
-# bulk-PASS ranges; those lines do not match the single-number pattern. Only individually-
-# numbered rows are counted: 55 parsed rows from the 85-scenario matrix.
+
 _EXPECTED_MATRIX_ROW_COUNT = 55
 
-# Pattern to extract test node IDs from backtick-quoted citations, e.g.
-# `tests/integration/test_foo.py::TestBar::test_baz`
+
 _CITATION_BACKTICK_PATTERN = re.compile(r"`([^`]+)`")
 
 
@@ -279,7 +261,7 @@ def _is_collectable(node_id: str, project_root: Path) -> tuple[bool, str]:
     test_name = node_id.split("::")[-1]
     if result.returncode == 0 and test_name in result.stdout:
         return True, f"collected OK (exit {result.returncode})"
-    # Provide a diagnostic that names the node and the exit code.
+
     snippet = (result.stdout + result.stderr).strip().splitlines()
     first_error = next(
         (ln for ln in snippet if ln.strip() and not ln.startswith("warning")),
@@ -289,11 +271,6 @@ def _is_collectable(node_id: str, project_root: Path) -> tuple[bool, str]:
         False,
         f"exit {result.returncode} -- first relevant output line: {first_error!r}",
     )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -343,11 +320,6 @@ def doc_citations(project_root: Path) -> dict[int, list[str]]:
     return _parse_doc_citations(text)
 
 
-# ---------------------------------------------------------------------------
-# Guard tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 def test_every_findings_row_has_a_mapped_existing_test(
     matrix_rows: list[tuple[int, str]],
@@ -380,10 +352,10 @@ def test_every_findings_row_has_a_mapped_existing_test(
         if not citations:
             uncited_rows.append(f"Row {row_num} ({scenario_name!r}): 'Covered By' cell is blank")
             continue
-        # Accept manual-only annotation as a valid coverage declaration.
+
         if any(_MANUAL_ONLY_ANNOTATION in c for c in citations):
             continue
-        # Every other citation must be a collectable pytest node.
+
         for node_id in citations:
             collectable, diagnostic = _is_collectable(node_id, project_root)
             if not collectable:
@@ -420,7 +392,7 @@ def test_matrix_row_count_matches_expected(
 
     Spec reference: E50-F2-S1-T2 AC-FUNC-002, E52-F2-S1-T1 AC-DOC-003.
     """
-    # Spec-anchored count for the 2026-05-30 findings-rerun matrix (individually-numbered rows).
+
     expected_count = _EXPECTED_MATRIX_ROW_COUNT
     actual_count = len(matrix_rows)
     assert actual_count == expected_count, (

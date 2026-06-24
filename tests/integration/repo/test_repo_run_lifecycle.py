@@ -21,11 +21,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo.main import run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising on non-zero exit."""
     result = subprocess.run(
@@ -95,11 +90,6 @@ def _create_manifest_repo(base: pathlib.Path, content_fetch_url: str) -> pathlib
     return bare_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_repo_init_then_repo_run_sync_clones_project(tmp_path: pathlib.Path) -> None:
     """AC-CYCLE-001: repo_init() then repo_run(dir, ["sync"]) clones projects from manifest.
@@ -113,9 +103,7 @@ def test_repo_init_then_repo_run_sync_clones_project(tmp_path: pathlib.Path) -> 
     repos_base.mkdir()
 
     _create_content_repo(repos_base)
-    # The manifest fetch URL is the parent directory of the bare repo.
-    # repo uses fetch + project name to compose the clone URL, so the
-    # fetch base must be the directory containing the bare repo directory.
+
     fetch_base = f"file://{repos_base}"
     manifest_bare = _create_manifest_repo(repos_base, fetch_base)
 
@@ -125,7 +113,6 @@ def test_repo_init_then_repo_run_sync_clones_project(tmp_path: pathlib.Path) -> 
     manifest_url = f"file://{manifest_bare}"
     repo_dot_dir = str(workspace / ".repo")
 
-    # Run repo init to set up the .repo directory.
     run_from_args(
         [
             "init",
@@ -145,12 +132,10 @@ def test_repo_init_then_repo_run_sync_clones_project(tmp_path: pathlib.Path) -> 
         f"Expected .repo/ directory at {repo_dot_path} after repo init, but it was not created."
     )
 
-    # Run repo sync via repo_run() -- this is the AC-CYCLE-001 requirement.
     exit_code = repo_pkg.repo_run(["sync"], repo_dir=repo_dot_dir)
 
     assert exit_code == 0, f"repo_run(['sync'], repo_dir=...) must return 0 on success, got {exit_code!r}"
 
-    # Verify the project directory was created by repo sync.
     project_dir = workspace / "content-repo"
     assert project_dir.is_dir(), (
         f"Expected project directory {project_dir} to exist after repo_run(['sync']), "
@@ -158,7 +143,6 @@ def test_repo_init_then_repo_run_sync_clones_project(tmp_path: pathlib.Path) -> 
         f"Workspace contents: {list(workspace.iterdir())!r}"
     )
 
-    # Verify the committed file from the content repo is present.
     readme = project_dir / "README.md"
     assert readme.is_file(), (
         f"Expected {readme} to exist inside the cloned project directory, "

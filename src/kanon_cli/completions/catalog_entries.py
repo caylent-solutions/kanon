@@ -77,11 +77,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_safe_entry(name: str) -> bool:
     """Return True iff *name* is safe to emit as a shell completion candidate.
 
@@ -229,11 +224,6 @@ def _inline_fetch(url: str, ref: str, entry_dir: Path, timeout: int) -> list[str
         return []
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return catalog entry names that start with *current_token*.
 
@@ -251,12 +241,11 @@ def complete(current_token: str) -> list[str]:
     Returns:
         Sorted list of matching catalog entry names, or [] on any error.
     """
-    # Step 1: completion disabled guard
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source from the single KANON_CATALOG_SOURCES entry.
     try:
         source = resolve_env_catalog_source()
     except ValueError as exc:
@@ -271,7 +260,6 @@ def complete(current_token: str) -> list[str]:
 
     url, ref = _parse_catalog_source(source)
 
-    # Step 3: check cache
     entry_dir = catalog_entry_dir(url, ref)
     index_path = entry_dir / "index.txt"
     fetched_path = entry_dir / "fetched_at.txt"
@@ -286,22 +274,16 @@ def complete(current_token: str) -> list[str]:
     if fetched_at is not None:
         age = now - fetched_at
         if age <= ttl:
-            # Cache hit
             names = read_entries(index_path)
         else:
-            # Cache stale
             names = read_entries(index_path)
             if refresh_bg == 1:
-                # Fork background refresh; return stale contents
                 _spawn_background_refresh(url, ref)
             else:
-                # Inline refresh
                 names = _inline_fetch(url, ref, entry_dir, timeout)
     else:
-        # Cache miss -- inline fetch
         names = _inline_fetch(url, ref, entry_dir, timeout)
 
-    # Filter by prefix (case-sensitive)
     return [n for n in names if n.startswith(current_token)]
 
 
@@ -329,11 +311,6 @@ def _spawn_background_refresh(url: str, ref: str) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 
 def register(

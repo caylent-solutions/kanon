@@ -79,11 +79,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _run_ls_remote(url: str, timeout: int) -> str:
     """Run ``git ls-remote --tags --heads <url>`` and return stdout as a string.
 
@@ -139,12 +134,12 @@ def _parse_ls_remote_output(output: str) -> tuple[list[str], list[str]]:
             continue
         _sha, ref = line.split("\t", 1)
         ref = ref.strip()
-        # Skip annotated-tag deref lines
+
         if ref.endswith("^{}"):
             continue
         if ref.startswith("refs/tags/"):
             suffix = ref[len("refs/tags/") :]
-            # Last path component only (handles refs/tags/release/v3 -> "v3")
+
             last_component = suffix.rsplit("/", 1)[-1]
             tags.append(last_component)
         elif ref.startswith("refs/heads/"):
@@ -173,8 +168,6 @@ def _sort_versions_and_branches(
     """
     seen: set[str] = set()
 
-    # Sort tags by PEP 440 Version ordering.
-    # valid_tags are guaranteed PEP 440-parseable (filter_pep440_tags was applied).
     sorted_tags: list[str] = []
     for tag in sorted(valid_tags, key=Version):
         if tag not in seen:
@@ -278,11 +271,6 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return catalog versions that start with *current_token*.
 
@@ -300,12 +288,11 @@ def complete(current_token: str) -> list[str]:
     Returns:
         Sorted list of matching version strings, or [] on any error.
     """
-    # Step 1: completion disabled guard
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source from the single KANON_CATALOG_SOURCES entry.
     try:
         source = resolve_env_catalog_source()
     except ValueError as exc:
@@ -320,7 +307,6 @@ def complete(current_token: str) -> list[str]:
 
     url, ref = _parse_catalog_source(source)
 
-    # Step 3: check cache
     entry_dir = catalog_entry_dir(url, ref)
     tags_path = entry_dir / _TAGS_FILENAME
     fetched_path = entry_dir / "fetched_at.txt"
@@ -335,26 +321,17 @@ def complete(current_token: str) -> list[str]:
     if fetched_at is not None:
         age = now - fetched_at
         if age <= ttl:
-            # Cache hit
             versions = read_entries(tags_path)
         else:
-            # Cache stale
             versions = read_entries(tags_path)
             if refresh_bg == 1:
                 _spawn_background_refresh(url, source)
             else:
                 versions = _inline_fetch(url, entry_dir, timeout)
     else:
-        # Cache miss -- inline fetch
         versions = _inline_fetch(url, entry_dir, timeout)
 
-    # Filter by prefix (case-sensitive)
     return [v for v in versions if v.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

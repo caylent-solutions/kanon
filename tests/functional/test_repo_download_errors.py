@@ -38,76 +38,59 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals extracted here.
-# No inline literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path component used in argument-parser and
-# precondition-failure tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-download-errors-repo-dir"
 
-# CLI token constants.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_DOWNLOAD = "download"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_HELP = "--help"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-download-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-download-option-99"
 
-# Value-requiring option used in AC-TEST-003: '--branch' requires exactly one
-# string argument. Supplying it without a value triggers exit 2 with
-# "'--branch option requires 1 argument'" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--branch"
 _OPTION_REQUIRING_VALUE_SHORT = "-b"
 
-# A valid change/patchset argument used in argument-parser-level tests.
-# These tests exercise flag or option errors and do not require .repo to exist.
+
 _DUMMY_CHANGE_ARG = "999/1"
 
-# Error message substring expected in stderr when the '--branch' option is
-# supplied without its required value (argument-parser missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires 1 argument"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo download"
 
-# Phrase expected in --help output describing the positional argument format.
+
 _HELP_POSITIONAL_PHRASE = "change"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename expected in the stderr error message for AC-TEST-004.
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Phrase expected in stderr when no positional arguments are supplied.
-# The embedded tool raises UsageError (exit 1), not an argparse error (exit 2).
+
 _USAGE_ERROR_PHRASE = "UsageError"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Parametrize data for AC-TEST-002: (bad_flag, test_id)
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary-unknown-flag"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a-not-real-flag"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b-bogus-option"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -154,11 +137,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo download --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -234,11 +212,6 @@ class TestRepoDownloadHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, [_CLI_FLAG_HELP], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -325,11 +298,6 @@ class TestRepoDownloadUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -454,11 +422,6 @@ class TestRepoDownloadMissingOptionValue:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -587,11 +550,6 @@ class TestRepoDownloadPreconditionFailure:
             _EXIT_PRECONDITION_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

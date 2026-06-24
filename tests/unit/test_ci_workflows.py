@@ -32,14 +32,10 @@ MAIN_WORKFLOW = WORKFLOWS_DIR / "main-validation.yml"
 WORKFLOW_FILES = [PR_WORKFLOW, MAIN_WORKFLOW]
 WORKFLOW_IDS = ["pr-validation", "main-validation"]
 
-# The four test tiers that must each run exactly once on the single Linux set.
+
 TEST_TIERS = ["unit", "integration", "functional", "scenario"]
 
-# Matches a per-OS marker filter that the single-Linux-set contract forbids,
-# for example an `and not <os>_only` exclusion threaded into a pytest -m
-# expression. The OS token is composed from parts so this guard never embeds a
-# literal per-OS marker name (the markers were removed; AC-2 forbids the literal
-# token anywhere under tests/).
+
 PER_OS_MARKER_FILTER = re.compile(r"and not (windows|linux)_only")
 
 
@@ -338,7 +334,7 @@ def test_ruff_check_covers_src_repo(workflow_path: pathlib.Path):
     run_steps = _collect_run_steps(workflow)
     lint_steps = [step for step in run_steps if "ruff" in step.get("run", "") or "make lint" in step.get("run", "")]
     assert lint_steps, f"Workflow {workflow_path.name} must have a ruff check or make lint step"
-    # Each lint step must cover src/ (which includes src/kanon_cli/repo/)
+
     for step in lint_steps:
         run = step.get("run", "")
         step_name = step.get("name", "<unnamed>")

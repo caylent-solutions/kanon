@@ -22,11 +22,6 @@ from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
@@ -109,11 +104,6 @@ def _install_with_synced_packages(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: install -> simulated crash -> clean -> install succeeds
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestInstallCrashCleanReinstall:
     """AC-TEST-001: lifecycle is recoverable from partial failure states.
@@ -135,7 +125,6 @@ class TestInstallCrashCleanReinstall:
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("crash"))
         store_base = _store_base()
 
-        # Step 1: Simulate crash during sync
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -147,11 +136,9 @@ class TestInstallCrashCleanReinstall:
             with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        # Step 2: Partial artifacts exist after crash
         source_dir = store_base / ".kanon-data" / "sources" / "crash"
         assert source_dir.is_dir(), "Source dir must exist after partial install (created before failed sync)"
 
-        # Step 3: Clean removes all partial state
         clean(kanonenv)
 
         assert not (store_base / ".kanon-data").exists(), (
@@ -159,7 +146,6 @@ class TestInstallCrashCleanReinstall:
         )
         assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a simulated crash"
 
-        # Step 4: Reinstall succeeds after clean
         _install_with_synced_packages(kanonenv, {"crash": ["recovered-tool"]})
 
         assert (store_base / ".kanon-data" / "sources" / "crash").is_dir(), (
@@ -180,20 +166,17 @@ class TestInstallCrashCleanReinstall:
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("orphan"))
         store_base = _store_base()
 
-        # Simulate a corrupted state: .packages/ exists but .kanon-data/ is absent
         orphan_packages = store_base / ".packages"
         orphan_packages.mkdir(parents=True)
         stale_link = orphan_packages / "stale-pkg"
         stale_link.mkdir()
 
-        # Install should handle the pre-existing .packages/ directory gracefully
         _install_with_synced_packages(kanonenv, {"orphan": ["fresh-tool"]})
 
-        # After reinstall, fresh-tool must be present
         assert (store_base / ".packages" / "fresh-tool").is_symlink(), (
             "Install must create .packages/fresh-tool even when .packages/ already existed"
         )
-        # .kanon-data/ must exist
+
         assert (store_base / ".kanon-data" / "sources" / "orphan").is_dir(), (
             "Install must create .kanon-data/sources/orphan/"
         )
@@ -224,13 +207,8 @@ class TestInstallCrashCleanReinstall:
         assert "channel error" in captured.err or "Error:" in captured.err, (
             "Error message from failed install must appear on stderr"
         )
-        # The error message must not appear on stdout
+
         assert "channel error" not in captured.out, "Error message must not leak to stdout"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: install over existing install is idempotent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -304,11 +282,6 @@ class TestInstallIdempotency:
             )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: .kanon change between installs reconciles correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestKanonChangeReconciliation:
     """AC-TEST-003: changing .kanon between installs reconciles the final state.
@@ -331,11 +304,8 @@ class TestKanonChangeReconciliation:
 
         _install_with_synced_packages(kanonenv, {"src-one": ["package-x"]})
 
-        # Update .kanon to add a second source
         kanonenv.write_text(_two_source_content(name_a="src-one", name_b="src-two"))
 
-        # refresh_lock=True is required because .kanon was modified after the first install
-        # wrote the lockfile; without it KanonHashMismatchError is raised.
         _install_with_synced_packages(
             kanonenv,
             {"src-one": ["package-x"], "src-two": ["package-y"]},
@@ -365,20 +335,14 @@ class TestKanonChangeReconciliation:
 
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"], "beta": ["tool-beta"]})
 
-        # Both source dirs and packages must exist after first install
         assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir()
         assert (store_base / ".kanon-data" / "sources" / "beta").is_dir()
 
-        # Update .kanon to remove beta
         kanonenv.write_text(_single_source_content("alpha"))
 
-        # Clean + reinstall with reduced .kanon
-        # refresh_lock=True is required because .kanon was modified before clean() was called;
-        # clean() does not remove the lockfile, so the old lockfile hash no longer matches.
         clean(kanonenv)
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"]}, refresh_lock=True)
 
-        # Only alpha source dir must exist
         assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
             "alpha source dir must exist after reinstall with alpha-only .kanon"
         )
@@ -402,8 +366,6 @@ class TestKanonChangeReconciliation:
 
         assert (store_base / ".packages" / "old-pkg").is_symlink(), "old-pkg must be present after first install"
 
-        # Second install: source now produces new-pkg instead of old-pkg
-        # (simulates a change in the upstream repo's package structure)
         _install_with_synced_packages(kanonenv, {"evolving": ["new-pkg"]})
 
         assert (store_base / ".packages" / "new-pkg").is_symlink(), "new-pkg must be present after reconciling install"

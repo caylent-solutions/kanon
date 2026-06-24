@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/status.py coverage."""
 
 from unittest import mock
@@ -82,7 +68,7 @@ class TestStatusCommand:
         mock_par_context.return_value.__enter__ = mock.MagicMock()
         mock_par_context.return_value.__exit__ = mock.MagicMock()
         mock_get_context.return_value = {}
-        mock_exec.return_value = 1  # All clean
+        mock_exec.return_value = 1
 
         cmd.Execute(opt, [])
 
@@ -106,7 +92,7 @@ class TestStatusCommand:
         mock_par_context.return_value.__enter__ = mock.MagicMock()
         mock_par_context.return_value.__exit__ = mock.MagicMock()
         mock_get_context.return_value = {}
-        mock_exec.return_value = 0  # Some dirty
+        mock_exec.return_value = 0
 
         cmd.Execute(opt, [])
 

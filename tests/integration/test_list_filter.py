@@ -25,16 +25,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants and utilities
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
 
-# Marketplace XML template with configurable metadata fields.
-# All recommended fields are present to suppress spurious WARNING: stderr output.
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -97,16 +91,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture: manifest repo with varied entries
-# ---------------------------------------------------------------------------
-
-# Five catalog entries with varied metadata used in AC-CYCLE-001.
-# Entry names and fields are chosen so that:
-#   - "foo" substring matches entries 1 and 2 by name/display-name/description/keywords.
-#   - "^foo" regex matches entries starting with "foo" in name.
-#   - "--match-fields keywords" with "foo" matches entry 3 (only in keywords).
-#   - "xyz-no-match" matches nobody.
 _FIVE_ENTRIES = [
     {
         "name": "foo-alpha",
@@ -177,11 +161,6 @@ def _create_manifest_repo(
     return bare_dir
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -208,11 +187,6 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests: substring filter
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSubstringFilter:
     """Integration tests for the positional substring filter."""
@@ -226,13 +200,11 @@ class TestSubstringFilter:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
-        # foo-alpha: name contains 'foo'
-        # foo-beta: name contains 'foo'
-        # gamma-lib: keywords contain 'foo'
+
         assert "foo-alpha" in output_names
         assert "foo-beta" in output_names
         assert "gamma-lib" in output_names
-        # delta-tool and epsilon-svc have no 'foo' anywhere
+
         assert "delta-tool" not in output_names
         assert "epsilon-svc" not in output_names
 
@@ -264,11 +236,6 @@ class TestSubstringFilter:
         assert "0 entries match filter" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: regex filter
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRegexFilter:
     """Integration tests for the --regex filter."""
@@ -282,13 +249,10 @@ class TestRegexFilter:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
-        # Only foo-alpha and foo-beta start with 'foo' in name
-        # gamma-lib has 'foo' in keywords but NOT at start of name
+
         assert "foo-alpha" in output_names
         assert "foo-beta" in output_names
-        # gamma-lib name doesn't start with foo; check display-name and description too
-        # "Gamma Library" - no "foo"; "Core library for gamma operations." - no "foo"
-        # But keywords "foo, library, gamma" -- re.search("^foo", "foo") -> matches!
+
         assert "gamma-lib" in output_names
         assert "delta-tool" not in output_names
         assert "epsilon-svc" not in output_names
@@ -305,11 +269,6 @@ class TestRegexFilter:
         assert "0 entries match filter" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: --match-fields narrowing
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestMatchFieldsFilter:
     """Integration tests for the --match-fields flag."""
@@ -323,11 +282,11 @@ class TestMatchFieldsFilter:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
-        # gamma-lib has 'foo' in keywords
+
         assert "gamma-lib" in output_names
-        # foo-alpha: name 'foo-alpha' has 'foo' but we only check keywords -- "widget, alpha"
+
         assert "foo-alpha" not in output_names
-        # foo-beta: keywords "gadget, beta" -- no 'foo'
+
         assert "foo-beta" not in output_names
 
     def test_match_fields_description_with_substring(self, tmp_path: pathlib.Path) -> None:
@@ -339,15 +298,10 @@ class TestMatchFieldsFilter:
 
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         output_names = result.stdout.strip().splitlines()
-        # foo-alpha: description "A widget in the foo category." -- has 'foo'
+
         assert "foo-alpha" in output_names
-        # foo-beta: description "A gadget related to beta work." -- no 'foo'
+
         assert "foo-beta" not in output_names
-
-
-# ---------------------------------------------------------------------------
-# Tests: hard errors (mutual exclusion)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -375,11 +329,6 @@ class TestMutualExclusionErrors:
         assert "ERROR:" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: filter + --tree guardrail interaction
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFilterTreeInteraction:
     """Integration tests for filter + --tree: guardrail is bypassed when filter supplied.
@@ -389,8 +338,7 @@ class TestFilterTreeInteraction:
 
     def test_filter_unblocks_tree_guardrail(self, tmp_path: pathlib.Path) -> None:
         """Supplying a substring filter unblocks the --tree guardrail for large catalogs."""
-        # Build a catalog with threshold+1 entries to trigger the guardrail.
-        # Use KANON_TREE_NO_FILTER_THRESHOLD=3 so the test is cheap.
+
         threshold = 3
         entries = [
             {
@@ -404,14 +352,12 @@ class TestFilterTreeInteraction:
         bare = _create_manifest_repo(tmp_path, entries, dir_suffix="tree-filter")
         catalog_source = f"file://{bare}@main"
 
-        # Without filter, guardrail fires.
         result_no_filter = _run_kanon(
             ["search", "--tree", "--catalog-source", catalog_source],
             extra_env={"KANON_TREE_NO_FILTER_THRESHOLD": str(threshold)},
         )
         assert result_no_filter.returncode != 0, "Expected guardrail to fire without filter"
 
-        # With substring filter, guardrail does not fire.
         result_with_filter = _run_kanon(
             ["search", "--tree", "entry-00", "--catalog-source", catalog_source],
             extra_env={"KANON_TREE_NO_FILTER_THRESHOLD": str(threshold)},
@@ -419,7 +365,7 @@ class TestFilterTreeInteraction:
         assert result_with_filter.returncode == 0, (
             f"Expected filter to unblock guardrail. stderr: {result_with_filter.stderr!r}"
         )
-        # Only the matched entry appears in the output
+
         assert "entry-00" in result_with_filter.stdout
 
     def test_regex_filter_unblocks_tree_guardrail(self, tmp_path: pathlib.Path) -> None:

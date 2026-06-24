@@ -22,16 +22,13 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# Canonical alias used throughout the journey -- a marketplace-typed dependency
-# whose KANON_SOURCE_<alias>_MARKETPLACE line is the on-disk type marker.
+
 _ALIAS = "aws_control_tower"
 
-# A second alias seeded with an explicit =false so the status step can assert that
-# an explicit =false and an absent line render identically (both "disabled").
+
 _FALSE_ALIAS = "explicit_false"
 
-# The sentinel .kanon.lock content; the journey asserts it is byte-for-byte
-# unchanged after every marketplace operation.
+
 _LOCK_SENTINEL = "SENTINEL .kanon.lock -- must not be touched by marketplace\n"
 
 
@@ -87,27 +84,24 @@ def test_marketplace_enable_disable_status_journey(
     """Drive enable -> disable -> status and assert .kanon.lock is untouched."""
     workspace, kanon_file, lock_file = journey_workspace
 
-    # --- Step 1: status (initial) -- aws_control_tower is enabled (=true) ----
     status_initial = _run_kanon("marketplace", "status", "--all", cwd=workspace)
     assert status_initial.returncode == 0, status_initial.stderr
     initial_row = next(line for line in status_initial.stdout.splitlines() if line.startswith(_ALIAS))
     assert "claude-marketplace" in initial_row
     assert initial_row.split()[-1] == "enabled"
-    # The explicit-false dep and the (later) absent line must both read disabled.
+
     false_row = next(line for line in status_initial.stdout.splitlines() if line.startswith(_FALSE_ALIAS))
     assert false_row.split()[-1] == "disabled"
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
-    # --- Step 2: disable -> removes the _MARKETPLACE line entirely -----------
     disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
     assert disable_result.returncode == 0, disable_result.stderr
     after_disable = kanon_file.read_text(encoding="utf-8")
     assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE" not in after_disable
-    # kanon never writes =false; absence is the canonical false.
+
     assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=false" not in after_disable
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
-    # status after disable: the absent line renders identically to explicit =false.
     status_after_disable = _run_kanon("marketplace", "status", "--all", cwd=workspace)
     assert status_after_disable.returncode == 0, status_after_disable.stderr
     absent_row = next(line for line in status_after_disable.stdout.splitlines() if line.startswith(_ALIAS))
@@ -117,7 +111,6 @@ def test_marketplace_enable_disable_status_journey(
     assert absent_row.split()[-1] == "disabled"
     assert explicit_false_row.split()[-1] == "disabled"
 
-    # --- Step 3: enable the explicit-false dep -> writes =true ---------------
     enable_result = _run_kanon("marketplace", "enable", _FALSE_ALIAS, cwd=workspace)
     assert enable_result.returncode == 0, enable_result.stderr
     after_enable = kanon_file.read_text(encoding="utf-8")
@@ -125,13 +118,11 @@ def test_marketplace_enable_disable_status_journey(
     assert f"KANON_SOURCE_{_FALSE_ALIAS}_MARKETPLACE=false" not in after_enable
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
-    # status after enable: the just-enabled dep now reads enabled.
     status_after_enable = _run_kanon("marketplace", "status", "--all", cwd=workspace)
     assert status_after_enable.returncode == 0, status_after_enable.stderr
     enabled_row = next(line for line in status_after_enable.stdout.splitlines() if line.startswith(_FALSE_ALIAS))
     assert enabled_row.split()[-1] == "enabled"
 
-    # Final invariant: the lock was never created anew nor modified.
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
 

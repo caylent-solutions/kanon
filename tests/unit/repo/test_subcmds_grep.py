@@ -1,17 +1,3 @@
-# Copyright (C) 2025 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds/grep.py module."""
 
 from unittest import mock
@@ -31,7 +17,6 @@ class TestGrepOptions:
         cmd = grep.Grep()
         opts, args = cmd.OptionParser.parse_args([])
 
-        # Verify default option values - cmd_argv is only set when options are used
         assert not hasattr(opts, "cmd_argv") or opts.cmd_argv is None
 
     def test_options_with_pattern(self):
@@ -44,7 +29,7 @@ class TestGrepOptions:
         """Test parsing -r revision option."""
         cmd = grep.Grep()
         opts, args = cmd.OptionParser.parse_args(["-r", "HEAD", "-e", "test"])
-        # -r stores in revision list, not cmd_argv
+
         assert opts.revision == ["HEAD"]
         assert "-e" in opts.cmd_argv
         assert "test" in opts.cmd_argv
@@ -170,8 +155,6 @@ class TestGrepValidateOptions:
         cmd = grep.Grep()
         opts, args = cmd.OptionParser.parse_args([])
 
-        # Grep doesn't have ValidateOptions, pattern validation happens in Execute
-        # Just verify we can parse with no args
         assert args == []
 
     def test_validate_options_with_pattern_passes(self):
@@ -179,7 +162,6 @@ class TestGrepValidateOptions:
         cmd = grep.Grep()
         opts, args = cmd.OptionParser.parse_args(["-e", "pattern"])
 
-        # Should not raise
         cmd.ValidateOptions(opts, args)
 
     def test_validate_options_with_positional_pattern(self):
@@ -187,7 +169,6 @@ class TestGrepValidateOptions:
         cmd = grep.Grep()
         opts, args = cmd.OptionParser.parse_args(["pattern"])
 
-        # Should not raise
         cmd.ValidateOptions(opts, args)
 
 

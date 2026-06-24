@@ -38,9 +38,6 @@ from kanon_cli.core.catalog import (
     resolve_env_catalog_source,
 )
 
-# ---------------------------------------------------------------------------
-# Parametrised unit tests -- AC-FUNC-001 through AC-FUNC-008, AC-TEST-001
-# ---------------------------------------------------------------------------
 
 _VALID_CASES = [
     (
@@ -69,12 +66,12 @@ _ERROR_CASES = [
     (
         "git@host:org/repo.git",
         "missing-ref",
-        "git@host:org/repo.git",  # fragment of the source that must appear in the error message
+        "git@host:org/repo.git",
     ),
     (
         "@main",
         "empty-url",
-        None,  # error asserted by type only
+        None,
     ),
     (
         "https://h/r.git@",
@@ -124,11 +121,6 @@ def test_parse_catalog_source_invalid(source: str, message_fragment: str | None)
         )
 
 
-# ---------------------------------------------------------------------------
-# End-to-end cycle test -- AC-CYCLE-001
-# ---------------------------------------------------------------------------
-
-
 def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
     """Create a bare git repo under ``base/`` with a ``catalog/`` directory.
 
@@ -148,8 +140,6 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
         text=True,
     )
 
-    # Minimal git identity so `git commit` succeeds in CI environments that
-    # have no global git config.
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.email", "test@example.com"],
         check=True,
@@ -163,7 +153,6 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
         text=True,
     )
 
-    # Create the catalog structure expected by `_clone_remote_catalog`.
     catalog_kanon = repo_dir / "catalog" / "kanon"
     catalog_kanon.mkdir(parents=True)
     (catalog_kanon / "README.md").write_text("fixture\n")
@@ -188,17 +177,14 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
 @pytest.mark.parametrize(
     "build_source,branch",
     [
-        # Case 1: Plain file:// URL with a branch name ref.
         (
             lambda repo_url: f"{repo_url}@main",
             "main",
         ),
-        # Case 2: Plain file:// URL with a different branch name ref.
         (
             lambda repo_url: f"{repo_url}@feature",
             "feature",
         ),
-        # Case 3: Plain file:// URL with a tag ref.
         (
             lambda repo_url: f"{repo_url}@v1.0.0",
             "v1.0.0",
@@ -231,7 +217,6 @@ def test_round_trip_through_catalog_resolver(
 
     repo_dir = _init_fixture_repo(fixture_base, "main")
 
-    # For the tag case, create the tag on the fixture repo.
     if branch != "main" and branch != "feature":
         subprocess.run(
             ["git", "-C", str(repo_dir), "tag", branch],
@@ -240,14 +225,13 @@ def test_round_trip_through_catalog_resolver(
             text=True,
         )
     elif branch == "feature":
-        # Create the feature branch in the fixture repo.
         subprocess.run(
             ["git", "-C", str(repo_dir), "checkout", "-b", branch],
             check=True,
             capture_output=True,
             text=True,
         )
-        # Return to main so the fixture repo HEAD is on main (the default clone branch).
+
         subprocess.run(
             ["git", "-C", str(repo_dir), "checkout", "main"],
             check=True,
@@ -258,27 +242,16 @@ def test_round_trip_through_catalog_resolver(
     file_url = f"file://{repo_dir}"
     source = build_source(file_url)
 
-    # Verify the splitter produces the right (url, ref) for this source string.
     url, ref = _parse_catalog_source(source)
     assert url == file_url, f"Splitter produced wrong URL for {source!r}: got {url!r}"
     assert ref == branch, f"Splitter produced wrong ref for {source!r}: got {ref!r}"
 
-    # Now run through the full public entry point -- resolve_catalog_dir.
     result = resolve_catalog_dir(source)
 
-    # The resolver returns the catalog/ directory inside the cloned repo.
     assert result.is_dir(), f"resolve_catalog_dir returned a non-directory path: {result}"
     assert result.name == "catalog", f"resolve_catalog_dir should return the catalog/ subdirectory; got: {result}"
     assert (result / "kanon").is_dir(), f"Expected catalog/kanon/ to exist in cloned repo; result path: {result}"
 
-
-# ---------------------------------------------------------------------------
-# Plural KANON_CATALOG_SOURCES parser -- AC-13 (spec Section 6 / FR-9)
-#
-# parse_catalog_sources splits the newline-delimited value into an
-# order-preserving, deduplicated list of (url, ref) entries; blank lines are
-# skipped; a malformed (non-blank) entry fails fast naming the offending line.
-# ---------------------------------------------------------------------------
 
 _PLURAL_VALID_CASES = [
     (
@@ -388,12 +361,6 @@ def test_parse_catalog_sources_malformed_entry_fails_fast(raw: str, offending: s
     message = str(exc_info.value)
     assert CATALOG_SOURCES_ENV_VAR in message, f"Error must name the env var; got: {message!r}"
     assert offending in message, f"Error must name the offending entry {offending!r}; got: {message!r}"
-
-
-# ---------------------------------------------------------------------------
-# resolve_env_catalog_source -- single-source resolution from the plural env
-# (spec Section 4.2: env consumed only when exactly one source is configured)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

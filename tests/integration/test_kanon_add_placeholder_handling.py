@@ -197,10 +197,6 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Line 1 is the offending GITBASE placeholder -- the validator must name
-        # line number 1 in its diagnostic.
-        # Schema 3.0.0 (FR-1) .kanon has no global [catalog] block; catalog
-        # sources are per-dependency and install is hermetic.
         kanon_content = textwrap.dedent(f"""\
             GITBASE=<YOUR_GIT_ORG_BASE_URL>
             CLAUDE_MARKETPLACES_DIR=${{HOME}}/.claude-marketplaces
@@ -215,10 +211,8 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(kanon_content)
 
-        # The offending line is line 1 (1-indexed) in the file above.
         offending_line_number = 1
 
-        # Remove catalog-source env var so install does not bypass the .kanon path.
         env = dict(os.environ)
         env.pop("KANON_CATALOG_SOURCES", None)
 

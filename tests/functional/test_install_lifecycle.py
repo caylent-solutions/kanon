@@ -149,8 +149,7 @@ class TestInstallLifecycle:
 
     def test_gitignore_appended_not_duplicated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         store = _isolated_store(monkeypatch, tmp_path / "home")
-        # Seed the store .gitignore with the .packages/ line already present so
-        # the install must NOT duplicate it (append-without-duplicate contract).
+
         (store / ".gitignore").write_text(".packages/\n")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",

@@ -22,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_manifest_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -82,10 +78,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     return m
 
 
-# ---------------------------------------------------------------------------
-# Fixture XML content for extend-project round-trip tests
-# ---------------------------------------------------------------------------
-
 _EXTEND_PROJECT_FIXTURE_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -98,11 +90,6 @@ _EXTEND_PROJECT_FIXTURE_XML = (
     '  <extend-project name="platform/tools" revision="refs/tags/v2.0.0" dest-branch="refs/heads/stable" />\n'
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Real parse + model verification
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -199,7 +186,7 @@ def test_extend_project_non_extended_project_unmodified(tmp_path: pathlib.Path) 
     AC-FUNC-001
     """
     repodir = _make_repo_dir(tmp_path)
-    # Only platform/tools is extended here; platform/build is not
+
     xml_content = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<manifest>\n"
@@ -220,11 +207,6 @@ def test_extend_project_non_extended_project_unmodified(tmp_path: pathlib.Path) 
     assert "extra" not in build.groups, (
         f"Expected 'extra' NOT in platform/build.groups (only tools was extended) but got: {build.groups!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: parse + ToXml preserves structural elements
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -30,33 +30,25 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Selfupdate Disabled Test User"
 _GIT_USER_EMAIL = "repo-selfupdate-disabled@example.com"
 _PROJECT_PATH = "selfupdate-disabled-test-project"
 
-# CLI token for the selfupdate subcommand
+
 _CLI_TOKEN_SELFUPDATE = "selfupdate"
 
-# Expected exit code for the disabled (embedded-mode) selfupdate
+
 _EXPECTED_EXIT_CODE = 1
 
-# Expected stdout for the disabled selfupdate (must be empty)
+
 _EXPECTED_STDOUT = ""
 
-# Traceback indicator for channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Composed CLI command phrase for diagnostic messages
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_SELFUPDATE}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: 'kanon repo selfupdate' exits 1 in embedded mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -89,11 +81,6 @@ class TestRepoSelfupdateDisabledExitCode:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-002: message appears on stderr, not stdout
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

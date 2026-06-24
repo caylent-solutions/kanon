@@ -15,12 +15,11 @@ from kanon_cli.core.install import InstallError, install
 from kanon_cli.repo import RepoCommandError
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
-# Legacy environment variables superseded by the embedded repo tool and --catalog-source.
+
 _LEGACY_REPO_URL_ENV = "REPO_URL"
 _LEGACY_REPO_REV_ENV = "REPO_REV"
 
-# Message template for the legacy env-var deprecation notice.  The var_list
-# placeholder is filled at call time with the set of legacy variable names.
+
 _LEGACY_ENV_DEPRECATION_MSG = (
     "{var_list} environment variable(s) are deprecated and no longer used by 'kanon install'. "
     "Use --catalog-source to specify a remote catalog source instead."
@@ -85,14 +84,6 @@ def register(subparsers) -> None:
         help="Path to the .kanon configuration file (default: auto-discover from current directory)",
     )
 
-    # kanon install is hermetic (spec Section 4.3 / FR-14): it is driven solely by
-    # the committed .kanon (+ .kanon.lock).  --catalog-source is deliberately NOT
-    # registered here, so passing it to install exits non-zero (argparse rejects the
-    # unrecognized argument).  A populated KANON_CATALOG_SOURCES env var has no effect
-    # on install (it is ignored, never read).  The catalog source belongs to the
-    # catalog-querying commands (kanon add / list / outdated / why).
-
-    # --refresh-lock and --refresh-lock-source are mutually exclusive (spec Section 4.7).
     refresh_group = parser.add_mutually_exclusive_group()
     refresh_group.add_argument(
         "--refresh-lock",
@@ -188,11 +179,6 @@ def _run(args) -> int | None:
             sys.exit(1)
         print(f"kanon install: found {args.kanonenv_path}")
 
-    # The downstream repo manifest parser enforces an absolute `manifest_file`
-    # at src/kanon_cli/repo/manifest_xml.py:410. Resolve here at the CLI
-    # boundary so `kanon install .kanon` (relative argument) behaves identically
-    # to auto-discovery, and fail-fast with a clear message if the file is
-    # missing.
     args.kanonenv_path = args.kanonenv_path.resolve()
     if not args.kanonenv_path.is_file():
         print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
@@ -220,11 +206,6 @@ def _run(args) -> int | None:
             strict_drift=args.strict_drift,
         )
     except InstallError as exc:
-        # InstallError subclasses already format their message with an "ERROR:"
-        # prefix per the spec-canonical error shape (spec Section 4 header).
-        # Canonical fixture: tests/fixtures/errors/lockfile-hash-mismatch.txt,
-        # lockfile-sha-unreachable.txt, conflict-detected.txt.
-        # Spec section: spec/kanon-list-add-lock-features-spec.md Section 6.
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:

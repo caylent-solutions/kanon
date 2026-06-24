@@ -43,10 +43,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_repo_hooks_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -111,11 +107,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <repo-hooks>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -291,11 +282,6 @@ class TestRepoHooksCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <repo-hooks> surface clear errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <repo-hooks> surface clear errors.
@@ -469,11 +455,6 @@ class TestRepoHooksDuplicateElementRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <repo-hooks> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksUnexpectedParent:
     """AC-TEST-003: <repo-hooks> in an unexpected parent raises or is ignored per spec.
@@ -628,11 +609,6 @@ class TestRepoHooksUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -725,11 +701,6 @@ class TestRepoHooksCrossRefParseTimeEnforcement:
         assert "commit-msg" in hooks, (
             f"AC-FUNC-001: expected 'commit-msg' in enabled_repo_hooks after Load() but got: {hooks!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

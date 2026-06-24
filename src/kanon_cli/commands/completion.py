@@ -34,12 +34,10 @@ import shtab
 from kanon_cli.completions import powershell
 from kanon_cli.completions.preamble import PREAMBLE
 
-# Shell whose completion script is produced by the PowerShell generator rather
-# than by shtab (shtab supports bash/zsh/tcsh only, not PowerShell).
+
 POWERSHELL_SHELL: str = "powershell"
 
-# Valid shell choices. The bash/zsh entries require a matching PREAMBLE entry;
-# the powershell entry is routed to kanon_cli.completions.powershell.generate.
+
 SUPPORTED_SHELLS: list[str] = ["bash", "zsh", POWERSHELL_SHELL]
 
 
@@ -90,8 +88,7 @@ def handle(args: argparse.Namespace) -> None:
               - args.parser (argparse.ArgumentParser): the root kanon parser
                 injected at invocation time from cli.py
     """
-    # Retrieve the root parser injected by cli.py so the generator can
-    # introspect every registered subcommand.
+
     root_parser: argparse.ArgumentParser = args.parser
     if args.shell == POWERSHELL_SHELL:
         sys.stdout.write(powershell.generate(root_parser))

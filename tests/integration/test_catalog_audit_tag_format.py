@@ -27,10 +27,6 @@ import sys
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper utilities
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -75,7 +71,6 @@ def _create_fixture_git_repo(base: pathlib.Path, tags: list[str]) -> pathlib.Pat
     repo_specs = repo_dir / "repo-specs"
     repo_specs.mkdir()
 
-    # Write a minimal marketplace XML so the directory is a valid audit target.
     xml_content = """\
 <?xml version="1.0"?>
 <manifest>
@@ -118,11 +113,6 @@ def _run_kanon(
         cwd=str(cwd) if cwd else None,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -219,11 +209,9 @@ class TestCatalogAuditTagFormatSubprocess:
             tags=["1.0.0", "v1.0.0", "subpackage/2.0.0", "release-2024"],
         )
         result = _run_kanon(["catalog", "audit", str(repo), "--check", "tag-format"])
-        # 1.0.0 should NOT appear in a "WARN" line -- only WARN for non-PEP-440 tags.
+
         warn_lines = [line for line in result.stdout.splitlines() if line.startswith("WARN:")]
         for line in warn_lines:
-            # Check that '1.0.0' is only referenced as part of 'v1.0.0' or
-            # 'subpackage/2.0.0', not as the plain PEP 440 tag itself.
             assert "WARN:" not in line or "v1.0.0" in line or "release-2024" in line, (
                 f"Unexpected WARN line content: {line!r}"
             )
@@ -253,11 +241,6 @@ class TestCatalogAuditTagFormatSubprocess:
         assert "T001" not in result.stdout, (
             f"Expected no T001 code when --check metadata is used.\nstdout: {result.stdout}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Annotated-tag fixture (produces peeled ^{} refs in git ls-remote output)
-# ---------------------------------------------------------------------------
 
 
 def _create_fixture_git_repo_with_annotated_tags(
@@ -316,11 +299,6 @@ def _create_fixture_git_repo_with_annotated_tags(
     return repo_dir
 
 
-# ---------------------------------------------------------------------------
-# TestT001PeeledRefs (AC-TEST-001, gap 4b)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestT001PeeledRefs:
     """T001 filters peeled ^{} refs and fires on malformed tags (gap 4b).
@@ -357,7 +335,7 @@ class TestT001PeeledRefs:
         messages = " ".join(warn_lines)
         assert "v1.0.0" in messages, f"Expected T001 finding for 'v1.0.0' in WARN lines.\nstdout: {result.stdout}"
         assert "badtag" in messages, f"Expected T001 finding for 'badtag' in WARN lines.\nstdout: {result.stdout}"
-        # Peeled ref suffix must NOT appear in any finding -- it was filtered before parsing.
+
         assert "^{}" not in result.stdout, (
             f"Peeled ref '^{{}}' must not appear in any T001 finding.\nstdout: {result.stdout}"
         )
@@ -402,13 +380,6 @@ class TestT001PeeledRefs:
             f"duplicate peeled ref). Got {len(warn_lines)} WARNs:\n{result.stdout}"
         )
         assert "v1.0.0" in warn_lines[0], f"Expected 'v1.0.0' in the single T001 WARN finding.\nstdout: {result.stdout}"
-
-
-# ---------------------------------------------------------------------------
-# TestT001MalformedTagFixture (AC-FUNC-001, AC-FUNC-002, AC-FUNC-003, AC-FUNC-004)
-# Spec Goal G2: fixture with {v1.0.0, 1.0, BADTAG, v1.0.0^{}} proves T001 fires
-# on genuinely-malformed tags and ignores peeled refs.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

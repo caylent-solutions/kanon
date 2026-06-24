@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for subcmds/forall.py module."""
 
 import errno
@@ -406,7 +392,6 @@ class TestDoWork:
 
                 DoWork(project, mirror, opt, cmd, shell, cnt, config)
 
-                # Check that subprocess.run was called with env containing REPO__TEST
                 call_kwargs = mock_run.call_args[1]
                 assert "REPO__TEST" in call_kwargs["env"]
                 assert call_kwargs["env"]["REPO__TEST"] == "testvalue"
@@ -526,7 +511,6 @@ class TestForallExecute:
         forall = Forall()
         forall.GetProjects = mock.Mock(return_value=[mock.Mock()])
 
-        # Mock ParallelContext as a context manager
         mock_context = mock.MagicMock()
         mock_context.__enter__ = mock.Mock(return_value=None)
         mock_context.__exit__ = mock.Mock(return_value=None)
@@ -552,7 +536,6 @@ class TestForallExecute:
             with pytest.raises(SystemExit) as exc_info:
                 forall.Execute(opt, [])
 
-            # Implementation exits with errno.EINTR
             assert exc_info.value.code == errno.EINTR
 
 
@@ -564,8 +547,6 @@ class TestProcessResults:
         """Test _ProcessResults with no output."""
         results = [(0, "")]
 
-        # This would normally be called via ExecuteInParallel
-        # We'll just test the logic inline
         rc = 0
         first = True
         opt = mock.Mock()

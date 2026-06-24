@@ -30,13 +30,9 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helper factories
-# ---------------------------------------------------------------------------
-
 _VALID_SHA40 = "a" * 40
 _VALID_SHA64 = "b" * 64
-# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 
 _VALID_PROJECT = ProjectEntry(
@@ -163,11 +159,6 @@ def _minimal_toml(schema_version: int = CURRENT_SCHEMA_VERSION, **overrides) -> 
     return "\n".join(lines) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Dataclass construction
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDataclassConstruction:
     """Verify the dataclass tree can be constructed with valid fields."""
@@ -216,11 +207,6 @@ class TestDataclassConstruction:
         assert parent.includes[0].includes == []
 
 
-# ---------------------------------------------------------------------------
-# AC-19: schema v4 alias-keyed round-trip and absent [catalog] block
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSchemaV4AliasKeyedSources:
     """AC-19: CURRENT_SCHEMA_VERSION is 4 and the lock is alias-keyed with no [catalog] block."""
@@ -236,7 +222,7 @@ class TestSchemaV4AliasKeyedSources:
         write_lockfile(lf, p)
         text = p.read_text(encoding="utf-8")
         source_block = text.split("[[sources]]", 1)[1]
-        # The first key line after the [[sources]] header must be alias.
+
         first_key = next(line.strip() for line in source_block.splitlines() if line.strip())
         assert first_key == 'alias = "my-alias"'
 
@@ -307,11 +293,6 @@ class TestSchemaV4AliasKeyedSources:
         assert "revision_spec" not in proj
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: resolved_sha validation
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolvedShaValidation:
     """Parametrised tests for resolved_sha shape validation (AC-FUNC-002)."""
@@ -319,19 +300,19 @@ class TestResolvedShaValidation:
     @pytest.mark.parametrize(
         "sha",
         [
-            "a" * 40,  # 40 lowercase hex -- valid SHA-1
+            "a" * 40,
             "f" * 40,
             "0" * 40,
             "deadbeef" + "a" * 32,
-            "b" * 64,  # 64 lowercase hex -- valid SHA-256
+            "b" * 64,
             "0" * 64,
-            "abcdef0123456789" * 4,  # exactly 64 chars
+            "abcdef0123456789" * 4,
         ],
     )
     def test_valid_resolved_sha_accepted(self, sha, tmp_path):
         """Valid 40 or 64 lowercase hex shas are accepted by read_lockfile."""
         toml_content = _minimal_toml()
-        # Override the source resolved_sha with our test sha
+
         toml_content = toml_content.replace(f'resolved_sha = "{_VALID_SHA40}"', f'resolved_sha = "{sha}"')
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
@@ -341,17 +322,17 @@ class TestResolvedShaValidation:
     @pytest.mark.parametrize(
         "bad_sha",
         [
-            "A" * 40,  # uppercase rejected
+            "A" * 40,
             "F" * 40,
-            "DEADBEEF" + "a" * 32,  # mixed-case rejected
-            "g" * 40,  # non-hex character
+            "DEADBEEF" + "a" * 32,
+            "g" * 40,
             "z" * 40,
-            "a" * 39,  # wrong length (39)
-            "a" * 41,  # wrong length (41)
-            "a" * 63,  # wrong length (63)
-            "a" * 65,  # wrong length (65)
-            "",  # empty
-            "abc",  # too short
+            "a" * 39,
+            "a" * 41,
+            "a" * 63,
+            "a" * 65,
+            "",
+            "abc",
         ],
     )
     def test_invalid_resolved_sha_raises(self, bad_sha, tmp_path):
@@ -367,8 +348,8 @@ class TestResolvedShaValidation:
     @pytest.mark.parametrize(
         "sha",
         [
-            "DeadBeef" + "a" * 32,  # mixed case
-            "ABCDEF01" + "a" * 32,  # uppercase prefix
+            "DeadBeef" + "a" * 32,
+            "ABCDEF01" + "a" * 32,
         ],
     )
     def test_mixed_case_sha_rejected(self, sha, tmp_path):
@@ -389,13 +370,8 @@ class TestResolvedShaValidation:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(p)
         err_msg = str(exc_info.value)
-        # Should name either the field path or the bad value
+
         assert "resolved_sha" in err_msg or bad_sha in err_msg
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: ref_spec validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -405,27 +381,21 @@ class TestRefSpecValidation:
     @pytest.mark.parametrize(
         "spec",
         [
-            # PEP 440 SpecifierSet branch
             "==1.0.0",
             "~=2.0.0",
             ">=1.0,<2.0",
             "!=1.0.0",
-            # refs/ prefix branch
             "refs/heads/main",
             "refs/tags/v1.0.0",
             "refs/pull/42/head",
-            # branch-charset regex branch
             "main",
             "feature-branch",
             "release/1.0",
             "my_branch",
             "v1.0.0",
             "feat/add-feature",
-            # monorepo path prefix + SpecifierSet
             "subpackage/==1.0.0",
             "sub/pkg/~=2.0.0",
-            # bare wildcard "*" = "any version" (written verbatim to the lockfile by
-            # add/install; the reader must accept it -- MK-18 / kanon clean)
             "*",
         ],
     )
@@ -441,10 +411,10 @@ class TestRefSpecValidation:
     @pytest.mark.parametrize(
         "bad_spec",
         [
-            "has space",  # space not in branch-charset, not PEP440, not refs/
-            "@invalid",  # @ not in branch-charset
-            "!invalid",  # ! not in branch-charset, not valid PEP440 alone
-            "",  # empty string
+            "has space",
+            "@invalid",
+            "!invalid",
+            "",
         ],
     )
     def test_invalid_ref_spec_raises(self, bad_spec, tmp_path):
@@ -475,11 +445,6 @@ class TestRefSpecValidation:
         p.write_text(toml_content)
         lf = read_lockfile(p)
         assert lf.sources[0].ref_spec == spec
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: canonical_url validation on ProjectEntry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -520,7 +485,7 @@ class TestCanonicalUrlValidation:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(p)
         err_msg = str(exc_info.value)
-        # Error must include both the recorded and computed value
+
         assert "canonical_url" in err_msg or "WRONG" in err_msg
 
     def test_error_includes_both_recorded_and_computed(self, tmp_path):
@@ -541,15 +506,10 @@ class TestCanonicalUrlValidation:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(p)
         err_msg = str(exc_info.value)
-        # Must contain the recorded (wrong) value
+
         assert wrong_canonical in err_msg
-        # Must also contain the computed (correct) value
+
         assert "https://example.com/proj" in err_msg
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: path and path_in_repo character validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -567,7 +527,7 @@ class TestPathCharacterValidation:
     def test_bad_char_in_source_path_raises(self, field, bad_char, char_desc, tmp_path):
         """SourceEntry.path containing NUL, newline, or tab raises LockfileValidationError."""
         bad_path = f"repo-specs/some{bad_char}file.xml"
-        # TOML cannot represent NUL in a basic string; use escape sequences
+
         if bad_char == "\x00":
             toml_path_val = bad_path.replace("\x00", "\\u0000")
         elif bad_char == "\n":
@@ -625,7 +585,7 @@ class TestPathCharacterValidation:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(p)
         err_msg = str(exc_info.value)
-        # Must name the codepoint (U+0000) or describe the char (NUL, null)
+
         assert any(x in err_msg for x in ["U+0000", "0x00", "NUL", "null", "\\x00"])
 
     def test_clean_path_accepted(self, tmp_path):
@@ -635,11 +595,6 @@ class TestPathCharacterValidation:
         p.write_text(toml)
         lf = read_lockfile(p)
         assert lf.sources[0].path == "repo-specs/clean-path.xml"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: unknown schema_version raises LockfileSchemaError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -704,18 +659,13 @@ class TestSchemaVersionValidation:
         assert type(schema_err) is not type(val_err)
 
 
-# ---------------------------------------------------------------------------
-# FLAG-C: v3 lock hard-fail regenerate (no silent v3 -> v4 upgrade)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestV3HardFailRegenerate:
     """A loaded v3 (and older) lock fails fast with an actionable regenerate error."""
 
     def test_v3_lock_raises_schema_error_flag_c(self, tmp_path):
         """A v3 lock raises LockfileSchemaError; there is no silent v3 -> v4 upgrader."""
-        # A realistic v3 lock: revision_spec-keyed source, [catalog] block present.
+
         v3_toml = (
             "schema_version = 3\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
@@ -754,14 +704,9 @@ class TestV3HardFailRegenerate:
         v3_toml = _minimal_toml(schema_version=3)
         p = tmp_path / "kanon.lock"
         p.write_text(v3_toml)
-        # Must raise -- no silent upgrade, no return value.
+
         with pytest.raises(LockfileSchemaError):
             read_lockfile(p)
-
-
-# ---------------------------------------------------------------------------
-# Tests for missing file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -773,11 +718,6 @@ class TestReadLockfileMissingFile:
         p = tmp_path / "nonexistent.lock"
         with pytest.raises(FileNotFoundError):
             read_lockfile(p)
-
-
-# ---------------------------------------------------------------------------
-# Tests for write_lockfile basic functionality
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -809,11 +749,6 @@ class TestWriteLockfileUnit:
         write_lockfile(lf, p)
         lf2 = read_lockfile(p)
         assert lf == lf2
-
-
-# ---------------------------------------------------------------------------
-# AC-7: marketplace_registered and marketplace_dir fields (schema v2, retained in v4)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -870,11 +805,6 @@ class TestMarketplaceFields:
         with open(p, "rb") as f:
             data = tomllib.load(f)
         assert data["marketplace_registered"] is False
-
-
-# ---------------------------------------------------------------------------
-# Per-source registered_marketplaces ledger (schema v3, retained in v4)
-# ---------------------------------------------------------------------------
 
 
 def _source_toml_block(*, name: str, registered_marketplaces_literal: str | None) -> str:
@@ -1018,11 +948,6 @@ class TestRegisteredMarketplacesField:
             read_lockfile(p)
 
 
-# ---------------------------------------------------------------------------
-# check_lockfile_consistency -- .kanon <-> .kanon.lock drift (spec FR-24, Section 4.5)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckLockfileConsistency:
     """The shared .kanon <-> .kanon.lock consistency check (alias uniqueness, alias-set, ref-specs)."""
@@ -1038,7 +963,6 @@ class TestCheckLockfileConsistency:
         kanon_aliases = ["alpha", "beta"]
         kanon_ref_specs = {"alpha": "main", "beta": "==1.2.3"}
 
-        # No exception means the pair is consistent.
         assert check_lockfile_consistency(kanon_aliases, kanon_ref_specs, lockfile) is None
 
     def test_duplicate_alias_raises(self) -> None:

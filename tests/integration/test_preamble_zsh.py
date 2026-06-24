@@ -20,8 +20,7 @@ import pytest
 
 from kanon_cli.completions.preamble import PREAMBLE
 
-# The suite shells out to a real zsh, a POSIX-only shell. The skipif lets the
-# suite self-skip on any host that lacks zsh.
+
 pytestmark = pytest.mark.skipif(
     shutil.which("zsh") is None,
     reason="zsh is not installed; zsh completion is validated on POSIX runners",
@@ -79,8 +78,6 @@ def _write_stub_kanon(tmp_path, outputs: dict[str, str] | None = None) -> tuple[
     output_cases = ""
     if outputs:
         for subcmd, out in outputs.items():
-            # Write output to a temp file so the stub can cat it,
-            # avoiding any shell quoting issues with embedded newlines.
             out_file = tmp_path / f"out_{subcmd.lstrip('_')}.txt"
             out_file.write_text(out, encoding="utf-8")
             output_cases += f'        "{subcmd}") cat {out_file} ;;\n'
@@ -159,7 +156,7 @@ def test_zsh_helper_disabled_returns_empty_no_subprocess(tmp_path, helper_name: 
         """)
     result = _run_zsh(script)
     assert result.returncode == 0, f"Script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    # Verify the stub was NOT called.
+
     import pathlib
 
     call_log_path = pathlib.Path(call_log)

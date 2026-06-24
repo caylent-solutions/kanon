@@ -19,7 +19,7 @@ from kanon_cli.core.lockfile import Lockfile, SourceEntry, write_lockfile
 
 from tests.functional.conftest import _run_kanon
 
-# -- Fixture field constants (no inline magic literals in the test bodies) --
+
 _VALID_SHA40 = "a" * 40
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 _KANONENV_FILENAME = ".kanon"
@@ -27,7 +27,7 @@ _LOCK_FILENAME = ".kanon.lock"
 _VALIDATE_TOKEN = "validate"
 _LOCKFILE_TOKEN = "lockfile"
 
-# Aliases and ref-specs reused across the consistent / drift scenarios.
+
 _ALPHA = "alpha"
 _BETA = "beta"
 _REF_BRANCH = "main"

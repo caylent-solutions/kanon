@@ -23,18 +23,8 @@ import pytest
 from kanon_cli.utils.spawn import spawn_detached
 
 
-# ---------------------------------------------------------------------------
-# Module-level callable used by the POSIX spawn tests.
-# ---------------------------------------------------------------------------
-
-
 def _noop_refresh() -> None:
     """No-op module-level refresh callable used where the body is irrelevant."""
-
-
-# ---------------------------------------------------------------------------
-# POSIX tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -56,12 +46,10 @@ def test_spawn_detached_success_posix(
     def refresh_fn() -> None:
         called.append("child_called")
 
-    # Simulate parent path: fork returns non-zero PID.
     with patch("os.fork", return_value=42) as mock_fork:
         spawn_detached(refresh_fn, log_path=tmp_path / "errors.log")
         mock_fork.assert_called_once()
 
-    # refresh_fn must NOT be called in the parent process.
     assert called == [], "refresh_fn must not run in the parent after fork"
 
 
@@ -79,7 +67,6 @@ def test_spawn_detached_child_executes_refresh_fn(
     def refresh_fn() -> None:
         called.append("ran")
 
-    # Simulate child path: fork returns 0.
     with (
         patch("os.fork", return_value=0),
         patch("os.setsid"),
@@ -89,7 +76,7 @@ def test_spawn_detached_child_executes_refresh_fn(
         patch("os._exit") as mock_exit,
     ):
         spawn_detached(refresh_fn, log_path=tmp_path / "errors.log")
-        # child exits 0 on success
+
         mock_exit.assert_called_once_with(0)
 
     assert called == ["ran"], "refresh_fn must run in the child process"
@@ -171,11 +158,6 @@ def test_spawn_detached_fork_failure_raises(
     with patch("os.fork", side_effect=OSError("fork failed: out of memory")):
         with pytest.raises(RuntimeError, match="spawn_detached: failed to fork"):
             spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
-
-
-# ---------------------------------------------------------------------------
-# POSIX log-directory hardening (0700)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

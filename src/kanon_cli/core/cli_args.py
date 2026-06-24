@@ -43,9 +43,7 @@ import os
 
 import kanon_cli.constants as constants
 
-# Canonical --catalog-source help text. Single source of truth for every command
-# that resolves a manifest repo; the multi-source ``search`` variant appends one
-# extra sentence rather than forking the whole string (DRY).
+
 _CATALOG_SOURCE_HELP = (
     "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
     "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "

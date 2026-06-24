@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S1-T3: os.execv replaces process on RepoChangedException.
 
 Bug reference: E0-F6-S1-T3 / Bug 3 -- main.py _Main() lines 808-817 contained
@@ -52,11 +38,6 @@ import kanon_cli.repo as repo_pkg
 import kanon_cli.repo.main as repo_main
 from kanon_cli.repo import RepoCommandError
 from kanon_cli.repo.main import _ExecvIntercepted, run_from_args
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Regression: os.execv never reaches real os module
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -157,11 +138,6 @@ def test_os_execv_not_called_for_any_extra_args_variant(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Regression: exact E0-F6-S1-T3 bug condition triggered
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_exact_bug_condition_repo_command_error_raised_not_process_replaced(
     monkeypatch: pytest.MonkeyPatch,
@@ -233,11 +209,6 @@ def test_exact_bug_condition_repo_command_error_has_non_zero_exit_code(
         f"when the retry limit is exhausted after RepoChangedException. "
         f"Got exit_code={error.exit_code!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Guard: fixed code is structurally sound
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -345,11 +316,6 @@ def test_retry_loop_exhaustion_raises_repo_command_error_with_actionable_message
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Guard: prevents Bug 3 from recurring
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_embedded_flag_restored_after_repo_changed_exception_handling(
     monkeypatch: pytest.MonkeyPatch,
@@ -412,11 +378,6 @@ def test_original_os_execv_restored_after_repo_changed_exception_handling(
         f"restores os.execv in src/kanon_cli/repo/main.py -- run_from_args() has "
         f"been removed or broken. Got: {os.execv!r}, expected: {original_execv!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

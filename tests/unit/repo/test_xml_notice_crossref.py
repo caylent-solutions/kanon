@@ -49,10 +49,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_notice_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -117,11 +113,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <notice>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -312,11 +303,6 @@ class TestNoticeCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <notice>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoticeDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <notice> surface clear errors.
@@ -486,11 +472,6 @@ class TestNoticeDuplicateElementRules:
         assert "notice" in error_text.lower(), (
             f"AC-TEST-002: expected 'notice' in error for ({first_text!r}, {second_text!r}) but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <notice> in an unexpected parent raises or is ignored per spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -678,11 +659,6 @@ class TestNoticeUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoticeCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -791,11 +767,6 @@ class TestNoticeCrossRefParseTimeEnforcement:
 
         with pytest.raises(ManifestParseError):
             m.Load()
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

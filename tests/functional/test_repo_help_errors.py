@@ -33,86 +33,66 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals extracted here;
-# no inline literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
-# CLI token constants -- subcommand path used by every invocation.
 _SUBCMD_HELP = "help"
 _FLAG_HELP = "--help"
 
-# Composed CLI command phrase for diagnostic messages.
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_SUBCMD_HELP}"
 
-# Nonexistent repo-dir path used in tests.
-# 'help' does not consult .repo state, so the directory need not exist.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-help-errors-repo-dir"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Phrase that must appear in the '--help' output (AC-TEST-001).
-# The Usage line 'repo help [--all|command]' is present in the help output.
+
 _HELP_USAGE_PHRASE = "repo help"
 
-# Flag documented in the '--help' output (AC-TEST-001 detail).
-# The '-a' / '--all' flag is listed in the options block.
+
 _HELP_DOCUMENTED_FLAG = "--all"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-help-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-help-option-99"
 
-# Phrase produced by optparse when an unrecognised option is supplied.
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Boolean flags with unexpected inline values exercised in AC-TEST-003.
-# optparse rejects '--<flag>=<value>' for store_true flags with
-# '--<flag> option does not take a value' and exits 2.
+
 _BOOL_FLAG_WITH_VALUE = "--all=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = "--help-all=badvalue"
 
-# Base name of the boolean flag used in the single-invocation AC-TEST-003 tests.
-# Used to assert the flag name appears in the error message.
+
 _BOOL_FLAG_BASE_NAME = "--all"
 
-# Phrase produced by optparse when a boolean flag receives an inline value.
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Invalid subcommand name passed as the positional argument (AC-TEST-004).
-# When this is supplied, the embedded repo tool emits "is not a repo command"
-# on stderr and exits 1.
+
 _INVALID_COMMAND_NAME = "notavalidhelpcommand"
 
-# Phrase expected in stderr when an invalid command name is passed (AC-TEST-004).
+
 _INVALID_COMMAND_PHRASE = "is not a repo command"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Parametrize tables -- all tuples reference constants; no inline literals.
 
-# AC-TEST-002: three distinct unknown flags, each must exit 2.
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b"),
 ]
 
-# AC-TEST-003: boolean flags with inline values, each must exit 2.
+
 _BOOL_FLAGS_WITH_INLINE_VALUE: list[tuple[str, str]] = [
     (_BOOL_FLAG_WITH_VALUE, "all-with-value"),
     (_BOOL_FLAG_WITH_VALUE_ALT_A, "help-all-with-value"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper: build the canonical 'repo help' argv prefix.
-# ---------------------------------------------------------------------------
 
 
 def _build_help_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
@@ -129,11 +109,6 @@ def _build_help_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
         A tuple of string arguments suitable for passing to ``_run_kanon``.
     """
     return (_CLI_TOKEN_REPO, _CLI_FLAG_REPO_DIR, str(repo_dir), _SUBCMD_HELP) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo help --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -220,11 +195,6 @@ class TestRepoHelpWithHelpFlag:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -315,11 +285,6 @@ class TestRepoHelpUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -414,11 +379,6 @@ class TestRepoHelpBoolFlagInlineValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoHelpInvalidCommandName:
     """AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message.
@@ -506,11 +466,6 @@ class TestRepoHelpInvalidCommandName:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

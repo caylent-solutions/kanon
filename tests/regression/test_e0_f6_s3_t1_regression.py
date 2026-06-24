@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S3-T1: Bugs 11-15 medium severity fixes.
 
 Bug reference: E0-F6-S3-T1 -- Five medium-severity bugs fixed:
@@ -56,11 +42,6 @@ from kanon_cli.repo.subcmds import init
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers -- Bug 11 (concurrent retry)
-# ---------------------------------------------------------------------------
-
-
 def _make_project(remote_url="https://example.com/org/repo.git"):
     """Return a Project instance with minimum attributes mocked.
 
@@ -100,11 +81,6 @@ def _make_success_result(tags=("refs/tags/dev/concurrent/2.0.0", "refs/tags/dev/
     result.stdout = lines
     result.stderr = ""
     return result
-
-
-# ---------------------------------------------------------------------------
-# Helpers -- Bug 13 (reinit warning) and Bug 14 (non-TTY log)
-# ---------------------------------------------------------------------------
 
 
 def _make_init_cmd(existing_checkout=True, current_url="https://old.example.com/manifest.git"):
@@ -198,11 +174,6 @@ def _format_log_calls(call_args_list):
     return messages
 
 
-# ---------------------------------------------------------------------------
-# Bug 12 -- skip-if-exists backup contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_bug12_existing_bak_not_overwritten(tmp_path):
     """AC-TEST-001: Bug 12 regression -- existing .bak must not be overwritten.
@@ -265,11 +236,6 @@ def test_regression_bug12_bak_created_when_absent(tmp_path):
     assert bak_path.stat().st_size > 0, (
         f"E0-F6-S3-T1 Bug 12 regression: .bak file created by EnvSubst is empty at {bak_path}."
     )
-
-
-# ---------------------------------------------------------------------------
-# Bug 13 -- reinit URL warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -339,11 +305,6 @@ def test_regression_bug13_no_warning_when_url_unchanged(tmp_path):
         f"is unchanged. The condition guard in init.py Execute() may be broken. "
         f"Unexpected warnings: {url_change_warnings!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Bug 14 -- non-TTY informational log
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -423,11 +384,6 @@ def test_regression_bug14_no_skip_message_when_stdin_is_a_tty():
     )
 
 
-# ---------------------------------------------------------------------------
-# Bug 15 -- pre-release version constraint documentation
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_bug15_prerelease_note_in_documentation():
     """AC-TEST-002 / Bug 15 regression: pre-release note in version_constraints.
@@ -484,11 +440,6 @@ def test_regression_bug15_pep440_or_semver_referenced():
         "src/kanon_cli/repo/version_constraints.py. "
         f"Module doc: {module_doc!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Bug 11 -- concurrent git ls-remote retry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -576,11 +527,6 @@ def test_regression_bug11_retry_log_message_produced(monkeypatch):
         "E0-F6-S3-T1 Bug 11 regression: retry log message does not contain 'attempt', "
         f"'retry', or 'failed'. Messages: {messages!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Structural guards -- source code inspection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -106,8 +106,6 @@ class TestClassifyRemoteUrlScheme:
 class TestEnforceRemoteUrlPolicy:
     """Tests for _enforce_remote_url_policy covering accept/reject combinations."""
 
-    # -- Always-accepted URLs (HTTPS and SSH variants) --
-
     @pytest.mark.parametrize(
         "allow_insecure",
         [True, False],
@@ -134,8 +132,6 @@ class TestEnforceRemoteUrlPolicy:
         """SSH protocol URLs are accepted regardless of the flag (AC-FUNC-003)."""
         result = _enforce_remote_url_policy("ssh://git@host/foo/bar.git", allow_insecure=allow_insecure)
         assert result is None
-
-    # -- Conditionally rejected URLs (HTTP, file://, OTHER) --
 
     def test_http_rejected_by_default(self) -> None:
         """HTTP URL raises InsecureRemoteUrlError when allow_insecure=False (AC-FUNC-004)."""

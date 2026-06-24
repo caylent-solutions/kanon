@@ -14,11 +14,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build content repos + bare manifest repo, run init + sync, return checkout dir."""
     content_repos = base / "content-repos"
@@ -81,11 +76,6 @@ def rp_ro_checkout(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return _build_rp_ro_repo(base)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPList:
     """RP-list-01..10: kanon repo list subcommand."""
@@ -137,7 +127,7 @@ class TestRPList:
         )
         first_line = result.stdout.splitlines()[0] if result.stdout.strip() else ""
         assert first_line, "Expected at least one name in repo list -n output"
-        # Name-only output should not contain path separators (just the project name)
+
         assert " : " not in first_line, f"Name-only output should not include path info: {first_line!r}"
 
     def test_rp_list_07_path_only(self, rp_ro_checkout: pathlib.Path) -> None:

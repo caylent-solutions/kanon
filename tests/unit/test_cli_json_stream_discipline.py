@@ -23,11 +23,6 @@ import pytest
 from kanon_cli.cli import _emit_json_payload
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: signature and existence
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmitJsonPayloadSignature:
     """_emit_json_payload is importable from cli and has the correct signature."""
@@ -55,7 +50,7 @@ class TestEmitJsonPayloadSignature:
         with patch("sys.stdout", buf):
             _emit_json_payload({"key": "value"})
         output = buf.getvalue().rstrip("\n")
-        # Compact JSON has no leading spaces on new lines
+
         assert "\n" not in output
 
     def test_sort_keys_false_preserves_insertion_order(self) -> None:
@@ -83,11 +78,6 @@ class TestEmitJsonPayloadSignature:
         with patch("sys.stdout", buf):
             result = _emit_json_payload({"key": "val"})
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: atomic write + flush, no temporal logic, no exception swallowing
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -164,11 +154,6 @@ class TestEmitJsonPayloadAtomicWriteFlush:
                 _emit_json_payload({"key": "value"})
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: docstring matches spec D3 contract text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmitJsonPayloadDocstring:
     """The docstring mentions the D3 contract key phrases."""
@@ -187,11 +172,6 @@ class TestEmitJsonPayloadDocstring:
         """Docstring contains the D3 directive about not using 2>&1."""
         doc = _emit_json_payload.__doc__ or ""
         assert "2>&1" in doc
-
-
-# ---------------------------------------------------------------------------
-# Output content correctness
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -264,6 +244,6 @@ class TestEmitJsonPayloadOutputContent:
         with patch("sys.stdout", buf):
             _emit_json_payload({"a": 1, "b": 2})
         output = buf.getvalue().rstrip("\n")
-        # Compact JSON: no space after colon, no space after comma
+
         assert ": " not in output
         assert ", " not in output

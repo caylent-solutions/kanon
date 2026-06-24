@@ -25,11 +25,6 @@ from kanon_cli.commands.remove import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     names: list[str],
     kanon_file: str,
@@ -50,11 +45,6 @@ def _make_args(
 def _write_kanon(path: pathlib.Path, content: str) -> None:
     """Write text content to the given path."""
     path.write_text(content)
-
-
-# ---------------------------------------------------------------------------
-# Subparser registration
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -174,11 +164,6 @@ class TestRegisterSubparser:
         assert remove_parser.add_help is True, "remove subparser must have add_help=True so '-h' is accepted"
 
 
-# ---------------------------------------------------------------------------
-# _scan_source_lines helper
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestScanSourceLines:
     """_scan_source_lines() returns line indices matching KANON_SOURCE_<name>_* keys."""
@@ -245,13 +230,8 @@ class TestScanSourceLines:
             "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
         ]
         result = _scan_source_lines(lines, "foo_bar")
-        # Comment line (index 0) should NOT be included
+
         assert result == {1, 2, 3, 4, 5}
-
-
-# ---------------------------------------------------------------------------
-# _collect_removal_lines helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -300,15 +280,10 @@ class TestCollectRemovalLines:
             _collect_removal_lines(lines, "foo_bar", "Foo-Bar")
 
         stderr = capsys.readouterr().err
-        # Spec-canonical: "not fully present in .kanon; found <n> of 5 expected"
+
         assert "not fully present in .kanon" in stderr
         assert "found 1 of 5 expected" in stderr
         assert "KANON_SOURCE_foo_bar_" in stderr
-
-
-# ---------------------------------------------------------------------------
-# run_remove -- missing .kanon file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -336,11 +311,6 @@ class TestRunRemoveMissingFile:
         stderr = capsys.readouterr().err
         assert str(kanon_file) in stderr
         assert "nothing to remove" in stderr
-
-
-# ---------------------------------------------------------------------------
-# run_remove -- entry-name vs source-name input paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -422,11 +392,6 @@ class TestRunRemoveInputPaths:
         assert "KANON_MARKETPLACE_INSTALL=true" in result
 
 
-# ---------------------------------------------------------------------------
-# run_remove -- non-contiguous lines
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunRemoveNonContiguous:
     """Scanner finds and removes the full block even when non-contiguous (AC-FUNC-005)."""
@@ -451,13 +416,13 @@ class TestRunRemoveNonContiguous:
 
         assert exit_code == 0
         result = kanon_file.read_text()
-        # foo_bar keys removed
+
         assert "KANON_SOURCE_foo_bar_URL" not in result
         assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
         assert "KANON_SOURCE_foo_bar_NAME" not in result
         assert "KANON_SOURCE_foo_bar_GITBASE" not in result
-        # Other content preserved
+
         assert "GITBASE=https://example.com" in result
         assert "# interleaved comment" in result
         assert "KANON_SOURCE_baz_URL=https://other.com/baz.git" in result
@@ -487,11 +452,6 @@ class TestRunRemoveNonContiguous:
         result = kanon_file.read_text()
         lines = [ln for ln in result.splitlines() if ln.strip()]
         assert lines == ["LINE_A=1", "LINE_B=2", "LINE_C=3", "LINE_D=4", "LINE_E=5", "LINE_F=6"]
-
-
-# ---------------------------------------------------------------------------
-# run_remove -- fewer-than-expected-keys hard error (AC-FUNC-006)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -550,11 +510,6 @@ class TestRunRemoveFewerThanExpectedKeys:
             run_remove(args)
 
         assert kanon_file.read_text() == original
-
-
-# ---------------------------------------------------------------------------
-# run_remove -- summary line output (AC-FUNC-009)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -626,11 +581,6 @@ class TestRunRemoveSummaryOutput:
         assert "baz_qux" in stdout
 
 
-# ---------------------------------------------------------------------------
-# run_remove -- multi-source atomicity (AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunRemoveAtomicity:
     """All-or-nothing semantics: if any name fails, the file is NOT written (AC-FUNC-008)."""
@@ -648,14 +598,14 @@ class TestRunRemoveAtomicity:
         original = content
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
-        # "foo_bar" is valid (5 keys), "nonexistent" has 0 keys
+
         args = _make_args(["foo_bar", "nonexistent"], str(kanon_file))
 
         with pytest.raises(SystemExit) as exc_info:
             run_remove(args)
 
         assert exc_info.value.code != 0
-        # File unchanged
+
         assert kanon_file.read_text() == original
 
     def test_all_blocks_removed_when_all_valid(self, tmp_path: pathlib.Path) -> None:
@@ -686,11 +636,6 @@ class TestRunRemoveAtomicity:
         assert "GITBASE=x" in result
 
 
-# ---------------------------------------------------------------------------
-# Tests for workspace lock integration in run_remove
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunRemoveWorkspaceLock:
     """run_remove wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
@@ -716,7 +661,6 @@ class TestRunRemoveWorkspaceLock:
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, content)
 
-        # Pre-condition: .kanon-data/ must not exist.
         assert not (tmp_path / ".kanon-data").exists()
 
         args = _make_args(["alpha"], str(kanon_file))
@@ -750,16 +694,11 @@ class TestRunRemoveWorkspaceLock:
         result = run_remove(args)
 
         assert result == 0
-        # Dry run must not create .kanon-data/.
+
         assert not (tmp_path / ".kanon-data").exists(), (
             "run_remove --dry-run must not create .kanon-data/; "
             "the workspace lock is only acquired on the non-dry-run write path"
         )
-
-
-# ---------------------------------------------------------------------------
-# run_remove -- --force flag behavior (AC-FUNC-001 through AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -862,7 +801,7 @@ class TestRunRemoveForce:
         subparsers = parser.add_subparsers(dest="command")
         register(subparsers)
         remove_parser = subparsers.choices["remove"]
-        # Find the --force action
+
         force_action = next(
             (a for a in remove_parser._actions if "--force" in (a.option_strings or [])),
             None,

@@ -29,18 +29,7 @@ Section 4.0 LAST-``@`` split rule), and routes to the appropriate completer:
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Bash preamble
-# ---------------------------------------------------------------------------
-#
-# Design:
-# - ``_kanon_run_complete <subcommand> [extra_args...]`` is the single
-#   dispatch function that handles the KANON_COMPLETION_ENABLED guard,
-#   the timeout(1) wrapper, and COMPREPLY population.  Every named helper
-#   simply calls it with the correct subcommand name and $cur.
-# - ``_kanon_complete_project_versions`` also passes a positional $repo_url
-#   argument before $cur as required by the spec.
-#
+
 _BASH_PREAMBLE = r"""
 # kanon shell-completion preamble (bash)
 # Sourced by the generated completion script produced by `kanon completion bash`.
@@ -131,15 +120,7 @@ _kanon_complete_add_arg() {
 }
 """
 
-# ---------------------------------------------------------------------------
-# Zsh preamble
-# ---------------------------------------------------------------------------
-#
-# Design mirrors the bash preamble:
-# - ``_kanon_run_complete <subcommand> [args...]`` handles the guard and the
-#   timeout wrapper, then calls ``compadd`` with the candidate list.
-# - Each named helper delegates to ``_kanon_run_complete``.
-#
+
 _ZSH_PREAMBLE = r"""
 # kanon shell-completion preamble (zsh)
 # Sourced by the generated completion script produced by `kanon completion zsh`.

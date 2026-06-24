@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds/gc.py module."""
 
 import os
@@ -139,7 +125,7 @@ class DeleteUnusedProjectsTest(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_rename.assert_not_called()
         mock_rmtree.assert_not_called()
-        # Verify it printed the dry-run message for the unused path.
+
         dry_run_calls = [c for c in mock_print.call_args_list if "Would have deleted" in str(c)]
         self.assertTrue(
             len(dry_run_calls) > 0,
@@ -162,7 +148,6 @@ class TestGeneratePromisorFiles:
         pack_file_2 = os.path.join(pack_dir, "pack-def456.pack")
         idx_file = os.path.join(pack_dir, "pack-abc123.idx")
 
-        # Create the pack and idx files.
         for f in (pack_file_1, pack_file_2, idx_file):
             with open(f, "w"):
                 pass
@@ -170,18 +155,15 @@ class TestGeneratePromisorFiles:
         with mock.patch("kanon_cli.repo.platform_utils.walk", side_effect=os.walk):
             gc_obj._generate_promisor_files(pack_dir)
 
-        # Verify .promisor files exist for each .pack file.
         expected_promisor_1 = os.path.join(pack_dir, "pack-abc123.promisor")
         expected_promisor_2 = os.path.join(pack_dir, "pack-def456.promisor")
 
         assert os.path.isfile(expected_promisor_1), f"Expected promisor file at {expected_promisor_1}"
         assert os.path.isfile(expected_promisor_2), f"Expected promisor file at {expected_promisor_2}"
 
-        # Verify no promisor file was created for the .idx file.
         unexpected_promisor = os.path.join(pack_dir, "pack-abc123.idxomisor")
         assert not os.path.exists(unexpected_promisor)
 
-        # Verify promisor files are empty.
         assert os.path.getsize(expected_promisor_1) == 0
         assert os.path.getsize(expected_promisor_2) == 0
 
@@ -212,7 +194,7 @@ class ExecuteTest(unittest.TestCase):
             self.gc.Execute(opt, [])
 
         mock_get_projects.assert_called_once_with([], all_manifests=True)
-        # The exact same list object must be passed through.
+
         mock_delete.assert_called_once_with(sentinel_projects, opt)
 
     def test_execute_returns_early_on_delete_failure(self):
@@ -278,7 +260,6 @@ class TestGcOptions:
         cmd._Options(p)
         opts, args = p.parse_args([])
 
-        # Verify default option values
         assert opts.dryrun is False
         assert opts.yes is False
         assert opts.repack is False
@@ -332,5 +313,5 @@ class TestGcCommand:
 
     def test_parallel_jobs(self):
         """Test Gc command has parallel jobs set."""
-        # Gc doesn't set PARALLEL_JOBS, it's None
+
         assert gc.Gc.PARALLEL_JOBS is None

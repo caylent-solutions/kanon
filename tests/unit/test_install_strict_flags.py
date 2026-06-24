@@ -32,18 +32,9 @@ from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
-# ---------------------------------------------------------------------------
-# Shared constants
-# ---------------------------------------------------------------------------
-
 _FAKE_SHA_ALPHA = "a" * 40
 _FAKE_SHA_BETA = "b" * 40
-_FAKE_SHA_REMOTE = "c" * 40  # simulates the remote's current branch tip
-
-
-# ---------------------------------------------------------------------------
-# Helpers to build test fixtures
-# ---------------------------------------------------------------------------
+_FAKE_SHA_REMOTE = "c" * 40
 
 
 def _write_kanon_single(
@@ -163,11 +154,6 @@ def _build_lockfile(
     )
 
 
-# ===========================================================================
-# Tests for _detect_orphaned_lock_entries (AC-FUNC-007)
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestDetectOrphanedLockEntries:
     """Unit tests for _detect_orphaned_lock_entries helper."""
@@ -218,11 +204,6 @@ class TestDetectOrphanedLockEntries:
         lockfile = _build_lockfile("sha256:" + "a" * 64, sources)
         result = _detect_orphaned_lock_entries(lockfile, [])
         assert sorted(result) == ["alpha", "beta"]
-
-
-# ===========================================================================
-# Tests for _detect_branch_drift (AC-FUNC-008)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -317,15 +298,13 @@ class TestDetectBranchDrift:
         lockfile = _build_lockfile("sha256:" + "a" * 64, sources)
 
         def _ls_remote_side_effect(*args, **kwargs):
-            # args[0] is the command list: ["git", "ls-remote", url, ref]
+
             url = args[0][2]
             mock = MagicMock()
             mock.returncode = 0
             if "alpha" in url:
-                # alpha has drifted
                 mock.stdout = f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n"
             else:
-                # beta is stable
                 mock.stdout = f"{_FAKE_SHA_BETA}\trefs/heads/main\n"
             return mock
 
@@ -334,11 +313,6 @@ class TestDetectBranchDrift:
 
         assert len(reports) == 1
         assert reports[0].source_name == "alpha"
-
-
-# ===========================================================================
-# Tests for OrphanedLockEntryError (AC-FUNC-002)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -361,11 +335,6 @@ class TestOrphanedLockEntryError:
 
         err = OrphanedLockEntryError(orphaned_names=["ghost"])
         assert isinstance(err, InstallError)
-
-
-# ===========================================================================
-# Tests for BranchDriftError (AC-FUNC-004)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -399,11 +368,6 @@ class TestBranchDriftError:
         assert isinstance(err, InstallError)
 
 
-# ===========================================================================
-# Tests for AC-FUNC-001: orphan + no flag -> prune + info-line
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestOrphanPruneNoFlag:
     """AC-FUNC-001: Orphaned entries are pruned and info-line is emitted (default mode)."""
@@ -432,7 +396,6 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            # ls-remote call from _detect_branch_drift: alpha's tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
             install(
                 kanon_path,
@@ -484,11 +447,6 @@ class TestOrphanPruneNoFlag:
         assert "alpha" in source_names
 
 
-# ===========================================================================
-# Tests for AC-FUNC-002: orphan + --strict-lock -> OrphanedLockEntryError
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestOrphanStrictLock:
     """AC-FUNC-002: --strict-lock upgrades orphaned entries to hard errors."""
@@ -527,10 +485,10 @@ class TestOrphanStrictLock:
 
     def test_strict_lock_error_lists_all_orphans(self, tmp_path: pathlib.Path) -> None:
         """OrphanedLockEntryError names every orphaned source in the message."""
-        # Write a .kanon with only "alpha"
+
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha")
         real_hash = compute_kanon_hash(kanon_path)
-        # Lockfile has alpha (active) + ghost1, ghost2 (orphans)
+
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
             f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
@@ -614,13 +572,8 @@ class TestOrphanStrictLock:
             )
 
         error_msg = str(exc_info.value)
-        # Remediation must mention running without --strict-lock OR restoring source triples
+
         assert "KANON_SOURCE_" in error_msg or "--strict-lock" in error_msg
-
-
-# ===========================================================================
-# Tests for AC-FUNC-003: drift + no flag -> reuse + info-line
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -646,7 +599,6 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            # Remote tip differs from locked SHA -- simulates drift
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
                 kanon_path,
@@ -686,17 +638,11 @@ class TestDriftReuseNoFlag:
                 strict_drift=False,
             )
 
-        # repo init should use the locked SHA, NOT the remote tip
         assert mock_init.called
         init_call_args = mock_init.call_args
-        # Third positional arg to run_repo_init is the revision passed to repo init
+
         called_revision = init_call_args.args[2]
         assert called_revision == _FAKE_SHA_ALPHA
-
-
-# ===========================================================================
-# Tests for AC-FUNC-004: drift + --strict-drift -> BranchDriftError
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -765,11 +711,6 @@ class TestDriftStrictFlag:
         assert "--refresh-lock-source" in error_msg
 
 
-# ===========================================================================
-# Tests for AC-FUNC-005: both flags, both events present
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestBothFlagsBothEvents:
     """AC-FUNC-005: --strict-lock + --strict-drift with both event types.
@@ -781,7 +722,7 @@ class TestBothFlagsBothEvents:
         """When orphan AND drift both exist with both strict flags, OrphanedLockEntryError fires first."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
         real_hash = compute_kanon_hash(kanon_path)
-        # Lockfile has alpha (active, drifted) AND ghost (orphan)
+
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
             f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
@@ -819,10 +760,8 @@ class TestBothFlagsBothEvents:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
-            # The orphan error must be raised, not the drift error
             pytest.raises(OrphanedLockEntryError),
         ):
-            # Both alpha's tip differs from locked SHA (drift) AND ghost is orphaned
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
                 kanon_path,
@@ -830,11 +769,6 @@ class TestBothFlagsBothEvents:
                 strict_lock=True,
                 strict_drift=True,
             )
-
-
-# ===========================================================================
-# Tests for AC-FUNC-006: drift detector only runs in consistent state
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -846,7 +780,6 @@ class TestDriftDetectorScope:
     ) -> None:
         """When lockfile is absent, no branch drift info-line is emitted."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
-        # No lockfile -- LOCKFILE_ABSENT state
 
         from kanon_cli.core.install import _RefResolution
 
@@ -874,7 +807,6 @@ class TestDriftDetectorScope:
     def test_drift_not_raised_in_lockfile_absent_state(self, tmp_path: pathlib.Path) -> None:
         """strict-drift does NOT raise when lockfile is absent (no lockfile to compare)."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
-        # No lockfile
 
         from kanon_cli.core.install import _RefResolution
 
@@ -890,7 +822,7 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            # Must NOT raise BranchDriftError -- lockfile is absent, nothing to compare
+
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",

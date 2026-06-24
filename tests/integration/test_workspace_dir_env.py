@@ -25,10 +25,6 @@ from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import _RefResolution, install
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _FAKE_SHA = "a" * 40
 _FAKE_REF_RESOLUTION = _RefResolution(sha=_FAKE_SHA, resolved_ref="refs/heads/main")
 
@@ -87,11 +83,6 @@ def _run_install(kanonenv: pathlib.Path, lock_path: pathlib.Path) -> None:
         install(kanonenv, lock_file_path=lock_path)
 
 
-# ---------------------------------------------------------------------------
-# AC-9 / AC-10: URL-based entry -- install and clean relocate under <KANON_HOME>/store
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestKanonHomeStoreInstallCleanRoundtrip:
     """AC-9 / AC-10: install + clean roundtrip with KANON_HOME set (URL source)."""
@@ -140,10 +131,9 @@ class TestKanonHomeStoreInstallCleanRoundtrip:
         project.mkdir()
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
-        # Pre-create artifacts as install would have
         (store / ".packages").mkdir(parents=True)
         (store / ".kanon-data").mkdir(parents=True)
-        # Decoy artifacts beside .kanon -- must not be touched
+
         (project / ".packages").mkdir()
         (project / ".kanon-data").mkdir()
 
@@ -175,11 +165,6 @@ class TestKanonHomeStoreInstallCleanRoundtrip:
         _run_install(kanonenv, lock_path)
 
         assert store.exists(), "install must create <KANON_HOME>/store when it is absent"
-
-
-# ---------------------------------------------------------------------------
-# AC-11 / AC-3: direct path= checkout entry also relocates
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -245,11 +230,6 @@ class TestKanonHomeStorePathEntry:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-12 / AC-4: unwritable KANON_HOME store -- fail-fast, no cwd fallback
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestKanonHomeStoreUnwritable:
     """AC-12 / AC-4: unwritable KANON_HOME store causes non-zero exit, no cwd fallback."""
@@ -258,8 +238,7 @@ class TestKanonHomeStoreUnwritable:
         """AC-12: install exits non-zero when the <KANON_HOME>/store cannot be created."""
         locked_parent = tmp_path / "locked"
         locked_parent.mkdir()
-        # KANON_HOME points inside a directory whose write bit is removed, so the
-        # nested home (and its store subdir) cannot be created.
+
         kanon_home = locked_parent / "home"
         locked_parent.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
@@ -304,11 +283,6 @@ class TestKanonHomeStoreUnwritable:
             )
         finally:
             locked_parent.chmod(stat.S_IRWXU)
-
-
-# ---------------------------------------------------------------------------
-# AC-14 / AC-6: --help snapshots unchanged (no surface drift)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

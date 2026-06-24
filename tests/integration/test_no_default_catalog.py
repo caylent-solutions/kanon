@@ -27,8 +27,6 @@ import pytest
 from kanon_cli.core.catalog import MissingCatalogSourceError, resolve_catalog_dir
 
 
-# Verbatim spec Section 4 missing-catalog error text.
-# The calling command interpolates its own command name in place of <command>.
 MISSING_CATALOG_ERROR_TEMPLATE = (
     "ERROR: {command} requires a catalog source.\n"
     "Provide one of:\n"

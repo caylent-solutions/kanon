@@ -75,7 +75,6 @@ class TestNoColorConstants:
 
         import kanon_cli.constants as constants
 
-        # Reload the module to get the initial default state
         importlib.reload(constants)
         assert constants._NO_COLOR_ACTIVE is False
 
@@ -120,7 +119,7 @@ class TestRecommendedCharRe:
             "foo!bar",
             "\u03b1pkg",
             "has#hash",
-            "foo\n",  # trailing newline: re.match() with $ would silently accept this
+            "foo\n",
         ],
     )
     def test_non_recommended_chars_produce_no_match(self, value: str) -> None:
@@ -135,7 +134,7 @@ class TestRecommendedCharRe:
 
     def test_pattern_anchored_at_start_and_end(self) -> None:
         """fullmatch() ensures the entire string is checked, so a bad char anywhere rejects the value."""
-        # A value that is clean at start but has a bad char later must not match
+
         assert RECOMMENDED_CHAR_RE.fullmatch("good.bad") is None
 
 
@@ -221,7 +220,6 @@ class TestKanonTreeNoFilterThreshold:
 
         import kanon_cli.constants as constants
 
-        # Ensure no override env var is set before checking the default.
         saved = os.environ.pop("KANON_TREE_NO_FILTER_THRESHOLD", None)
         importlib.reload(constants)
         try:
@@ -375,7 +373,7 @@ class TestKanonAddConstants:
         assert SOURCE_MARKETPLACE_KEY == "marketplace"
         assert MARKETPLACE_FLAG_TRUE == "true"
         assert CATALOG_TYPE_CLAUDE_MARKETPLACE == "claude-marketplace"
-        # The marketplace flag is optional, so it is NOT a required source suffix.
+
         assert SOURCE_MARKETPLACE_SUFFIX not in SOURCE_SUFFIXES
 
     def test_header_constants_are_non_empty(self) -> None:
@@ -1290,11 +1288,6 @@ class TestKanonStaleCompletionScriptWarningConstant:
         assert "/usr/local/share/bash-completion/completions/kanon" in rendered
 
 
-# ---------------------------------------------------------------------------
-# Doctor cache-management constants (subchecks 8 + 10, E5-F1-S1-T4)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonCachePruneAgeDays:
     """KANON_CACHE_PRUNE_AGE_DAYS is a positive integer defaulting to 30."""
@@ -1312,7 +1305,6 @@ class TestKanonCachePruneAgeDays:
         import os
         import sys
 
-        # Remove any existing instance to force reload without the env var.
         for mod_name in list(sys.modules.keys()):
             if "kanon_cli.constants" in mod_name:
                 del sys.modules[mod_name]
@@ -1325,7 +1317,7 @@ class TestKanonCachePruneAgeDays:
         finally:
             if env_backup is not None:
                 os.environ["KANON_CACHE_PRUNE_AGE_DAYS"] = env_backup
-            # Reload to restore normal module state.
+
             for mod_name in list(sys.modules.keys()):
                 if "kanon_cli.constants" in mod_name:
                     del sys.modules[mod_name]
@@ -1644,11 +1636,6 @@ class TestKanonDoctorRemoteStderrPreviewChars:
         importlib.reload(constants)
 
 
-# ---------------------------------------------------------------------------
-# Tests for the new catalog-audit constants (E5-F2-S1-T1 changes to constants.py)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonCatalogAuditValidChecks:
     """KANON_CATALOG_AUDIT_VALID_CHECKS contains the five expected check names."""
@@ -1903,11 +1890,6 @@ class TestKanonCatalogMetadataFieldLists:
         required = set(KANON_CATALOG_METADATA_REQUIRED_FIELDS)
         recommended = set(KANON_CATALOG_METADATA_RECOMMENDED_FIELDS)
         assert required.isdisjoint(recommended)
-
-
-# ---------------------------------------------------------------------------
-# KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE (E5-F2-S1-T3 AC-FUNC-006)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -2222,11 +2204,6 @@ class TestExitCodeDeprecated:
         assert EXIT_CODE_DEPRECATED != 2
 
 
-# ---------------------------------------------------------------------------
-# E7-F3-S1-T1: completion cache constants (AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletionCacheConstants:
     """TDD-paired test for the cache constants added to constants.py by E7-F3-S1-T1."""
@@ -2360,11 +2337,6 @@ class TestCompletionSanitizationConstants:
 
         for char in COMPLETION_UNSAFE_CHARS:
             assert len(char) == 1, f"Non-single-char element in COMPLETION_UNSAFE_CHARS: {char!r}"
-
-
-# ---------------------------------------------------------------------------
-# KANON_GIT_LS_REMOTE_TIMEOUT (E1-F1-S2-T1: per-attempt git ls-remote timeout)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

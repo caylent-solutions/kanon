@@ -42,19 +42,6 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 
-# ---------------------------------------------------------------------------
-# Auto-apply the unit marker to every test in this directory.
-#
-# The upstream files under tests/unit/repo/ were copied from the Gerrit repo
-# test suite, which predates the project-level pytest marker conventions
-# (unit / integration / functional). This hook applies @pytest.mark.unit to
-# any test collected from tests/unit/repo/** that does not already carry one
-# of the three registered markers, so every test runs under exactly one of
-# the three make targets (make test-unit / test-integration / test-functional)
-# and nothing is orphaned.
-# ---------------------------------------------------------------------------
-
-
 _MARKERS = {"unit", "integration", "functional"}
 
 
@@ -73,11 +60,6 @@ def pytest_collection_modifyitems(config, items):
         if any(mark.name in _MARKERS for mark in item.iter_markers()):
             continue
         item.add_marker(pytest.mark.unit)
-
-
-# ---------------------------------------------------------------------------
-# Shared pytest fixtures for the repo test suite.
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -178,11 +160,6 @@ def subprocess_timeout() -> int:
     return timeout
 
 
-# ---------------------------------------------------------------------------
-# Kanon repo root fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def repo_root() -> str:
     """Return the absolute path to the kanon repository root as a string.
@@ -196,10 +173,6 @@ def repo_root() -> str:
     """
     return str(REPO_ROOT)
 
-
-# ---------------------------------------------------------------------------
-# Fixtures loaded from tests/unit/repo/fixtures/
-# ---------------------------------------------------------------------------
 
 _FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 

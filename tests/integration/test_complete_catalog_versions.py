@@ -16,11 +16,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def fixture_manifest_repo(tmp_path: Path) -> Path:
     """Create a local git repo with the seven refs from the spec."""
@@ -39,7 +34,6 @@ def fixture_manifest_repo(tmp_path: Path) -> Path:
         capture_output=True,
     )
 
-    # Create initial commit on default branch
     (repo / "README.md").write_text("manifest repo\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
     subprocess.run(
@@ -47,28 +41,26 @@ def fixture_manifest_repo(tmp_path: Path) -> Path:
         check=True,
         capture_output=True,
     )
-    # Rename default branch to main
+
     subprocess.run(
         ["git", "-C", str(repo), "branch", "-M", "main"],
         check=True,
         capture_output=True,
     )
 
-    # Create tags: 1.0.0, 2.0.0, 1.0.0a1, not-a-version, release/v3
     for tag in ["1.0.0", "2.0.0", "1.0.0a1", "not-a-version"]:
         subprocess.run(
             ["git", "-C", str(repo), "tag", tag],
             check=True,
             capture_output=True,
         )
-    # Create a namespaced tag: release/v3 (last component is "v3", non-PEP-440)
+
     subprocess.run(
         ["git", "-C", str(repo), "tag", "release/v3"],
         check=True,
         capture_output=True,
     )
 
-    # Create branch: develop
     subprocess.run(
         ["git", "-C", str(repo), "branch", "develop"],
         check=True,
@@ -87,8 +79,7 @@ def _run_complete(
     """Invoke `kanon __complete_catalog_versions <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
     env["KANON_CATALOG_SOURCES"] = f"file://{repo_path}@main"
-    # cache_dir() resolves to <KANON_HOME>/cache; KANON_HOME=cache_dir.parent
-    # makes the resolved cache equal cache_dir.
+
     env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
@@ -99,11 +90,6 @@ def _run_complete(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -124,11 +110,11 @@ class TestCompleteCatalogVersionsSubprocess:
 
         assert result.returncode == 0, f"non-zero exit: {result.stderr!r}"
         names = [line for line in result.stdout.splitlines() if line]
-        # "not-a-version" excluded; "v3" included (PEP 440-valid); branches included
+
         assert "not-a-version" not in names, f"not-a-version should be excluded: {names}"
         assert "release/v3" not in names, f"full slash-path should not appear: {names}"
         assert "not-a-version" not in names
-        # PEP 440-valid tags and branches must be present
+
         for expected in ["1.0.0", "1.0.0a1", "2.0.0", "v3", "develop", "main"]:
             assert expected in names, f"expected {expected!r} in output: {names}"
 
@@ -153,7 +139,7 @@ class TestCompleteCatalogVersionsSubprocess:
 
         assert result.returncode == 0, f"non-zero exit: {result.stderr!r}"
         names = [line for line in result.stdout.splitlines() if line]
-        # PEP 440 ordering: 1.0.0a1 < 1.0.0
+
         assert names == ["1.0.0a1", "1.0.0"], f"expected [1.0.0a1, 1.0.0], got {names}"
 
     def test_prefix_m_returns_main_only(self, fixture_manifest_repo: Path, tmp_path: Path) -> None:
@@ -224,7 +210,7 @@ class TestCompleteCatalogVersionsSubprocess:
         names1 = result1.stdout.splitlines()
         names2 = result2.stdout.splitlines()
         assert names1 == names2
-        # Both calls return same output (PEP 440-valid tags + branches, not-a-version excluded)
+
         assert "not-a-version" not in names1
         assert "release/v3" not in names1
         for expected in ["1.0.0", "1.0.0a1", "2.0.0", "develop", "main"]:
@@ -239,6 +225,5 @@ class TestCompleteCatalogVersionsSubprocess:
         if result.stdout:
             assert result.stdout.endswith("\n"), f"stdout does not end with newline: {result.stdout!r}"
         lines = [line for line in result.stdout.splitlines() if line]
-        # fixture has: 1.0.0, 1.0.0a1, 2.0.0, v3 (from release/v3), develop, main
-        # not-a-version excluded (6 entries: 4 tags + 2 branches)
+
         assert len(lines) == 6, f"expected 6 lines, got {lines}"

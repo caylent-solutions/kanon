@@ -19,28 +19,12 @@ import pytest
 from kanon_cli.constants import KANON_REPO_DIR_ENV
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Passthrough Test User"
 _GIT_USER_EMAIL = "passthrough-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from passthrough test content"
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The four helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) are near-duplicates of
-# same-named functions in test_kanon_repo_cli.py. Consolidating them into a
-# shared module requires touching that file, which is outside this task's
-# Changes Manifest. This duplication is tracked as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -184,11 +168,6 @@ def _setup_init_and_sync_env(
     return checkout_dir, repo_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: kanon repo sync --jobs 4 passes through to repo sync
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestSyncJobsPassthrough:
     """AC-TEST-001: 'kanon repo sync --jobs 4' forwards --jobs to the repo sync command."""
@@ -268,11 +247,6 @@ class TestSyncJobsPassthrough:
         assert project_dir.is_dir(), (
             f"Project directory {project_dir!r} was not created after 'kanon repo sync --jobs 4'."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: --repo-dir /custom/.repo overrides default repo dir
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -376,11 +350,6 @@ class TestRepoDirFlagOverride:
         assert project_dir.is_dir(), (
             f"Project directory {project_dir!r} was not created after sync with custom --repo-dir {custom_repo_dir!r}."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: KANON_REPO_DIR env var sets default repo dir when --repo-dir omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -524,11 +493,6 @@ class TestKanonRepoDirEnvVar:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: argv after `kanon repo` is forwarded verbatim
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestArgvVerbatimPassthrough:
     """AC-FUNC-001: argv after 'kanon repo' is forwarded verbatim to the repo subcommand dispatcher."""
@@ -620,11 +584,6 @@ class TestArgvVerbatimPassthrough:
         assert len(combined) > 0, (
             f"'kanon repo --help' produced empty output.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

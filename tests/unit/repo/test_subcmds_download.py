@@ -1,17 +1,3 @@
-# Copyright (C) 2025 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds/download.py module."""
 
 import pytest
@@ -28,7 +14,6 @@ class TestDownloadOptions:
         cmd = download.Download()
         opts, args = cmd.OptionParser.parse_args([])
 
-        # Verify default option values (None is default before action is taken)
         assert opts.cherrypick is None or opts.cherrypick is False
         assert opts.revert is None or opts.revert is False
         assert opts.ffonly is None or opts.ffonly is False
@@ -74,7 +59,6 @@ class TestDownloadValidateOptions:
         cmd = download.Download()
         opts, args = cmd.OptionParser.parse_args(["project", "12345/1"])
 
-        # Should not raise
         cmd.ValidateOptions(opts, args)
 
     def test_validate_options_conflicting_options(self):
@@ -82,6 +66,5 @@ class TestDownloadValidateOptions:
         cmd = download.Download()
         opts, args = cmd.OptionParser.parse_args(["-c", "-x", "--ff", "project", "12345/1"])
 
-        # -x and --ff are mutually exclusive
         with pytest.raises(SystemExit):
             cmd.ValidateOptions(opts, args)

@@ -59,10 +59,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -185,11 +181,6 @@ def _get_linkfile(manifest: manifest_xml.XmlManifest, project_name: str):
     by_name = {p.name: p for p in manifest.projects}
     project = by_name[project_name]
     return project.linkfiles[0]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every documented attribute of <linkfile>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -387,11 +378,6 @@ class TestLinkfileExcludeValidValues:
             )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests for every documented attribute of <linkfile>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLinkfileSrcInvalidValues:
     """AC-TEST-002 -- invalid values for the src attribute raise ManifestInvalidPathError.
@@ -528,11 +514,6 @@ class TestLinkfileDestInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLinkfileRequiredAttributeOmission:
     """AC-TEST-003 -- omitting a required attribute raises ManifestParseError
@@ -606,11 +587,6 @@ class TestLinkfileRequiredAttributeOmission:
         with pytest.raises(ManifestParseError) as exc_info:
             _write_and_load(tmp_path, xml_content)
         assert str(exc_info.value), "Expected a non-empty error message from ManifestParseError for missing dest"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Every documented attribute is validated at parse time
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -691,11 +667,6 @@ class TestLinkfileParseTimeValidation:
         linkfile = _get_linkfile(manifest, "platform/core")
         assert linkfile.src == "tools", f"Expected src='tools' but got: {linkfile.src!r}"
         assert linkfile.dest == "workspace/tools", f"Expected dest='workspace/tools' but got: {linkfile.dest!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

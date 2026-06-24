@@ -70,14 +70,9 @@ def is_version_constraint(rev_spec: str) -> bool:
         if last_component.startswith(op):
             return True
 
-    # Detect malformed single-equals constraints (e.g. ``=*``, ``=1.0.0``).
-    # The single ``=`` operator is not valid PEP 440; ``==`` is the equality
-    # operator. Treat these as constraint attempts so the caller receives
-    # ``invalid version constraint`` instead of a misleading git error.
     if last_component.startswith("=") and not last_component.startswith("=="):
         return True
 
-    # Range constraints: comma-separated specifiers (e.g. ">=1.0.0,<2.0.0").
     if "," in last_component:
         parts = last_component.split(",")
         return any(part.lstrip().startswith(op) for part in parts for op in PEP440_OPERATORS)
@@ -314,7 +309,6 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if not revision or not revision.strip():
         raise ValueError(f"revision must not be empty; received {revision!r}")
 
-    # Split revision into prefix and constraint at the last '/'.
     if "/" in revision:
         prefix, constraint_str = revision.rsplit("/", 1)
         tag_prefix = prefix + "/"
@@ -327,8 +321,6 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if not candidate_tags:
         raise ValueError(f"No tags found under prefix '{prefix}' for the given revision")
 
-    # Parse version from the last path component of each candidate.
-    # Collect skipped non-PEP-440 tag names for the loud error if needed.
     versions = []
     skipped: list[str] = []
     for tag in candidate_tags:
@@ -342,18 +334,9 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         display_prefix = prefix if prefix is not None else "refs/tags"
         raise ValueError(_format_zero_pep440_tags_error(display_prefix, skipped))
 
-    # Wildcard or 'latest': return highest version. The literal ``latest``
-    # is treated as an alias for ``*`` so that ``refs/tags/latest`` and the
-    # bare form ``latest`` both resolve to the highest available semver
-    # tag, matching the catalog-source contract in
-    # ``kanon_cli.core.catalog``.
     if constraint_str in ("*", "latest"):
         return max(versions, key=lambda pair: pair[1])[0]
 
-    # Strip standalone wildcard parts from compound constraints.
-    # A bare * combined with range specifiers (e.g. >=1.0.0,<2.0.0,*) is
-    # redundant -- it means "any version" within the range -- but is not a
-    # valid PEP 440 specifier for SpecifierSet. Remove it before parsing.
     if "," in constraint_str:
         parts = [p.strip() for p in constraint_str.split(",")]
         filtered_parts = [p for p in parts if p != "*"]
@@ -413,16 +396,14 @@ def _classify_revision_shape(revision: str) -> RevisionShape:
     Returns:
         A :class:`RevisionShape` member describing the revision kind.
     """
-    # SHA check: exactly 40 or 64 hex characters
+
     hex_chars = frozenset("0123456789abcdefABCDEF")
     if len(revision) in (SHA1_HEX_LENGTH, SHA256_HEX_LENGTH) and all(c in hex_chars for c in revision):
         return RevisionShape.SHA
 
-    # Tag check: PEP 440 constraint or explicit refs/tags/ prefix
     if is_version_constraint(revision) or revision.startswith("refs/tags/"):
         return RevisionShape.TAG
 
-    # Default: branch-pinned
     return RevisionShape.BRANCH
 
 
@@ -529,8 +510,7 @@ def _resolve_symref_default_branch(url: str) -> str | None:
         stripped = line.strip()
         if not stripped.startswith(SYMREF_LINE_PREFIX):
             continue
-        # Line shape: "ref: refs/heads/<branch>\tHEAD". Drop the "ref: " token,
-        # then split off the trailing "\tHEAD" symref-name column.
+
         symref_target = stripped[len(SYMREF_LINE_PREFIX) :].split("\t", 1)[0].strip()
         if symref_target.startswith(SYMREF_HEADS_PREFIX):
             return symref_target[len(SYMREF_HEADS_PREFIX) :]

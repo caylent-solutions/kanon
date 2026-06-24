@@ -31,10 +31,6 @@ from kanon_cli.core.install import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers shared with the state-matrix tests
-# ---------------------------------------------------------------------------
-
 _KANON_SINGLE_SOURCE = """\
 GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
@@ -86,11 +82,6 @@ path = "manifest.xml"
     return lock_path
 
 
-# ===========================================================================
-# AC-FUNC-006: InstallState.REFRESH_LOCK enum value exists
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRefreshLockInstallState:
     """AC-FUNC-006: REFRESH_LOCK enum value is present on InstallState."""
@@ -110,11 +101,6 @@ class TestRefreshLockInstallState:
         ]
         for other in other_states:
             assert InstallState.REFRESH_LOCK is not other
-
-
-# ===========================================================================
-# AC-FUNC-006: _classify_install_state short-circuits on refresh_lock=True
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -162,11 +148,6 @@ class TestClassifyInstallStateRefreshLock:
         assert classification.state is InstallState.LOCKFILE_ABSENT
 
 
-# ===========================================================================
-# Hermetic refresh-lock: --refresh-lock does not resolve or require a catalog source
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRefreshLockIsHermetic:
     """Spec Section 4.3 / FR-14: --refresh-lock rebuilds the lock from .kanon
@@ -197,7 +178,7 @@ class TestRefreshLockIsHermetic:
                 lock_file_path=lock_path,
                 refresh_lock=True,
             )
-        # The lock was (re)built hermetically.
+
         assert lock_path.exists()
 
     def test_refresh_lock_ignores_env_catalog_source(
@@ -218,7 +199,6 @@ class TestRefreshLockIsHermetic:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
-            # The env var must not abort the refresh-lock rebuild.
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=lock_path,
@@ -227,13 +207,8 @@ class TestRefreshLockIsHermetic:
 
         assert lock_path.exists()
         lock_text = lock_path.read_text(encoding="utf-8")
-        # The lock is rebuilt from .kanon; the ignored env-var URL is not recorded.
+
         assert "https://env.example.com/repo.git" not in lock_text
-
-
-# ===========================================================================
-# AC-FUNC-001: _emit_install_state emits the correct line for REFRESH_LOCK
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -260,11 +235,6 @@ class TestEmitInstallStateRefreshLock:
         _emit_install_state(InstallState.REFRESH_LOCK, sources=sources, projects=projects)
         captured = capsys.readouterr()
         assert f"({sources} sources, {projects} projects)" in captured.out
-
-
-# ===========================================================================
-# AC-FUNC-005: install() accepts refresh_lock kwarg
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -306,7 +276,6 @@ class TestInstallRefreshLockKwarg:
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
-        # Write a consistent lockfile with a stale SHA so we can detect the rewrite.
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
 
         real_hash = compute_hash(kanon_path)
@@ -329,13 +298,8 @@ class TestInstallRefreshLockKwarg:
 
         assert lock_path.exists()
         new_content = lock_path.read_text()
-        # The lockfile must have been rewritten (new_sha appears; original may differ).
+
         assert new_sha in new_content
-
-
-# ===========================================================================
-# AC-FUNC-002: install(refresh_lock=True) does NOT modify .kanon
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -367,14 +331,6 @@ class TestRefreshLockDoesNotTouchKanonFile:
             )
 
         assert kanon_path.read_text() == original_content
-
-
-# ===========================================================================
-# AC-FUNC-004: --refresh-lock argparse registration (mutual exclusion group)
-# T2 registers --refresh-lock in a mutually_exclusive_group.
-# T3 will add --refresh-lock-source to the same group; the end-to-end
-# mutual-exclusion SystemExit(2) test for the combined pair lives in T3.
-# ===========================================================================
 
 
 @pytest.mark.unit

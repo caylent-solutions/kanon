@@ -27,11 +27,6 @@ from kanon_cli.completions.catalog_entries import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_xml(name: str) -> str:
     """Return a minimal valid *-marketplace.xml content for catalog name *name*."""
     return (
@@ -45,11 +40,6 @@ def _make_xml(name: str) -> str:
         "  </catalog-metadata>\n"
         "</package>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# _is_safe_entry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -113,11 +103,6 @@ class TestIsSafeEntry:
         assert _is_safe_entry(entry) is False
 
 
-# ---------------------------------------------------------------------------
-# _build_index
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildIndex:
     """_build_index() parses *-marketplace.xml files and returns sorted names."""
@@ -164,19 +149,13 @@ class TestBuildIndex:
         assert result == ["ok"]
 
 
-# ---------------------------------------------------------------------------
-# _fetch_and_cache
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFetchAndCache:
     """_fetch_and_cache() clones manifest repo, builds index, writes cache."""
 
     def test_writes_cache_and_returns_names(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On success, cache index.txt is written and the name list returned."""
-        # Build index returns controlled names; patch _build_index to avoid needing
-        # a real clone.
+
         cache_entry_dir = tmp_path / "cache_entry"
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
@@ -199,7 +178,6 @@ class TestFetchAndCache:
         """When repo-specs/ directory is absent, empty list is returned and index.txt is empty."""
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
-        # No repo-specs/ directory
 
         cache_entry_dir = tmp_path / "cache_entry"
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
@@ -218,11 +196,6 @@ class TestFetchAndCache:
         with patch.object(ce, "_clone_manifest_repo", side_effect=RuntimeError("clone failed")):
             with pytest.raises(RuntimeError, match="clone failed"):
                 _fetch_and_cache("https://example.com/repo.git", "main", cache_entry_dir)
-
-
-# ---------------------------------------------------------------------------
-# _clone_manifest_repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -261,11 +234,6 @@ class TestCloneManifestRepo:
         ):
             with pytest.raises(TimeoutError):
                 _clone_manifest_repo("https://example.com/repo.git", "main", tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# _inline_fetch
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -308,11 +276,6 @@ class TestInlineFetch:
         mock_log.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# complete()
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestComplete:
     """complete() is the public API -- tests cache-hit, cache-miss, stale, disabled, errors."""
@@ -350,7 +313,7 @@ class TestComplete:
         index = entry_dir / "index.txt"
         index.write_text("foo\nbar\nbaz\n")
         fetched = entry_dir / "fetched_at.txt"
-        # Write a fresh timestamp (now)
+
         fetched.write_text(str(int(time.time())))
 
         with patch.object(ce, "_inline_fetch") as mock_fetch:
@@ -381,7 +344,6 @@ class TestComplete:
     def test_cache_miss_calls_inline_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Cache miss: _inline_fetch is called and result returned (AC-FUNC-005)."""
         self._env_setup(monkeypatch, tmp_path)
-        # No cache directory -- miss
 
         expected = ["alpha", "beta"]
         with patch.object(ce, "_inline_fetch", return_value=expected) as mock_fetch:
@@ -402,7 +364,7 @@ class TestComplete:
         index = entry_dir / "index.txt"
         index.write_text("stale-entry\n")
         fetched = entry_dir / "fetched_at.txt"
-        # Write a stale timestamp (5000 seconds ago -- well past default TTL of 300)
+
         fetched.write_text(str(int(time.time()) - 5000))
 
         mock_proc = MagicMock()
@@ -412,11 +374,10 @@ class TestComplete:
             with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
                 result = complete("")
 
-        # Stale contents returned
         assert result == ["stale-entry"]
-        # _inline_fetch was NOT called (background process handles it)
+
         mock_fetch.assert_not_called()
-        # Background refresh was spawned
+
         mock_popen.assert_called_once()
 
     def test_cache_stale_bg_disabled_calls_inline_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -478,11 +439,6 @@ class TestComplete:
             assert name.startswith(prefix), f"{name!r} does not start with {prefix!r}"
 
 
-# ---------------------------------------------------------------------------
-# _handle() dispatcher
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestHandle:
     """_handle() is the argparse entry point; tests dispatch and exit-code contract."""
@@ -521,11 +477,6 @@ class TestHandle:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert result == 0
-
-
-# ---------------------------------------------------------------------------
-# _parse_catalog_source
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -579,11 +530,6 @@ class TestParseCatalogSource:
         mock_log.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# Fix: narrow except in _build_index + log unexpected exceptions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildIndexExceptionHandling:
     """_build_index() only silently skips CatalogMetadataParseError; other exceptions are logged."""
@@ -592,23 +538,16 @@ class TestBuildIndexExceptionHandling:
         """Non-parse exceptions (e.g. PermissionError) are logged via log_completion_error and skipped."""
         specs = tmp_path / "repo-specs"
         specs.mkdir()
-        # Write one file that will raise PermissionError when parsed
+
         (specs / "perm-marketplace.xml").write_text(_make_xml("perm"))
 
         with patch.object(ce, "_parse_catalog_metadata", side_effect=PermissionError("denied")):
-            # The PermissionError should be logged (not silently swallowed)
             with patch.object(ce, "log_completion_error") as mock_log:
                 result = _build_index(tmp_path)
 
-        # The unexpected error was logged
         mock_log.assert_called_once()
-        # Entry was skipped -- result is empty
+
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# Fix: --refresh-only flag in _handle() skips stdout printing
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -629,7 +568,7 @@ class TestHandleRefreshOnly:
             result = _handle(args)
 
         captured = capsys.readouterr()
-        # When refresh_only, stdout must be empty
+
         assert captured.out == ""
         assert result == 0
 
@@ -652,11 +591,6 @@ class TestHandleRefreshOnly:
         assert result == 0
 
 
-# ---------------------------------------------------------------------------
-# Fix: timeout parameter in _inline_fetch passed to _clone_manifest_repo
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInlineFetchTimeoutPassthrough:
     """_inline_fetch() passes the timeout argument to _fetch_and_cache."""
@@ -669,7 +603,7 @@ class TestInlineFetchTimeoutPassthrough:
         captured_env: dict[str, str] = {}
 
         def _fake_fetch_and_cache(url: str, ref: str, entry_dir: Path) -> list[str]:
-            # Capture the env variable that _clone_manifest_repo reads
+
             captured_env["KANON_COMPLETION_TIMEOUT"] = os.environ.get("KANON_COMPLETION_TIMEOUT", "")
             return ["ok"]
 
@@ -677,13 +611,13 @@ class TestInlineFetchTimeoutPassthrough:
             result = _inline_fetch("https://example.com/repo.git", "main", cache_entry_dir, timeout=42)
 
         assert result == ["ok"]
-        # The timeout value must be visible to the subprocess via env
+
         assert captured_env.get("KANON_COMPLETION_TIMEOUT") == "42"
 
     def test_timeout_restores_pre_existing_env_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores the original value after fetch."""
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
-        # Pre-set a different timeout value to verify restoration
+
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         cache_entry_dir = tmp_path / "entry"
 
@@ -697,15 +631,10 @@ class TestInlineFetchTimeoutPassthrough:
             result = _inline_fetch("https://example.com/repo.git", "main", cache_entry_dir, timeout=42)
 
         assert result == ["ok"]
-        # During fetch, the new timeout was visible
+
         assert captured_env["during"] == "42"
-        # After fetch, the original value is restored
+
         assert os.environ.get("KANON_COMPLETION_TIMEOUT") == "99"
-
-
-# ---------------------------------------------------------------------------
-# Fix: stderr tty diagnostic on error paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -717,7 +646,7 @@ class TestStderrTtyDiagnostic:
     ) -> None:
         """When sys.stderr.isatty() is True, a diagnostic line is written to stderr."""
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
-        # Remove KANON_CATALOG_SOURCES to trigger the missing-source error path in complete()
+
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
@@ -737,7 +666,7 @@ class TestStderrTtyDiagnostic:
             result = complete("")
 
         assert result == []
-        # A diagnostic line should have been written to stderr (tty is active)
+
         assert any("__complete_catalog_entries" in line or "KANON_CATALOG_SOURCES" in line for line in err_lines), (
             f"Expected diagnostic stderr output, got: {err_lines!r}"
         )

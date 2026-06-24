@@ -67,7 +67,6 @@ class TestCheckLegacyCatalogDir:
         target.mkdir()
 
         if subdirs == ["__empty__"]:
-            # catalog/ present but contains no subdirectories
             (target / "catalog").mkdir()
         elif subdirs:
             catalog_dir = target / "catalog"
@@ -156,7 +155,7 @@ class TestCheckLegacyCatalogDir:
         target = tmp_path / "target"
         catalog_dir = target / "catalog"
         catalog_dir.mkdir(parents=True)
-        # Write files (not subdirectories) inside catalog/
+
         (catalog_dir / "README.md").write_text("content", encoding="utf-8")
         (catalog_dir / ".gitkeep").write_text("", encoding="utf-8")
 
@@ -252,7 +251,7 @@ class TestAuditCommandLegacyDirIntegration:
         """audit_command emits legacy-dir WARN even when --check metadata is specified. AC-FUNC-005."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
-        # Create the legacy catalog/ directory tree to trigger the WARN.
+
         (tmp_path / "catalog" / "entry").mkdir(parents=True)
 
         args = _make_audit_args(target=str(tmp_path), check="metadata")
@@ -275,7 +274,6 @@ class TestAuditCommandLegacyDirIntegration:
         """audit_command emits no WARN when catalog/ is absent. AC-FUNC-001."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
-        # No catalog/ directory created.
 
         args = _make_audit_args(target=str(tmp_path), check="metadata")
         captured_output: list[str] = []

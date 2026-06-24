@@ -67,11 +67,6 @@ from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
 
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class ChainNode:
     """A single node in a resolved dependency chain.
@@ -111,11 +106,6 @@ class ResolvedTree:
     """
 
     sources: list[ChainNode]
-
-
-# ---------------------------------------------------------------------------
-# Lockfile-to-tree conversion
-# ---------------------------------------------------------------------------
 
 
 def _include_entry_to_node(entry: IncludeEntry) -> ChainNode:
@@ -202,12 +192,10 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
             scope=WHY_SCOPE_TOP_LEVEL,
         )
 
-        # Build include subtree (recursive)
         include_chain_roots: list[ChainNode] = []
         for inc in source_entry.includes:
             include_chain_roots.append(_include_entry_to_node(inc))
 
-        # Build project leaf nodes
         project_nodes: list[ChainNode] = [
             ChainNode(
                 kind="project",
@@ -221,17 +209,12 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
         ]
 
         if include_chain_roots:
-            # Attach includes as direct children of the source
             for inc_node in include_chain_roots:
                 source_node.children.append(inc_node)
 
-            # Place project nodes under every leaf include so the chain output
-            # contains the intermediate include segment:
-            #   <source> -> <include-path>@<sha> -> <project>@<sha>
             leaf_includes = _collect_leaf_include_nodes(include_chain_roots)
             for leaf in leaf_includes:
                 for proj_node in project_nodes:
-                    # Each leaf gets its own ChainNode instance to avoid sharing
                     leaf.children.append(
                         ChainNode(
                             kind="project",
@@ -243,18 +226,12 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
                         )
                     )
         else:
-            # No includes: projects are direct children of the source node
             for proj_node in project_nodes:
                 source_node.children.append(proj_node)
 
         sources.append(source_node)
 
     return ResolvedTree(sources=sources)
-
-
-# ---------------------------------------------------------------------------
-# Live tree resolution
-# ---------------------------------------------------------------------------
 
 
 class LiveResolveError(Exception):
@@ -363,9 +340,6 @@ def _substitute_fetch_url(
     if "${" not in fetch_url:
         return fetch_url
 
-    # Temporarily inject globals into os.environ so os.path.expandvars resolves
-    # ${VAR} patterns.  Save and restore any keys we overwrite so the process
-    # environment is unchanged after this call.
     overwritten: dict[str, str | None] = {}
     for key, value in globals_map.items():
         overwritten[key] = os.environ.get(key)
@@ -460,19 +434,12 @@ def _build_project_nodes_from_xml(
         remote_attr = project_el.get("remote")
         project_name = project_el.get("name", "")
         if not remote_attr or not project_name:
-            # Skip projects with no remote attribute or empty name -- these
-            # cannot be resolved to a canonical URL without a <default> lookup.
             continue
 
         raw_fetch = remote_map.get(remote_attr)
         if raw_fetch is None:
-            # Remote is unresolvable; skip rather than hard-fail so that
-            # valid projects in the same manifest still produce chain nodes.
-            # The audit command (kanon catalog audit) surfaces R001 for these.
             continue
 
-        # Substitute ${VAR} placeholders (e.g. ${GITBASE}) from .kanon globals
-        # before canonicalization.  Fails fast when a placeholder has no match.
         fetch_url = _substitute_fetch_url(
             raw_fetch,
             resolved_globals,
@@ -484,8 +451,6 @@ def _build_project_nodes_from_xml(
         try:
             canonical = canonicalize_repo_url(raw_url)
         except ValueError:
-            # URL is genuinely unresolvable after substitution (e.g. non-URL
-            # value in fetch that is not a ${VAR} placeholder); skip.
             continue
 
         project_nodes.append(
@@ -524,7 +489,7 @@ def _clone_source_repo(
     Raises:
         LiveResolveError: If ``git clone`` exits non-zero.
     """
-    # Strip canonical ref prefixes so git receives a plain name.
+
     branch_or_tag = revision
     for prefix in ("refs/tags/", "refs/heads/"):
         if revision.startswith(prefix):
@@ -618,9 +583,6 @@ def _populate_source_children_from_manifest(
         kanon_file=kanon_file,
     )
 
-    # Attach children mirroring _build_tree_from_lockfile (~215-240):
-    # includes as direct children of the source; projects under every leaf
-    # include, or directly under the source when no includes are present.
     if include_roots:
         for inc_node in include_roots:
             source_node.children.append(inc_node)
@@ -736,11 +698,6 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
     return ResolvedTree(sources=source_nodes)
 
 
-# ---------------------------------------------------------------------------
-# Chain walking (DFS)
-# ---------------------------------------------------------------------------
-
-
 def _walk_chains(tree: ResolvedTree, target_canonical_url: str) -> list[list[ChainNode]]:
     """Walk the resolved tree depth-first and collect all chains ending at the target.
 
@@ -760,12 +717,10 @@ def _walk_chains(tree: ResolvedTree, target_canonical_url: str) -> list[list[Cha
     def _dfs(node: ChainNode, path: list[ChainNode]) -> None:
         current_path = path + [node]
 
-        # Check if this node is the target project
         if node.kind == "project" and node.canonical_url == target_canonical_url:
             found_chains.append(current_path)
             return
 
-        # Recurse into children
         for child in node.children:
             _dfs(child, current_path)
 
@@ -819,9 +774,6 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
             found_chains.append(current_path)
             return
         if not node.children:
-            # Source or include node with no nested children: the node itself
-            # is the leaf of the chain (e.g. a live-resolved source with no
-            # projects, or a top-level source that is the match target).
             found_chains.append(current_path)
             return
         for child in node.children:
@@ -831,11 +783,9 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
         """Walk the tree looking for target_node; once found, collect chains."""
         if node is target_node:
             if node.scope == WHY_SCOPE_TOP_LEVEL:
-                # Top-level source match: return a single-node chain. The source is
-                # the terminal point; no need to descend into includes or projects.
                 found_chains.append([node])
                 return
-            # Transitive include or unscoped (live-resolve) node: collect all leaves.
+
             _dfs_collect_all_leaves(node, path)
             return
         for child in node.children:
@@ -845,11 +795,6 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
         _dfs_find(source_node, [])
 
     return found_chains
-
-
-# ---------------------------------------------------------------------------
-# Three-category argument matchers
-# ---------------------------------------------------------------------------
 
 
 def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
@@ -880,7 +825,6 @@ def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
 
     matches: list[ChainNode] = []
 
-    # Check top-level source nodes by their URL.
     for source_node in tree.sources:
         if source_node.url is not None:
             try:
@@ -921,7 +865,6 @@ def _match_by_xml_path(tree: ResolvedTree, argument: str) -> list[ChainNode]:
     """
     matches: list[ChainNode] = []
 
-    # Check top-level source nodes by their root manifest path (ref).
     for source_node in tree.sources:
         if source_node.ref is not None and source_node.ref == argument:
             matches.append(source_node)
@@ -955,11 +898,6 @@ def _match_by_source_name(tree: ResolvedTree, argument: str) -> list[ChainNode]:
     """
     normalized_arg = derive_source_name(argument, warn=False)
     return [source for source in tree.sources if derive_source_name(source.name) == normalized_arg]
-
-
-# ---------------------------------------------------------------------------
-# Ambiguity-aware match resolution
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -1001,11 +939,9 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
     """
     hits: list[_MatchHit] = []
 
-    # (a) URL category
     url_nodes = _match_by_url(tree, argument)
     for node in url_nodes:
         if node.kind == "source":
-            # Source nodes matched by URL use the raw source URL as the label.
             url_label = node.url or argument
         else:
             assert node.canonical_url is not None, (
@@ -1018,12 +954,10 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
             )
         )
 
-    # (b) XML path category
     xml_nodes = _match_by_xml_path(tree, argument)
     for node in xml_nodes:
         hits.append(_MatchHit(category="xml_path", label=f"XML manifest path '{node.ref}'", node=node))
 
-    # (c) Source name category
     src_nodes = _match_by_source_name(tree, argument)
     for node in src_nodes:
         hits.append(_MatchHit(category="source_name", label=f"source name '{node.name}'", node=node))
@@ -1061,11 +995,6 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
         sys.exit(1)
 
     return hits[0]
-
-
-# ---------------------------------------------------------------------------
-# Closest-match suggestion (spec Section 4.5 step 5)
-# ---------------------------------------------------------------------------
 
 
 def _build_suggestion_universe(tree: ResolvedTree) -> list[str]:
@@ -1134,11 +1063,6 @@ def _suggest_closest_matches(
     return [candidate for _, candidate in scored[:top_n]]
 
 
-# ---------------------------------------------------------------------------
-# Text rendering
-# ---------------------------------------------------------------------------
-
-
 def _node_display(node: ChainNode) -> str:
     """Format a single node for the text-format chain display.
 
@@ -1158,7 +1082,7 @@ def _node_display(node: ChainNode) -> str:
     if node.kind == "include":
         label = node.ref if node.ref else node.name
         return f"{label}@{node.sha}"
-    # project
+
     return f"{node.name}@{node.sha}"
 
 
@@ -1242,11 +1166,6 @@ def _render_text(chains: list[list[ChainNode]]) -> list[str]:
     return lines
 
 
-# ---------------------------------------------------------------------------
-# JSON rendering
-# ---------------------------------------------------------------------------
-
-
 def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
     """Convert a single chain (list of ChainNode) into the spec-shaped list of node dicts.
 
@@ -1269,8 +1188,6 @@ def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
     """
     result: list[dict[str, object]] = []
     for node in chain:
-        # For project nodes, emit the canonicalized URL so the JSON output
-        # matches the text-renderer and the spec (Section 4.5 step 4).
         if node.kind == "project":
             url_value: object = node.canonical_url
         else:
@@ -1319,11 +1236,6 @@ def _render_json(chains: list[list[ChainNode]]) -> str:
         A JSON string representation of all chains, terminated with a newline.
     """
     return json.dumps(_build_why_payload(chains), sort_keys=False, indent=KANON_WHY_JSON_INDENT) + "\n"
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
@@ -1411,11 +1323,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     parser.set_defaults(func=run)
 
 
-# ---------------------------------------------------------------------------
-# Command entry point
-# ---------------------------------------------------------------------------
-
-
 def run(args: argparse.Namespace) -> int:
     """Execute the 'kanon why' command.
 
@@ -1438,7 +1345,7 @@ def run(args: argparse.Namespace) -> int:
     Returns:
         0 on success. Non-zero on error (but most errors call sys.exit directly).
     """
-    # -- Validate .kanon file existence --
+
     kanon_path = pathlib.Path(args.kanon_file)
     if not kanon_path.exists():
         print(
@@ -1448,37 +1355,28 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Determine lockfile path --
-    # Use the shared three-tier derivation: CLI flag > KANON_LOCK_FILE env > derived default.
     resolved_lock_path = derive_lock_file_path(
         cli_lock_file=pathlib.Path(args.lock_file) if args.lock_file else None,
         env_lock_file=os.environ.get(KANON_LOCK_FILE),
         kanon_file_path=kanon_path,
     )
-    # Fail fast when the user explicitly specifies --lock-file and the path does not exist.
+
     if args.lock_file is not None and not resolved_lock_path.exists():
         print(
             f"ERROR: lock file not found: {args.lock_file}",
             file=sys.stderr,
         )
         sys.exit(1)
-    # Only treat the path as present when the file actually exists.
+
     if resolved_lock_path.exists():
         lock_file_path: pathlib.Path | None = resolved_lock_path
     else:
         lock_file_path = None
 
-    # -- Resolve the tree --
     if lock_file_path is not None and lock_file_path.exists():
-        # Lockfile path: no network calls, read SHAs from lockfile directly.
         lockfile = read_lockfile(lock_file_path)
         tree = _build_tree_from_lockfile(lockfile)
     else:
-        # Live-resolve path: requires catalog source. The --catalog-source flag
-        # carries a lazy default=None (cli_args.py); resolve KANON_CATALOG_SOURCES
-        # here so the single configured entry is honoured when the flag is absent
-        # (the env read is deferred out of the parser to avoid a multi-source
-        # MultipleCatalogSourcesError crashing parser construction).
         catalog_source: str | None = args.catalog_source or resolve_env_catalog_source()
         if not catalog_source:
             print(
@@ -1487,21 +1385,16 @@ def run(args: argparse.Namespace) -> int:
                 end="",
             )
             sys.exit(1)
-        # Delegate to live resolver.
+
         try:
             tree = _live_resolve_tree(kanon_path, catalog_source)
         except LiveResolveError as exc:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-    # -- Resolve the match (all three categories; ambiguity detection) --
-    # _resolve_match calls sys.exit(1) on zero matches (not-found) or
-    # two-or-more matches (ambiguity). Returns a single _MatchHit on success.
     hit = _resolve_match(tree, args.target)
 
-    # -- Walk all chains from the matched node --
     if hit.category == "url" and hit.node.kind == "project":
-        # Project URL match: target_canonical is stored on the project node.
         target_canonical = hit.node.canonical_url
         if target_canonical is None:
             print(
@@ -1511,7 +1404,6 @@ def run(args: argparse.Namespace) -> int:
             sys.exit(1)
         chains = _walk_chains(tree, target_canonical)
     else:
-        # XML path, source name, or source-URL match: walk from the matched node itself.
         chains = _walk_chains_from_node(tree, hit.node)
 
     if not chains:
@@ -1521,22 +1413,13 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Extract the matched token from hit.label for the match annotation --
-    # hit.label has the form: '<category description> '<token>''
-    # e.g. "project URL 'https://github.com/org/baz'" or "XML manifest path 'repo-specs/bar.xml'"
-    # The token is enclosed in the first and last single-quote in the label.
     first_quote = hit.label.index("'")
     last_quote = hit.label.rindex("'")
     matched_token = hit.label[first_quote + 1 : last_quote]
 
-    # -- Build the alias-render strings for the sources in the matched chains --
-    # The alias -> name from <source>@<ref> render (spec Section 5.1 / FR-59,
-    # FR-6) is sourced from the parsed .kanon per-dependency _NAME / _REF / _URL
-    # fields, keyed by alias.
     alias_renders_map = _build_alias_renders(kanon_path)
     chain_alias_renders = _alias_renders_for_chains(chains, alias_renders_map)
 
-    # -- Render and emit output --
     if args.format == KANON_WHY_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 

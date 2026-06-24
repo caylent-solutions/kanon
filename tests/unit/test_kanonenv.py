@@ -88,9 +88,9 @@ class TestValidParsing:
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"]["build"]["marketplace"] is True
-        # A source with no _MARKETPLACE line defaults to False (absence == false).
+
         assert result["sources"]["plain"]["marketplace"] is False
-        # The per-alias flag is never surfaced as a global.
+
         assert "KANON_SOURCE_build_MARKETPLACE" not in result["globals"]
         assert "KANON_MARKETPLACE_INSTALL" not in result
 
@@ -164,7 +164,7 @@ class TestValidation:
             "KANON_SOURCE_build_PATH=meta.xml\n"
             "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
-        # _NAME is absent -> validate_sources names it.
+
         with pytest.raises(ValueError, match="KANON_SOURCE_build_NAME"):
             parse_kanonenv(kanonenv)
 
@@ -293,7 +293,7 @@ class TestPosixWritePermission:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(_block("build"))
         kanonenv.chmod(stat.S_IRUSR | stat.S_IWUSR)
-        # No exception: owner-only write is the only permitted POSIX state.
+
         _check_write_permission(kanonenv)
 
     def test_parse_kanonenv_rejects_world_writable_end_to_end(

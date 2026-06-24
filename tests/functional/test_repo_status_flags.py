@@ -36,10 +36,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon, _setup_synced_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Status Flags Test User"
 _GIT_USER_EMAIL = "repo-status-flags@example.com"
@@ -48,55 +44,44 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "status-flags-test-project"
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for argument-parsing errors (optparse exits 2 for bad flags).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-status-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Phrase optparse emits when a store_true flag is given an inline value.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# The one flag registered in Status._Options():
-# -o / --orphans (store_true): include objects outside of repo projects.
+
 _FLAG_SHORT_ORPHANS = "-o"
 _FLAG_LONG_ORPHANS = "--orphans"
 
-# All flags from Status._Options() as (flag, test_id) pairs for parametrize.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_FLAG_SHORT_ORPHANS, "short-orphans"),
     (_FLAG_LONG_ORPHANS, "long-orphans"),
 ]
 
-# Long-form boolean flags for AC-TEST-002 negative tests.
-# Only long-form flags can be supplied with '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_FLAG_LONG_ORPHANS, "orphans"),
 ]
 
-# Phrase expected in stdout when all projects are clean.
+
 _CLEAN_PHRASE = "nothing to commit (working directory clean)"
 
-# Phrase expected when -o is used and no orphans are found.
+
 _NO_ORPHANS_PHRASE = "No orphan files or directories"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Private setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_initialized_and_synced_repo(
@@ -126,11 +111,6 @@ def _setup_initialized_and_synced_repo(
         manifest_filename=_MANIFEST_FILENAME,
         branch=_GIT_BRANCH_MAIN,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/status.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -253,11 +233,6 @@ class TestRepoStatusFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with inline values (boolean flags)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStatusFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts enumerated values has a negative test.
@@ -377,11 +352,6 @@ class TestRepoStatusFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStatusFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -472,11 +442,6 @@ class TestRepoStatusFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStatusFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -546,11 +511,6 @@ class TestRepoStatusFlagsDocumentedBehavior:
             f"Orphan phrase {_NO_ORPHANS_PHRASE!r} appeared in stdout "
             f"when -o was not supplied.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

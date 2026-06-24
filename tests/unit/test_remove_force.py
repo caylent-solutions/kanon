@@ -19,11 +19,6 @@ import pytest
 from kanon_cli.commands.remove import run_remove
 
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     names: list[str],
     kanon_file: str,
@@ -58,13 +53,8 @@ _KNOWN_B_BLOCK = (
 
 _HEADER = "GITBASE=https://git.example.com\n"
 
-# Fixture content: header + known_a block + known_b block
+
 _TWO_KNOWN_CONTENT = _HEADER + _KNOWN_A_BLOCK + _KNOWN_B_BLOCK
-
-
-# ---------------------------------------------------------------------------
-# Parametrized test function for the four AC-FUNC scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -156,22 +146,18 @@ def test_remove_force_scenarios(
 
     captured = capsys.readouterr()
 
-    # Assert on stderr substring (when non-empty)
     if expected_stderr_substr:
         assert expected_stderr_substr in captured.err, (
             f"Expected '{expected_stderr_substr}' in stderr, got: {captured.err!r}"
         )
     else:
-        # For --force cases: stderr must not contain "ERROR:"
         assert "ERROR:" not in captured.err, f"Expected no ERROR in stderr for force scenario, got: {captured.err!r}"
 
-    # Assert on post-invocation file content
     if expected_file_matches_original:
         assert kanon_file.read_text() == kanon_content, (
             "File content must be byte-for-byte unchanged when no successful removal occurred"
         )
     else:
-        # AC-FUNC-002: known_a block must be removed, file must differ
         after = kanon_file.read_text()
         assert "KANON_SOURCE_known_a_URL" not in after, (
             "known_a block must be removed when it is fully present and --force is set"
@@ -182,19 +168,10 @@ def test_remove_force_scenarios(
         assert "KANON_SOURCE_known_a_GITBASE" not in after
         assert "GITBASE=https://git.example.com" in after, "Non-removed header lines must be preserved"
 
-    # AC-FUNC-004 additional assertion: dry-run + force produces no '-' lines in stdout
     if dry_run and force:
         assert not any(line.startswith("-") for line in captured.out.splitlines()), (
             "dry-run + force with unknown-only source must produce no '-' diff lines in stdout"
         )
-
-
-# ---------------------------------------------------------------------------
-# Named test functions required by AC-TEST-001 (test-gaps-spec.md section 4.4)
-# Each function covers exactly one of the four row-65 scenarios and asserts
-# the full contract from spec section 4.4: setup, invocation, exit code,
-# stderr content, and file state.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

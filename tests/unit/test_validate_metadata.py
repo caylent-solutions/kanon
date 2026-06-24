@@ -20,11 +20,6 @@ import pytest
 from kanon_cli.commands.validate import _run_metadata, _run_validate_help, register, validate_metadata_command
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: Path, content: str) -> Path:
     """Write XML content to path (creating parent dirs) and return path."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,11 +67,6 @@ def _make_args(repo_root: Path, fmt: str = "text") -> types.SimpleNamespace:
     return types.SimpleNamespace(repo_root=repo_root, format=fmt)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Parametrized unit tests -- success and error paths
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestValidateMetadataCommandCleanRepo:
     """AC-FUNC-001: Clean manifest repo exits 0 with zero findings."""
@@ -112,7 +102,7 @@ class TestValidateMetadataCommandMissingRequiredField:
             "description": "<description>A useful tool.</description>",
             "version": "<version>1.0.0</version>",
         }
-        # Remove the target field
+
         remaining = {k: v for k, v in fields.items() if k != field}
         body = textwrap.dedent(f"""\
             <package>
@@ -139,7 +129,7 @@ class TestValidateMetadataCommandMissingRecommendedField:
     def test_missing_recommended_field_exits_zero(
         self, tmp_path: Path, field: str, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        # Build XML with all required fields but missing the target recommended field
+
         rec_fields = {
             "type": "<type>plugin</type>",
             "owner-name": "<owner-name>Alice</owner-name>",
@@ -231,7 +221,7 @@ class TestValidateMetadataCommandSourceNameDrift:
     """AC-FUNC-006: Source-name drift exits 0 with WARN finding."""
 
     def test_source_name_drift_exits_zero(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        # 'Foo-Bar' normalises to 'foo_bar' via derive_source_name -- S001 WARN
+
         body = textwrap.dedent("""\
             <package>
               <catalog-metadata>
@@ -387,7 +377,6 @@ class TestValidateMetadataCommandCheckFunctionsInvoked:
         error_finding = AuditFinding(kind="error", code="X001", message="test error", remediation="")
         warn_finding = AuditFinding(kind="warn", code="X002", message="test warn", remediation="")
 
-        # metadata returns error, source-name-derivation returns warn, uniqueness returns empty
         with (
             patch("kanon_cli.commands.validate._check_metadata", return_value=[error_finding]),
             patch("kanon_cli.commands.validate._check_source_name_derivation", return_value=[warn_finding]),
@@ -395,7 +384,7 @@ class TestValidateMetadataCommandCheckFunctionsInvoked:
         ):
             with pytest.raises(SystemExit) as exc_info:
                 validate_metadata_command(args)
-        # error finding means exit 1
+
         assert exc_info.value.code == 1
 
 
@@ -439,7 +428,7 @@ class TestRunValidateHelp:
     def test_no_exit_when_subcommand_is_set(self) -> None:
         """_run_validate_help does nothing when validate_command is already set."""
         args = types.SimpleNamespace(validate_command="metadata")
-        # Should return None without raising SystemExit
+
         result = _run_validate_help(args)
         assert result is None
 
@@ -456,8 +445,6 @@ class TestValidateRegisterMetadataSubcommand:
         subparsers = top_parser.add_subparsers(dest="command")
         register(subparsers)
 
-        # Parse a 'validate metadata --help' invocation to confirm registration
-        # (will raise SystemExit(0) from --help, not NameError/unknown subcommand)
         with pytest.raises(SystemExit) as exc_info:
             top_parser.parse_args(["validate", "metadata", "--help"])
         assert exc_info.value.code == 0
@@ -492,7 +479,6 @@ class TestValidateRegisterMetadataSubcommand:
         subparsers = top_parser.add_subparsers(dest="command")
         register(subparsers)
 
-        # xml and marketplace should also be parseable
         parsed_xml = top_parser.parse_args(["validate", "xml"])
         assert hasattr(parsed_xml, "func")
 

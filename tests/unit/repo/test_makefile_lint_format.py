@@ -48,7 +48,7 @@ def test_make_format_calls_ruff_format(repo_root):
     )
     assert result.returncode == 0, f"make -n format failed: {result.stderr}"
     assert "ruff format" in result.stdout, f"format target must invoke 'ruff format', got: {result.stdout}"
-    # format target should not use --check (that's format-check)
+
     format_lines = [line for line in result.stdout.splitlines() if "ruff format" in line]
     for line in format_lines:
         assert "--check" not in line, f"format target must not use --check (use format-check instead): {line}"

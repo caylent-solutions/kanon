@@ -21,44 +21,27 @@ import pytest
 
 from kanon_cli.core.install import install
 
-# fcntl + SIGALRM are POSIX-only; these tests exercise the POSIX locking/signal
-# path and run in full on the single Linux CI set. The importorskip below is the
-# defence-in-depth collection guard on any host that lacks fcntl.
+
 fcntl = pytest.importorskip("fcntl")
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
-# Timeout for subprocess signal tests (seconds).
+
 _SIGNAL_WAIT_TIMEOUT = 30
 
-# Timeout for waiting for a subprocess to reach the retry-sleep phase (seconds).
-# The repo tool sleeps ~4 seconds after the first failed git fetch attempt;
-# we wait up to this many seconds for the marker line to appear in stdout.
+
 _STARTUP_MARKER_TIMEOUT = 20
 
-# Text fragment emitted by the embedded repo tool when it enters the retry-sleep
-# phase after a failed git fetch. With PYTHONUNBUFFERED=1 in the subprocess
-# environment, this line arrives in real time so the test can reliably detect
-# the blocked mid-install state.
+
 _RETRY_SLEEP_MARKER = "sleeping"
 
-# Exit code expected when a process handles SIGTERM and exits with 128 + SIGTERM.
-# POSIX shell convention: 128 + signal number.
-_EXIT_SIGTERM = 128 + signal.SIGTERM  # 143
 
-# Exit code expected when a process handles SIGINT and exits with 128 + SIGINT.
-# POSIX shell convention: 128 + signal number.
-_EXIT_SIGINT = 128 + signal.SIGINT  # 130
+_EXIT_SIGTERM = 128 + signal.SIGTERM
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
+_EXIT_SIGINT = 128 + signal.SIGINT
 
 
 def _build_subprocess_env(extra_env: "dict[str, str] | None" = None) -> dict[str, str]:
@@ -80,8 +63,7 @@ def _build_subprocess_env(extra_env: "dict[str, str] | None" = None) -> dict[str
     entries = [src_str] + [p for p in existing.split(os.pathsep) if p and p != src_str]
     env["PYTHONPATH"] = os.pathsep.join(entries)
     env.setdefault("REPO_TRACE", "0")
-    # Disable Python's output buffering so stdout lines can be read line by
-    # line by the test harness rather than only after the pipe closes.
+
     env["PYTHONUNBUFFERED"] = "1"
     if extra_env:
         env.update(extra_env)
@@ -169,11 +151,6 @@ def _wait_for_retry_sleep(proc: subprocess.Popen, timeout: float = _STARTUP_MARK
     return found.wait(timeout=timeout)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: SIGTERM mid-install results in exit 143 and cleanup
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSigtermMidInstall:
     """AC-TEST-001: SIGTERM mid-install results in exit 143 and cleanup.
@@ -246,8 +223,6 @@ class TestSigtermMidInstall:
             proc.kill()
             proc.wait()
 
-        # The OS releases file locks when a process exits, including when killed
-        # by a signal. Verify the lock file (if it exists) is now acquirable.
         lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
         if lock_path.exists():
             with open(lock_path, "w", encoding="utf-8") as lock_fd:
@@ -286,11 +261,6 @@ class TestSigtermMidInstall:
 
         stdout = proc.stdout.read() if proc.stdout else ""
         assert "Traceback" not in stdout, f"Python traceback leaked to stdout after SIGTERM. stdout={stdout!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: SIGINT mid-sync results in exit 130 and restore
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -359,8 +329,6 @@ class TestSigintMidSync:
             proc.kill()
             proc.wait()
 
-        # Retry install in-process with all repo ops patched to no-ops.
-        # The retry must succeed despite partial state from the interrupted run.
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -404,11 +372,6 @@ class TestSigintMidSync:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: SIGHUP behaves per default handler
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestSighupDefaultHandler:
     """AC-TEST-003: SIGHUP behaves per default handler.
@@ -444,9 +407,6 @@ class TestSighupDefaultHandler:
             proc.wait()
             pytest.fail(f"kanon install did not terminate within {_SIGNAL_WAIT_TIMEOUT}s after SIGHUP")
 
-        # The default SIGHUP handler terminates the process.
-        # Python reports signal-killed exit as -signum (e.g., -1 for SIGHUP).
-        # kanon must not override SIGHUP with a custom handler.
         assert proc.returncode == -(signal.SIGHUP), (
             f"Expected SIGHUP default termination (returncode {-(signal.SIGHUP)}), "
             f"got {proc.returncode}. "

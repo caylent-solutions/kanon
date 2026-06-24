@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for subcmds/diffmanifests.py module."""
 
 from unittest import mock
@@ -83,7 +69,6 @@ class TestDiffmanifestsValidateOptions:
         opt = mock.Mock()
         opt.this_manifest_only = True
 
-        # Should not raise
         with mock.patch.object(type(diffmanifests), "OptionParser", new_callable=mock.PropertyMock) as mock_op:
             mock_op.return_value = mock_parser
             diffmanifests.ValidateOptions(opt, ["manifest1.xml"])
@@ -505,5 +490,4 @@ class TestDiffmanifestsExecute:
         with mock.patch("kanon_cli.repo.subcmds.diffmanifests.RepoClient", return_value=manifest):
             diffmanifests.Execute(opt, ["manifest1.xml"])
 
-            # When color is False, all printers should be set to printText
             assert diffmanifests.printProject == diffmanifests.printText

@@ -17,11 +17,6 @@ import pytest
 from tests.functional.conftest import _run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: Path, content: str) -> Path:
     """Write an XML file, creating parent directories as needed.
 
@@ -81,11 +76,6 @@ def _valid_marketplace_xml(
     ET.SubElement(meta, "description").text = "d"
     ET.SubElement(meta, "version").text = "1.0.0"
     return ET.tostring(root, encoding="unicode")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: linkfile dest validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -182,11 +172,6 @@ class TestLinkfileDestValidation:
         assert "bad" in result.stderr, (
             f"AC-TEST-001: expected error mentioning project 'bad'.\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: include chain cycle detection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -298,9 +283,6 @@ class TestIncludeChainCycleDetection:
 
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
-        # The cycle is detected and visited nodes are skipped -- no error is emitted
-        # for the cycle itself, and no infinite loop occurs. The validator exits 0
-        # and emits nothing to stderr (silent-cycle behavior).
         assert result.returncode == 0, (
             f"AC-TEST-002: circular includes must be silently skipped (exit 0).\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
@@ -309,11 +291,6 @@ class TestIncludeChainCycleDetection:
             f"AC-TEST-002: circular includes must not produce any stderr output.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: uniqueness, tag format, branch format, constraint format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -442,11 +419,6 @@ class TestTagFormatValidation:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: marketplace-specific rules layered over generic xml validation
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestMarketplaceSpecificRules:
     """AC-FUNC-001: validate marketplace applies marketplace-specific checks.
@@ -487,7 +459,7 @@ class TestMarketplaceSpecificRules:
         generic XML validator.
         """
         repo_root = _make_repo(tmp_path)
-        # Write only a non-marketplace XML file -- this should not be discovered.
+
         _write_xml(
             repo_root / "repo-specs" / "catalog.xml",
             '<manifest><remote name="r" fetch="https://example.com" /></manifest>',
@@ -495,7 +467,6 @@ class TestMarketplaceSpecificRules:
 
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
-        # No marketplace files found -- the command exits 1 with the "no files" error.
         assert result.returncode == 1, (
             f"AC-FUNC-001: expected exit 1 when only non-marketplace XML exists.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
@@ -540,15 +511,10 @@ class TestMarketplaceSpecificRules:
         assert result.returncode == 1, (
             f"AC-FUNC-001: expected exit 1 for multiple errors.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Both errors must appear in stderr
+
         assert "invalid" in result.stderr.lower() or "error" in result.stderr.lower(), (
             f"AC-FUNC-001: expected error messages in stderr.\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (summary)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -583,7 +549,7 @@ class TestStdoutStderrDiscipline:
         assert result.returncode == 0, (
             f"Expected exit 0 for valid marketplace.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # The validator prints "Validating ..." progress and "All N ... passed." on stdout.
+
         assert result.stdout.strip() != "", (
             f"AC-CHANNEL-001: expected non-empty stdout on success.\nstdout: {result.stdout!r}"
         )
@@ -601,7 +567,7 @@ class TestStdoutStderrDiscipline:
         assert result.returncode == 1, (
             f"Expected exit 1 for invalid marketplace.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # "Found N validation error(s):" appears on stderr.
+
         assert "error" in result.stderr.lower(), (
             f"AC-CHANNEL-001: expected error summary on stderr.\nstderr: {result.stderr!r}"
         )

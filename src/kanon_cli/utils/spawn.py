@@ -53,8 +53,6 @@ def _record_posix_child_error(log_path: Path) -> None:
         with open(log_path, "a", encoding="utf-8") as log_fh:
             log_fh.write(traceback.format_exc())
     except OSError:
-        # Detached child about to os._exit(1); no further recovery channel
-        # exists and the non-zero exit preserves the fail-fast contract.
         return
 
 
@@ -83,10 +81,6 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
     _spawn_detached_posix(refresh_fn, log_path=log_path)
 
 
-# ---------------------------------------------------------------------------
-# POSIX implementation
-# ---------------------------------------------------------------------------
-
 _POSIX_FILE_MODE = 0o600
 
 
@@ -106,23 +100,15 @@ def _spawn_detached_posix(
         ) from exc
 
     if pid != 0:
-        # Parent path: return immediately; do NOT call os.waitpid.
         return
 
-    # Child path: detach, redirect I/O, run refresh_fn, exit.
-    # os._exit is always called (success or failure) so the child never
-    # falls through to the parent's code path.
     try:
         os.setsid()
 
-        # Redirect stdin and stdout to /dev/null.
         devnull_fd = os.open(os.devnull, os.O_RDWR)
-        os.dup2(devnull_fd, 0)  # stdin
-        os.dup2(devnull_fd, 1)  # stdout
+        os.dup2(devnull_fd, 0)
+        os.dup2(devnull_fd, 1)
 
-        # Redirect stderr to log_path (append mode).
-        # Explicitly chmod to 0700 after mkdir: the umask cannot be trusted
-        # to enforce owner-only permissions in a regulated-financial codebase.
         log_path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(log_path.parent, 0o700)
         log_fd = os.open(
@@ -130,9 +116,8 @@ def _spawn_detached_posix(
             os.O_WRONLY | os.O_CREAT | os.O_APPEND,
             _POSIX_FILE_MODE,
         )
-        os.dup2(log_fd, 2)  # stderr
+        os.dup2(log_fd, 2)
 
-        # Close the extra descriptors now that they are dup'd onto 0, 1, 2.
         os.close(devnull_fd)
         os.close(log_fd)
 

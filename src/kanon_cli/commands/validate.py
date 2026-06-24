@@ -48,7 +48,6 @@ def register(subparsers) -> None:
         description="Available validation targets",
     )
 
-    # xml sub-subcommand
     xml_parser = validate_subs.add_parser(
         "xml",
         add_help=True,
@@ -69,7 +68,6 @@ def register(subparsers) -> None:
     )
     xml_parser.set_defaults(func=_run_xml)
 
-    # marketplace sub-subcommand
     mp_parser = validate_subs.add_parser(
         "marketplace",
         add_help=True,
@@ -90,7 +88,6 @@ def register(subparsers) -> None:
     )
     mp_parser.set_defaults(func=_run_marketplace)
 
-    # metadata sub-subcommand
     meta_parser = validate_subs.add_parser(
         "metadata",
         add_help=True,
@@ -137,7 +134,6 @@ def register(subparsers) -> None:
     )
     meta_parser.set_defaults(func=_run_metadata)
 
-    # lockfile sub-subcommand
     lock_parser = validate_subs.add_parser(
         "lockfile",
         add_help=True,
@@ -210,12 +206,7 @@ def _resolve_repo_root(provided: Path | None) -> Path:
         SystemExit: If auto-detection fails or the provided directory does not
             exist.
     """
-    # Normalize to an absolute path at the CLI boundary so downstream
-    # pathlib operations (rglob, relative_to, joinpath) work identically
-    # whether the user invoked `kanon validate xml --repo-root .` (relative)
-    # or `kanon validate xml --repo-root /abs/path` (absolute) or omitted the
-    # flag (auto-detect via `git rev-parse --show-toplevel`, which always
-    # produces an absolute path). Fail-fast if an explicit path does not exist.
+
     if provided is not None:
         resolved = provided.resolve()
         if not resolved.is_dir():
@@ -378,8 +369,6 @@ def validate_lockfile_command(args) -> None:
         os.environ.get(_KANON_LOCK_FILE_ENV),
     )
 
-    # Parse .kanon. parse_kanonenv fails fast (ValueError) on a duplicate
-    # KANON_SOURCE_<alias>_* key, surfacing duplicate aliases at the CLI boundary.
     try:
         parsed = parse_kanonenv(kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:

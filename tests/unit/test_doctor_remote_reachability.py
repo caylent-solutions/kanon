@@ -46,11 +46,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 _DEFAULT_RETRY_POLICY = RetryPolicy(
     timeout=_KANON_RESOLVE_TIMEOUT_DEFAULT,
     retry_count=GIT_RETRY_COUNT_DEFAULT,
@@ -166,11 +161,6 @@ def _long_stderr_ls_remote(
     return (128, "", long_msg)
 
 
-# ---------------------------------------------------------------------------
-# Tests: all URLs reachable -- no findings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAllUrlsReachable:
     """_check_remote_reachability produces no findings when all URLs succeed."""
@@ -224,11 +214,6 @@ class TestAllUrlsReachable:
         findings = _check_remote_reachability(lockfile, _ok_ls_remote, _DEFAULT_RETRY_POLICY)
 
         assert findings == []
-
-
-# ---------------------------------------------------------------------------
-# Tests: single unreachable URL -- one warning finding
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -299,7 +284,6 @@ class TestSingleUnreachableUrl:
 
         findings = _check_remote_reachability(lockfile, _fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
-        # Canonical form strips .git suffix; anchored regex prevents partial-hostname false matches
         assert re.search(r"\bexample\.com/", findings[0].message)
 
     def test_single_unreachable_finding_contains_exit_code(self, tmp_path: pathlib.Path) -> None:
@@ -355,11 +339,6 @@ class TestSingleUnreachableUrl:
         findings = _check_remote_reachability(lockfile, _fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
         assert "docs/git-auth-setup.md" in findings[0].remediation
-
-
-# ---------------------------------------------------------------------------
-# Tests: all URLs unreachable -- N warning findings
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -445,11 +424,6 @@ class TestAllUrlsUnreachable:
         assert all(f.kind == "warn" for f in findings)
 
 
-# ---------------------------------------------------------------------------
-# Tests: stderr truncated at KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestStderrTruncation:
     """Stderr preview in the finding is truncated at KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS."""
@@ -471,9 +445,7 @@ class TestStderrTruncation:
         findings = _check_remote_reachability(lockfile, _long_stderr_ls_remote, _DEFAULT_RETRY_POLICY)
 
         assert len(findings) == 1
-        # The finding message should NOT exceed the combined length of the fixed
-        # parts plus the preview cap (we test that "X" * LIMIT is in the message
-        # but "X" * (LIMIT + 1) is not, which verifies truncation occurred).
+
         expected_preview = "X" * KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS
         overshoot = "X" * (KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS + 1)
         assert expected_preview in findings[0].message
@@ -496,11 +468,6 @@ class TestStderrTruncation:
         findings = _check_remote_reachability(lockfile, _fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
         assert "repository not found" in findings[0].message
-
-
-# ---------------------------------------------------------------------------
-# Tests: auth-error patterns -- still produces warning, no retries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -542,7 +509,6 @@ class TestAuthErrorPattern:
 
         findings = _check_remote_reachability(lockfile, _auth_fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
-        # Canonical form strips .git suffix; anchored regex prevents partial-hostname false matches
         assert re.search(r"\bexample\.com/", findings[0].message)
 
     def test_auth_error_finding_contains_stderr_preview(self, tmp_path: pathlib.Path) -> None:
@@ -580,11 +546,6 @@ class TestAuthErrorPattern:
         findings = _check_remote_reachability(lockfile, _auth_fail_ls_remote, _DEFAULT_RETRY_POLICY)
 
         assert "docs/git-auth-setup.md" in findings[0].remediation
-
-
-# ---------------------------------------------------------------------------
-# Tests: duplicate URLs (ssh vs https forms) -- deduplicated to one check
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -682,11 +643,6 @@ class TestDuplicateUrlDeduplication:
         assert call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# Tests: exact call count matches distinct canonicalized URL count
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestExactCallCount:
     """Verifies the exact number of ls-remote calls equals the number of distinct canonical URLs."""
@@ -751,11 +707,6 @@ class TestExactCallCount:
         assert call_count == expected_calls
 
 
-# ---------------------------------------------------------------------------
-# Tests: AC-FUNC-007 -- callable injection contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCallableInjection:
     """_check_remote_reachability accepts ls_remote_callable as a parameter (AC-FUNC-007)."""
@@ -779,8 +730,7 @@ class TestCallableInjection:
         _check_remote_reachability(lockfile, _recording_stub, _DEFAULT_RETRY_POLICY)
 
         assert len(calls) == 1
-        # The URL passed to the callable must be the raw URL (not canonical form
-        # -- git ls-remote needs the actual URL, not the https:// normalized form)
+
         assert calls[0][0] in (url, "https://example.com/org/repo")
         assert calls[0][1] == "HEAD"
 
@@ -790,11 +740,6 @@ class TestCallableInjection:
 
         assert isinstance(preview_chars, int)
         assert preview_chars > 0
-
-
-# ---------------------------------------------------------------------------
-# Tests: KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS constant
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -818,11 +763,6 @@ class TestRemoteStderrPreviewConst:
         from kanon_cli.constants import KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS
 
         assert KANON_DOCTOR_REMOTE_STDERR_PREVIEW_CHARS > 0
-
-
-# ---------------------------------------------------------------------------
-# Tests: invalid URL -- canonicalize_repo_url raises ValueError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -913,11 +853,6 @@ class TestInvalidUrlWarning:
         assert "docs/git-auth-setup.md" in findings[0].remediation
 
 
-# ---------------------------------------------------------------------------
-# Tests: _run_ls_remote_impl -- direct coverage with monkeypatched subprocess
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunLsRemoteImpl:
     """Direct unit tests for _run_ls_remote_impl covering subprocess interaction."""
@@ -962,7 +897,6 @@ class TestRunLsRemoteImpl:
 
         code, out, err = _run_ls_remote_impl(["git", "ls-remote", "https://example.com/r", "HEAD"], 30, 3)
 
-        # Auth errors must not be retried -- only one subprocess call despite retry_count=3
         assert call_count == 1
         assert code == 128
         assert "Permission denied" in err
@@ -995,11 +929,6 @@ class TestRunLsRemoteImpl:
 
         assert call_count == 3
         assert code == 1
-
-
-# ---------------------------------------------------------------------------
-# Tests: _run_ls_remote_exit_code -- direct coverage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1048,11 +977,6 @@ class TestRunLsRemoteExitCode:
         code, out, err = _run_ls_remote_exit_code("https://example.com/r", "HEAD", 30, 1, 0.0)
 
         assert code == 2
-
-
-# ---------------------------------------------------------------------------
-# Tests: _read_retry_policy -- direct coverage with monkeypatched os.environ
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

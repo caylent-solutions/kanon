@@ -30,11 +30,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_pkg_alpha(fixtures_dir: pathlib.Path) -> pathlib.Path:
     """Create a bare content repo for pkg-alpha under fixtures_dir/content-repos.
 
@@ -67,7 +62,6 @@ def _build_manifest_primary(
     manifest_dir = fixtures_dir / "manifest-repos"
     manifest_dir.mkdir(parents=True, exist_ok=True)
 
-    # pkg-alpha bare repo sits at pkg_alpha_bare; its parent is the fetch root.
     content_fetch_url = pkg_alpha_bare.parent.as_uri()
 
     remote_xml = (
@@ -121,11 +115,6 @@ def _write_ad_kanonenv(work_dir: pathlib.Path, manifest_bare: pathlib.Path) -> p
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestAD:
     def test_ad_01_install_no_arg_in_dir_with_kanon(self, tmp_path: pathlib.Path) -> None:
@@ -170,8 +159,7 @@ class TestAD:
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
-        # Install artifacts land under the shared store (<KANON_HOME>/store),
-        # regardless of which subdirectory the install was invoked from.
+
         assert (store_base / ".packages" / "pkg-alpha").exists(), (
             f".packages/pkg-alpha not found under store {store_base}"
         )
@@ -180,7 +168,6 @@ class TestAD:
         """AD-03: kanon install with no .kanon anywhere -- must fail with exit 1."""
         work_dir = tmp_path / "test-ad03"
         work_dir.mkdir()
-        # Deliberately do NOT create a .kanon file.
 
         result = run_kanon("install", cwd=work_dir)
 
@@ -220,7 +207,6 @@ class TestAD:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _write_ad_kanonenv(work_dir, manifest_bare)
 
-        # First install with explicit arg, then clean without any arg.
         catalog_source = f"{manifest_bare.as_uri()}@main"
         install_result = run_kanon(
             "install",
@@ -276,11 +262,9 @@ class TestAD:
         manifest_bare = _build_ad_fixtures(fixtures_dir)
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # cwd dir without a .kanon.
         cwd_dir = tmp_path / "test-ad07-cwd"
         cwd_dir.mkdir()
 
-        # Separate dir with the real .kanon.
         explicit_dir = tmp_path / "test-ad07-explicit"
         explicit_dir.mkdir()
         _write_ad_kanonenv(explicit_dir, manifest_bare)
@@ -295,8 +279,7 @@ class TestAD:
 
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon install: done" in result.stdout, f"stdout={result.stdout!r}"
-        # Install artifacts land under the shared store (<KANON_HOME>/store);
-        # neither the explicit .kanon dir nor the cwd receives a .packages tree.
+
         assert (store_base / ".packages" / "pkg-alpha").exists(), (
             f".packages/pkg-alpha not found under store {store_base}"
         )

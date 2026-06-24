@@ -32,10 +32,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in other attribute test files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -104,11 +100,6 @@ def _minimal_manifest_with_hooks(
         f'  <repo-hooks in-project="{in_project}" enabled-list="{enabled_list}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: valid-value tests -- one per documented <repo-hooks> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -228,11 +219,6 @@ class TestRepoHooksAttributeValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: invalid-value tests -- each attribute's invalid values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksAttributeInvalidValues:
     """AC-TEST-002: every documented <repo-hooks> attribute raises on invalid values.
@@ -331,11 +317,6 @@ class TestRepoHooksAttributeInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRepoHooksRequiredAttributeOmission:
     """AC-TEST-003: omitting a required attribute raises ManifestParseError with
@@ -432,11 +413,6 @@ class TestRepoHooksRequiredAttributeOmission:
             f"Expected '{expected_attr_in_message}' in error message for missing required attribute "
             f"but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (parser raises, never prints)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

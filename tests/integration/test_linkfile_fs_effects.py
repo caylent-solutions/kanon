@@ -20,11 +20,6 @@ import pytest
 from kanon_cli.repo.project import _LinkFile
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_linkfile(
     git_worktree: pathlib.Path,
     src: str,
@@ -48,11 +43,6 @@ def _make_linkfile(
     if exclude is not None:
         kwargs["exclude"] = exclude
     return _LinkFile(str(git_worktree), src, str(topdir), dest, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: linkfile creates a symlink, not a copy
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -138,11 +128,6 @@ def test_linkfile_does_not_create_regular_file(tmp_path: pathlib.Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: linkfile permissions preserved
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_linkfile_preserves_source_permissions_via_symlink(tmp_path: pathlib.Path) -> None:
     """The symlink created by _Link() preserves the source file's permissions.
@@ -160,7 +145,7 @@ def test_linkfile_preserves_source_permissions_via_symlink(tmp_path: pathlib.Pat
 
     src_file = worktree / "script.sh"
     src_file.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-    # Set a distinctive permission mask: owner-execute, group-read, world none.
+
     src_file.chmod(0o750)
     expected_mode = stat.S_IMODE(os.stat(str(src_file)).st_mode)
 
@@ -169,7 +154,7 @@ def test_linkfile_preserves_source_permissions_via_symlink(tmp_path: pathlib.Pat
 
     dest = topdir / "script.sh"
     assert os.path.islink(str(dest)), f"Expected {dest} to be a symlink after _Link()."
-    # os.stat follows the symlink, so this reads the source file's mode.
+
     resolved_mode = stat.S_IMODE(os.stat(str(dest)).st_mode)
     assert resolved_mode == expected_mode, (
         f"Expected resolved permissions {expected_mode:#o} (from source) "
@@ -208,11 +193,6 @@ def test_linkfile_preserves_various_source_modes(tmp_path: pathlib.Path, mode: i
         f"Mode {mode:#o}: expected resolved mode {expected_mode:#o} "
         f"but got {resolved_mode:#o} through symlink at {dest}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: linkfile replacement overwrites existing symlink atomically
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -314,11 +294,6 @@ def test_linkfile_idempotent_on_already_current_symlink(tmp_path: pathlib.Path) 
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: linkfile absolute dest fork feature works
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_linkfile_absolute_dest_creates_symlink_at_absolute_path(tmp_path: pathlib.Path) -> None:
     """_Link() with an absolute dest path creates the symlink at that absolute path.
@@ -400,11 +375,6 @@ def test_linkfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path) -> N
         f"Expected a symlink at {abs_dest!r} after _Link() with nested absolute dest, "
         f"but the path does not exist or is not a symlink."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: linkfile exclude wildcards work
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -548,11 +518,6 @@ def test_linkfile_no_exclude_creates_single_directory_symlink(tmp_path: pathlib.
     assert (dest / "lib").is_dir(), f"Expected 'lib' to be accessible through the directory symlink at {dest}."
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: filesystem effects match documented fork behavior
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_linkfile_relative_dest_resolved_under_topdir(tmp_path: pathlib.Path) -> None:
     """_Link() with a relative dest resolves it under topdir.
@@ -576,11 +541,6 @@ def test_linkfile_relative_dest_resolved_under_topdir(tmp_path: pathlib.Path) ->
         f"Expected a symlink at {dest} (relative dest resolved under topdir) after _Link()."
     )
     assert dest.read_text(encoding="utf-8") == "env: production\n", "Expected symlink to resolve to source content."
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: no stdout leakage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -39,7 +39,7 @@ def _run_kanon(
 def _fixture_dir() -> pathlib.Path:
     """Return the path to the broken-soft-spot-1 fixture directory."""
     here = pathlib.Path(__file__).parent
-    # tests/integration/ -> tests/fixtures/catalog/broken-soft-spot-1/
+
     return here.parent / "fixtures" / "catalog" / "broken-soft-spot-1"
 
 
@@ -75,7 +75,7 @@ class TestCatalogAuditMetadataSubprocess:
         fixture = _fixture_dir()
         result = _run_kanon(["catalog", "audit", str(fixture), "--check", "metadata"])
         combined = result.stdout + result.stderr
-        # duplicate-child.xml triggers a duplicate-name error
+
         assert "ERROR" in combined
 
     def test_multiple_blocks_error_in_output(self) -> None:

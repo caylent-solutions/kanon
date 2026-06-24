@@ -17,11 +17,6 @@ import subprocess
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Module existence (AC-4 prerequisite)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestGitRunnerModuleExists:
     """git_runner module must exist and be importable from kanon_cli.core."""
@@ -37,11 +32,6 @@ class TestGitRunnerModuleExists:
         from kanon_cli.core.git_runner import run_git_ls_remote
 
         assert callable(run_git_ls_remote)
-
-
-# ---------------------------------------------------------------------------
-# Success path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -113,11 +103,6 @@ class TestRunGitLsRemoteSuccess:
         assert call_count == 1
 
 
-# ---------------------------------------------------------------------------
-# Retry exhaustion -- no time.sleep
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRetryExhaustionNoSleep:
     """run_git_ls_remote retries up to retry_count on non-auth failures; never calls time.sleep."""
@@ -170,7 +155,7 @@ class TestRetryExhaustionNoSleep:
 
         def _tracking_sleep(delay: float) -> None:
             sleep_calls.append(delay)
-            original_sleep(0)  # call with 0 so the test does not actually block
+            original_sleep(0)
 
         monkeypatch.setattr(time, "sleep", _tracking_sleep)
         monkeypatch.setattr(
@@ -209,11 +194,6 @@ class TestRetryExhaustionNoSleep:
         )
 
         assert call_count == 1
-
-
-# ---------------------------------------------------------------------------
-# Timeout error path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -306,11 +286,6 @@ class TestTimeoutErrorPath:
         assert sleep_calls == [], f"time.sleep was called {len(sleep_calls)} time(s); expected 0"
 
 
-# ---------------------------------------------------------------------------
-# Auth-error pattern skips retry
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAuthErrorSkipsRetry:
     """Auth-error patterns in stderr cause run_git_ls_remote to skip retries immediately."""
@@ -364,11 +339,6 @@ class TestAuthErrorSkipsRetry:
 
         assert code == 128
         assert "Permission denied" in err
-
-
-# ---------------------------------------------------------------------------
-# KANON_GIT_LS_REMOTE_TIMEOUT constant
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

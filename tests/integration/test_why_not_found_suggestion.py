@@ -35,26 +35,17 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
-
 _SOURCE_NAME = "foo"
 _PROJECT_NAME = "baz"
 _PROJECT_URL = "https://github.com/org/baz.git"
 _INCLUDE_NAME = "bar"
 _INCLUDE_PATH = "repo-specs/bar/bar.xml"
 
-# Fixed SHAs -- 40 hex chars each
+
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
 _KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -69,11 +60,6 @@ def _mock_check_sha_reachable():
     yield
 
 
-# ---------------------------------------------------------------------------
-# Fixture: .kanon and .kanon.lock in a tmp directory
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def why_suggestion_fixture(tmp_path: pathlib.Path):
     """Create a .kanon file and a .kanon.lock for suggestion tests.
@@ -81,7 +67,7 @@ def why_suggestion_fixture(tmp_path: pathlib.Path):
     Tree structure:
       foo (source) -> repo-specs/bar/bar.xml (include) -> https://github.com/org/baz.git (project)
     """
-    # Write .kanon file
+
     kanon_file = tmp_path / ".kanon"
     kanon_file.write_text(
         f"KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog\n"
@@ -92,7 +78,6 @@ def why_suggestion_fixture(tmp_path: pathlib.Path):
     )
     kanon_file.chmod(0o644)
 
-    # Write .kanon.lock file
     canonical_project_url = canonicalize_repo_url(_PROJECT_URL)
     lockfile = Lockfile(
         schema_version=CURRENT_SCHEMA_VERSION,
@@ -136,11 +121,6 @@ def why_suggestion_fixture(tmp_path: pathlib.Path):
     return tmp_path, kanon_file, lock_path
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _invoke_why(
     tmp_path: pathlib.Path,
     kanon_file: pathlib.Path,
@@ -166,11 +146,6 @@ def _invoke_why(
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestWhyNotFoundWithSuggestion:
     """Integration tests for closest-match suggestion on not-found."""
@@ -185,7 +160,7 @@ class TestWhyNotFoundWithSuggestion:
         assert result.returncode != 0, "Expected non-zero exit for not-found"
         assert "not found" in result.stderr.lower(), f"Expected 'not found' in stderr; got:\n{result.stderr}"
         assert "foo" in result.stderr, f"Expected source name 'foo' in suggestion list; stderr:\n{result.stderr}"
-        # Must NOT contain "No close matches"
+
         assert "No close matches" not in result.stderr, (
             f"Expected suggestion list, not 'No close matches'; stderr:\n{result.stderr}"
         )
@@ -222,7 +197,7 @@ class TestWhyNotFoundWithSuggestion:
         result = _invoke_why(tmp_path, kanon_file, lock_file, "foo")
 
         assert result.returncode == 0, f"Expected exit 0 for exact source match; stderr:\n{result.stderr}"
-        # The chain should be printed to stdout
+
         assert "foo" in result.stdout
         assert "not found" not in result.stderr.lower()
 
@@ -231,7 +206,7 @@ class TestWhyNotFoundWithSuggestion:
     ) -> None:
         """'kanon why repo-specs/bar/barr.xml' (one-char typo on XML path) includes XML path."""
         tmp_path, kanon_file, lock_file = why_suggestion_fixture
-        # One-char typo: "repo-specs/bar/barr.xml" vs "repo-specs/bar/bar.xml"
+
         result = _invoke_why(tmp_path, kanon_file, lock_file, "repo-specs/bar/barr.xml")
 
         assert result.returncode != 0

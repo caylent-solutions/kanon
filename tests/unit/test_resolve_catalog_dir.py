@@ -62,7 +62,7 @@ class TestResolveCatalogDirParametrised:
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
             mock_clone.return_value = flag_catalog
             resolve_catalog_dir("https://flag-repo.git@main")
-        # Verify the env-var value was NOT passed to the cloner
+
         call_arg = mock_clone.call_args[0][0]
         assert call_arg == "https://flag-repo.git@main"
         assert call_arg != "https://env-repo.git@env-branch"

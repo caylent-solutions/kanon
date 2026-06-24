@@ -28,10 +28,6 @@ from kanon_cli.constants import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _VALID_XML = textwrap.dedent("""\
     <?xml version="1.0"?>
     <package>
@@ -93,11 +89,6 @@ class TestMetadataAuditRejectsOldScheme:
         assert "nested" in m007.message
 
 
-# ---------------------------------------------------------------------------
-# Constants presence
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMetadataConstants:
     """KANON_CATALOG_METADATA_REQUIRED_FIELDS and *_RECOMMENDED_FIELDS exist in constants."""
@@ -134,11 +125,6 @@ class TestMetadataConstants:
         assert required.isdisjoint(recommended)
 
 
-# ---------------------------------------------------------------------------
-# Registry registration (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMetadataCheckRegistered:
     """'metadata' is registered in AUDIT_CHECK_REGISTRY."""
@@ -148,11 +134,6 @@ class TestMetadataCheckRegistered:
 
     def test_metadata_value_is_callable(self) -> None:
         assert callable(AUDIT_CHECK_REGISTRY["metadata"])
-
-
-# ---------------------------------------------------------------------------
-# Valid XML produces zero findings (AC-FUNC-009)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -181,11 +162,6 @@ class TestValidXmlProducesNoFindings:
         findings = _run_check(tmp_path)
         assert findings != []
         assert any("tool-other.xml" in f.message for f in findings)
-
-
-# ---------------------------------------------------------------------------
-# Missing REQUIRED fields => ERROR (AC-FUNC-001, AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 def _xml_missing_required(field: str) -> str:
@@ -258,11 +234,6 @@ class TestMissingRequiredField:
             f"Expected 4 ERRORs for 4 missing required fields, got {len(error_findings)}: "
             f"{[f.message for f in error_findings]}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Missing RECOMMENDED fields => WARN (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 def _xml_missing_recommended(field: str) -> str:
@@ -341,11 +312,6 @@ class TestMissingRecommendedField:
         assert error_findings == []
 
 
-# ---------------------------------------------------------------------------
-# Duplicate child elements => ERROR (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDuplicateChildElement:
     """Duplicate <name> or <description> within one <catalog-metadata> block => ERROR."""
@@ -402,11 +368,6 @@ class TestDuplicateChildElement:
         )
 
 
-# ---------------------------------------------------------------------------
-# Multiple <catalog-metadata> blocks => ERROR (AC-FUNC-005)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMultipleCatalogMetadataBlocks:
     """Multiple <catalog-metadata> blocks in one file => ERROR naming path and count."""
@@ -435,7 +396,7 @@ class TestMultipleCatalogMetadataBlocks:
 
         error_findings = [f for f in findings if f.kind == "error"]
         assert error_findings, "Expected at least one ERROR for multiple <catalog-metadata> blocks"
-        # Must name the count (2)
+
         count_errors = [f for f in error_findings if "2" in f.message]
         assert count_errors, f"Expected ERROR naming count '2', got: {[f.message for f in error_findings]}"
         assert str(xml_file) in count_errors[0].message or xml_file.name in count_errors[0].message
@@ -456,11 +417,6 @@ class TestMultipleCatalogMetadataBlocks:
         error_findings = [f for f in findings if f.kind == "error"]
         count_errors = [f for f in error_findings if "3" in f.message]
         assert count_errors, f"Expected ERROR naming count '3', got: {[f.message for f in error_findings]}"
-
-
-# ---------------------------------------------------------------------------
-# Malformed XML => ERROR with M003 (AC-TEST-001 full error-class coverage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -495,11 +451,6 @@ class TestMalformedXml:
         m003_findings = [f for f in findings if f.code == "M003"]
         assert m003_findings, "Expected M003 finding for malformed XML"
         assert str(xml_file) in m003_findings[0].message or xml_file.name in m003_findings[0].message
-
-
-# ---------------------------------------------------------------------------
-# Zero <catalog-metadata> blocks => ERROR with M004 (AC-TEST-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -558,11 +509,6 @@ class TestZeroCatalogMetadataBlocks:
         assert str(xml_file) in m004_findings[0].message or xml_file.name in m004_findings[0].message
 
 
-# ---------------------------------------------------------------------------
-# Empty / whitespace-only REQUIRED fields => ERROR (AC-FUNC-006)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmptyRequiredField:
     """Empty or whitespace-only REQUIRED fields => ERROR (treated as missing)."""
@@ -581,7 +527,7 @@ class TestEmptyRequiredField:
         self, tmp_path: pathlib.Path, field: str, empty_element: str
     ) -> None:
         """AC-FUNC-006: empty/whitespace required field => ERROR for that field."""
-        # Build XML replacing the normal field value with the empty/whitespace element.
+
         replacement_map = {
             "name": "    <name>my-tool</name>",
             "display-name": "    <display-name>My Tool</display-name>",
@@ -601,11 +547,6 @@ class TestEmptyRequiredField:
             f"Expected ERROR naming field {field!r} for empty/whitespace element, "
             f"got: {[f.message for f in error_findings]}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Exit code: ERROR => non-zero, only WARN => zero (AC-FUNC-010)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -633,11 +574,6 @@ class TestCheckMetadataExitCodeSignal:
         assert not any(f.kind == "error" for f in findings)
 
 
-# ---------------------------------------------------------------------------
-# Multiple XML files
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMultipleXmlFiles:
     """_check_metadata walks all *-marketplace.xml files under repo-specs/."""
@@ -648,7 +584,7 @@ class TestMultipleXmlFiles:
         _write_xml(tmp_path, "tool-b-marketplace.xml", _xml_missing_required("version"))
         findings = _run_check(tmp_path)
         error_findings = [f for f in findings if f.kind == "error"]
-        # At least one for each file
+
         assert len(error_findings) >= 2
 
     def test_mixed_valid_and_invalid(self, tmp_path: pathlib.Path) -> None:

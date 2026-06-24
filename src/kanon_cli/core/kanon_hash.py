@@ -16,13 +16,10 @@ import pathlib
 
 from kanon_cli.core.kanonenv import parse_kanonenv
 
-# Characters forbidden inside any field value used in the hash serialisation.
-# A literal tab (0x09) is the field delimiter; a literal newline (0x0A) is
-# the record delimiter; a literal NUL (0x00) is rejected because it cannot
-# be represented safely in many downstream consumers.
+
 _FORBIDDEN_CHARS: tuple[str, ...] = ("\t", "\n", "\x00")
 
-# Human-readable names for each forbidden character, keyed by the character.
+
 _CHAR_CODEPOINT: dict[str, str] = {
     "\t": "0x09",
     "\n": "0x0A",

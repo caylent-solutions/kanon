@@ -18,11 +18,6 @@ from kanon_cli.core.catalog import (
 )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Catalog constraints integration tests (10 tests)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestParseCatalogSource:
     """Verify catalog source string parsing into URL and ref."""

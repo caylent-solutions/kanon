@@ -24,14 +24,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Full marketplace XML template (all recommended fields included).
+
 _FULL_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -48,7 +44,7 @@ _FULL_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Partial XML: omits type, owner-name, owner-email, keywords (triggers WARNING).
+
 _PARTIAL_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -60,11 +56,6 @@ _PARTIAL_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -98,11 +89,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_manifest_repo(
@@ -158,11 +144,6 @@ def _create_manifest_repo(
     return _clone_as_bare(work_dir, base / "manifest-bare.git")
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -185,11 +166,6 @@ def _run_kanon(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration test: --detail with a three-entry catalog
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -242,7 +218,7 @@ class TestListDetailThreeEntries:
             ["search", "--detail", "--catalog-source", catalog_source],
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
-        # Header lines are non-indented, non-empty lines.
+
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
         assert sorted(header_lines) == ["alpha", "beta", "gamma"], (
             f"Expected headers ['alpha', 'beta', 'gamma']; got {header_lines!r}.\n  stdout: {result.stdout!r}"
@@ -266,7 +242,7 @@ class TestListDetailThreeEntries:
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
-        # 3 entries x 4 fields each = 12 indented lines.
+
         assert len(indented_lines) == 12, (
             f"Expected 12 indented lines (3 entries x 4 fields); got {len(indented_lines)}.\n"
             f"  stdout: {result.stdout!r}"
@@ -291,7 +267,7 @@ class TestListDetailThreeEntries:
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         stdout = result.stdout
-        # Find the alpha record (lines from 'alpha' header to the next blank/header).
+
         lines = stdout.splitlines()
         alpha_block = []
         in_alpha = False
@@ -315,11 +291,6 @@ class TestListDetailThreeEntries:
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         assert "ERROR:" not in result.stderr, f"Unexpected ERROR: in stderr: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# Integration test: AC-CYCLE-001 -- full + partial entries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -347,7 +318,7 @@ class TestListDetailAcCycle001:
                 "display_name": "Partial Entry",
                 "description": "Missing type and owner fields.",
                 "version": "0.5.0",
-                "pkg_type": None,  # Omit type, owner-name, owner-email, keywords.
+                "pkg_type": None,
             },
         ]
         bare = _create_manifest_repo(tmp_path, entries)
@@ -427,11 +398,6 @@ class TestListDetailAcCycle001:
         )
 
 
-# ---------------------------------------------------------------------------
-# Integration test: record shape matches spec Section 2.1 step 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestListDetailRecordShape:
     """The per-entry record shape matches the spec Section 2.1 step 2 worked example."""
@@ -508,8 +474,8 @@ class TestListDetailRecordShape:
             extra_env={"KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         lines = result.stdout.splitlines()
-        for line in lines[1:]:  # Skip name header.
-            if line:  # Skip blank separators if any.
+        for line in lines[1:]:
+            if line:
                 assert line.startswith("  "), f"Field line missing two-space indent: {line!r}"
 
     def test_record_has_five_lines(self, tmp_path: pathlib.Path) -> None:

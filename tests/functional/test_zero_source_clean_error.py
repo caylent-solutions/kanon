@@ -22,15 +22,13 @@ import pytest
 from tests.conftest import write_lockfile_doctor_unit
 from tests.functional.conftest import _run_kanon
 
-# A .kanon with zero source triples. Comments and KANON_MARKETPLACE_INSTALL
-# are not sources, so source discovery raises the "No sources found" ValueError.
+
 _ZERO_SOURCE_KANON = "# zero-source workspace -- no KANON_SOURCE_* triples\nKANON_MARKETPLACE_INSTALL=false\n"
 
-# A throwaway catalog source for commands that require one before they reach
-# the parse step (outdated unconditionally, why on the live-resolve path).
+
 _FAKE_CATALOG_SOURCE = "file:///does/not/matter@main"
 
-# Sentinels that must never appear on either stream for a clean error.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 _BUG_MARKER = "BUG:"
 
@@ -73,13 +71,12 @@ class TestZeroSourceCleanError:
     """Every entry command must fail cleanly on a zero-source .kanon."""
 
     def test_doctor_zero_source_no_traceback(self, tmp_path: pathlib.Path) -> None:
-        # doctor recomputes kanon_hash only when a lockfile is present, so a
-        # lockfile must exist to drive _check_kanon_hash into parse_kanonenv.
+
         kanon = _write_zero_source_kanon(tmp_path)
         write_lockfile_doctor_unit(tmp_path)
         result = _run_kanon("doctor", "--kanon-file", str(kanon))
         _assert_clean_error(result, command="doctor")
-        # doctor specifically reports the structured NO_SOURCES finding.
+
         assert "no sources" in result.stderr.lower(), f"stderr={result.stderr!r}"
 
     def test_install_zero_source_no_traceback(self, tmp_path: pathlib.Path) -> None:
@@ -93,8 +90,7 @@ class TestZeroSourceCleanError:
         _assert_clean_error(result, command="clean")
 
     def test_why_zero_source_no_traceback(self, tmp_path: pathlib.Path) -> None:
-        # No lockfile present -> why takes the live-resolve path, which requires
-        # a catalog source and reaches parse_kanonenv inside _live_resolve_tree.
+
         kanon = _write_zero_source_kanon(tmp_path)
         result = _run_kanon(
             "why",

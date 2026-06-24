@@ -26,23 +26,10 @@ import subprocess
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
-# Directory that holds all help fixture files.  The path is resolved relative
-# to this source file so the harness works regardless of the working directory
-# from which pytest is invoked.
 _FIXTURES_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "fixtures" / "help"
 
-# Each row is a (case_id, argv, fixture_name) triple.
-#
-# case_id      -- unique string used as the pytest parametrize ID
-# argv         -- tuple of CLI tokens inserted *before* "--help"
-#                 (empty tuple -> "kanon --help")
-# fixture_name -- file name inside _FIXTURES_DIR; the expected stdout
-#
-# Tasks T02-T11 each append one (or two, for T09) rows to this list.
+
 _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-toplevel", (), "kanon-toplevel.txt"),
     ("kanon-search", ("search",), "kanon-search.txt"),
@@ -58,11 +45,6 @@ _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-catalog-audit", ("catalog", "audit"), "kanon-catalog-audit.txt"),
     ("kanon-completion", ("completion",), "kanon-completion.txt"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Environment helper
-# ---------------------------------------------------------------------------
 
 
 def _clean_env() -> dict[str, str]:
@@ -86,11 +68,6 @@ def _clean_env() -> dict[str, str]:
     env.pop("KANON_CATALOG_SOURCES", None)
     env["COLUMNS"] = "80"
     return env
-
-
-# ---------------------------------------------------------------------------
-# Snapshot test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

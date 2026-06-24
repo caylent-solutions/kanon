@@ -20,18 +20,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal .kanon file content for a branch-pinned source.
-# {name_upper} -- uppercased source name for env-var key
-# {name_lower} -- lowercased source name for path
-# {url} -- file:// URL to the bare project repo
-# {revision} -- branch name (e.g. "main")
+
 _KANON_BRANCH_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_URL={url}
     KANON_SOURCE_{name_upper}_REF={revision}
@@ -39,11 +31,6 @@ _KANON_BRANCH_TEMPLATE = textwrap.dedent("""\
     KANON_SOURCE_{name_upper}_NAME={name_upper}
     KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -84,11 +71,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _create_project_repo_with_two_commits(
     base: pathlib.Path,
     name: str,
@@ -109,13 +91,11 @@ def _create_project_repo_with_two_commits(
     work_dir.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(work_dir)
 
-    # First commit -- SHA A
     (work_dir / "README.md").write_text(f"# {name} initial\n")
     _git(["add", "."], cwd=work_dir)
     _git(["commit", "-m", "Initial commit"], cwd=work_dir)
     sha_a = _git_output(["rev-parse", "HEAD"], cwd=work_dir)
 
-    # Second commit -- SHA B (HEAD)
     (work_dir / "README.md").write_text(f"# {name} second\n")
     _git(["add", "."], cwd=work_dir)
     _git(["commit", "-m", "Second commit"], cwd=work_dir)
@@ -175,11 +155,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -197,11 +172,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -248,7 +218,6 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # Write a lockfile with SHA A (the older commit)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
             "schema_version = 4\n"
@@ -320,7 +289,6 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # Write lockfile with the current HEAD SHA (no drift)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
             "schema_version = 4\n"
@@ -356,10 +324,7 @@ class TestOutdatedBranchDrift:
         )
         assert sha_b_12 in result.stdout, f"Expected HEAD SHA {sha_b_12!r} in output:\n{result.stdout}"
         assert "none" in result.stdout, f"Expected upgrade-type=none in output:\n{result.stdout}"
-        # Inspect only the STABLE table row's upgrade-type column. A whole-stdout
-        # substring check would false-match 'drift' inside the leading
-        # 'alias -> name from <url>@<ref>' render line whenever the fixture path
-        # contains that substring (e.g. the temp dir for this test name).
+
         stable_row = next(line for line in result.stdout.splitlines() if line.startswith("STABLE") and "|" in line)
         assert "none" in stable_row, f"Expected upgrade-type=none in STABLE row:\n{stable_row}"
         assert "drift" not in stable_row, f"Expected no drift when locked SHA == HEAD:\n{stable_row}"
@@ -392,7 +357,6 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # No lockfile -- live resolve should pick current HEAD
         result = _run_kanon(
             [
                 "outdated",
@@ -470,8 +434,7 @@ class TestOutdatedBranchDrift:
         assert result.returncode == 0, (
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Both latest-matching-spec and latest-available must be the same HEAD SHA
-        # Count occurrences of sha_b_12 -- should appear at least twice (both columns)
+
         count = result.stdout.count(sha_b_12)
         assert count >= 2, (
             f"Expected {sha_b_12!r} to appear in both latest-matching-spec and "

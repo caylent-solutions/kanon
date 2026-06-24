@@ -22,10 +22,6 @@ import kanon_cli.repo.pager as repo_pager
 from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 from kanon_cli.repo.subcmds import selfupdate as selfupdate_mod
 
-# ---------------------------------------------------------------------------
-# Helper factories
-# ---------------------------------------------------------------------------
-
 
 def _make_selfupdate_instance() -> selfupdate_mod.Selfupdate:
     """Return a minimal Selfupdate instance with all dependencies mocked."""
@@ -47,11 +43,6 @@ def _make_opt(repo_upgraded: bool = False, repo_verify: bool = True) -> MagicMoc
     opt.repo_upgraded = repo_upgraded
     opt.repo_verify = repo_verify
     return opt
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-TEST-002: Execute() returns 1 in embedded (disabled) mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -112,11 +103,6 @@ class TestSelfupdateStubExitCode:
             assert result == 1, f"Execute() must return 1 in embedded mode with {flag_label}, got {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: message emitted to stderr in embedded mode
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSelfupdateStubMessageEmission:
     """AC-FUNC-002: disabled-stub emits the documented message to stderr.
@@ -156,11 +142,6 @@ class TestSelfupdateStubMessageEmission:
         assert SELFUPDATE_EMBEDDED_MESSAGE not in output, (
             f"Disabled message must not appear on stdout, but stdout contains: {output!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Guard: no network ops in embedded (disabled) mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

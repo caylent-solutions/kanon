@@ -39,11 +39,7 @@ import kanon_cli.constants as constants
 
 from .conftest import _run_kanon
 
-# Driver script run in a fresh interpreter. It seeds the real update-check cache
-# under KANON_HOME, monkeypatches only the network fetch + installed-version +
-# editable probes, and calls the genuine maybe_alert_update so stderr/stdout
-# routing, the TTL classification, the version comparison, and alert rendering
-# are all exercised in a separate process. argv[1] selects the scenario.
+
 _DRIVER = r"""
 import argparse
 import sys
@@ -115,14 +111,9 @@ def _base_env() -> dict[str, str]:
     import os
 
     env = dict(os.environ)
-    # Keep rendering deterministic and never inherit a skip flag from the parent.
+
     env.pop(constants.KANON_SKIP_UPDATE_CHECK_ENV, None)
     return env
-
-
-# ---------------------------------------------------------------------------
-# Stale cache -> alert on stderr (AC-55)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -137,15 +128,10 @@ def test_stale_cache_prints_alert_to_stderr(tmp_path: Path) -> None:
         read_now=10_000_000,
     )
     assert result.returncode == 0, f"driver failed: {result.stderr!r}"
-    # The alert is on stderr, never stdout (protects --format json / pipes).
+
     assert "99.0.0" in result.stderr
     assert constants.KANON_UPDATE_UPGRADE_COMMAND in result.stderr
     assert result.stdout == ""
-
-
-# ---------------------------------------------------------------------------
-# Up-to-date -> silent (AC-55)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -178,11 +164,6 @@ def test_installed_newer_than_cached_is_silent(tmp_path: Path) -> None:
     assert result.returncode == 0, f"driver failed: {result.stderr!r}"
     assert result.stdout == ""
     assert result.stderr == ""
-
-
-# ---------------------------------------------------------------------------
-# Skip conditions via the real CLI (dev install / flags) -- no alert (AC-28/AC-55)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -239,11 +220,6 @@ def test_help_lists_no_update_check_flag(tmp_path: Path) -> None:
     assert "--no-update-check" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Completion invocations skip the check (no alert pollutes Tab-completion output)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 def test_completion_subcommand_skips_update_alert(tmp_path: Path) -> None:
     """A `__complete_*` invocation emits no update alert on stderr.
@@ -253,7 +229,7 @@ def test_completion_subcommand_skips_update_alert(tmp_path: Path) -> None:
     then the real completer subcommand is invoked.
     """
     home = tmp_path / "home-complete"
-    # Seed a stale cache that WOULD alert if the check were not skipped.
+
     seed = subprocess.run(
         [
             sys.executable,

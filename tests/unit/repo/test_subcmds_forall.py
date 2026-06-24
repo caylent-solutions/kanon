@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the forall subcmd."""
 
 import os
@@ -48,13 +34,10 @@ class AllCommands(unittest.TestCase):
     def initTempGitTree(self, git_dir):
         """Create a new empty git checkout for testing."""
 
-        # Tests need to assume, that main is default branch at init,
-        # which is not supported in config until 2.28.
         cmd = ["git", "init", "-q"]
         if git_command.git_require((2, 28, 0)):
             cmd += ["--initial-branch=main"]
         else:
-            # Use template dir for init
             templatedir = os.path.join(self.tempdirobj.name, ".test-template")
             os.makedirs(templatedir)
             with open(os.path.join(templatedir, "HEAD"), "w") as fp:
@@ -67,7 +50,6 @@ class AllCommands(unittest.TestCase):
         """Create and return a setup of 8 projects with enough dummy
         files and setup to execute forall."""
 
-        # Set up a manifest git dir for parsing to work
         gitdir = os.path.join(self.repodir, "manifests.git")
         os.mkdir(gitdir)
         with open(os.path.join(gitdir, "config"), "w") as fp:
@@ -78,7 +60,6 @@ class AllCommands(unittest.TestCase):
                 """
             )
 
-        # Add the manifest data
         manifest_data = """
                 <manifest>
                     <remote name="origin" fetch="http://localhost" />
@@ -96,7 +77,6 @@ class AllCommands(unittest.TestCase):
         with open(self.manifest_file, "w", encoding="utf-8") as fp:
             fp.write(manifest_data)
 
-        # Set up 8 empty projects to match the manifest
         for x in range(1, 9):
             os.makedirs(os.path.join(self.repodir, "projects/tests/path" + str(x) + ".git"))
             os.makedirs(os.path.join(self.repodir, "project-objects/project" + str(x) + ".git"))
@@ -134,14 +114,13 @@ class CmdOptionTests(unittest.TestCase):
         mock_option = unittest.mock.MagicMock()
         mock_option.dest = None
 
-        # Use a simple namespace as parser.values so setattr works
         values = type("Values", (), {})()
         mock_parser = unittest.mock.MagicMock()
         mock_parser.values = values
         mock_parser.rargs = ["echo", "hello"]
 
         Forall._cmd_option(mock_option, "-c", None, mock_parser)
-        # With dest=None, fallback is "command"
+
         self.assertEqual(values.command, ["echo", "hello"])
 
     def test_cmd_option_uses_explicit_dest(self):
@@ -171,7 +150,6 @@ class TestForallOptions:
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-c", "echo"])
 
-        # Verify command is parsed
         assert hasattr(opts, "command")
         assert opts.command is not None
 
@@ -189,7 +167,7 @@ class TestForallOptions:
 
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-r", "-c", "echo", "path.*"])
-        # -r is a boolean flag, patterns come from args
+
         assert opts.regex is True
 
     def test_options_with_inverse_regex(self):
@@ -198,7 +176,7 @@ class TestForallOptions:
 
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-i", "-c", "echo", "test"])
-        # -i is a boolean flag, patterns come from args
+
         assert opts.inverse_regex is True
 
     def test_options_project_header(self):
@@ -215,7 +193,7 @@ class TestForallOptions:
 
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-v", "-c", "echo"])
-        # -v sets output_mode to True (verbose)
+
         assert opts.output_mode is True
 
     def test_options_abort_on_errors(self):
@@ -238,7 +216,7 @@ class TestForallValidateOptions:
 
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args([])
-        # Set command to None explicitly
+
         opts.command = None
 
         with pytest.raises(UsageError):
@@ -251,7 +229,6 @@ class TestForallValidateOptions:
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-c", "echo", "test"])
 
-        # Should not raise
         cmd.ValidateOptions(opts, args)
 
     def test_validate_options_interactive_sets_jobs(self):
@@ -261,7 +238,6 @@ class TestForallValidateOptions:
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["--interactive", "-c", "echo"])
 
-        # ValidateOptions doesn't raise - that's success
         cmd.ValidateOptions(opts, args)
 
 
@@ -275,10 +251,9 @@ class TestForallWantPager:
 
         cmd = Forall()
         opts, args = cmd.OptionParser.parse_args(["-p", "-c", "echo"])
-        # Set jobs to 1 as required by WantPager
+
         opts.jobs = 1
 
-        # WantPager needs project_header=True and jobs==1
         assert cmd.WantPager(opts) is True
 
     def test_want_pager_without_project_header(self):
@@ -289,7 +264,6 @@ class TestForallWantPager:
         opts, args = cmd.OptionParser.parse_args(["-c", "echo"])
         opts.jobs = 1
 
-        # Without project_header (None), WantPager returns None or False
         result = cmd.WantPager(opts)
         assert result is None or result is False
 

@@ -23,11 +23,6 @@ from tests.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# CLI runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon_doctor(
     kanon_file: pathlib.Path,
     *,
@@ -49,7 +44,7 @@ def _run_kanon_doctor(
         The completed process object with stdout, stderr, and returncode.
     """
     env = dict(os.environ)
-    # Strip any inherited catalog source to ensure test isolation.
+
     env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
@@ -69,11 +64,6 @@ def _run_kanon_doctor(
 def _write_minimal_kanon(tmp_path: pathlib.Path) -> pathlib.Path:
     """Write a minimal .kanon file and return its path."""
     return _write_kanon(tmp_path, "src", "https://example.com/org/repo.git")
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Only KANON_CATALOG_SOURCES is set (no CLI flag, no lockfile).
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -103,11 +93,6 @@ class TestDoctorEffectiveSourceEnvVarOnly:
         )
 
         assert "(from KANON_CATALOG_SOURCES env var)" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: CLI flag takes precedence over KANON_CATALOG_SOURCES env var.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -155,18 +140,6 @@ class TestDoctorEffectiveSourceCliWins:
         )
 
         assert env_value not in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: A schema-v4 lockfile no longer contributes a catalog source.
-#
-# Schema v4 (spec Section 5.2 / FR-7) removed the lockfile [catalog] block, so
-# the lockfile no longer participates in the effective-source precedence chain.
-# The chain is now: --catalog-source CLI flag -> KANON_CATALOG_SOURCES env var ->
-# none. When a v4 lockfile is the only thing present (no CLI flag, no env var),
-# the effective source is "(none configured)" -- the lockfile does NOT supply
-# a catalog source the way the removed [catalog].source tier used to.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -235,11 +208,6 @@ class TestDoctorEffectiveSourceLockfilePresent:
         assert "(from KANON_CATALOG_SOURCES env var)" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: No source configured (no CLI flag, no env var, no lockfile).
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorEffectiveSourceNoneConfigured:
     """kanon doctor reports 'none configured' when no catalog source is available."""
@@ -259,11 +227,6 @@ class TestDoctorEffectiveSourceNoneConfigured:
         result = _run_kanon_doctor(kanon_file)
 
         assert "commands requiring" in result.stdout or "will fail" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: Leaked env var scenario.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

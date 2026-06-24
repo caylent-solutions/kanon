@@ -15,10 +15,6 @@ import pytest
 from kanon_cli.core.kanonenv import parse_kanonenv
 
 
-# ---------------------------------------------------------------------------
-# Minimal valid .kanon content that satisfies source discovery requirements.
-# Reused across multiple tests as a shared constant to avoid duplication.
-# ---------------------------------------------------------------------------
 _VALID_SOURCE_LINES = (
     "KANON_SOURCE_build_URL=https://example.com\n"
     "KANON_SOURCE_build_REF=main\n"
@@ -155,12 +151,11 @@ class TestPermissionDenied:
         """When .kanon exists but is not readable, PermissionError includes the path."""
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(_VALID_SOURCE_LINES)
-        # Remove all read permissions from the file
+
         kanonenv.chmod(stat.S_IWRITE)
         try:
             with pytest.raises(PermissionError) as exc_info:
                 parse_kanonenv(kanonenv)
             assert str(kanonenv) in str(exc_info.value)
         finally:
-            # Restore permissions so tmp_path cleanup can delete the file
             kanonenv.chmod(stat.S_IRUSR | stat.S_IWUSR)

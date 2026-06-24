@@ -30,26 +30,17 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
-
 _SOURCE_NAME = "FOO"
 _PROJECT_NAME = "baz"
 _PROJECT_URL = "https://github.com/org/baz"
 _INCLUDE_NAME = "bar"
 _INCLUDE_PATH = "repo-specs/bar.xml"
 
-# Fixed SHAs used throughout the fixture -- 40 hex chars each
+
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
 _KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -62,11 +53,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: this test does not install anything -- no git calls needed."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture: .kanon and .kanon.lock in a tmp directory
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -145,11 +131,6 @@ def why_json_fixture(tmp_path: pathlib.Path):
     }
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-
 def _run_why_json(
     fixture: dict,
     target: str,
@@ -172,11 +153,6 @@ def _run_why_json(
     if extra_args:
         cmd.extend(extra_args)
     return subprocess.run(cmd, capture_output=True, text=True)
-
-
-# ---------------------------------------------------------------------------
-# End-to-end integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -339,7 +315,7 @@ class TestWhyFormatJsonIntegration:
         """No ERROR message emitted to stderr on a successful --format json invocation."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
-        # Warnings (e.g., about recommended character set) are acceptable; hard errors are not
+
         assert "ERROR:" not in result.stderr
 
     def test_not_found_error_exits_nonzero_with_json_format(self, why_json_fixture: dict) -> None:
@@ -421,11 +397,6 @@ class TestWhyFormatJsonIntegration:
             "This is a regression: _chain_to_node_dicts must use node.canonical_url for project nodes."
         )
         assert project_node["url"] != raw_url, f"url field must not be the raw SCP form {raw_url!r}"
-
-
-# ---------------------------------------------------------------------------
-# JSON parity test for url match on live-resolve path (no lockfile)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

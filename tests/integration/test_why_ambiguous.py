@@ -23,11 +23,6 @@ import pytest
 from tests.conftest import _make_minimal_kanon_file, _write_lockfile
 
 
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def _mock_resolve_ref_to_sha():
     """Override: this test does not install anything -- no git calls needed."""
@@ -38,11 +33,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: this test does not install anything -- no git calls needed."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _run_why(
@@ -66,11 +56,6 @@ def _run_why(
         capture_output=True,
         text=True,
     )
-
-
-# ---------------------------------------------------------------------------
-# Ambiguity: XML path AND source name
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -114,11 +99,11 @@ class TestWhyAmbiguousXmlPathAndSourceName:
         result = _run_why(kanon_file, lock_file, ambiguous_arg)
 
         assert result.returncode != 0
-        # Error message must mention XML path category
+
         assert (
             "xml" in result.stderr.lower() or "manifest" in result.stderr.lower() or "path" in result.stderr.lower()
         ), f"stderr must mention XML path interpretation, got: {result.stderr!r}"
-        # Error message must mention the actual path value
+
         assert ambiguous_arg in result.stderr, (
             f"stderr must contain the XML path '{ambiguous_arg}', got: {result.stderr!r}"
         )
@@ -135,11 +120,11 @@ class TestWhyAmbiguousXmlPathAndSourceName:
         result = _run_why(kanon_file, lock_file, ambiguous_arg)
 
         assert result.returncode != 0
-        # Error message must mention source name category
+
         assert "source" in result.stderr.lower(), (
             f"stderr must mention source name interpretation, got: {result.stderr!r}"
         )
-        # Error message must mention the source name token
+
         assert source_name in result.stderr, (
             f"stderr must contain the source name '{source_name}', got: {result.stderr!r}"
         )
@@ -158,11 +143,6 @@ class TestWhyAmbiguousXmlPathAndSourceName:
         assert result.returncode != 0
         assert result.stdout.strip() == "", f"stdout must be empty on ambiguity error, got: {result.stdout!r}"
         assert result.stderr.strip() != "", f"stderr must contain the error message, got: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# Ambiguity: URL + XML path (file:// fixture)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -184,7 +164,7 @@ class TestWhyAmbiguousUrlAndXmlPath:
             (exact same string -- XML path matching is exact string equality)
         """
         source_name = "FOO"
-        # The file:// URL and include path are identical strings
+
         ambiguous_arg = "file:///tmp/some/path.xml"
         project_url = ambiguous_arg
 
@@ -221,19 +201,14 @@ class TestWhyAmbiguousUrlAndXmlPath:
 
         assert result.returncode != 0
         stderr = result.stderr
-        # Must mention URL interpretation
+
         assert "url" in stderr.lower() or "project" in stderr.lower(), (
             f"stderr must mention URL category, got: {stderr!r}"
         )
-        # Must mention XML path interpretation
+
         assert "xml" in stderr.lower() or "manifest" in stderr.lower() or "path" in stderr.lower(), (
             f"stderr must mention XML path category, got: {stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Single-match: URL-only (regression / AC-CYCLE-001 complement)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -285,7 +260,6 @@ class TestWhyUrlOnlyMatch:
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name)
         lock_file = _write_lockfile(tmp_path, source_name, project_url, include_path=ambiguous_arg)
 
-        # Step 1: Ambiguous argument -> non-zero
         ambiguous_result = _run_why(kanon_file, lock_file, ambiguous_arg)
         assert ambiguous_result.returncode != 0, (
             f"Step 1: expected non-zero for ambiguous arg '{ambiguous_arg}'\nstderr: {ambiguous_result.stderr!r}"
@@ -294,7 +268,6 @@ class TestWhyUrlOnlyMatch:
             f"Step 1: stderr must describe ambiguity, got: {ambiguous_result.stderr!r}"
         )
 
-        # Step 2: Explicit project URL -> exit 0
         url_result = _run_why(kanon_file, lock_file, project_url)
         assert url_result.returncode == 0, (
             f"Step 2: expected exit 0 for URL '{project_url}'\n"
@@ -302,15 +275,10 @@ class TestWhyUrlOnlyMatch:
         )
         lines = [ln for ln in url_result.stdout.splitlines() if ln.strip()]
         assert len(lines) >= 1, f"Step 2: expected at least 1 chain line, got: {lines!r}"
-        # Source name appears in chain
+
         assert source_name in url_result.stdout, (
             f"Step 2: chain must contain source name '{source_name}', got: {url_result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Single-match: source name only
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -325,7 +293,6 @@ class TestWhySourceNameOnlyMatch:
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name)
         lock_file = _write_lockfile(tmp_path, source_name, project_url)
 
-        # Argument "my-source" normalizes to "my_source" == derive_source_name("MY_SOURCE")
         result = _run_why(kanon_file, lock_file, "my-source")
 
         assert result.returncode == 0, (
@@ -341,18 +308,12 @@ class TestWhySourceNameOnlyMatch:
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name)
         lock_file = _write_lockfile(tmp_path, source_name, project_url)
 
-        # "Foo-Bar" normalizes to "foo_bar" which equals derive_source_name("FOO_BAR")
         result = _run_why(kanon_file, lock_file, "Foo-Bar")
 
         assert result.returncode == 0, (
             f"Expected exit 0 for Foo-Bar -> FOO_BAR\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert "FOO_BAR" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# Single-match: XML path only
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -386,7 +347,6 @@ class TestWhyXmlPathOnlyMatch:
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name)
         lock_file = _write_lockfile(tmp_path, source_name, project_url, include_path=include_path)
 
-        # Partial path
         result = _run_why(kanon_file, lock_file, "exact.xml")
 
         assert result.returncode != 0, (

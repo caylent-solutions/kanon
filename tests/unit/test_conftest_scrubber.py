@@ -24,10 +24,9 @@ def test_scrubber_fixture_is_registered(request: pytest.FixtureRequest) -> None:
     pytest.FixtureLookupError and this test FAILS. After the autouse fixture
     is added (GREEN phase), the fixture resolves successfully and the test PASSES.
     """
-    # If _scrub_catalog_source_env is not registered, this raises FixtureLookupError.
+
     fixture_value = request.getfixturevalue("_scrub_catalog_source_env")
-    # The fixture yields None; the generator yields control and the teardown
-    # runs post-test. The resolved value in the test body is None (the yielded value).
+
     assert fixture_value is None
 
 

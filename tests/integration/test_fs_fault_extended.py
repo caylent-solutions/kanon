@@ -25,10 +25,6 @@ from kanon_cli.core.install import create_source_dirs
 from kanon_cli.core.install import install
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in source files)
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
@@ -40,23 +36,17 @@ _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
 
-# PATH_MAX is the maximum total path length on POSIX systems.
-# PC_PATH_MAX is the limit for the absolute path, or 4096 if unavailable.
+
 try:
     _PATH_MAX = os.pathconf("/", "PC_PATH_MAX")
 except (AttributeError, ValueError):
     _PATH_MAX = 4096
 
-# PC_NAME_MAX is the maximum length of a single filename component.
+
 try:
     _NAME_MAX = os.pathconf("/", "PC_NAME_MAX")
 except (AttributeError, ValueError):
     _NAME_MAX = 255
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon_subprocess(
@@ -111,11 +101,6 @@ def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     return kanonenv
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: non-UTF-8 filename in path produces a clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNonUtf8PathError:
     """AC-TEST-001: when the CLI receives a path that contains non-UTF-8 bytes
@@ -147,9 +132,7 @@ class TestNonUtf8PathError:
         through the surrogateescape codec. The CLI must fail-fast with exit 1
         rather than raising an unhandled UnicodeDecodeError.
         """
-        # Build a path whose directory name embeds a non-UTF-8 octet (0xFF).
-        # os.fsdecode with surrogateescape produces a str that contains
-        # a lone surrogate (which is invalid Unicode but legal in Python str).
+
         raw_name = b"bad\xff" + b"dir"
         try:
             nonexistent_dir = tmp_path / os.fsdecode(raw_name)
@@ -158,8 +141,6 @@ class TestNonUtf8PathError:
 
         nonexistent_kanon = nonexistent_dir / ".kanon"
 
-        # The path will not exist (we never created the directory), so the CLI
-        # must fail fast with a missing-file or non-UTF-8 encoding error.
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 
         assert result.returncode == 1, (
@@ -215,11 +196,6 @@ class TestNonUtf8PathError:
         assert not stdout_error_lines, (
             f"Error text leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: paths with Unicode characters work
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -325,13 +301,11 @@ class TestUnicodePathsWork:
 
         result = _run_kanon_subprocess("install", str(kanonenv))
 
-        # The CLI must not report a file-not-found error: the file exists.
         assert ".kanon file not found" not in result.stderr, (
             f"install must not report '.kanon file not found' for a valid path in a "
             f"Unicode directory. Got stderr={result.stderr!r}"
         )
-        # A path-encoding error must not appear; any failure must be from
-        # network/repo, not from path handling.
+
         assert "UnicodeDecodeError" not in result.stderr, (
             f"Path encoding error must not appear for Unicode directory name. Got stderr={result.stderr!r}"
         )
@@ -372,11 +346,6 @@ class TestUnicodePathsWork:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: PATH_MAX length path is handled
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestPathMaxHandling:
     """AC-TEST-003: when a path at or beyond PATH_MAX is presented to the CLI,
@@ -390,9 +359,7 @@ class TestPathMaxHandling:
         approaches PATH_MAX. The CLI must either succeed or fail cleanly -- no
         unhandled exceptions.
         """
-        # Build a path using the maximum-length single component allowed (NAME_MAX).
-        # We nest one level deep to bring the total close to PATH_MAX.
-        # The segment length is capped at NAME_MAX to be accepted by the FS.
+
         available_depth = _PATH_MAX - len(str(tmp_path)) - len("/.kanon") - 2
         segment_len = min(_NAME_MAX, max(1, available_depth))
         long_segment = "a" * segment_len
@@ -412,7 +379,6 @@ class TestPathMaxHandling:
 
         result = _run_kanon_subprocess("install", str(kanonenv))
 
-        # Whatever the outcome, no raw traceback on stderr.
         assert "Traceback (most recent call last):" not in result.stderr, (
             f"Raw traceback must not appear for near-PATH_MAX path. Got stderr={result.stderr!r}"
         )
@@ -450,18 +416,17 @@ class TestPathMaxHandling:
         passes it to the CLI. The OS will reject the path; the CLI must convert
         that OS error to a clean exit-1 with an 'Error:' message on stderr.
         """
-        # Build a path string that is longer than PATH_MAX without touching disk.
+
         excess = "b" * (_PATH_MAX + 100)
         long_path_str = str(tmp_path / excess / ".kanon")
 
         result = _run_kanon_subprocess("install", long_path_str)
 
-        # The path cannot exist (too long), so the CLI must exit non-zero.
         assert result.returncode != 0, (
             f"Expected non-zero exit for PATH_MAX-exceeding path, got {result.returncode}.\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # The error must be clean -- no raw traceback.
+
         assert "Traceback (most recent call last):" not in result.stderr, (
             f"Raw traceback must not appear for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
         )
@@ -478,11 +443,6 @@ class TestPathMaxHandling:
         )
         stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: mid-operation deletion race produces a clear error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -632,7 +592,6 @@ class TestMidOperationDeletionRace:
         directory-listing and its rmtree call.
         """
         kanonenv = _write_kanonenv(tmp_path)
-        # Intentionally do NOT create .packages/ or .kanon-data/
 
         result = _run_kanon_subprocess("clean", str(kanonenv))
 

@@ -41,7 +41,6 @@ from kanon_cli.core.lockfile import (
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# Keep-set marketplace names that kanon never registers and must never remove.
 _KEEP_SET_NAMES = ("claude-plugins-official", "devbench-authoring")
 
 _MARKETPLACE_JSON_TEMPLATE = '{{"name": "{name}", "plugins": []}}'
@@ -58,10 +57,6 @@ def _extract_marketplace_remove_names(call_args_list: list) -> list[str]:
             names.append(argv[4])
     return names
 
-
-# ---------------------------------------------------------------------------
-# (b) install auto-prune across a reconcile
-# ---------------------------------------------------------------------------
 
 _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -197,15 +192,12 @@ class TestInstallAutoPruneReconcile:
         claude_bin = "/usr/bin/claude"
         mock_completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-        # --- First install: source-alpha only. The marketplace 'source-alpha'
-        #     is deposited via linkfile processing and recorded in the ledger. ---
         kanonenv = _write_kanonenv_single_source(
             workspace,
             marketplace_dir,
             source_name="source_alpha",
             source_url=f"file://{bare_alpha}",
         )
-        # NOTE: PATH stem is source_alpha-marketplace.xml -> marketplace name 'source_alpha'.
 
         with (
             patch("kanon_cli.repo.repo_init", side_effect=_make_repo_init_with_linkfiles(marketplace_dir)),
@@ -223,7 +215,6 @@ class TestInstallAutoPruneReconcile:
             f"got {first_lock.sources[0].registered_marketplaces!r}"
         )
 
-        # --- Rewrite .kanon to source-bravo and reconcile-install. ---
         kanonenv = _write_kanonenv_single_source(
             workspace,
             marketplace_dir,
@@ -308,11 +299,6 @@ class TestInstallAutoPruneReconcile:
         )
 
 
-# ---------------------------------------------------------------------------
-# (c) canonical flow: install A+B, kanon remove A (no reinstall), clean --orphans
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanOrphansCanonicalFlow:
     def test_remove_a_then_clean_orphans_unregisters_a_marketplace(self, tmp_path: pathlib.Path) -> None:
@@ -360,22 +346,17 @@ class TestCleanOrphansCanonicalFlow:
         ):
             install(kanonenv, lock_file_path=lock_path)
 
-        # Sanity: the lock attributes source_alpha to source A.
         installed_lock = read_lockfile(lock_path)
         assert "source_alpha" in {
             mp for s in installed_lock.sources if s.name == "source_alpha" for mp in s.registered_marketplaces
         }
 
-        # kanon remove source A -- this rewrites .kanon to drop source A's triple
-        # but does NOT touch the lock or the marketplace directory (the
-        # orphaned-source state under test).  Re-declare only source B.
         _write_kanonenv_sources(
             workspace,
             marketplace_dir,
             sources=[("source_bravo", f"file://{bare_bravo}")],
         )
 
-        # clean --orphans: prune the marketplaces of sources now absent from .kanon.
         with (
             patch("kanon_cli.core.clean.uninstall_marketplace_plugins"),
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),

@@ -31,36 +31,22 @@ from kanon_cli.completions.cache import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Parametrized tests for classify()
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "file_content, ttl, now, expected",
     [
-        # AC-FUNC-001: missing file -> MISSING
         (None, 300, 1_000_000, Freshness.MISSING),
-        # AC-FUNC-002: empty file -> MISSING
         ("", 300, 1_000_000, Freshness.MISSING),
-        # AC-FUNC-003: non-numeric content -> MISSING
         ("not-a-number", 300, 1_000_000, Freshness.MISSING),
         ("1.5", 300, 1_000_000, Freshness.MISSING),
         ("abc\n", 300, 1_000_000, Freshness.MISSING),
-        # AC-FUNC-004: negative value -> MISSING
         ("-1", 300, 1_000_000, Freshness.MISSING),
         ("-1000000", 300, 1_000_000, Freshness.MISSING),
-        # AC-FUNC-005: future timestamp (clock skew: fetched_at > now) -> FRESH
         ("2000000", 300, 1_000_000, Freshness.FRESH),
         ("1000001", 300, 1_000_000, Freshness.FRESH),
-        # AC-FUNC-006 boundary: now - fetched_at == ttl -> FRESH
         ("999700", 300, 1_000_000, Freshness.FRESH),
-        # AC-FUNC-006 boundary: now - fetched_at == ttl + 1 -> STALE
         ("999699", 300, 1_000_000, Freshness.STALE),
-        # Ordinary fresh case: well within TTL
         ("999900", 300, 1_000_000, Freshness.FRESH),
-        # Ordinary stale case: far past TTL
         ("100000", 300, 1_000_000, Freshness.STALE),
     ],
 )
@@ -84,11 +70,6 @@ def test_classify_parametrized(
     assert result == expected
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: purity -- same result on repeated calls, no side effects
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_classify_pure_no_side_effects(tmp_path: Path) -> None:
     """classify() is pure: calling it twice yields the same result and does not
@@ -103,15 +84,10 @@ def test_classify_pure_no_side_effects(tmp_path: Path) -> None:
     result2 = classify(fetched_at_path, ttl_seconds=300, now=1_000_000)
 
     assert result1 == result2 == Freshness.FRESH
-    # The file must not have been modified.
+
     assert fetched_at_path.stat().st_mtime == before_mtime
-    # No extra files created alongside the fetched_at file.
+
     assert list(tmp_path.iterdir()) == [fetched_at_path]
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: read_entries_with_freshness() contract
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -119,7 +95,7 @@ def test_read_entries_with_freshness_missing_returns_empty(tmp_path: Path) -> No
     """MISSING freshness => entries list is empty."""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    # No files created -- fetched_at.txt is absent.
+
     entries, freshness = read_entries_with_freshness(cache_dir, ttl_seconds=300, now=1_000_000)
 
     assert freshness == Freshness.MISSING
@@ -148,18 +124,13 @@ def test_read_entries_with_freshness_stale_returns_entries(tmp_path: Path) -> No
     cache_dir.mkdir()
 
     (cache_dir / "index.txt").write_text("alpha\nbeta\n")
-    # fetched_at is 1000 seconds ago, ttl is 300 -- stale
+
     (cache_dir / "fetched_at.txt").write_text("999000")
 
     entries, freshness = read_entries_with_freshness(cache_dir, ttl_seconds=300, now=1_000_000)
 
     assert freshness == Freshness.STALE
     assert entries == ["alpha", "beta"]
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: end-to-end cycle test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -196,10 +167,6 @@ def test_cycle_just_expired_returns_stale(tmp_path: Path) -> None:
     assert entries == ["foo", "bar"]
 
 
-# ---------------------------------------------------------------------------
-# Search-path TTL cache extension (E3-F1-S4-T1, spec Section 4.1 / FR-25 / AC-17)
-# ---------------------------------------------------------------------------
-
 _SEARCH_URL = "https://example.com/org/catalog.git"
 _SEARCH_REF = "main"
 
@@ -232,7 +199,6 @@ def test_search_versions_fresh_reuse_within_ttl(_isolated_search_cache: Path) ->
     written = ["alpha@1.2.0", "alpha@1.1.0", "alpha@latest"]
     write_search_versions(_SEARCH_URL, _SEARCH_REF, written, now=1_000_000)
 
-    # now within the TTL window of the stamped fetched_at.
     versions, freshness = read_search_versions_with_freshness(_SEARCH_URL, _SEARCH_REF, ttl_seconds=300, now=1_000_100)
     assert freshness is Freshness.FRESH
     assert versions == written
@@ -248,7 +214,6 @@ def test_search_versions_stale_past_ttl_still_returns_entries(_isolated_search_c
     written = ["beta@2.0.0", "beta@latest"]
     write_search_versions(_SEARCH_URL, _SEARCH_REF, written, now=1_000_000)
 
-    # now is well past the TTL window.
     versions, freshness = read_search_versions_with_freshness(
         _SEARCH_URL, _SEARCH_REF, ttl_seconds=300, now=1_000_000 + 301
     )
@@ -266,7 +231,7 @@ def test_search_versions_per_source_isolation(_isolated_search_cache: Path) -> N
     dev_versions, _ = read_search_versions_with_freshness(_SEARCH_URL, "dev", ttl_seconds=300, now=1_000_010)
     assert main_versions == ["alpha@1.0.0"]
     assert dev_versions == ["alpha@9.9.9"]
-    # The two entries live in different per-key directories.
+
     assert search_entry_dir(_SEARCH_URL, "main") != search_entry_dir(_SEARCH_URL, "dev")
 
 
@@ -275,7 +240,7 @@ def test_search_versions_dir_under_search_namespace(_isolated_search_cache: Path
     """The search cache is namespaced under cache_dir()/search/<sha>."""
     entry_dir = search_entry_dir(_SEARCH_URL, _SEARCH_REF)
     assert entry_dir.parent == _isolated_search_cache / "search"
-    # The directory name is a 64-char SHA-256 hex digest.
+
     assert len(entry_dir.name) == 64
     assert all(c in "0123456789abcdef" for c in entry_dir.name)
 

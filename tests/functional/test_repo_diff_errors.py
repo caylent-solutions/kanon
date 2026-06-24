@@ -26,75 +26,55 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- ALL domain literals live here.
-# Zero inline literals in test bodies, f-string diagnostics, or parametrize
-# tuples.
-# ---------------------------------------------------------------------------
 
-# CLI tokens
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_DIFF = "diff"
 _FLAG_HELP = "--help"
 
-# Nonexistent repo-dir name used in all tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-diff-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-diff-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-diff-option-99"
 
-# Phrase produced by optparse when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The embedded repo tool writes 'repo diff' in the Usage line.
+
 _HELP_USAGE_PHRASE = "repo diff"
 
-# A flag name that must appear in --help output, confirming it is
-# subcommand-specific (--absolute is registered in Diff._Options()).
+
 _HELP_EXPECTED_FLAG_PHRASE = "--absolute"
 
-# Value-requiring option used in AC-TEST-003: requires exactly one integer
-# argument. Supplying it without a value triggers exit 2 with
-# "--jobs option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--jobs"
 
-# Error message substring expected in stderr when the option is supplied
-# without a value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase emitted by the embedded repo tool when the .repo directory is
-# absent (AC-TEST-004). The repo tool prints 'error parsing manifest'
-# followed by the manifest path.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file name that must appear in the precondition-failure error
-# message (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Sentinel for empty output.
+
 _EMPTY_OUTPUT = ""
 
-# Parametrize data for AC-TEST-002: unknown flags that must each exit 2
-# and name themselves in stderr. Each tuple is (flag_token, test_id).
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo diff --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -227,11 +207,6 @@ class TestRepoDiffHelp:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffUnknownFlag:
     """AC-TEST-002: Unknown flag to 'repo diff' exits 2 with the flag name in stderr.
@@ -348,11 +323,6 @@ class TestRepoDiffUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -480,11 +450,6 @@ class TestRepoDiffMissingOptionValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffPreconditionFailure:
     """AC-TEST-004: Subcommand precondition failure exits 1 with a clear message.
@@ -602,11 +567,6 @@ class TestRepoDiffPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Determinism and channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

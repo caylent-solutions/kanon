@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T1: empty envsubst file list silent.
 
 Bug reference: E0-F6-S2-T1 / Bug 5 -- when envsubst is invoked and
@@ -47,11 +33,6 @@ from kanon_cli.repo.subcmds import envsubst as envsubst_module
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd() -> Envsubst:
     """Return an Envsubst instance without invoking the parent __init__ chain.
 
@@ -65,11 +46,6 @@ def _make_cmd() -> Envsubst:
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- regression: warning logged when glob returns empty list
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -108,11 +84,6 @@ def test_regression_warning_logged_when_glob_returns_empty(caplog: pytest.LogCap
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- exact bug condition from E0-F6-S2-T1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_exact_bug_condition_no_exception_on_empty_glob() -> None:
     """AC-TEST-002: Execute() must not raise when glob.glob() returns [].
@@ -146,11 +117,6 @@ def test_regression_exact_bug_condition_no_exception_on_empty_glob() -> None:
                     f"return normally (it is not an error condition). "
                     f"Exception: {exc}"
                 )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- passes against the current fixed code
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -208,11 +174,6 @@ def test_regression_fixed_code_handles_empty_and_degenerate_glob(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: empty-list check present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_empty_list_guard_present_in_execute_source() -> None:
     """AC-FUNC-001: The empty-list guard is present in Envsubst.Execute() source.
@@ -243,11 +204,6 @@ def test_regression_empty_list_guard_present_in_execute_source() -> None:
         "Restore the '_LOG.warning(\"No files matched glob pattern: %s\", self.path)' "
         "call in the empty-list branch."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

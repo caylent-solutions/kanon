@@ -70,18 +70,8 @@ from tests.scenarios.conftest import (
     xml_escape,
 )
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
 
-# The 7-tag set shared by both the KS-fixture manifest repo and the catalog
-# content repo.  Every test resolves its .kanon constraint to one of these.
 _KS_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _make_ks_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
@@ -100,9 +90,9 @@ def _make_ks_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
         (work / "version.txt").write_text(tag)
         run_git(["add", "version.txt"], work)
         run_git(["commit", "-m", f"version {tag}"], work)
-        # Annotated tag: enables ``git describe --exact-match HEAD``.
+
         run_git(["tag", "-a", "-m", f"release {tag}", tag], work)
-        # Branch with the tag name: enables plain ``revision="1.0.0"`` forms.
+
         run_git(["branch", tag], work)
     return clone_as_bare(work, bare)
 
@@ -137,11 +127,9 @@ def _make_ks_fix_repo(
         (work / "default.xml").write_text(default_xml)
         run_git(["add", "default.xml"], work)
         run_git(["commit", "-m", f"version {tag}"], work)
-        # Annotated tag: enables ``git describe --exact-match HEAD`` on the
-        # KS-fixture source itself (used when kanon checks out the manifest).
+
         run_git(["tag", "-a", "-m", f"release {tag}", tag], work)
-        # Branch with tag name: lets plain REVISION strings like ``1.0.0``
-        # resolve as ``refs/heads/1.0.0`` in the KS-fixture source.
+
         run_git(["branch", tag], work)
 
     return clone_as_bare(work, bare)
@@ -167,16 +155,11 @@ def _build_ks_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     manifest_dir.mkdir()
 
     catalog_bare = _make_ks_catalog_repo(content_dir)
-    # repo appends ``<project-name>.git`` to the fetch URL.
+
     catalog_fetch_url = content_dir.as_uri()
     ks_fix_bare = _make_ks_fix_repo(manifest_dir, catalog_fetch_url)
 
     return ks_fix_bare, catalog_bare
-
-
-# ---------------------------------------------------------------------------
-# Core run helper
-# ---------------------------------------------------------------------------
 
 
 def _run_ks(
@@ -219,21 +202,11 @@ def _run_ks(
     )
 
 
-# ---------------------------------------------------------------------------
-# Class-scoped fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="class")
 def ks_repos(tmp_path_factory: pytest.TempPathFactory) -> tuple[pathlib.Path, pathlib.Path]:
     """Class-scoped (ks_fix_bare, catalog_bare) built once for all TestKS methods."""
     base = tmp_path_factory.mktemp("ks_fixtures")
     return _build_ks_fixtures(base)
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

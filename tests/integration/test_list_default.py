@@ -22,15 +22,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal *-marketplace.xml for a named entry. Owner fields included to avoid
-# recommended-field warnings polluting stderr assertions.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -46,11 +41,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers (independent copies, not imported from other tests)
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -98,11 +88,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture: manifest repo with marketplace XML files
-# ---------------------------------------------------------------------------
-
-
 def _create_manifest_repo(
     base: pathlib.Path,
     entry_names: list[str],
@@ -127,8 +112,6 @@ def _create_manifest_repo(
     repo_specs_dir = work_dir / "repo-specs"
     repo_specs_dir.mkdir()
 
-    # Git does not track empty directories; a .gitkeep ensures the directory
-    # is always committed even when entry_names is empty.
     (repo_specs_dir / ".gitkeep").write_text("")
 
     for name in entry_names:
@@ -170,7 +153,6 @@ def _create_manifest_repo_with_legacy_catalog(
         xml_path = repo_specs_dir / f"{name}-marketplace.xml"
         xml_path.write_text(_MARKETPLACE_XML_TEMPLATE.format(name=name))
 
-    # Legacy catalog directory -- must NOT be read by kanon search
     for name in legacy_names:
         legacy_dir = work_dir / "catalog" / name
         legacy_dir.mkdir(parents=True, exist_ok=True)
@@ -181,11 +163,6 @@ def _create_manifest_repo_with_legacy_catalog(
     _git(["commit", "-m", "Add entries and legacy catalog"], cwd=work_dir)
 
     return _clone_as_bare(work_dir, base / "manifest-legacy-bare.git")
-
-
-# ---------------------------------------------------------------------------
-# Subprocess runner for kanon
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon(
@@ -213,11 +190,6 @@ def _run_kanon(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration test: happy path -- three entries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -271,7 +243,7 @@ class TestListDefaultHappyPath:
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
-            ["search"],  # No --catalog-source flag
+            ["search"],
             extra_env={
                 "KANON_CATALOG_SOURCES": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
@@ -287,7 +259,7 @@ class TestListDefaultHappyPath:
 
     def test_catalog_source_flag_wins_over_env_var(self, tmp_path: pathlib.Path) -> None:
         """CLI --catalog-source takes precedence over KANON_CATALOG_SOURCES env var."""
-        # Create two repos: one with "correct" entry, one with "wrong" entry.
+
         bare_correct = _create_manifest_repo(tmp_path / "correct", ["correct-entry"])
         bare_wrong = _create_manifest_repo(tmp_path / "wrong", ["wrong-entry"])
 
@@ -303,18 +275,13 @@ class TestListDefaultHappyPath:
         assert "wrong-entry" not in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Integration test: empty catalog
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestListDefaultEmptyCatalog:
     """kanon search with zero marketplace XMLs: exit 0, empty stdout, stderr note."""
 
     def test_exits_0_for_empty_catalog(self, tmp_path: pathlib.Path) -> None:
         """kanon search exits 0 when the manifest repo has zero marketplace XMLs."""
-        bare = _create_manifest_repo(tmp_path, [])  # No entries
+        bare = _create_manifest_repo(tmp_path, [])
         catalog_source = f"file://{bare}@main"
 
         result = _run_kanon(
@@ -367,18 +334,13 @@ class TestListDefaultEmptyCatalog:
         assert "manifest repo contains 0 entries" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Integration test: missing catalog source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestListDefaultMissingCatalogSource:
     """kanon search with no --catalog-source and no env var: exit non-zero, error on stderr."""
 
     def test_exits_nonzero_when_no_source(self) -> None:
         """kanon search exits non-zero when neither flag nor env var is set."""
-        # Remove KANON_CATALOG_SOURCES from the environment
+
         clean_env = {k: v for k, v in os.environ.items() if k != "KANON_CATALOG_SOURCES"}
 
         result = subprocess.run(
@@ -428,11 +390,6 @@ class TestListDefaultMissingCatalogSource:
             env=clean_env,
         )
         assert "--catalog-source" in result.stderr, f"Expected '--catalog-source' hint in stderr; got {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# Integration test: legacy catalog/ directory is ignored
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

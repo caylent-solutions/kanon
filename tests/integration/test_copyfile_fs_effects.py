@@ -18,11 +18,6 @@ import pytest
 from kanon_cli.repo.project import _CopyFile
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_copyfile(
     git_worktree: pathlib.Path,
     src: str,
@@ -41,11 +36,6 @@ def _make_copyfile(
         A configured _CopyFile instance.
     """
     return _CopyFile(str(git_worktree), src, str(topdir), dest)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: copyfile creates a regular file (not a symlink)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -157,7 +147,6 @@ def test_copyfile_dest_is_independent_of_source(tmp_path: pathlib.Path) -> None:
     dest = topdir / "values.yaml"
     assert not os.path.islink(str(dest)), f"Expected {dest} to be a regular file, not a symlink."
 
-    # Overwrite the source -- a real copy must not be affected.
     src_file.write_text("completely different content\n", encoding="utf-8")
 
     dest_content = dest.read_text(encoding="utf-8")
@@ -165,11 +154,6 @@ def test_copyfile_dest_is_independent_of_source(tmp_path: pathlib.Path) -> None:
         f"Expected dest to retain original content {original_content!r} after source was overwritten, "
         f"but got {dest_content!r}. _Copy() must produce an independent file, not a symlink."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: copyfile permissions preserved
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -186,7 +170,7 @@ def test_copyfile_preserves_source_permissions(tmp_path: pathlib.Path) -> None:
 
     src_file = worktree / "script.sh"
     src_file.write_text("#!/bin/sh\necho hello\n", encoding="utf-8")
-    # Set a distinctive permission mask: owner-execute, group-read, world none.
+
     src_file.chmod(0o750)
     expected_mode = stat.S_IMODE(os.stat(str(src_file)).st_mode)
 
@@ -263,14 +247,8 @@ def test_copyfile_read_only_source_permissions_preserved(tmp_path: pathlib.Path)
         f"but got {dest_mode:#o}. _Copy() must not alter permission bits."
     )
 
-    # Restore write permission so tmp_path cleanup can remove the file.
     dest.chmod(0o644)
     src_file.chmod(0o644)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: copyfile replacement overwrites existing file atomically
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -361,7 +339,6 @@ def test_copyfile_idempotent_when_source_unchanged(tmp_path: pathlib.Path) -> No
     assert not os.path.islink(str(dest)), f"Expected {dest} to be a regular file, not a symlink."
     first_mtime = dest.stat().st_mtime
 
-    # Second call with unchanged source -- should skip the copy (filecmp.cmp == True).
     cf._Copy()
 
     second_mtime = dest.stat().st_mtime
@@ -399,7 +376,6 @@ def test_copyfile_replacement_produces_independent_file(tmp_path: pathlib.Path) 
     assert copied_content == "setting=new\n", "Pre-condition: replacement must have happened."
     assert not os.path.islink(str(dest)), f"Expected {dest} to be a regular file, not a symlink."
 
-    # Overwrite the source -- the replacement copy must not be affected.
     src_file.write_text("setting=mutated\n", encoding="utf-8")
 
     final_content = dest.read_text(encoding="utf-8")
@@ -407,11 +383,6 @@ def test_copyfile_replacement_produces_independent_file(tmp_path: pathlib.Path) 
         f"Expected the replaced dest to retain copied content after source was mutated, "
         f"but got {final_content!r}. The copy must be independent of the source."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: copyfile produces an actual filesystem copy
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -469,11 +440,6 @@ def test_copyfile_produces_copy_in_nested_dest_directory(tmp_path: pathlib.Path)
         f"Expected {dest} inode to be a regular file (mode {dest_stat.st_mode:#o}), but S_ISREG returned False."
     )
     assert dest.read_text(encoding="utf-8") == "env: staging\n", "Expected dest content to match source."
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: no stdout leakage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

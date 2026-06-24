@@ -29,10 +29,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# XML templates
-# ---------------------------------------------------------------------------
-
 _MODERN_MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -49,9 +45,7 @@ _MODERN_MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Legacy flat-metadata: well-formed XML but lacks <catalog-metadata><name>.
-# Mirrors the historical catalog format (pre-nested-name contract).
-# The directory name is the known-bad path-component that must NOT appear in output.
+
 _LEGACY_MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -67,32 +61,21 @@ _LEGACY_MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Canonical Names Test User"
 _GIT_USER_EMAIL = "canonical-names-test@example.com"
 
-# Known-bad path-component names that legacy directory layouts produce when
-# _derive_entry_name_from_xml_path() is used as a fallback.
+
 _KNOWN_BAD_NAMES: frozenset[str] = frozenset({"code-review", "idp", "cli", "microservice"})
 
-# Canonical entry names that mirror the real catalog (nested <name> values).
-# The directory names for legacy versions use the corresponding bad path-component names.
+
 _CANONICAL_ENTRIES: list[tuple[str, str, str]] = [
-    # (canonical_name, legacy_dir_name, display_name)
     ("security-code-review", "code-review", "Security Code Review"),
     ("spec-driven-dev-idp", "idp", "Spec Driven Dev IDP"),
 ]
 
-# Additional canonical entry not mirroring a legacy bad name (sanity control).
+
 _EXTRA_CANONICAL_ENTRY: tuple[str, str] = ("platform-bootstrap", "Platform Bootstrap")
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -165,11 +148,6 @@ def _commit_and_tag(work_dir: pathlib.Path, tag: str, message: str) -> None:
     _git(["tag", tag], cwd=work_dir)
 
 
-# ---------------------------------------------------------------------------
-# Fixture builder
-# ---------------------------------------------------------------------------
-
-
 def _build_canonical_names_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
     """Build a bare git repo that mirrors the real catalog's mixed-metadata history.
 
@@ -197,20 +175,17 @@ def _build_canonical_names_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
     _git(["add", "README.md"], cwd=work_dir)
     _git(["commit", "-m", "init"], cwd=work_dir)
 
-    # Tag 1.0.0: legacy flat-metadata versions -- directory names are bad path-components.
     repo_specs = work_dir / "repo-specs"
     for canonical_name, legacy_dir, display_name in _CANONICAL_ENTRIES:
         _write_legacy_xml(repo_specs, legacy_dir, display_name, "1.0.0")
     _commit_and_tag(work_dir, "1.0.0", "release 1.0.0 (legacy flat-metadata)")
 
-    # Tag 2.13.0: modern nested <name> -- canonical entry names.
     for canonical_name, legacy_dir, display_name in _CANONICAL_ENTRIES:
         _write_modern_xml(repo_specs, legacy_dir, canonical_name, display_name, "2.13.0")
     extra_name, extra_display = _EXTRA_CANONICAL_ENTRY
     _write_modern_xml(repo_specs, extra_name, extra_name, extra_display, "2.13.0")
     _commit_and_tag(work_dir, "2.13.0", "release 2.13.0 (canonical nested names)")
 
-    # Tag 2.14.0: modern nested <name> -- same canonical entry names, incremented version.
     for canonical_name, legacy_dir, display_name in _CANONICAL_ENTRIES:
         _write_modern_xml(repo_specs, legacy_dir, canonical_name, display_name, "2.14.0")
     _write_modern_xml(repo_specs, extra_name, extra_name, extra_display, "2.14.0")
@@ -218,11 +193,6 @@ def _build_canonical_names_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
 
     bare_dir = tmp_path / "bare.git"
     return _clone_as_bare(work_dir, bare_dir)
-
-
-# ---------------------------------------------------------------------------
-# Runner helpers
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon(
@@ -286,11 +256,6 @@ def _parse_entry_names_from_stdout(stdout: str) -> frozenset[str]:
         names.add(line.split("@")[0])
     return frozenset(names)
 
-
-# ---------------------------------------------------------------------------
-# New-scheme-only: real old flat-attribute fixture (metadata as ATTRIBUTES on
-# <catalog-metadata>, the actual historical catalog format e.g. tag 2.14.0).
-# ---------------------------------------------------------------------------
 
 _OLD_FLAT_ATTRIBUTE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -383,11 +348,6 @@ class TestAllVersionsAllOldScheme:
         assert "Traceback" not in combined, (
             f"expected a clean error, not a raw Python traceback.\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests: canonical-name-subset and excluded-name properties (AC-1, AC-2, AC-3, AC-14)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -507,9 +467,6 @@ class TestAllVersionsCanonicalNames:
             f"stdout: {av_result.stdout!r}\nstderr: {av_result.stderr!r}"
         )
 
-        # Verify no legacy directory-path names appear in stdout as standalone entry names.
-        # Parse entry names from the output to avoid substring false positives
-        # (e.g. "security-code-review" contains "code-review" as a substring).
         av_names = _parse_entry_names_from_stdout(av_result.stdout)
         for bad_name in _KNOWN_BAD_NAMES:
             assert bad_name not in av_names, (
@@ -517,7 +474,6 @@ class TestAllVersionsCanonicalNames:
                 f"av_names={av_names!r}\nstdout: {av_result.stdout!r}"
             )
 
-        # A diagnostic note about skipped legacy-metadata versions must appear in stderr.
         assert "skipped" in av_result.stderr.lower(), (
             f"Expected a 'skipped' diagnostic note in stderr for legacy-metadata versions.\n"
             f"stderr: {av_result.stderr!r}"
@@ -541,7 +497,6 @@ class TestAllVersionsCanonicalNames:
 
         help_text = result.stdout
 
-        # Verify key surface contracts are present (flag names, positional argument).
         expected_fragments = [
             "--all",
             "--catalog-source",

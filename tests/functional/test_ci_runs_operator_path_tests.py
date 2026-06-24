@@ -24,11 +24,6 @@ import pytest
 import yaml
 
 
-# ---------------------------------------------------------------------------
-# Project-root resolution (no hard-coded absolute paths)
-# ---------------------------------------------------------------------------
-
-
 def _project_root() -> Path:
     """Return the project root by walking up from this file's location.
 
@@ -36,7 +31,7 @@ def _project_root() -> Path:
     three levels up.
     """
     here = Path(__file__).resolve()
-    # tests/functional/test_ci_runs_operator_path_tests.py -> project root
+
     root = here.parent.parent.parent
     pyproject = root / "pyproject.toml"
     if not pyproject.is_file():
@@ -46,11 +41,6 @@ def _project_root() -> Path:
             "Ensure this file lives at <project_root>/tests/functional/."
         )
     return root
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -89,11 +79,6 @@ def makefile_lines(project_root: Path) -> list[str]:
     return makefile_path.read_text(encoding="utf-8").splitlines()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _collect_recipe_lines(makefile_lines: list[str], target: str) -> list[str]:
     """Return the tab-indented recipe lines that belong to a given Make target.
 
@@ -127,11 +112,6 @@ def _job_run_commands(job: dict) -> list[str]:
     return commands
 
 
-# ---------------------------------------------------------------------------
-# Guard tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 def test_ci_workflow_triggers_on_pull_request(workflow_data: dict) -> None:
     """The workflow must define a pull_request trigger.
@@ -147,7 +127,7 @@ def test_ci_workflow_triggers_on_pull_request(workflow_data: dict) -> None:
         "so the operator-path tests run on every PR. "
         "Add 'on:\\n  pull_request:' to the workflow."
     )
-    # YAML parses bare `on` as Python True; handle both forms.
+
     if isinstance(on_section, dict):
         has_pull_request = "pull_request" in on_section
     elif isinstance(on_section, list):
@@ -183,7 +163,6 @@ def test_ci_workflow_invokes_scenario_tests(workflow_data: dict, makefile_lines:
         "'make test-scenarios' or 'make test-operator-path'."
     )
 
-    # Collect all run: commands across all jobs and track which jobs contain them.
     operator_path_targets = {"make test-scenarios", "make test-operator-path"}
     matching_jobs: list[str] = []
     for job_id, job in jobs.items():
@@ -191,7 +170,6 @@ def test_ci_workflow_invokes_scenario_tests(workflow_data: dict, makefile_lines:
             continue
         run_commands = _job_run_commands(job)
         for cmd in run_commands:
-            # Normalise whitespace for matching.
             stripped = cmd.strip()
             for target in operator_path_targets:
                 if target in stripped:
@@ -205,9 +183,6 @@ def test_ci_workflow_invokes_scenario_tests(workflow_data: dict, makefile_lines:
         "Add a job with a run: step that calls one of these make targets."
     )
 
-    # Cross-check: verify the invoked make target exercises the scenario marker.
-    # Determine which make target(s) are called and confirm each one's Makefile
-    # recipe references pytest with the 'scenario' marker or scenario test paths.
     for job_id in matching_jobs:
         job = jobs[job_id]
         for cmd in _job_run_commands(job):
@@ -262,7 +237,7 @@ def test_ci_scenario_tests_job_uses_shell_bash(workflow_data: dict) -> None:
         job_invokes_scenario = any(target in cmd.strip() for cmd in run_commands for target in operator_path_targets)
         if not job_invokes_scenario:
             continue
-        # This job runs operator-path/scenario tests -- check every run: step.
+
         for step in job.get("steps", []) or []:
             if not isinstance(step, dict):
                 continue

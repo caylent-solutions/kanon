@@ -1,17 +1,3 @@
-# Copyright (C) 2019 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the manifest_xml.py module."""
 
 import os
@@ -29,7 +15,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo import project
 
 
-# Invalid paths that we don't want in the filesystem.
 INVALID_FS_PATHS = (
     "",
     ".",
@@ -45,24 +30,19 @@ INVALID_FS_PATHS = (
     "/foo",
     "./../foo",
     ".git/foo",
-    # Check case folding.
     ".GIT/foo",
     "blah/.git/foo",
     ".repo/foo",
     ".repoconfig",
-    # Block ~ due to 8.3 filenames on Windows filesystems.
     "~",
     "foo~",
     "blah/foo~",
-    # Block Unicode characters that get normalized out by filesystems.
     "foo\u200cbar",
-    # Block newlines.
     "f\n/bar",
     "f\r/bar",
 )
 
-# Make sure platforms that use path separators (e.g. Windows) are also
-# rejected properly.
+
 if os.path.sep != "/":
     INVALID_FS_PATHS += tuple(x.replace("/", os.path.sep) for x in INVALID_FS_PATHS)
 
@@ -128,7 +108,6 @@ class ManifestParseTestCase(unittest.TestCase):
         os.mkdir(self.repodir)
         os.mkdir(self.manifest_dir)
 
-        # The manifest parsing really wants a git repo currently.
         gitdir = os.path.join(self.repodir, "manifests.git")
         os.mkdir(gitdir)
         with open(os.path.join(gitdir, "config"), "w") as fp:
@@ -176,10 +155,8 @@ class ManifestValidateFilePaths(unittest.TestCase):
         def check(*args):
             manifest_xml.XmlManifest._ValidateFilePaths("linkfile", *args)
 
-        # We allow symlinks to end in a slash since we allow them to point to
-        # dirs in general.  Technically the slash isn't necessary.
         check("foo/", "bar")
-        # We allow a single '.' to get a reference to the project itself.
+
         check(".", "bar")
 
     def test_bad_paths(self):
@@ -430,16 +407,12 @@ class IncludeElementTests(ManifestParseTestCase):
         include_m = manifest_xml.XmlManifest(self.repodir, root_m)
         for proj in include_m.projects:
             if proj.name == "root-name1":
-                # Check include revision not set on root level proj.
                 self.assertNotEqual("stable-branch", proj.revisionExpr)
             if proj.name == "root-name2":
-                # Check root proj revision not removed.
                 self.assertEqual("refs/heads/main", proj.revisionExpr)
             if proj.name == "stable-name1":
-                # Check stable proj has inherited revision include node.
                 self.assertEqual("stable-branch", proj.revisionExpr)
             if proj.name == "stable-name2":
-                # Check stable proj revision can override include node.
                 self.assertEqual("stable-branch2", proj.revisionExpr)
 
     def test_group_levels(self):
@@ -476,19 +449,15 @@ class IncludeElementTests(ManifestParseTestCase):
         include_m = manifest_xml.XmlManifest(self.repodir, root_m)
         for proj in include_m.projects:
             if proj.name == "root-name1":
-                # Check include group not set on root level proj.
                 self.assertNotIn("level1-group", proj.groups)
             if proj.name == "root-name2":
-                # Check root proj group not removed.
                 self.assertIn("r2g1", proj.groups)
             if proj.name == "level1-name1":
-                # Check level1 proj has inherited group level 1.
                 self.assertIn("level1-group", proj.groups)
             if proj.name == "level2-name1":
-                # Check level2 proj has inherited group levels 1 and 2.
                 self.assertIn("level1-group", proj.groups)
                 self.assertIn("level2-group", proj.groups)
-                # Check level2 proj group not removed.
+
                 self.assertIn("l2g1", proj.groups)
 
     def test_allow_bad_name_from_user(self):
@@ -505,18 +474,15 @@ class IncludeElementTests(ManifestParseTestCase):
 </manifest>
 """
             )
-            # Force the manifest to be parsed.
+
             manifest.ToXml()
 
-        # Setup target of the include.
         target = os.path.join(self.tempdir, "target.xml")
         with open(target, "w") as fp:
             fp.write("<manifest></manifest>")
 
-        # Include with absolute path.
         parse(os.path.abspath(target))
 
-        # Include with relative path.
         parse(os.path.relpath(target, self.manifest_dir))
 
     def test_bad_name_checks(self):
@@ -524,7 +490,7 @@ class IncludeElementTests(ManifestParseTestCase):
 
         def parse(name):
             name = self.encodeXmlAttr(name)
-            # Setup target of the include.
+
             with open(
                 os.path.join(self.manifest_dir, "target.xml"),
                 "w",
@@ -541,10 +507,9 @@ class IncludeElementTests(ManifestParseTestCase):
 </manifest>
 """
             )
-            # Force the manifest to be parsed.
+
             manifest.ToXml()
 
-        # Handle empty name explicitly because a different codepath rejects it.
         with self.assertRaises(error.ManifestParseError):
             parse("")
 
@@ -572,7 +537,7 @@ class ProjectElementTests(ManifestParseTestCase):
 """
         )
         self.assertEqual(len(manifest.projects), 2)
-        # Ordering isn't guaranteed.
+
         result = {
             manifest.projects[0].name: manifest.projects[0].groups,
             manifest.projects[1].name: manifest.projects[1].groups,
@@ -695,14 +660,11 @@ class ProjectElementTests(ManifestParseTestCase):
 </manifest>
 """
             )
-            # Force the manifest to be parsed.
+
             manifest.ToXml()
 
-        # Verify the parser is valid by default to avoid buggy tests below.
         parse("ok", "ok")
 
-        # Handle empty name explicitly because a different codepath rejects it.
-        # Empty path is OK because it defaults to the name field.
         with self.assertRaises(error.ManifestParseError):
             parse("", "ok")
 
@@ -713,7 +675,6 @@ class ProjectElementTests(ManifestParseTestCase):
             with self.assertRaises(error.ManifestInvalidPathError):
                 parse(path, "ok")
 
-            # We have a dedicated test for path=".".
             if path not in {"."}:
                 with self.assertRaises(error.ManifestInvalidPathError):
                     parse("ok", path)
@@ -1602,19 +1563,19 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
         self.tempdir = self.tempdirobj.name
-        # Simulated worktree and topdir for _LinkFile.
+
         self.worktree = os.path.join(self.tempdir, "git-project")
         self.topdir = os.path.join(self.tempdir, "checkout")
         os.makedirs(self.worktree)
         os.makedirs(self.topdir)
-        # Absolute dest directory (simulates CLAUDE_MARKETPLACES_DIR).
+
         self.marketplace_dir = os.path.join(self.tempdir, "marketplaces")
-        # Set the env var for expandvars resolution.
+
         self.orig_env = os.environ.get(self.ENV_VAR_NAME)
         os.environ[self.ENV_VAR_NAME] = self.marketplace_dir
 
     def tearDown(self):
-        # Restore original env state.
+
         if self.orig_env is None:
             os.environ.pop(self.ENV_VAR_NAME, None)
         else:
@@ -1643,7 +1604,6 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
         src_name = "settings.yml"
         self._create_source_file(src_name)
 
-        # Step 1: Simulate envsubst — resolve ${CLAUDE_MARKETPLACES_DIR}.
         raw_dest = "${%s}/test-marketplace" % self.ENV_VAR_NAME
         resolved_dest = os.path.expandvars(raw_dest)
         self.assertTrue(
@@ -1656,15 +1616,11 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
             "all variables should be resolved",
         )
 
-        # Step 2: Validate through manifest parsing layer.
-        # This calls _CheckLocalPath with abs_ok=True for linkfile.
         manifest_xml.XmlManifest._ValidateFilePaths("linkfile", src_name, resolved_dest)
 
-        # Step 3: Create the symlink via _LinkFile._Link().
         lf = project._LinkFile(self.worktree, src_name, self.topdir, resolved_dest)
         lf._Link()
 
-        # Step 4: Verify symlink exists at the resolved absolute path.
         self.assertTrue(
             os.path.islink(resolved_dest),
             f"symlink should exist at '{resolved_dest}'",
@@ -1674,7 +1630,6 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
             f"symlink target should be resolvable at '{resolved_dest}'",
         )
 
-        # Step 5: Verify parent directories were created.
         parent_dir = os.path.dirname(resolved_dest)
         self.assertTrue(
             os.path.isdir(parent_dir),
@@ -1727,7 +1682,6 @@ class MultipleCheckoutsSameRepoTests(ManifestParseTestCase):
         proj_a = projects_by_path["checkout-a"]
         proj_b = projects_by_path["checkout-b"]
 
-        # Same repo name but different paths.
         self.assertEqual(proj_a.name, "shared-repo")
         self.assertEqual(proj_b.name, "shared-repo")
         self.assertNotEqual(
@@ -1736,7 +1690,6 @@ class MultipleCheckoutsSameRepoTests(ManifestParseTestCase):
             "Projects should have different checkout paths",
         )
 
-        # Different revisions.
         self.assertEqual(proj_a.revisionExpr, "refs/tags/v1.0.0")
         self.assertEqual(proj_b.revisionExpr, "refs/tags/v2.0.0")
 
@@ -1760,7 +1713,6 @@ class CircularIncludeDetectionTests(ManifestParseTestCase):
         """
         from kanon_cli.repo.error import ManifestParseError
 
-        # Create a manifest that includes itself.
         inc_a = os.path.join(self.manifest_dir, "a.xml")
         with open(inc_a, "w") as fp:
             fp.write('<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="a.xml" />\n</manifest>\n')
@@ -1775,13 +1727,7 @@ class CircularIncludeDetectionTests(ManifestParseTestCase):
         )
 
         with self.assertRaises(ManifestParseError):
-            # Accessing .projects forces _Load which triggers parsing.
             _ = manifest.projects
-
-
-# ============================================================================
-# Additional Unit Tests for Coverage Improvement
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -2052,7 +1998,7 @@ class ParseRemoteTests(ManifestParseTestCase):
             '  <default remote="origin" revision="main" />\n'
             "</manifest>\n"
         )
-        _ = manifest.projects  # Force load
+        _ = manifest.projects
         remote = manifest.remotes["origin"]
         self.assertEqual(remote.name, "origin")
         self.assertEqual(remote.fetchUrl, "https://github.com/")
@@ -2600,11 +2546,10 @@ class UnloadTests(ManifestParseTestCase):
             '  <project name="test/project" path="project" />\n'
             "</manifest>\n"
         )
-        # Load the manifest
+
         _ = manifest.projects
         self.assertTrue(manifest._loaded)
 
-        # Unload it
         manifest.Unload()
         self.assertFalse(manifest._loaded)
         self.assertEqual(manifest._projects, {})
@@ -2695,11 +2640,10 @@ class SubmanifestTests(ManifestParseTestCase):
     @pytest.mark.unit
     def test_add_annotation_to_xml_submanifest(self):
         """Test AddAnnotation method adds annotation to list."""
-        # Create a mock _XmlSubmanifest with just the annotations attribute
+
         submanifest = mock.Mock(spec=manifest_xml._XmlSubmanifest)
         submanifest.annotations = []
 
-        # Call the actual AddAnnotation method
         manifest_xml._XmlSubmanifest.AddAnnotation(submanifest, "key", "value", "true")
 
         self.assertEqual(len(submanifest.annotations), 1)

@@ -24,10 +24,6 @@ from tests.scenarios.conftest import (
     write_kanonenv,
 )
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_fixtures(parent: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     """Create a content repo and a manifest repo, returning their bare paths.
@@ -75,11 +71,6 @@ def _write_primary_kanonenv(
         ],
         marketplace_install="false",
     )
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

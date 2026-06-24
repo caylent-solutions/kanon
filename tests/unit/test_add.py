@@ -25,11 +25,6 @@ from kanon_cli.core.metadata import CatalogMetadata
 from tests.conftest import bare_text_io_calls
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_metadata(
     name: str = "my-entry",
     url: str = "https://example.com/manifest-repo.git",
@@ -43,11 +38,6 @@ def _make_metadata(
         description=f"Description of {name}.",
         version=version,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_source_block_lines
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -102,7 +92,7 @@ class TestBuildSourceBlockLines:
             gitbase="https://example.com",
             marketplace=False,
         )
-        # kanon never writes =false; the disabled state is the line's absence.
+
         assert not any(line.endswith("_MARKETPLACE=false") for line in lines)
         assert not any("_MARKETPLACE" in line for line in lines)
 
@@ -254,11 +244,6 @@ class TestBuildSourceBlockLines:
         assert f"KANON_SOURCE_{source_name}_GITBASE" in joined
 
 
-# ---------------------------------------------------------------------------
-# Tests for no standard-header (spec Section 5.1: per-dependency blocks only)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoStandardHeader:
     """add writes no standard header: the _write_standard_header writer is removed."""
@@ -338,15 +323,10 @@ class TestNoStandardHeader:
         content = kanon_file.read_text()
         assert "[catalog]" not in content
         assert "KANON_MARKETPLACE_INSTALL" not in content
-        # No bare GITBASE= header line; only the per-dep KANON_SOURCE_<alias>_GITBASE.
+
         for line in content.splitlines():
             assert not line.startswith("GITBASE="), f"unexpected GITBASE header line: {line!r}"
         assert "KANON_SOURCE_entry_a_GITBASE=https://example.com/org" in content
-
-
-# ---------------------------------------------------------------------------
-# Tests for stdout summary line
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -435,11 +415,6 @@ class TestStdoutSummary:
         assert content.splitlines()[0] == "KANON_SOURCE_pkg_URL=u"
 
 
-# ---------------------------------------------------------------------------
-# Tests for error paths
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUnknownEntryError:
     """Unknown entry name is a hard error naming the entry."""
@@ -499,7 +474,6 @@ class TestSoftSpotHardError:
         """A CatalogMetadataParseError from the catalog scan exits non-zero."""
         from kanon_cli.commands.add import _build_entry_catalog
 
-        # Create a malformed XML file that _parse_catalog_metadata will reject.
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
         bad_xml = repo_specs / "bad-marketplace.xml"
@@ -552,11 +526,6 @@ class TestSoftSpotHardError:
         catalog = _build_entry_catalog(tmp_path, url="https://example.com/repo.git")
         assert len(catalog) == 1
         assert catalog[0][0].name == "entry-a"
-
-
-# ---------------------------------------------------------------------------
-# Tests for argparse subparser structure
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -698,11 +667,6 @@ class TestAddSubparser:
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests for spec-split on last '@'
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSplitNameSpec:
     """_split_name_spec splits on the LAST '@' (spec Section 4.0)."""
@@ -724,11 +688,6 @@ class TestSplitNameSpec:
         name, spec = _split_name_spec(raw)
         assert name == expected_name
         assert spec == expected_spec
-
-
-# ---------------------------------------------------------------------------
-# Tests for _derive_gitbase_from_catalog_source and CatalogSourceURLDerivationError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -840,7 +799,6 @@ class TestDeriveGitbaseFromCatalogSource:
             _derive_gitbase_from_catalog_source,
         )
 
-        # A URL with scheme but no host (not a file:// or git@ URL).
         with pytest.raises(CatalogSourceURLDerivationError) as exc_info:
             _derive_gitbase_from_catalog_source("ftp:")
         err_msg = str(exc_info.value)
@@ -865,11 +823,6 @@ class TestDeriveGitbaseFromCatalogSource:
         assert isinstance(err, ValueError)
         assert err.url == "url"
         assert err.reason == "reason"
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -915,11 +868,6 @@ class TestResolveSpec:
         assert result == "refs/tags/1.0.0"
 
 
-# ---------------------------------------------------------------------------
-# Tests for _xml_repo_relative_path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestXmlRepoRelativePath:
     """_xml_repo_relative_path returns the repo-relative path string."""
@@ -945,11 +893,6 @@ class TestXmlRepoRelativePath:
         assert result == "repo-specs/sub/bar-marketplace.xml"
 
 
-# ---------------------------------------------------------------------------
-# Tests for _resolve_manifest_repo_for_add error paths (unit-level)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolveManifestRepoForAdd:
     """_resolve_manifest_repo_for_add error paths."""
@@ -973,11 +916,6 @@ class TestResolveManifestRepoForAdd:
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_add entry point (unit-level, mocked)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1020,8 +958,7 @@ class TestRunAddGitbaseDerivationError:
         from kanon_cli.commands.add import run_add
 
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
-        # A schemeless bare URL that cannot be derived -- "@main" suffix is stripped,
-        # leaving "not-valid-url/org/repo" which has no scheme and no SCP pattern match.
+
         args = argparse.Namespace(
             catalog_source="not-valid-url/org/repo@main",
             kanon_file="./.kanon",
@@ -1117,7 +1054,6 @@ class TestRunAddHappyPath:
 
         kanon_file = tmp_path / ".kanon"
 
-        # Create a minimal metadata for use in catalog
         meta = CatalogMetadata(
             name="entry-a",
             display_name="Entry A",
@@ -1177,11 +1113,6 @@ class TestRunAddHappyPath:
         assert "KANON_SOURCE_entry_a_PATH=" in content
 
 
-# ---------------------------------------------------------------------------
-# Tests for workspace lock integration in run_add
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunAddWorkspaceLock:
     """run_add wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
@@ -1238,7 +1169,6 @@ class TestRunAddWorkspaceLock:
             dry_run=False,
         )
 
-        # Pre-condition: .kanon-data/ must not exist.
         assert not (tmp_path / ".kanon-data").exists()
 
         with (
@@ -1330,16 +1260,11 @@ class TestRunAddWorkspaceLock:
             result = run_add(args)
 
         assert result == 0
-        # Dry run must not create .kanon-data/ -- the lock is not acquired.
+
         assert not (tmp_path / ".kanon-data").exists(), (
             "run_add --dry-run must not create .kanon-data/; "
             "the workspace lock is only acquired on the non-dry-run write path"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_spec with no PEP 440-valid tags (lines 476-477, 482-490)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1422,11 +1347,6 @@ class TestResolveSpecNoPep440Tags:
             assert cap_phrase not in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Tests for _check_within_request_collisions (lines 578-585)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckWithinRequestCollisions:
     """_check_within_request_collisions detects duplicate entry names."""
@@ -1464,11 +1384,6 @@ class TestCheckWithinRequestCollisions:
 
         result = _check_within_request_collisions(["entry-a", "entry-b", "entry-c"])
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# Tests for _read_existing_source_block (lines 609-623)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1514,11 +1429,6 @@ class TestReadExistingTripleBlock:
         assert url is None
         assert revision is None
         assert path is None
-
-
-# ---------------------------------------------------------------------------
-# Tests for _check_against_existing_blocks (line 652, lines 660-669)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1569,10 +1479,10 @@ class TestSameNameGuard:
             )
         err = capsys.readouterr().err
         assert "my_pkg" in err
-        # Diff renders the existing block with '-' and the requested block with '+'.
+
         assert "-KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0" in err
         assert "+KANON_SOURCE_my_pkg_REF===2.0.0" in err
-        # Guiding remediation message.
+
         assert "--force" in err
         assert "kanon remove my_pkg" in err
 
@@ -1636,8 +1546,7 @@ class TestResolveEntryAlias:
             "history_caylent_private_kanon": (self._URL_B, "2.0.0"),
             "history_caylent_private_kanon_3_0_0": (url_c, "3.0.0"),
         }
-        # Third candidate is base_repo_ref = history_caylent_private_kanon_3_0_0,
-        # occupied by url_c, so all three candidates collide with distinct sources.
+
         with pytest.raises(SystemExit) as exc_info:
             _resolve_entry_alias(existing, "history", self._URL_B, "3.0.0", force=False)
         assert exc_info.value.code != 0
@@ -1783,11 +1692,6 @@ class TestReadAllSourceAliases:
         assert _read_all_source_aliases(tmp_path / ".kanon") == {}
 
 
-# ---------------------------------------------------------------------------
-# Tests for _overwrite_source_block (lines 693-722)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestOverwriteTripleBlock:
     """_overwrite_source_block replaces an existing triple in the .kanon file."""
@@ -1861,11 +1765,6 @@ class TestOverwriteTripleBlock:
         assert "Overwrote" in captured.out
 
 
-# ---------------------------------------------------------------------------
-# Tests for _render_dry_run_diff with force=True (lines 749-761)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRenderDryRunDiff:
     """_render_dry_run_diff prints correct diff lines."""
@@ -1926,11 +1825,6 @@ class TestRenderDryRunDiff:
             assert f"+{line}" in captured.out
 
 
-# ---------------------------------------------------------------------------
-# Tests for run_add with --force (lines 902-910)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunAddForce:
     """run_add --force overwrites an existing triple block."""
@@ -1975,7 +1869,7 @@ class TestRunAddForce:
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
-        # Pre-populate with an existing block for force-pkg at the SAME source@ref.
+
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
             "KANON_SOURCE_force_pkg_URL=https://example.com/repo.git\n"
@@ -2019,10 +1913,10 @@ class TestRunAddForce:
 
         assert result == 0
         content = kanon_file.read_text()
-        # The block stays keyed by the bare alias (overwrite, not auto-suffix).
+
         assert "KANON_SOURCE_force_pkg_REF=refs/tags/2.0.0" in content
         assert "KANON_SOURCE_force_pkg_repo_URL=" not in content
-        # The PATH is refreshed by the overwrite.
+
         assert "repo-specs/force-pkg-marketplace.xml" in content
         assert "repo-specs/stale-path.xml" not in content
 
@@ -2034,7 +1928,7 @@ class TestRunAddForce:
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
-        # Existing block keyed by alias 'force_pkg' at a DIFFERENT source URL.
+
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
             "KANON_SOURCE_force_pkg_URL=https://example.com/other.git\n"
@@ -2078,7 +1972,7 @@ class TestRunAddForce:
 
         assert result == 0
         content = kanon_file.read_text()
-        # New block carries the source-repo suffix; the original block is intact.
+
         assert "KANON_SOURCE_force_pkg_repo_URL=https://example.com/repo.git" in content
         assert "KANON_SOURCE_force_pkg_URL=https://example.com/other.git" in content
 
@@ -2139,9 +2033,7 @@ class TestRunAddForce:
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
-        # Existing block at the SAME source@ref so the --force add resolves to a
-        # force_overwrite (a re-add of the existing package) and the dry-run diff
-        # renders the removed (-) and added (+) block lines.
+
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
             "KANON_SOURCE_dry_pkg_URL=https://example.com/repo.git\n"
@@ -2185,17 +2077,13 @@ class TestRunAddForce:
 
         assert result == 0
         captured = capsys.readouterr()
-        # Dry run must show removed lines with '-' and added lines with '+'
+
         assert "-KANON_SOURCE_dry_pkg_PATH=repo-specs/stale-path.xml" in captured.out
         assert "+KANON_SOURCE_dry_pkg_PATH=" in captured.out
-        # File must remain unchanged
+
         content = kanon_file.read_text()
         assert "repo-specs/stale-path.xml" in content
 
-
-# ---------------------------------------------------------------------------
-# utf-8 encoding sweep (AC-12)
-# ---------------------------------------------------------------------------
 
 _ADD_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "commands" / "add.py"
 

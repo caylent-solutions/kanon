@@ -37,11 +37,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_minimal_kanon(kanon_file: pathlib.Path) -> None:
     """Write a minimal .kanon file with a single per-dependency source block.
 
@@ -157,11 +152,6 @@ def _make_doctor_args(
     )
 
 
-# ---------------------------------------------------------------------------
-# Line 114: _is_branch_revision returns False for refs/-prefixed strings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "revision_spec,expected",
@@ -187,11 +177,6 @@ def test_is_branch_revision(revision_spec: str, expected: bool) -> None:
     assert _is_branch_revision(revision_spec) is expected
 
 
-# ---------------------------------------------------------------------------
-# git_runner: run_git_ls_remote never calls time.sleep (issue #64)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunGitLsRemoteNoSleep:
     """run_git_ls_remote (in git_runner) never calls time.sleep between retries."""
@@ -214,7 +199,6 @@ class TestRunGitLsRemoteNoSleep:
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
 
-        # retry_count=2 means two attempts; no sleep should occur
         run_git_ls_remote(
             ["git", "ls-remote", "https://example.com/repo.git", "HEAD"],
             timeout=1,
@@ -274,11 +258,6 @@ class TestRunGitLsRemoteNoSleep:
         )
 
         assert sleep_calls == []
-
-
-# ---------------------------------------------------------------------------
-# _run_ls_remote function body (direct unit tests via run_git_ls_remote patch)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -350,11 +329,6 @@ class TestRunLsRemoteDirectly:
         assert err == "not found"
 
 
-# ---------------------------------------------------------------------------
-# Line 454: _check_branch_drift continues on returncode != 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckBranchDriftNonZeroReturncode:
     """_check_branch_drift skips sources when _run_ls_remote returns non-zero."""
@@ -415,17 +389,16 @@ class TestCheckBranchDriftNonZeroReturncode:
 
         def _recording_stub(url, ref, timeout, retry_count, retry_delay):
             checked_urls.append(url)
-            # First call fails; second returns a "no drift" result
+
             if url == "https://example.com/first.git":
                 return (128, "", "error")
-            # Return same SHA as locked to avoid a drift finding
+
             return (0, f"{'b' * 40}\trefs/heads/develop\n", "")
 
         monkeypatch.setattr(doctor_mod, "_run_ls_remote", _recording_stub)
 
         _check_branch_drift(lockfile, strict_drift=False)
 
-        # Both URLs must have been queried
         assert "https://example.com/first.git" in checked_urls
         assert "https://example.com/second.git" in checked_urls
 
@@ -463,11 +436,6 @@ class TestCheckBranchDriftNonZeroReturncode:
 
         assert len(findings) == 1
         assert findings[0].code == "BRANCH_DRIFT"
-
-
-# ---------------------------------------------------------------------------
-# Lines 1114-1116: doctor_command orphan-lock findings loop
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -519,7 +487,6 @@ class TestDoctorCommandOrphanLockFindings:
         kanon_file = tmp_path / ".kanon"
         self._write_kanon_without_source(kanon_file)
 
-        # Build a lockfile with a source that is NOT in .kanon
         lock_path = tmp_path / ".kanon.lock"
         lockfile = _make_lockfile_with_sources(
             tmp_path,
@@ -602,11 +569,6 @@ class TestDoctorCommandOrphanLockFindings:
         result = doctor_command(args)
 
         assert result == 0
-
-
-# ---------------------------------------------------------------------------
-# Lines 1121-1123: doctor_command branch-drift findings loop
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -698,11 +660,6 @@ class TestDoctorCommandBranchDriftFindings:
         assert "BRANCH_DRIFT" in captured.err or "branch" in captured.err.lower()
 
 
-# ---------------------------------------------------------------------------
-# Lines 1128-1130: doctor_command dangling-SHA findings loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandDanglingShaFindings:
     """doctor_command prints dangling-SHA findings and sets has_errors for error findings."""
@@ -770,11 +727,6 @@ class TestDoctorCommandDanglingShaFindings:
         assert "DANGLING_SHA" in captured.err or "dangling" in captured.err.lower()
 
 
-# ---------------------------------------------------------------------------
-# Line 1139: doctor_command remote-reachability findings loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandRemoteReachabilityFindings:
     """doctor_command prints remote-reachability findings (always warnings, never errors)."""
@@ -807,7 +759,6 @@ class TestDoctorCommandRemoteReachabilityFindings:
         args = _make_doctor_args(kanon_file=str(kanon_file))
         result = doctor_command(args)
 
-        # Remote findings are always warnings -- they must not cause a non-zero exit
         assert result == 0
 
     def test_remote_finding_printed_to_stderr(

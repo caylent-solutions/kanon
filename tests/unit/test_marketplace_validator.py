@@ -195,8 +195,7 @@ class TestTagFormat:
     )
     def test_validate_tag_format_rejects_non_exact(self, tmp_path: Path, revision: str) -> None:
         """AC-54: validate_tag_format rejects every non-exact-tag revision shape."""
-        # Build via ElementTree so attribute values containing '<' / '>'
-        # (range constraints) are XML-encoded rather than producing invalid XML.
+
         manifest = ET.Element("manifest")
         ET.SubElement(manifest, "project", name="p", path=".packages/p", remote="r", revision=revision)
         f1 = _write_xml(tmp_path / "m.xml", ET.tostring(manifest, encoding="unicode"))
@@ -235,7 +234,7 @@ class TestTagFormat:
         assert len(errors) == 1
         assert "inherited <default revision>" in errors[0]
         assert "main" in errors[0]
-        # The include file itself has no <project>, so it produces no errors.
+
         assert validate_tag_format([f1], tmp_path) == []
 
     def test_inherited_exact_default_revision_passes(self, tmp_path: Path) -> None:

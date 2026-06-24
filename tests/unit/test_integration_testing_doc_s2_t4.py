@@ -38,17 +38,14 @@ def _rp_checkout_01_section() -> str:
 class TestT4RPCheckout01:
     def test_uses_repo_started_branch(self) -> None:
         section = _rp_checkout_01_section()
-        # The fix swaps `checkout main` for `checkout mybr` -- the topic
-        # branch created in the preceding `repo start` step.
+
         assert "kanon repo checkout mybr" in section, (
             "RP-checkout-01 must check out the repo-started branch `mybr`, not the upstream `main` branch"
         )
 
     def test_does_not_attempt_to_checkout_main(self) -> None:
         section = _rp_checkout_01_section()
-        # The previous form `kanon repo checkout main` (with or without
-        # --all) must be removed; checking it out fails because no project
-        # has a repo-tracked branch named `main`.
+
         assert "kanon repo checkout main" not in section, (
             "RP-checkout-01 must no longer invoke `kanon repo checkout main`; "
             "the kanon repo checkout subcommand only operates on branches "
@@ -57,8 +54,7 @@ class TestT4RPCheckout01:
 
     def test_documents_repo_checkout_limitation(self) -> None:
         section = _rp_checkout_01_section()
-        # The fix adds a prose note explaining the limit so future readers
-        # understand why the scenario uses a repo-started branch.
+
         assert "kanon repo checkout" in section
         assert "repo start" in section, (
             "RP-checkout-01 must include a prose note pointing to "

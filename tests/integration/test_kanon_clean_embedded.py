@@ -209,8 +209,6 @@ class TestCleanMarketplaceBehavior:
         marketplace_dir.mkdir()
         (marketplace_dir / "some-marketplace-file.txt").write_text("marketplace data")
 
-        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
-        # the removed global KANON_MARKETPLACE_INSTALL header.
         kanonenv = _write_kanonenv(
             tmp_path,
             (

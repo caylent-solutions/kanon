@@ -29,8 +29,7 @@ from kanon_cli.core.install import (
     store_entries_dir,
 )
 
-# The single source every project in this journey installs. Both project dirs
-# resolve it to the same SHA, so they must dedup to one content-addressed entry.
+
 _SOURCE_URL = "https://example.com/build.git"
 _SOURCE_SHA = "a" * 40
 
@@ -51,9 +50,6 @@ def _write_kanonenv(project_dir: pathlib.Path) -> pathlib.Path:
     return kanonenv
 
 
-# Multi-byte payload written by a publish so a half-written final entry would be
-# detectable: a reader observing the final content-addressed path must see ALL
-# files. The publish renames the temp dir atomically, so this is never partial.
 _PAYLOAD = {"first": "1", "second": "2"}
 
 
@@ -75,7 +71,7 @@ def _contended_publish_worker(store_str: str, address: str, ready_barrier, error
     try:
         ready_barrier.wait()
         publish_store_entry(store, address, materialize)
-    except BaseException as exc:  # surface any worker failure to the parent
+    except BaseException as exc:
         error_queue.put(f"{type(exc).__name__}: {exc}")
 
 
@@ -170,12 +166,12 @@ class TestKanonHomeStoreJourney:
 
         final_path = store_entries_dir(store) / address
         assert final_path.is_dir(), "the content-addressed entry must be published exactly once"
-        # Atomic publish: the loser never sees a half-written entry; all files present.
+
         for name, content in _PAYLOAD.items():
             assert (final_path / name).read_text(encoding="utf-8") == content
         published = [p.name for p in store_entries_dir(store).iterdir() if p.is_dir()]
         assert published == [address], f"contention must still yield exactly one entry; got {published}"
-        # No partial temp dir survives the publish (the rename consumed it).
+
         tmp_root = store / ".tmp"
         leftover = list(tmp_root.iterdir()) if tmp_root.exists() else []
         assert leftover == [], f"no partial temp dir may survive a publish: {leftover}"
@@ -186,7 +182,7 @@ class TestKanonHomeStoreJourney:
         """A .gitignore safety net is written into the store only when KANON_HOME is in a git repo."""
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
-        (repo_root / ".git").mkdir()  # mark repo_root as a git working tree
+        (repo_root / ".git").mkdir()
         kanon_home = repo_root / "home"
         store = kanon_home / "store"
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
@@ -208,7 +204,6 @@ class TestKanonHomeStoreJourney:
         store = kanon_home / "store"
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
-        # Guard: no ancestor of the store is a git working tree in this sandbox.
         assert not any((parent / ".git").exists() for parent in [store, *store.parents]), (
             "test setup invariant: the store must not sit inside a git repo"
         )

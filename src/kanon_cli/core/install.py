@@ -120,9 +120,7 @@ from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.version import resolve_version
 
-# Re-export include-walker symbols so call-sites can import from either module.
-# InstallError is defined in include_walker to avoid circular imports; re-exporting
-# it here preserves backwards compatibility for all existing import sites.
+
 __all__ = [
     "IncludeCycleError",
     "IncludeTree",
@@ -140,14 +138,6 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Unresolved-placeholder detection (spec Section 4 E28 Change (b))
-# ---------------------------------------------------------------------------
-
-# Compiled regex matching uppercase-with-underscores-or-pipes tokens enclosed
-# in angle brackets -- the canonical kanon placeholder shape.  The character
-# class is intentionally restricted to [A-Z_|] so the pattern does NOT match
-# lowercase XML element tags such as <remote> or <default>.
 _UNRESOLVED_PLACEHOLDER_PATTERN: re.Pattern[str] = re.compile(r"<[A-Z_|]+>")
 
 
@@ -181,20 +171,15 @@ def _scan_kanonenv_for_unresolved_placeholders(
     return findings
 
 
-# ---------------------------------------------------------------------------
-# OrphanedLockEntryError message templates (spec Section 4 E26)
-# ---------------------------------------------------------------------------
-
-# Header line template for a single orphaned lockfile entry (N == 1).
 _ORPHAN_HEADER_SINGULAR = "ERROR: {count} orphaned lockfile entry: {names}"
 
-# Header line template for multiple orphaned lockfile entries (N >= 2).
+
 _ORPHAN_HEADER_PLURAL = "ERROR: {count} orphaned lockfile entries: {names}"
 
-# Context line explaining why the entries are orphaned.
+
 _ORPHAN_CONTEXT = "These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon."
 
-# Remediation block (three options) presented after the context line.
+
 _ORPHAN_REMEDIATION = (
     "Remediation:\n"
     "  Run `kanon install` (without --strict-lock) to auto-prune, or\n"
@@ -202,15 +187,8 @@ _ORPHAN_REMEDIATION = (
     "  run `kanon remove <name>` for each orphan to clean the lockfile."
 )
 
-# INFO-line prefix emitted once per orphaned lock entry that is auto-pruned
-# on default install (no --strict-lock).  Spec Section 4 E34 Change.
-# Rendered as: f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {name}"
+
 INFO_PRUNED_ORPHAN_LOCK_ENTRY = "pruned orphaned lock entry"
-
-
-# ---------------------------------------------------------------------------
-# State enum
-# ---------------------------------------------------------------------------
 
 
 class InstallState(enum.Enum):
@@ -239,11 +217,6 @@ class InstallState(enum.Enum):
     LOCKFILE_UNREACHABLE = "lockfile-unreachable"
     REFRESH_LOCK = "refresh-lock"
     REFRESH_LOCK_SOURCE = "refresh-lock-source"
-
-
-# ---------------------------------------------------------------------------
-# Exception hierarchy
-# ---------------------------------------------------------------------------
 
 
 class KanonHashMismatchError(InstallError):
@@ -422,11 +395,6 @@ class BranchDriftError(InstallError):
             "  for each drifted source to accept the new branch tip."
         )
         return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Canonical-URL conflict detection types and exception
-# ---------------------------------------------------------------------------
 
 
 class ResolvedProject(NamedTuple):
@@ -614,15 +582,9 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
     if not manifests_dir.is_dir():
         return
 
-    # Detect whether manifests_dir is a git working tree by checking for the
-    # presence of a .git entry (file or directory).  This check must not
-    # raise and must not write to stderr on the no-op path; a plain directory
-    # check is the safest cross-platform approach that reuses no new helpers.
     if not (manifests_dir / ".git").exists():
         return
 
-    # Restore all tracked files to HEAD state.  ``git checkout -- .`` discards
-    # local modifications to tracked files; it does NOT affect untracked files.
     result = subprocess.run(
         ["git", "checkout", "--", "."],
         cwd=str(manifests_dir),
@@ -635,7 +597,6 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
             f"_reset_manifests_working_tree: git checkout -- . failed in {manifests_dir!r}: {result.stderr!r}"
         )
 
-    # Remove .bak files created by envsubst (untracked; git checkout leaves them).
     for bak_file in manifests_dir.rglob("*.bak"):
         bak_file.unlink()
 
@@ -658,7 +619,7 @@ def _detect_canonical_url_conflicts(
         that has at least two entries with different SHAs.  Returns ``[]`` when no
         conflicts exist; never returns ``None``.
     """
-    # Group entries by canonical URL.
+
     groups: dict[str, list[ResolvedProject]] = {}
     for project in all_projects:
         groups.setdefault(project.canonical_url, []).append(project)
@@ -766,11 +727,6 @@ def _gather_resolved_projects(resolved_entries: list[SourceEntry]) -> list[Resol
     return result
 
 
-# ---------------------------------------------------------------------------
-# Lockfile helpers (public API consumed by sibling tasks)
-# ---------------------------------------------------------------------------
-
-
 def read_lockfile_if_present(path: pathlib.Path) -> Lockfile | None:
     """Return the parsed Lockfile if ``path`` exists, or ``None`` if absent.
 
@@ -853,8 +809,7 @@ def _classify_install_state(
         LockfileSchemaError: If the lockfile's schema_version is unsupported.
         LockfileValidationError: If a lockfile field fails validation.
     """
-    # Short-circuit: operator requested a full lockfile rebuild.
-    # The lockfile state (present, consistent, mismatched) is irrelevant.
+
     if refresh_lock:
         return InstallClassification(
             state=InstallState.REFRESH_LOCK,
@@ -942,11 +897,6 @@ class _RefResolution(NamedTuple):
     resolved_ref: str
 
 
-# ---------------------------------------------------------------------------
-# --refresh-lock-source helpers
-# ---------------------------------------------------------------------------
-
-
 def _resolve_source_name(name: str, lockfile: Lockfile) -> SourceEntry:
     """Resolve a --refresh-lock-source name to a ``SourceEntry`` in two steps.
 
@@ -972,12 +922,11 @@ def _resolve_source_name(name: str, lockfile: Lockfile) -> SourceEntry:
         UnknownSourceError: If ``name`` does not match any source in the lockfile
             by either the direct or the ``derive_source_name`` resolution path.
     """
-    # Step 1: direct literal match.
+
     for entry in lockfile.sources:
         if entry.name == name:
             return entry
 
-    # Step 2: normalise via derive_source_name and compare.
     normalised = derive_source_name(name)
     for entry in lockfile.sources:
         if entry.name == normalised:
@@ -1064,7 +1013,7 @@ def _merge_partial_lockfile(
         raise UnknownSourceError(name=refreshed_source.name, known_names=known)
 
     new_sources = [refreshed_source if e.name == refreshed_source.name else e for e in old_lockfile.sources]
-    # Refresh every source's per-source ledger from the fresh attribution.
+
     for entry in new_sources:
         entry.registered_marketplaces = attributed_marketplaces.get(entry.name, [])
     return Lockfile(
@@ -1111,9 +1060,7 @@ def _check_sha_reachable(url: str, sha: str, source_name: str) -> None:
             sha=sha,
             remote_url=url,
         )
-    # Check the first column (SHA) of each tab-delimited line; a substring search
-    # against the full stdout would produce false positives when a SHA appears in
-    # a ref name (unlikely but possible with partial hashes or test fixtures).
+
     sha_found = any(line.split("\t")[0] == sha for line in stdout.strip().splitlines() if "\t" in line)
     if not sha_found:
         raise LockfileUnreachableShaError(
@@ -1162,9 +1109,7 @@ def _resolve_ref_to_sha(url: str, ref: str) -> _RefResolution:
         if len(parts) >= 2:
             matched_sha = parts[0]
             matched_ref = parts[1]
-            # Accept a match when the ref is fully-qualified and equals the
-            # matched_ref, OR when the ref is a short name and is the suffix
-            # of the matched_ref (e.g. "main" matches "refs/heads/main").
+
             if matched_ref == ref or matched_ref.endswith(f"/{ref}"):
                 return _RefResolution(sha=matched_sha, resolved_ref=matched_ref)
     raise ValueError(
@@ -1224,11 +1169,6 @@ def resolve_workspace_base_dir() -> pathlib.Path:
         sys.exit(1)
 
     return store_path
-
-
-# ---------------------------------------------------------------------------
-# Content-addressed store publish (spec Section 3.5 / Section 7.1 / FR-16)
-# ---------------------------------------------------------------------------
 
 
 def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
@@ -1394,7 +1334,6 @@ def publish_store_entry(
     entries_dir = store_entries_dir(store_base)
     final_path = entries_dir / address
 
-    # Step 1: readiness via final-path existence (dedup hit, no poll-sleep).
     if final_path.exists():
         return final_path
 
@@ -1402,17 +1341,10 @@ def publish_store_entry(
     lock_root = store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
     lock_root.mkdir(parents=True, exist_ok=True)
 
-    # Step 2: per-entry lock via the E2 cross-platform lock interface. The lock
-    # file lives at <lock_root>/.kanon-data/<INSTALL_LOCK_FILENAME>; the timeout
-    # and stale-lock-recovery diagnostics are owned by kanon_workspace_lock.
     with kanon_workspace_lock(lock_root):
-        # Step 3: re-check existence under the lock (a racing publisher may have
-        # finished between step 1 and lock acquisition).
         if final_path.exists():
             return final_path
 
-        # Step 4: materialize into a private temp dir inside the store, then
-        # atomically rename into the final content-addressed path.
         tmp_root = store_base / KANON_HOME_STORE_TMP_SUBDIR
         tmp_root.mkdir(parents=True, exist_ok=True)
         tmp_dir = tmp_root / address
@@ -1704,28 +1636,25 @@ def _is_branch_shaped_spec(revision_spec: str) -> bool:
     Returns:
         ``True`` if the spec is branch-shaped; ``False`` otherwise.
     """
-    # refs/tags/ -- clearly a tag ref, immutable
+
     if revision_spec.startswith("refs/tags/"):
         return False
-    # refs/heads/ -- a fully-qualified branch ref
+
     if revision_spec.startswith("refs/heads/"):
         return True
-    # other refs/ prefixes (e.g. refs/pull/) -- treat as branch-shaped
+
     if revision_spec.startswith("refs/"):
         return True
-    # PEP 440 specifier -- a pinned version, not a branch
+
     try:
         SpecifierSet(revision_spec)
-        # A successful parse means it is a version specifier -- not branch-shaped.
-        # However, a plain string like "main" also parses as a SpecifierSet with
-        # zero specifiers (empty set), so we must check that the set is non-empty.
+
         parsed = SpecifierSet(revision_spec)
         if len(list(parsed)) > 0:
             return False
     except (InvalidSpecifier, ValueError):
         pass
-    # Branch-charset names: plain alphanumeric + _ . / + -
-    # These are the branch-shaped specs we care about for drift.
+
     return True
 
 
@@ -1862,8 +1791,7 @@ def _detect_branch_drift(
     for entry in lockfile.sources:
         if not _is_branch_shaped_spec(entry.ref_spec):
             continue
-        # Determine the ref to query.  Use resolved_ref when available;
-        # fall back to ref_spec for plain branch names.
+
         ref_to_query = entry.resolved_ref if entry.resolved_ref else entry.ref_spec
 
         returncode, stdout, _stderr = run_git_ls_remote(
@@ -1872,9 +1800,6 @@ def _detect_branch_drift(
             retry_count=1,
         )
         if returncode != 0:
-            # ls-remote failure for drift check is non-fatal in strict-drift mode;
-            # the caller handles BranchDriftError based on the reports list.
-            # A reachability failure will surface separately via _check_sha_reachable.
             continue
 
         current_sha: str | None = None
@@ -1888,16 +1813,13 @@ def _detect_branch_drift(
                     break
 
         if current_sha is None:
-            # Ref not found on remote -- cannot determine drift; skip.
             continue
 
         if current_sha != entry.resolved_sha:
-            # Extract a human-readable branch name from resolved_ref.
             branch_name = entry.resolved_ref
             if branch_name.startswith("refs/heads/"):
                 branch_name = branch_name[len("refs/heads/") :]
             elif branch_name.startswith("refs/"):
-                # Other ref types: keep last segment
                 branch_name = branch_name.split("/")[-1]
             reports.append(
                 BranchDriftReport(
@@ -1924,7 +1846,6 @@ def _print_package_summary(
         print("\nkanon install: no packages synced.")
         return
 
-    # Group packages by source, preserving source order
     by_source: dict[str, list[str]] = {name: [] for name in source_names}
     for pkg_name, source_name in sorted(package_owners.items()):
         by_source[source_name].append(pkg_name)
@@ -2009,19 +1930,13 @@ def _run_install(
         OSError: If a source directory cannot be created.
         RepoCommandError: If any repo sub-command exits non-zero.
     """
-    # Step 1: Classify the lockfile state.
-    # When refresh_lock_source is set, we short-circuit to REFRESH_LOCK_SOURCE.
-    # When refresh_lock=True, _classify_install_state short-circuits to REFRESH_LOCK.
-    # Otherwise run the normal five-row classification.
+
     install_state: InstallState
     existing_lockfile: Lockfile | None
     lockfile_hash_mismatch_lockfile: Lockfile | None = None
     lockfile_hash_mismatch_computed: str | None = None
 
     if refresh_lock_source is not None:
-        # REFRESH_LOCK_SOURCE path: read the existing lockfile for the partial merge.
-        # If absent, proceed as REFRESH_LOCK_SOURCE with no existing lockfile
-        # (the partial merge step falls back to a full write in that case).
         install_state = InstallState.REFRESH_LOCK_SOURCE
         existing_lockfile = read_lockfile_if_present(lockfile_path)
     else:
@@ -2032,38 +1947,14 @@ def _run_install(
             lockfile_hash_mismatch_lockfile = classification.lockfile
             lockfile_hash_mismatch_computed = classification.computed_hash
 
-    # _consistent_has_orphans: set True when orphans were detected and pruned in the
-    # LOCKFILE_CONSISTENT state so Step 7 knows to rewrite the lockfile without the
-    # orphaned entries.  The RECONCILE path does NOT use this flag -- it always
-    # rebuilds and writes a full lockfile in Step 7.
     _consistent_has_orphans: bool = False
 
-    # reconcile_computed_hash: the freshly-computed kanon_hash for the current
-    # .kanon, carried into Step 7 so the rebuilt lockfile records it.  Set only on
-    # the RECONCILE path.
     reconcile_computed_hash: str | None = None
 
-    # Step 2: On a hash mismatch, decide between npm-ci (strict) and npm-install
-    # (reconcile) semantics.
-    #
-    # --strict-lock (npm ci): error cleanly on ANY drift and NEVER mutate the lock.
-    #   Pure-removal drift -> OrphanedLockEntryError (names each orphan); any other
-    #   drift (addition and/or changed spec) -> KanonHashMismatchError.
-    #
-    # default install (npm install): reconcile .kanon <-> lock.  Set the state to
-    #   RECONCILE, KEEP the existing lockfile for replay, and emit one
-    #   "pruned orphaned lock entry: <name>" line per orphan.  Nothing is written to
-    #   disk here; the per-source loop replays unchanged sources and resolves
-    #   added/changed sources fresh, and Step 7 rebuilds + writes the full lockfile
-    #   once on success.
     if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
-        # Both fields are populated by _classify_install_state in the HASH_MISMATCH
-        # branch (assigned above).  cast() communicates non-None to the type checker.
         existing_lockfile_nn = cast(Lockfile, lockfile_hash_mismatch_lockfile)
         computed_hash_nn = cast(str, lockfile_hash_mismatch_computed)
 
-        # Parse .kanon to get the current source set and their revision specs so we
-        # can classify the drift (orphans vs additions vs changed specs).
         mismatch_config = parse_kanonenv(kanonenv_path)
         mismatch_source_names: list[str] = mismatch_config["KANON_SOURCES"]
         mismatch_revision_specs: dict[str, str] = {
@@ -2071,7 +1962,6 @@ def _run_install(
         }
 
         if strict_lock:
-            # npm ci: pick the precise clean error and raise it WITHOUT writing.
             raise _strict_lock_drift_error(
                 existing_lockfile_nn,
                 mismatch_source_names,
@@ -2079,10 +1969,6 @@ def _run_install(
                 kanon_revision_specs=mismatch_revision_specs,
             )
 
-        # npm install: reconcile.  Emit one info-line per orphaned lock entry
-        # (lockfile sources absent from the current .kanon).  Orphans are excluded
-        # naturally by the per-source loop (it iterates .kanon source names only),
-        # so this is purely informational; nothing is pruned-and-written here.
         orphaned_on_mismatch = _detect_orphaned_lock_entries(existing_lockfile_nn, mismatch_source_names)
         for orphan_name in orphaned_on_mismatch:
             print(f"{INFO_PRUNED_ORPHAN_LOCK_ENTRY}: {orphan_name}")
@@ -2090,18 +1976,9 @@ def _run_install(
         existing_lockfile = existing_lockfile_nn
         reconcile_computed_hash = computed_hash_nn
 
-    # kanon install is hermetic (spec Section 4.3 / FR-14).  The v4 lock carries no
-    # [catalog] block, so install neither resolves nor records a catalog source: it
-    # reads .kanon + .kanon.lock and reconciles sources only.  A populated
-    # KANON_CATALOG_SOURCES env var has no effect here (it is ignored, never read),
-    # and --catalog-source is not registered on the install parser.
     print(f"kanon install: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
 
-    # Scan .kanon for unresolved placeholders BEFORE repo envsubst (spec E28 Change (b)).
-    # Any value matching <[A-Z_|]+> is a literal placeholder the operator forgot to
-    # replace.  Raising here gives a structured diagnostic rather than an opaque
-    # repo sync 404 or git-remote error.
     placeholder_findings = _scan_kanonenv_for_unresolved_placeholders(kanonenv_path)
     if placeholder_findings:
         first_line_no, first_placeholder = placeholder_findings[0]
@@ -2116,12 +1993,6 @@ def _run_install(
     sources = config["sources"]
     globals_dict = config["globals"]
 
-    # Per-dependency marketplace install (spec Section 4.3 / 5.1 / FR-17): the
-    # side-effect is performed per source iff that source's
-    # KANON_SOURCE_<alias>_MARKETPLACE flag is present and true.  source_marketplace
-    # maps each alias to its flag; any_marketplace gates the shared resources (the
-    # marketplace directory, plugin install, and lockfile aggregate) that exist
-    # whenever at least one dependency opted in.
     source_marketplace: dict[str, bool] = {name: bool(sources[name][SOURCE_MARKETPLACE_KEY]) for name in source_names}
     any_marketplace = any(source_marketplace.values())
 
@@ -2148,21 +2019,8 @@ def _run_install(
 
     source_dirs = create_source_dirs(source_names, base_dir)
 
-    # Compute the allow_insecure flag once: True only when the env var is exactly "1".
-    # This is used by _enforce_remote_url_policy for every encountered source URL.
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
 
-    # Step 5a: In the LOCKFILE_CONSISTENT state, apply strictness checks and
-    # drift detection BEFORE entering the per-source loop.
-    # Orphan check: sources in the lockfile but absent from .kanon.
-    # Drift check: branch-shaped sources whose remote tip differs from locked SHA.
-    # Both checks run only in the consistent state; reconcile, refresh, and absent
-    # paths skip them (reconcile prunes orphans in Step 2 and rebuilds the lock in
-    # Step 7, so it does not use _consistent_has_orphans).
-    # _drifted_source_names: set of source names with detected branch drift in
-    # the consistent state.  Used to skip SHA reachability checks for those
-    # sources (the locked SHA is not a current ref head after the branch moved,
-    # but we are intentionally reusing it in the default drift-reuse path).
     _drifted_source_names: set[str] = set()
     if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
         orphaned = _detect_orphaned_lock_entries(existing_lockfile, source_names)
@@ -2185,89 +2043,46 @@ def _run_install(
                     f"reusing locked SHA"
                 )
 
-        # Canonical-URL conflict check on the consistent path: run the detector
-        # against the lockfile contents before replaying SHAs.  A conflict baked
-        # into the lockfile surfaces here so the operator sees the error and can
-        # remediate without waiting for a full re-resolve.
         lockfile_projects = _gather_resolved_projects(existing_lockfile.sources)
         canonical_conflict_reports = _detect_canonical_url_conflicts(lockfile_projects)
         if canonical_conflict_reports:
             raise CanonicalUrlConflictError(reports=canonical_conflict_reports)
 
-    # Step 5: Resolve SHAs and sync sources.
-    # In the LOCKFILE_CONSISTENT state, replay the pinned SHAs from the lockfile
-    # instead of calling resolve_version() (which would query the remote).
-    # In the REFRESH_LOCK_SOURCE state, re-resolve only the named source; replay
-    # all others from the existing lockfile verbatim.
-    # resolved_entries: populated for lockfile writing.
     resolved_entries: list[SourceEntry] = []
 
-    # Per-source marketplace attribution (schema v3): maps each current source
-    # name to the sorted list of marketplace names it registered this install.
-    # Built from the before/after discover() diff inside the per-source loop and
-    # attached to each source's SourceEntry.registered_marketplaces.  Empty for
-    # every source when marketplace install is disabled.
     attributed_marketplaces: dict[str, list[str]] = {}
 
-    # For REFRESH_LOCK_SOURCE: resolve the target entry from the existing lockfile.
-    # Do this before the per-source loop so we can fail fast with UnknownSourceError
-    # before touching any source directories.
-    # refresh_lock_source is non-None when install_state is REFRESH_LOCK_SOURCE.
     refresh_lock_source_nn: str = cast(str, refresh_lock_source)
     target_source_entry: SourceEntry | None = None
     if install_state is InstallState.REFRESH_LOCK_SOURCE and existing_lockfile is not None:
         target_source_entry = _resolve_source_name(refresh_lock_source_nn, existing_lockfile)
     elif install_state is InstallState.REFRESH_LOCK_SOURCE and existing_lockfile is None:
-        # No lockfile exists -- treat the named source as a synthetic lookup against
-        # the .kanon source names directly, then resolve fresh.
         if refresh_lock_source_nn not in source_names:
             normalised = derive_source_name(refresh_lock_source_nn)
             if normalised not in source_names:
                 raise UnknownSourceError(name=refresh_lock_source_nn, known_names=source_names)
-        # target_source_entry remains None; the per-source loop resolves fresh.
 
     for name in source_names:
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
 
-        # Per-source marketplace attribution (schema v3): snapshot the
-        # discoverable marketplace-name set BEFORE this source does anything that
-        # could deposit a marketplace (repo sync's native <linkfile> processing,
-        # kanon's _process_manifest_linkfiles, and register_direct_checkout_
-        # marketplaces).  The AFTER snapshot is taken once this source's
-        # marketplace registration completes; the set-difference is exactly the
-        # marketplaces THIS source contributed.  prepare_marketplace_dir wiped the
-        # directory before the loop, so per-source diffs cleanly isolate each
-        # source's contribution.
         before_marketplace_names: set[str] = set()
         if source_marketplace[name]:
             before_marketplace_names = set(discover_registered_marketplace_names(pathlib.Path(marketplace_dir_str)))
 
-        # On the RECONCILE path, decide replay-vs-resolve for this source by
-        # comparing its .kanon revision spec to the locked entry's recorded spec.
-        # Computed once here so the HTTPS-enforcement URL selection and the
-        # resolution branch below agree.
         reconcile_replay = install_state is InstallState.RECONCILE and _should_replay_source(
             name,
             source_data["ref"],
             existing_lockfile,
         )
 
-        # HTTPS enforcement (Section 3.6 trust model).
-        # On the lockfile-consistent replay path -- and on the RECONCILE path for a
-        # source being replayed -- check the LOCKED URL so a malicious lockfile that
-        # records an HTTP remote is rejected before any clone attempt.  On all other
-        # paths (fresh resolve, refresh) check the .kanon source URL.
         if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
             _replay_candidate = next(
                 (e for e in existing_lockfile.sources if e.name == name),
                 None,
             )
             if _replay_candidate is None:
-                # Defensive invariant: in LOCKFILE_CONSISTENT the kanon_hash matched,
-                # so every .kanon source must be present in the lockfile.  RECONCILE
-                # never reaches this branch (it resolves missing sources fresh).
                 raise InstallError(
                     f"BUG: source {name!r} not found in lockfile under LOCKFILE_CONSISTENT state"
                     " -- kanon_hash consistency violation"
@@ -2275,7 +2090,7 @@ def _run_install(
             _url_to_check = _replay_candidate.url
         elif reconcile_replay and existing_lockfile is not None:
             _reconcile_pinned = next((e for e in existing_lockfile.sources if e.name == name), None)
-            # reconcile_replay is True only when the source is present in the lock.
+
             _url_to_check = cast(SourceEntry, _reconcile_pinned).url
         else:
             _url_to_check = source_data["url"]
@@ -2287,20 +2102,16 @@ def _run_install(
         )
 
         if install_state is InstallState.REFRESH_LOCK_SOURCE:
-            # Determine whether this source is the one being refreshed.
             is_refresh_target = (target_source_entry is not None and target_source_entry.name == name) or (
-                # Lockfile-absent path: match by name or derive_source_name.
                 existing_lockfile is None
                 and (name == refresh_lock_source_nn or name == derive_source_name(refresh_lock_source_nn))
             )
 
             if is_refresh_target:
-                # Re-resolve this source fresh.
                 new_entry = _refresh_one_source(name, source_data)
                 resolved_entries.append(new_entry)
                 resolved_revision = new_entry.resolved_sha
             elif existing_lockfile is not None:
-                # Preserve this source's entry verbatim from the existing lockfile.
                 pinned = next(
                     (e for e in existing_lockfile.sources if e.name == name),
                     None,
@@ -2309,23 +2120,15 @@ def _run_install(
                     resolved_revision = pinned.resolved_sha
                     resolved_entries.append(pinned)
                 else:
-                    # Source not in lockfile -- resolve fresh.
                     new_entry = _refresh_one_source(name, source_data)
                     resolved_entries.append(new_entry)
                     resolved_revision = new_entry.resolved_sha
             else:
-                # No lockfile -- resolve all sources fresh.
                 new_entry = _refresh_one_source(name, source_data)
                 resolved_entries.append(new_entry)
                 resolved_revision = new_entry.resolved_sha
         elif install_state is InstallState.RECONCILE:
-            # npm install reconcile: replay unchanged sources (preserve the locked
-            # SHA), resolve added/changed sources fresh.  Orphans never reach this
-            # branch -- the loop iterates .kanon source names only.
             if reconcile_replay and existing_lockfile is not None:
-                # reconcile_replay implies the source is present in the lock with an
-                # identical revision spec.  Apply the same reachability validation the
-                # CONSISTENT branch does before replaying the locked SHA.
                 pinned = cast(SourceEntry, next(e for e in existing_lockfile.sources if e.name == name))
                 _check_sha_reachable(
                     url=pinned.url,
@@ -2335,27 +2138,15 @@ def _run_install(
                 resolved_revision = pinned.resolved_sha
                 resolved_entries.append(pinned)
             else:
-                # New source or changed spec -- re-resolve fresh, mirroring the
-                # REFRESH_LOCK_SOURCE re-resolve so the .repo/manifests working tree
-                # is reset before repo_init (see the reset block below).
                 new_entry = _refresh_one_source(name, source_data)
                 resolved_entries.append(new_entry)
                 resolved_revision = new_entry.resolved_sha
         elif install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
-            # Replay: find the pinned entry for this source.
             pinned = next(
                 (e for e in existing_lockfile.sources if e.name == name),
                 None,
             )
             if pinned is not None:
-                # Verify SHA reachability before replaying: list all remote refs
-                # and check whether the pinned SHA appears in the first column.
-                # git ls-remote with a bare SHA pattern always returns empty output
-                # (only ref names are matched), so we list all refs and grep the SHA.
-                # Skip reachability check for drifted branch-shaped sources: after
-                # the branch tip has moved, the locked SHA is no longer a ref head
-                # and would falsely fail the reachability check.  The drift info-line
-                # was already emitted (or BranchDriftError was raised) above.
                 if name not in _drifted_source_names:
                     _check_sha_reachable(
                         url=pinned.url,
@@ -2365,7 +2156,6 @@ def _run_install(
                 resolved_revision = pinned.resolved_sha
                 resolved_entries.append(pinned)
             else:
-                # Source in .kanon but not in lockfile -- resolve fresh.
                 resolved_revision = resolve_version(source_data["url"], source_data["ref"])
                 ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
                 resolved_entries.append(
@@ -2381,8 +2171,7 @@ def _run_install(
                 )
         else:
             resolved_revision = resolve_version(source_data["url"], source_data["ref"])
-            # Resolve the actual commit SHA and the matched ref for the lockfile entry.
-            # ValueError propagates unconditionally (fail-fast; no silent degradation).
+
             ref_resolution = _resolve_ref_to_sha(source_data["url"], resolved_revision)
             resolved_entries.append(
                 SourceEntry(
@@ -2397,29 +2186,12 @@ def _run_install(
             )
 
         print(f"  repo init ({source_data['path']})...")
-        # On the refresh path, reset the .repo/manifests working tree before
-        # re-init. kanon's own repo envsubst step (from the previous install)
-        # dirtied the working tree by rewriting manifest XML files and leaving
-        # .bak sibling files. If the new manifest commit also changes manifest.xml,
-        # git refuses the checkout ("local changes would be overwritten"), leaves
-        # HEAD pointing to the deleted 'default' branch ref, and the subsequent
-        # rev-list ^HEAD <sha> raises an unhandled GitCommandError. Resetting the
-        # working tree to HEAD state before re-init lets git checkout the new
-        # manifest commit cleanly. (AC-FUNC-001)
-        # Re-resolved sources need the working-tree reset: REFRESH_LOCK and
-        # REFRESH_LOCK_SOURCE always re-resolve, and RECONCILE re-resolves any
-        # added/changed source (a replayed RECONCILE source keeps its manifest
-        # commit, so it follows the plain repo_init path like CONSISTENT replay).
+
         _is_reresolve = install_state in (
             InstallState.REFRESH_LOCK,
             InstallState.REFRESH_LOCK_SOURCE,
         ) or (install_state is InstallState.RECONCILE and not reconcile_replay)
         if _is_reresolve:
-            # On the refresh path, reset the .repo/manifests working tree before
-            # re-init, then wrap repo init so that any git-level failure
-            # (including the GitCommandError from rev-list ^HEAD on a deleted branch ref)
-            # is caught and re-raised as a handled kanon ERROR: with the offending source
-            # name and a remediation hint, never as a raw traceback. (AC-FUNC-001, AC-FUNC-002)
             try:
                 _reset_manifests_working_tree(source_dir)
             except OSError as exc:
@@ -2447,58 +2219,26 @@ def _run_install(
         print("  repo sync...")
         run_repo_sync(source_dir)
 
-        # Walk the <include> chain from the checked-out manifest XML.
-        # After repo init + repo sync, manifest files live under
-        # source_dir/.repo/manifests/ (the repo tool's manifest checkout dir).
-        # _walk_includes uses that directory as the manifest repo root so all
-        # <include name=...> values (relative to the repo root) resolve correctly.
-        # The walker raises IncludeCycleError on cycles and MalformedIncludeError
-        # on malformed elements -- both propagate unconditionally (fail-fast).
-        # Only the root's children become [[sources.includes]] entries; the root
-        # itself is already recorded in the [[sources]] entry above.
         manifest_repo_root = source_dir / ".repo" / "manifests"
         manifest_xml_path = manifest_repo_root / source_data["path"]
 
-        # Process <linkfile> elements from the manifest XML to ensure that
-        # marketplace plugin manifests are copied into CLAUDE_MARKETPLACES_DIR.
-        # This supplements the repo tool's native linkfile processing so that
-        # marketplace entries are present for install_marketplace_plugins even
-        # when the repo tool's linkfile step did not run (spec Section 4 E35).
-        #
         if source_marketplace[name]:
             marketplace_dir = pathlib.Path(marketplace_dir_str)
             _process_manifest_linkfiles(manifest_xml_path, source_dir)
-            # Also register direct-checkout entries that carry a
-            # .claude-plugin/marketplace.json but have NO <linkfile> element
-            # (BUG-3: builders-plugins pattern). For each such project, a
-            # symlink from CLAUDE_MARKETPLACES_DIR/<name> to the project
-            # checkout dir is created so install_marketplace_plugins can find it.
+
             register_direct_checkout_marketplaces(manifest_xml_path, source_dir, marketplace_dir)
-            # AFTER snapshot for per-source attribution (see the BEFORE snapshot
-            # at the top of the loop).  The diff is exactly the marketplaces this
-            # source deposited via repo sync's linkfiles, kanon's linkfile copy,
-            # or a direct-checkout registration.
+
             after_names = set(discover_registered_marketplace_names(marketplace_dir))
             attributed_marketplaces[name] = sorted(after_names - before_marketplace_names)
             resolved_entries[-1].registered_marketplaces = attributed_marketplaces[name]
         include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
-        # resolved_entries[-1] is the SourceEntry appended for this source
-        # in the resolution branches above. Populate its includes list with
-        # the DFS-ordered, diamond-deduped tree the walker produced.
+
         resolved_entries[-1].includes = _include_tree_to_entries(
             include_tree,
             source_url=source_data["url"],
             resolved_sha=resolved_entries[-1].resolved_sha,
         )
 
-        # Publish the freshly-synced source as an immutable content-addressed
-        # store entry (spec Section 3.5 / FR-16).  The address is derived from
-        # the canonical URL + resolved SHA, so two project dirs sharing one
-        # KANON_HOME that sync the same manifest@SHA dedup to a single entry.
-        # The publish is concurrency-safe: a per-entry lock guards each address
-        # and the content is materialized into a temp dir then atomically renamed
-        # into the final content-addressed path (readiness via final-path
-        # existence, never a poll-sleep).
         entry_address = compute_store_entry_address(source_data["url"], resolved_entries[-1].resolved_sha)
         publish_store_entry(
             base_dir,
@@ -2506,9 +2246,6 @@ def _run_install(
             lambda dest, src=source_dir: shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True),
         )
 
-    # Canonical-URL conflict check on the absent/refresh paths: run the detector
-    # against the freshly-resolved entries now that all sources have been resolved.
-    # The consistent path already ran this check against the lockfile contents above.
     if install_state is not InstallState.LOCKFILE_CONSISTENT:
         fresh_projects = _gather_resolved_projects(resolved_entries)
         canonical_conflict_reports = _detect_canonical_url_conflicts(fresh_projects)
@@ -2519,17 +2256,9 @@ def _run_install(
     package_owners = aggregate_symlinks(source_names, base_dir)
     update_gitignore(base_dir)
 
-    # Conditional .gitignore safety net: when the resolved KANON_HOME store sits
-    # inside a git working tree, ensure a .gitignore entry that ignores the whole
-    # store so the fetched-artifact cache is never committed (spec Section 3.5).
-    # Runs after update_gitignore so the safety-net entry is appended idempotently.
     write_store_gitignore_if_in_git_repo(base_dir)
 
-    # Step 6: Emit the spec's info-line for the current state.
     if install_state is InstallState.REFRESH_LOCK_SOURCE and target_source_entry is not None:
-        # Count refreshed vs preserved top-level source entries.
-        # A source is refreshed when its name matches the target; all other
-        # top-level sources in resolved_entries are preserved (kept as-is).
         refreshed_name = target_source_entry.name
         refreshed_count = sum(1 for e in resolved_entries if e.name == refreshed_name)
         preserved_count = sum(1 for e in resolved_entries if e.name != refreshed_name)
@@ -2551,24 +2280,6 @@ def _run_install(
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         install_marketplace_plugins(marketplace_dir)
 
-    # Marketplace ownership reconciliation (per-source, schema v3).
-    #
-    # NEW = union of every current source's attributed marketplace names (the
-    # marketplaces present under CLAUDE_MARKETPLACES_DIR after this install).
-    # When marketplace install is disabled, no source is attributed anything, so
-    # NEW is empty.
-    #
-    # OLD = union of every source's recorded ``registered_marketplaces`` in the
-    # existing lockfile (empty when there is no prior lock).
-    #
-    # Auto-prune: any name in OLD that is absent from NEW is an orphan -- a
-    # marketplace whose source was reconciled away (or whose registration was
-    # toggled off).  Each orphan is unregistered from ~/.claude via
-    # ``remove_marketplace`` (idempotent).  The claude binary is located lazily,
-    # only when at least one orphan exists, so a no-orphan run never requires
-    # claude on PATH.  This diff runs even when every dependency has marketplace
-    # install DISABLED so removing the last KANON_SOURCE_<alias>_MARKETPLACE=true
-    # flag prunes everything kanon previously registered (NEW=[], orphans=OLD).
     new_marketplace_set: set[str] = set()
     for _names in attributed_marketplaces.values():
         new_marketplace_set.update(_names)
@@ -2586,21 +2297,7 @@ def _run_install(
             print(f"  - unregistering marketplace: {name}")
             remove_marketplace(claude_bin, name)
 
-    # Step 7: Write the lockfile.  Schema v4 (spec Section 5.2 / FR-7) has no
-    # [catalog] block, so no write path resolves or records a catalog source.
-    # - LOCKFILE_ABSENT: write fresh lockfile.
-    # - REFRESH_LOCK: full rebuild; overwrite lockfile.
-    # - RECONCILE: full rebuild from the resolved+replayed entries (orphans dropped,
-    #   added/changed resolved fresh, unchanged replayed), recording the new
-    #   kanon_hash.  Written once, on success only -- nothing was written earlier
-    #   on this path.
-    # - REFRESH_LOCK_SOURCE: partial rebuild; merge one source into old lockfile.
-    # - LOCKFILE_CONSISTENT with orphans pruned: rewrite without orphaned entries.
-    # - LOCKFILE_CONSISTENT (no orphans): lockfile is authoritative; do NOT rewrite.
     if install_state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
-        # In the LOCKFILE_ABSENT state, computed_hash is always None because
-        # _classify_install_state does not call kanon_hash when there is no
-        # lockfile to compare against. Compute it now.
         computed_hash = _kanon_hash(kanonenv_path)
 
         lf = Lockfile(
@@ -2615,8 +2312,6 @@ def _run_install(
         write_lockfile(lf, lockfile_path)
 
     elif install_state is InstallState.RECONCILE:
-        # Full rebuild from the reconciled source set.  The new kanon_hash is the
-        # value computed during Step 2 classification.
         reconcile_hash_nn = cast(str, reconcile_computed_hash)
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
@@ -2630,10 +2325,8 @@ def _run_install(
         write_lockfile(lf, lockfile_path)
 
     elif install_state is InstallState.REFRESH_LOCK_SOURCE:
-        # Partial rebuild: merge the refreshed source into the existing lockfile.
         new_kanon_hash = _kanon_hash(kanonenv_path)
         if existing_lockfile is not None and target_source_entry is not None:
-            # Find the freshly-resolved entry for the target source.
             refreshed_entry = next(
                 (e for e in resolved_entries if e.name == target_source_entry.name),
                 None,
@@ -2651,7 +2344,6 @@ def _run_install(
             )
             write_lockfile(merged_lf, lockfile_path)
         else:
-            # No existing lockfile -- write a full lockfile as if LOCKFILE_ABSENT.
             lf = Lockfile(
                 schema_version=CURRENT_SCHEMA_VERSION,
                 generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -2664,15 +2356,9 @@ def _run_install(
             write_lockfile(lf, lockfile_path)
 
     elif install_state is InstallState.LOCKFILE_CONSISTENT and _consistent_has_orphans:
-        # Orphans were pruned from the consistent-state run.  Rewrite the lockfile
-        # without the orphaned entries so subsequent installs do not re-detect them.
-        # The kanon_hash and all non-orphan source entries are preserved verbatim
-        # from the existing lockfile (it is still consistent).
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
-        # These entry objects were appended to resolved_entries as ``pinned`` and
-        # mutated in the per-source loop with fresh per-source attribution, so
-        # their ``registered_marketplaces`` is already authoritative.
+
         pruned_sources = [e for e in pruned_lf_nn.sources if e.name in active_names]
         pruned_lockfile = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,

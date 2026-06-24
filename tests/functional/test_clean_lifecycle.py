@@ -59,9 +59,6 @@ class TestCleanLifecycle:
         mp_dir.mkdir()
         (mp_dir / "some-file.txt").write_text("data")
 
-        # 3.0.0 marketplace opt-in is per-dependency (KANON_SOURCE_<alias>_MARKETPLACE)
-        # -- the removed global KANON_MARKETPLACE_INSTALL header no longer gates it.
-        # With no lockfile present, clean falls back to the per-dependency flag.
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (

@@ -1,17 +1,3 @@
-# Copyright (C) 2008 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the main.py module."""
 
 import optparse
@@ -42,7 +28,7 @@ class TestCheckRepoDir(unittest.TestCase):
 
     def test_valid_repo_dir(self):
         """Test that valid repo_dir passes."""
-        # Should not raise or exit
+
         main._CheckRepoDir("/valid/repo/dir")
 
 
@@ -58,7 +44,6 @@ class TestPruneOptions(unittest.TestCase):
         argv = ["--known", "value", "--unknown", "value2", "arg"]
         main._PruneOptions(argv, opt)
 
-        # _PruneOptions removes anything that's not a known option
         self.assertEqual(argv, ["--known"])
 
     def test_prune_with_equals(self):
@@ -79,7 +64,6 @@ class TestPruneOptions(unittest.TestCase):
         argv = ["--known", "value", "--", "--unknown", "value2"]
         main._PruneOptions(argv, opt)
 
-        # _PruneOptions removes non-options before --, then stops
         self.assertEqual(argv, ["--known", "--", "--unknown", "value2"])
 
     def test_prune_empty_list(self):
@@ -144,10 +128,8 @@ class TestAddPasswordFromUserInput(unittest.TestCase):
         mock_req = mock.Mock()
         mock_req.get_full_url.return_value = "http://example.com"
 
-        # Should not raise
         main._AddPasswordFromUserInput(mock_handler, "Auth required", mock_req)
 
-        # Should not add password
         mock_handler.passwd.add_password.assert_not_called()
 
     def test_existing_user_skips_input(self):
@@ -747,7 +729,6 @@ class TestTimeFormatting(unittest.TestCase):
         with mock.patch("builtins.print") as mock_print:
             self.repo._RunLong("sync", mock_gopts, [], mock_git_log)
 
-        # Verify time was printed
         calls = [str(call) for call in mock_print.call_args_list]
         time_printed = any("real" in str(call) for call in calls)
         self.assertTrue(time_printed)
@@ -786,7 +767,6 @@ class TestTimeFormatting(unittest.TestCase):
         with mock.patch("builtins.print") as mock_print:
             self.repo._RunLong("sync", mock_gopts, [], mock_git_log)
 
-        # Verify time was printed with hours
         calls = [str(call) for call in mock_print.call_args_list]
         time_printed = any("real" in str(call) and "h" in str(call) for call in calls)
         self.assertTrue(time_printed)

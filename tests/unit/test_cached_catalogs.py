@@ -17,10 +17,6 @@ import pytest
 from tests.conftest import bare_text_io_calls
 
 
-# ---------------------------------------------------------------------------
-# utf-8 encoding sweep (AC-12)
-# ---------------------------------------------------------------------------
-
 _CACHED_CATALOGS_PY = (
     pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "completions" / "cached_catalogs.py"
 )
@@ -47,11 +43,6 @@ class TestCachedCatalogsPyUtf8EncodingSweep:
             f"completions/cached_catalogs.py has bare write_text() calls: {write_bare}. "
             "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
         )
-
-
-# ---------------------------------------------------------------------------
-# _read_origin functional tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

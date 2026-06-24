@@ -60,29 +60,20 @@ from kanon_cli.core.metadata import (
 )
 from kanon_cli.version import _list_tags, _resolve_constraint_from_tags, is_version_constraint, resolve_version
 
-# Spec-verbatim error emitted when the manifest repo has no PEP 440-valid tags
-# and the operator did not supply an explicit @<spec> constraint.
-# Spec reference: kanon-list-add-lock-features-spec.md Section 4.2, step 4.
+
 _ZERO_PEP440_TAGS_ERROR = (
     "manifest repo has no PEP 440-valid tags; pin to a branch or SHA"
     " explicitly (e.g., 'kanon add foo@main') or ask the catalog author"
     " to publish a release tag."
 )
 
-# Pre-compiled regex for SCP-shorthand git URLs: git@host:org/repo[.git]
-# Compiled at module load time to avoid re-compiling on every derivation call.
+
 _SCP_URL_PATTERN = re.compile(r"^(git@[^:]+):([^/]+)/[^/]+(?:\.git)?$")
 
-# Alias charset (spec Section 4.2 / 5.1): a local alias uses only [A-Za-z0-9_]
-# with single underscores (never a "__" run). This pattern matches a legal
-# fully-formed alias; it is reused to validate the --as override and to verify
-# the auto-computed alias never emits a "__".
+
 _ALIAS_CHARSET_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
-# Run of one or more characters that are NOT in the alias charset. Used by the
-# suffix sanitizer (spec Section 4.2 / 5.1): every such run collapses to a
-# single underscore so a constraint ref like ">=0.1.0,<1.0.0" maps to the alias
-# fragment "0_1_0_1_0_0" (never "__").
+
 _NON_ALIAS_CHARS_RE = re.compile(r"[^A-Za-z0-9_]+")
 
 
@@ -185,12 +176,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         ),
     )
 
-    # Per-dependency marketplace-install override flags (spec Section 4.2 /
-    # FR-17). They are mutually exclusive: --marketplace-install forces the added
-    # dependency's KANON_SOURCE_<alias>_MARKETPLACE line on (a pretty error, not a
-    # crash, when the catalog entry is not a marketplace type);
-    # --no-marketplace-install forces it off (the line is omitted). When neither
-    # flag is supplied the value is auto-detected from <catalog-metadata><type>.
     marketplace_group = parser.add_mutually_exclusive_group()
     marketplace_group.add_argument(
         "--marketplace-install",
@@ -220,11 +205,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     )
 
     parser.set_defaults(func=run_add)
-
-
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
 
 
 class CatalogSourceURLDerivationError(ValueError):
@@ -307,11 +287,6 @@ class MarketplaceInstallError(ValueError):
         )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _derive_gitbase_from_catalog_source(url: str) -> str:
     """Derive the GITBASE value from a catalog-source URL.
 
@@ -338,12 +313,10 @@ def _derive_gitbase_from_catalog_source(url: str) -> str:
     if not url:
         raise ValueError("catalog-source URL is required for kanon add")
 
-    # SCP-shorthand form: git@host:org/repo(.git)?
-    # urllib.parse.urlsplit does not recognise this form, so handle it first.
     scp_match = _SCP_URL_PATTERN.match(url)
     if scp_match:
-        host_part = scp_match.group(1)  # e.g. git@github.com
-        org_part = scp_match.group(2)  # e.g. my-org
+        host_part = scp_match.group(1)
+        org_part = scp_match.group(2)
         return f"{host_part}:{org_part}"
 
     parsed = urllib.parse.urlsplit(url)
@@ -353,8 +326,6 @@ def _derive_gitbase_from_catalog_source(url: str) -> str:
             "URL has no scheme; expected https://, http://, ssh://, git@host:, or file://",
         )
 
-    # file:// URLs have an empty netloc; return scheme:// + parent directory.
-    # e.g. file:///tmp/bare-repo.git -> file:///tmp
     if parsed.scheme == "file":
         parent_path = str(pathlib.PurePosixPath(parsed.path).parent)
         return f"{parsed.scheme}://{parsed.netloc}{parent_path}"
@@ -365,16 +336,11 @@ def _derive_gitbase_from_catalog_source(url: str) -> str:
             f"URL scheme '{parsed.scheme}' has no host/authority component",
         )
 
-    # For https/http/ssh, extract the leading path segment (the org/owner part)
-    # before the repository name. The path looks like /org/repo[.git].
-    # Strip a leading slash, then take the first segment.
     path_segments = [s for s in parsed.path.split("/") if s]
     if len(path_segments) >= 2:
-        # At least org/repo present -- include the org segment.
         org_segment = path_segments[0]
         return f"{parsed.scheme}://{parsed.netloc}/{org_segment}"
 
-    # Only a single path segment (just the repo, no org prefix) or no path.
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
@@ -439,8 +405,7 @@ def _source_repo_fragment(url: str) -> str:
     Returns:
         The sanitized source-repo fragment for use as an alias suffix.
     """
-    # Normalise both separators so the final segment is the repo name regardless
-    # of URL form. SCP shorthand (git@host:org/repo) uses ':' before the path.
+
     tail = url.replace(":", "/").rstrip("/").rsplit("/", 1)[-1]
     repo_name = tail.removesuffix(".git")
     return _sanitize_alias_fragment(repo_name)
@@ -582,7 +547,7 @@ def _resolve_entry_alias(
         existing_url, existing_ref = existing[candidate]
         if existing_url == entry_url and existing_ref == entry_ref:
             return candidate, ("force_overwrite" if force else "duplicate")
-        # Same alias, different source coordinates -> try the next suffix.
+
     print(
         f"ERROR: cannot auto-compute a unique alias for {entry_url}@{entry_ref}: "
         f"every candidate alias ({base_alias} and its source-repo / ref suffixes) "
@@ -734,9 +699,7 @@ def _build_source_block_lines(
         ``_MARKETPLACE=true`` line when ``marketplace`` is true.
     """
     prefix = f"{SOURCE_PREFIX}{source_name}"
-    # The suffix tokens are written as literals (rather than interpolated from
-    # the suffix constants) so this single canonical writer states the on-disk
-    # alias-block schema verbatim: _URL, _REF, _PATH, _NAME, _GITBASE.
+
     lines = [
         f"{prefix}_URL={url}",
         f"{prefix}_REF={ref}",
@@ -814,10 +777,6 @@ def _build_entry_catalog(
             metadata = _parse_catalog_metadata(xml_path)
             entries.append((metadata, xml_path, url))
         except CatalogMetadataParseError as exc:
-            # Use the manifest-relative path in all error output so messages
-            # are reproducible regardless of the temp clone directory.
-            # Canonical fixture: tests/fixtures/errors/missing-required-metadata-field.txt
-            # Spec section: spec/kanon-list-add-lock-features-spec.md Section 3.
             rel_path = str(xml_path.relative_to(manifest_root))
             error_paths.append(rel_path)
             error_msg = str(exc).replace(str(xml_path), rel_path)
@@ -887,12 +846,9 @@ def _resolve_spec(url: str, spec: str | None) -> str:
     if spec is None:
         tags = _list_tags(url)
         if not tags:
-            # Zero tags total -- emit spec-verbatim error (AC-FUNC-002).
             print(f"ERROR: {_ZERO_PEP440_TAGS_ERROR}", file=sys.stderr)
             sys.exit(1)
 
-        # Check whether at least one tag has a PEP 440-valid last component.
-        # Collect skipped names so the loud error can list them (AC-FUNC-003).
         skipped: list[str] = []
         has_pep440 = False
         for tag in tags:
@@ -905,8 +861,6 @@ def _resolve_spec(url: str, spec: str | None) -> str:
                 skipped.append(tag)
 
         if not has_pep440:
-            # Zero PEP 440-valid tags -- emit spec-verbatim error plus skipped
-            # tag names (first up-to-TAG_ERROR_DISPLAY_CAP, sorted) (AC-FUNC-003).
             sorted_skipped = sorted(skipped)
             display = sorted_skipped[:TAG_ERROR_DISPLAY_CAP]
             lines = [f"ERROR: {_ZERO_PEP440_TAGS_ERROR}", "Skipped non-PEP-440 tags:"]
@@ -982,11 +936,6 @@ def _xml_repo_relative_path(
     return str(xml_path.relative_to(manifest_root))
 
 
-# ---------------------------------------------------------------------------
-# Collision detection helpers
-# ---------------------------------------------------------------------------
-
-
 def _check_within_request_collisions(entry_names: list[str]) -> None:
     """Detect duplicates within the requested set before any catalog work.
 
@@ -999,7 +948,7 @@ def _check_within_request_collisions(entry_names: list[str]) -> None:
     Raises:
         SystemExit: When two or more names normalise to the same source name.
     """
-    seen: dict[str, str] = {}  # source_name -> first raw name
+    seen: dict[str, str] = {}
     for raw in entry_names:
         source = derive_source_name(raw)
         if source in seen:
@@ -1101,11 +1050,6 @@ def _emit_same_name_guard_error(
     sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# Force-overwrite helper
-# ---------------------------------------------------------------------------
-
-
 def _overwrite_source_block(
     dest: pathlib.Path,
     source_name: str,
@@ -1138,22 +1082,16 @@ def _overwrite_source_block(
         key = stripped.split("=", 1)[0] if "=" in stripped else stripped
         if key in block_keys:
             if not inserted:
-                # Insert replacement block at the position of the first matched line.
                 for new_line in lines:
                     result.append(new_line + "\n")
                 inserted = True
-            # Skip old line (replaced above).
+
         else:
             result.append(raw_line)
 
     dest.write_text("".join(result), encoding="utf-8")
 
     print(f"Overwrote {_source_block_key_names(source_name)} in {dest}")
-
-
-# ---------------------------------------------------------------------------
-# Lock re-pin helper (spec Section 4.2: --force re-pins the alias lock entry)
-# ---------------------------------------------------------------------------
 
 
 def _repin_lock_entry(
@@ -1210,23 +1148,15 @@ def _repin_lock_entry(
         )
         sys.exit(1)
 
-    # Re-pin the source coordinates; keep the dep's manifest NAME unchanged.
     target.url = url
     target.ref_spec = ref_spec
     target.resolved_ref = resolution.resolved_ref
     target.resolved_sha = resolution.sha
 
-    # Recompute the kanon_hash from the just-overwritten .kanon so .kanon and
-    # .kanon.lock stay consistent (the validate-lockfile drift check, FR-24).
     lockfile.kanon_hash = kanon_hash(kanon_file)
 
     write_lockfile(lockfile, lock_path)
     print(f"Re-pinned lock entry for alias '{alias}' in {lock_path}")
-
-
-# ---------------------------------------------------------------------------
-# Dry-run renderer
-# ---------------------------------------------------------------------------
 
 
 def _existing_block_lines(dest: pathlib.Path, source_name: str) -> list[str]:
@@ -1286,11 +1216,6 @@ def _render_dry_run_diff(
         print(f"+{new_line}")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-
 def run_add(args: argparse.Namespace) -> int:
     """Entry-point function for the 'kanon add' subcommand.
 
@@ -1348,12 +1273,9 @@ def run_add(args: argparse.Namespace) -> int:
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
     alias_override: str | None = getattr(args, "alias_override", None)
-    # None == auto-detect from <catalog-metadata><type>; True/False == forced by
-    # --marketplace-install / --no-marketplace-install (spec Section 4.2 / FR-17).
+
     marketplace_override: bool | None = getattr(args, "marketplace_install", None)
 
-    # An --as override targets a single alias; rejecting the multi-entry case up
-    # front (fail fast) avoids silently aliasing only one of several entries.
     if alias_override is not None and len(args.entries) != 1:
         print(
             "ERROR: --as <alias> overrides the alias for a single entry; "
@@ -1370,12 +1292,6 @@ def run_add(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-    # Validate that a GITBASE org base is derivable from the catalog-source URL
-    # early (before any file writes) so a malformed URL fails fast before cloning
-    # the manifest repo. The per-dependency _GITBASE written into each block is
-    # derived from that dependency's own entry URL in the resolution loop below.
-    # The catalog_source has the form <url>@<ref>; strip the trailing @<ref> to
-    # obtain the bare URL for the early derivation guard.
     catalog_source_url = catalog_source[: catalog_source.rfind("@")] if "@" in catalog_source else catalog_source
     try:
         _derive_gitbase_from_catalog_source(catalog_source_url)
@@ -1383,27 +1299,15 @@ def run_add(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
 
-    # Pre-flight: within-request collision detection (before any catalog work).
-    # add is single-source per invocation, so two entries normalising to the
-    # same manifest name from the one source are a genuine duplicate request.
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
     _check_within_request_collisions(raw_names)
 
-    # Step 1: Resolve manifest repo.
     manifest_root, url, _ref = _resolve_manifest_repo_for_add(catalog_source)
 
-    # Step 2: Build entry catalog (hard-errors on soft-spot rule 1 / 3 violations).
     catalog = _build_entry_catalog(manifest_root, url)
 
-    # Step 3-4: Resolution phase -- resolve every entry, compute its deterministic
-    # alias, and run the same-NAME guard BEFORE any file write. This ensures that
-    # if any entry fails (zero PEP 440-valid tags, unknown name, --as taken, or a
-    # re-add without --force), the destination .kanon is not modified at all
-    # (AC-FUNC-004). The ``existing`` alias map seeds from the committed .kanon
-    # and is updated per resolved entry so two entries in one invocation also
-    # auto-suffix deterministically.
     existing_aliases = _read_all_source_aliases(kanon_file)
-    # Each resolved entry: (alias, mode, entry_url, lock_ref_spec, lines).
+
     resolved_entries: list[tuple[str, str, str, str, list[str]]] = []
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
@@ -1413,14 +1317,11 @@ def run_add(args: argparse.Namespace) -> int:
         resolved_revision = _resolve_spec(entry_url, spec)
 
         base_alias = derive_source_name(metadata.name)
-        # The lock ref-spec records the operator's intent (the verbatim spec when
-        # supplied), falling back to the auto-resolved revision for the bare add.
+
         lock_ref_spec = spec if spec is not None else resolved_revision
 
         rel_path = _xml_repo_relative_path(manifest_root, xml_path)
 
-        # Per-dependency GITBASE org base, derived from this entry's own URL
-        # (spec Section 5.1). Failure to derive fails fast (no silent default).
         try:
             entry_gitbase = _derive_gitbase_from_catalog_source(entry_url)
         except CatalogSourceURLDerivationError as exc:
@@ -1433,8 +1334,6 @@ def run_add(args: argparse.Namespace) -> int:
             alias, mode = _resolve_entry_alias(existing_aliases, base_alias, entry_url, resolved_revision, force)
 
         if mode == "duplicate":
-            # Re-add of the existing package at the same source@ref without
-            # --force: fail fast with a diff and the guiding message.
             _emit_same_name_guard_error(
                 kanon_file=kanon_file,
                 source_name=alias,
@@ -1443,10 +1342,6 @@ def run_add(args: argparse.Namespace) -> int:
                 new_path=rel_path,
             )
 
-        # Resolve the per-dependency marketplace flag (auto-detect from the
-        # entry's <type>, overridden by --[no-]marketplace-install). Forcing
-        # --marketplace-install on a non-marketplace entry is a pretty error
-        # (fail fast, before any file write -- AC-FUNC-004 holds).
         try:
             marketplace = _resolve_marketplace_flag(
                 entry_name=metadata.name,
@@ -1457,9 +1352,6 @@ def run_add(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-        # Auto-detected marketplace entries print a notice naming the override
-        # flag (spec Section 4.2 / FR-17). The notice is emitted only on
-        # auto-detect (override unset); an explicit flag already states intent.
         if marketplace and marketplace_override is None:
             print(
                 f"Note: catalog entry '{metadata.name}' is a "
@@ -1480,13 +1372,9 @@ def run_add(args: argparse.Namespace) -> int:
             marketplace=marketplace,
         )
 
-        # Record the resolved alias so a later entry in this same invocation
-        # auto-suffixes against it (deterministic within-request collision).
         existing_aliases[alias] = (entry_url, resolved_revision)
         resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines))
 
-    # Step 5: Write phase -- all entries resolved successfully; now write to disk.
-    # For --dry-run: print diffs without any file modification (no lock needed).
     if dry_run:
         for alias, mode, _entry_url, _lock_ref_spec, lines in resolved_entries:
             _render_dry_run_diff(
@@ -1497,9 +1385,6 @@ def run_add(args: argparse.Namespace) -> int:
             )
         return 0
 
-    # Normal (non-dry-run) write path: acquire the workspace exclusive lock
-    # before any file write so a concurrent kanon install cannot read a
-    # half-written .kanon file.
     workspace_root = kanon_file.resolve().parent
     with kanon_workspace_lock(workspace_root):
         for alias, mode, entry_url, lock_ref_spec, lines in resolved_entries:
@@ -1509,10 +1394,7 @@ def run_add(args: argparse.Namespace) -> int:
                     source_name=alias,
                     lines=lines,
                 )
-                # Re-pin the alias's lock entry (keeping its NAME) so .kanon and
-                # .kanon.lock do not drift after a --force overwrite (spec
-                # Section 4.2). No-op when no .kanon.lock exists or the alias is
-                # absent from it.
+
                 _repin_lock_entry(
                     kanon_file=kanon_file,
                     alias=alias,

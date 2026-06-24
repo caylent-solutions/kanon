@@ -18,11 +18,6 @@ import pathlib
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _sha256_of(text: str) -> str:
     """Return the hex SHA-256 digest of a UTF-8 encoded string.
 
@@ -54,11 +49,6 @@ def _make_generator(output: str):
     return _generator
 
 
-# ---------------------------------------------------------------------------
-# Tests: _check_completion_script_staleness
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckCompletionScriptStalenessNoScripts:
     """When no static completion scripts are installed, no findings are emitted."""
@@ -71,7 +61,6 @@ class TestCheckCompletionScriptStalenessNoScripts:
         """
         from kanon_cli.commands.doctor import _check_completion_script_staleness
 
-        # Empty search paths -- nothing installed.
         findings = _check_completion_script_staleness(
             search_paths=[],
             completion_generator=_make_generator("# bash completion"),
@@ -365,7 +354,7 @@ class TestCheckCompletionScriptStalenessMultiShell:
         def _generator(shell: str) -> str:
             if shell == "bash":
                 return "# fresh bash\n"
-            return fresh_zsh  # zsh is in-sync
+            return fresh_zsh
 
         findings = _check_completion_script_staleness(
             search_paths=[
@@ -398,11 +387,6 @@ class TestCheckCompletionScriptStalenessMultiShell:
         assert findings[0].code == "STALE_COMPLETION_SCRIPT"
 
 
-# ---------------------------------------------------------------------------
-# Tests: _run_completion_subchecks
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunCompletionSubchecks:
     """_run_completion_subchecks invokes subcheck 7 and 9 and prints findings to stderr."""
@@ -427,15 +411,12 @@ class TestRunCompletionSubchecks:
         script_file = tmp_path / "kanon.bash"
         script_file.write_text(stale_content, encoding="utf-8")
 
-        # Verify the staleness check detects the drift
         findings = _check_completion_script_staleness(
             search_paths=[("bash", str(script_file))],
             completion_generator=_make_generator(fresh_content),
         )
         assert len(findings) == 1
 
-        # Now run via _run_completion_subchecks to exercise line 726 (_print_finding call)
-        # Patch KANON_STATIC_COMPLETION_SEARCH_PATHS to only the tmp_path script
         import kanon_cli.commands.doctor as doctor_module
 
         original_paths = doctor_module.KANON_STATIC_COMPLETION_SEARCH_PATHS
@@ -468,9 +449,8 @@ class TestRunCompletionSubchecks:
         """
         from kanon_cli.commands.doctor import _run_completion_subchecks
 
-        # No generator -- should not emit any staleness warnings
         _run_completion_subchecks(completion_generator=None)
 
         captured = capsys.readouterr()
-        # No WARN about stale scripts (subcheck 9 is skipped)
+
         assert "STALE" not in captured.err

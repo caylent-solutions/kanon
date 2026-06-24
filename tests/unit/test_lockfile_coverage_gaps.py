@@ -32,11 +32,6 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 _VALID_SHA40 = "a" * 40
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 
@@ -108,11 +103,6 @@ def _write_lockfile_toml(path: pathlib.Path, kanon_hash: str) -> None:
         'path = "repo-specs/source.xml"\n'
     )
     path.write_text(toml, encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# Schema v4: [catalog] block removed, alias-keyed sources, v3 hard-fail
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -203,19 +193,14 @@ class TestSchemaV4CatalogRemoval:
         assert "kanon add" in err_msg and "kanon install" in err_msg
 
 
-# ---------------------------------------------------------------------------
-# _validate_kanon_hash raises LockfileValidationError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_hash",
     [
-        "a" * 64,  # 64 hex chars without sha256: prefix
-        "sha256:" + "a" * 32,  # only 32 hex chars after prefix
-        "sha256:" + "A" * 64,  # uppercase hex not allowed
-        "sha256:" + "g" * 64,  # 'g' is not a hex char
+        "a" * 64,
+        "sha256:" + "a" * 32,
+        "sha256:" + "A" * 64,
+        "sha256:" + "g" * 64,
     ],
     ids=[
         "missing_sha256_prefix",
@@ -261,11 +246,6 @@ class TestValidateKanonHash:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(lock_file)
         assert "sha256" in str(exc_info.value).lower()
-
-
-# ---------------------------------------------------------------------------
-# write_lockfile inner exception handler (fsync failure)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -319,7 +299,6 @@ class TestWriteLockfileInnerExceptionHandler:
         with pytest.raises(OSError):
             write_lockfile(lockfile, dest)
 
-        # Verify all temp files created during the call were cleaned up
         for tmp_path_item in created_tmp_files:
             assert not tmp_path_item.exists(), f"Temp file {tmp_path_item} should have been removed on fsync failure"
 
@@ -343,11 +322,6 @@ class TestWriteLockfileInnerExceptionHandler:
             write_lockfile(lockfile, dest)
 
         assert not dest.exists()
-
-
-# ---------------------------------------------------------------------------
-# write_lockfile outer exception handler (os.replace failure)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

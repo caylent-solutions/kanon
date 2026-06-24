@@ -43,10 +43,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in test_xml_notice_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -121,11 +117,6 @@ def _minimal_manifest_without_notice() -> str:
         '  <default revision="main" remote="origin" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: valid-value tests -- one per documented <notice> content form
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -307,11 +298,6 @@ class TestNoticeTextContentValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: invalid-value tests -- invalid content raises ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoticeTextContentInvalidValues:
     """AC-TEST-002: every invalid content form of <notice> raises the appropriate error.
@@ -457,11 +443,6 @@ class TestNoticeTextContentInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: content omission -- empty / missing text content behavior
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoticeRequiredContentOmission:
     """AC-TEST-003: the <notice> element has no required XML attributes,
@@ -584,11 +565,6 @@ class TestNoticeRequiredContentOmission:
         assert "notice" in error_text.lower(), (
             f"Expected 'notice' in error message for empty tag xml={empty_notice_xml!r} but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (parser raises, never prints)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

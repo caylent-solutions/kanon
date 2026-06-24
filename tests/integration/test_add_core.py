@@ -25,14 +25,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal marketplace XML for a named entry.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -48,11 +44,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -78,11 +69,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_manifest_repo_with_tags(
@@ -126,11 +112,6 @@ def _create_manifest_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -156,11 +137,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -217,11 +193,10 @@ class TestAddCoreCreateWithHeader:
         )
         assert kanon_file.exists(), "Expected .kanon file to be created"
         content = kanon_file.read_text()
-        # add writes only the per-dependency source block: no global header.
+
         assert "[catalog]" not in content
         assert "KANON_MARKETPLACE_INSTALL=" not in content
-        # The per-dependency block carries its own GITBASE (KANON_SOURCE_<alias>_GITBASE),
-        # but there is no bare global GITBASE= header line.
+
         assert "\nGITBASE=" not in content
         assert not content.startswith("GITBASE=")
         assert "KANON_SOURCE_entry_a_GITBASE=" in content
@@ -320,7 +295,6 @@ class TestAddCoreAppendToExisting:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # Pre-create the file with an unrelated existing line.
         kanon_file.write_text("EXISTING=value\n")
 
         result = _run_kanon(
@@ -336,7 +310,7 @@ class TestAddCoreAppendToExisting:
         )
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         content = kanon_file.read_text()
-        # Prior content is preserved and the per-dependency block is appended once.
+
         assert "EXISTING=value" in content
         assert content.count("KANON_SOURCE_entry_b_URL=") == 1
 

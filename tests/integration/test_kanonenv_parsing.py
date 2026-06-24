@@ -13,11 +13,6 @@ import pytest
 from kanon_cli.core.kanonenv import parse_kanonenv, validate_sources
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: kanonenv parsing integration tests (20 tests)
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(path: pathlib.Path, content: str) -> pathlib.Path:
     """Write content to a .kanon file at path and return its absolute path."""
     kanonenv = path / ".kanon"
@@ -79,9 +74,7 @@ class TestKanonenvParsingSingleSource:
         assert result["sources"]["s"]["path"] == "repo-specs/manifest.xml"
 
     def test_marketplace_install_defaults_false(self, tmp_path: pathlib.Path) -> None:
-        # 3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
-        # the removed global KANON_MARKETPLACE_INSTALL header. A source with no
-        # _MARKETPLACE line defaults to False on its parsed entry.
+
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"

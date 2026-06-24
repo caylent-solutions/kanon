@@ -49,11 +49,10 @@ from kanon_cli.constants import (
     SUFFIX_TO_KEY,
 )
 
-# Permission bits that indicate group-write or world-write access.
-# These are rejected to prevent privilege escalation via tampered .kanon files.
+
 _UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 
-# Suffix used to identify PATH variables for path-traversal checking.
+
 _PATH_SUFFIX = "_PATH"
 
 
@@ -256,7 +255,7 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
         env_value = os.environ.get(key)
         if env_value is not None:
             merged[key] = env_value
-    # Also check for env vars that define source groups not in the file
+
     for key, value in os.environ.items():
         if key.startswith(SOURCE_PREFIX) and key not in merged:
             merged[key] = value

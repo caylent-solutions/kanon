@@ -37,10 +37,6 @@ from kanon_cli.completions.cache import (
 from tests.conftest import bare_text_io_calls
 
 
-# ---------------------------------------------------------------------------
-# utf-8 encoding sweep (AC-12)
-# ---------------------------------------------------------------------------
-
 _CACHE_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "completions" / "cache.py"
 
 
@@ -189,11 +185,6 @@ def test_written_file_has_secure_mode(
     assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
 
 
-# ---------------------------------------------------------------------------
-# write_entries -- sanitization integration (E7-F3-S1-T4)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_write_entries_clean_entries_written(
     tmp_path: Path,
@@ -245,7 +236,6 @@ def test_write_entries_logs_dropped_entry(
         completer_name="__complete_test",
     )
 
-    # With KANON_COMPLETION_LOG unset, the log defaults to <KANON_HOME>/cache.
     log_path = tmp_path / "cache" / "completion-errors.log"
     assert log_path.exists(), "completion-errors.log was not created"
     lines = [ln for ln in log_path.read_text().splitlines() if ln.strip()]
@@ -265,7 +255,6 @@ def test_write_entries_log_line_contains_newline_reason(
     out = tmp_path / "index.txt"
     write_entries(out, ["bad\nentry"], completer_name="__complete_test")
 
-    # With KANON_COMPLETION_LOG unset, the log defaults to <KANON_HOME>/cache.
     log_path = tmp_path / "cache" / "completion-errors.log"
     content = log_path.read_text()
     assert "newline" in content
@@ -300,18 +289,10 @@ def test_write_entries_empty_input_writes_empty_file(
     assert out.read_text() == ""
 
 
-# ---------------------------------------------------------------------------
-# fork_background_refresh -- importability and env-off short-circuit
-# (E7-F3-S1-T5)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_fork_background_refresh_importable() -> None:
     """fork_background_refresh is importable from kanon_cli.completions.cache."""
-    # The import at module level already proves importability; this test exists
-    # to satisfy source-test atomicity for cache.py and gives an explicit,
-    # human-readable assertion.
+
     from kanon_cli.completions.cache import fork_background_refresh as fbr
 
     assert callable(fbr)
@@ -365,14 +346,8 @@ def test_fork_background_refresh_routes_through_spawn_detached(
     with patch("kanon_cli.completions.cache.spawn_detached") as mock_spawn:
         fork_background_refresh(refresh_fn)
         mock_spawn.assert_called_once()
-        # Verify a callable was passed as the first positional argument (the
-        # logging wrapper around refresh_fn, not refresh_fn itself).
+
         assert callable(mock_spawn.call_args[0][0]), "spawn_detached must receive a callable as its first argument"
-
-
-# ---------------------------------------------------------------------------
-# Search-path cache extension (E3-F1-S4-T1, spec Section 4.1 / FR-25 / AC-17)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

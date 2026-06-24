@@ -17,17 +17,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical definition).
-#
-# No git helpers are needed in this test file because all tests here only
-# invoke help flags and do not require a real .repo directory or git repos.
-# Where --repo-dir is needed (AC-TEST-003), the tests supply a nonexistent
-# path via the nonexistent_repo_dir fixture: the embedded repo tool handles
-# '--help' before consulting the .repo directory so a real directory is not
-# required for help passthrough.
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
@@ -41,7 +30,6 @@ def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
     return str(tmp_path / "nonexistent-repo-dir")
 
 
-# Top-level subcommands whose '-h'/'--help' exits 0 with usage text.
 _TOP_LEVEL_SUBCOMMANDS = [
     "install",
     "clean",
@@ -49,11 +37,7 @@ _TOP_LEVEL_SUBCOMMANDS = [
     "repo",
 ]
 
-# Every top-level kanon subcommand plus 'catalog audit' as a nested case
-# (AC-2.2). Each entry is a tuple of positional args that precede '-h'.
-# Parametrize IDs derive from " ".join(args) for readable test names.
-# The 3.0.0 surface renamed 'list' to 'search' and added the standalone
-# 'marketplace' command; both are exercised here.
+
 _ALL_SUBCOMMAND_DASH_H_CASES = [
     ("add",),
     ("remove",),
@@ -71,8 +55,7 @@ _ALL_SUBCOMMAND_DASH_H_CASES = [
     ("repo",),
 ]
 
-# Repo subcommands that support --help via passthrough to the embedded tool.
-# Each subcommand's --help is handled before the .repo directory is consulted.
+
 _REPO_SUBCOMMANDS = [
     "abandon",
     "branches",
@@ -101,11 +84,6 @@ _REPO_SUBCOMMANDS = [
     "sync",
     "upload",
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: kanon -h and kanon --help both exit 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -178,11 +156,6 @@ class TestTopLevelHelpFlags:
             result = _run_kanon(flag)
             assert result.returncode == 0
             assert len(result.stdout) > 0, f"'kanon {flag}' produced empty stdout.\n  stderr: {result.stderr!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Every top-level subcommand supports -h and --help
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -292,18 +265,13 @@ class TestSubcommandHelpFlags:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-        # The last subcommand name must appear in the help output.
+
         leaf_subcmd = subcmd_args[-1]
         assert leaf_subcmd in combined, (
             f"'{cmd_display}' output does not mention subcommand name {leaf_subcmd!r}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Every repo subcommand supports --help via passthrough
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -368,17 +336,12 @@ class TestRepoSubcommandHelpPassthrough:
         )
         assert result.returncode == 0
         combined = result.stdout + result.stderr
-        # The help output contains 'repo <subcmd>' in the Usage line.
+
         assert subcmd in combined, (
             f"'kanon repo {subcmd} --help' output does not mention {subcmd!r}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Every entry point responds to both help flags identically
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -430,11 +393,6 @@ class TestHelpFlagIdenticalResponse:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline for help output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestHelpChannelDiscipline:
     """AC-CHANNEL-001: Help output appears on stdout; no cross-channel leakage."""
@@ -451,8 +409,7 @@ class TestHelpChannelDiscipline:
         """'kanon --help' must not produce error-level output on stderr."""
         result = _run_kanon("--help")
         assert result.returncode == 0
-        # argparse help writes to stdout only; stderr must be empty or contain
-        # only non-error informational output (not kanon 'Error:' prefix).
+
         assert "Error:" not in result.stderr, (
             f"'kanon --help' produced an 'Error:' prefix on stderr.\n  stderr: {result.stderr!r}"
         )

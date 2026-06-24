@@ -22,9 +22,6 @@ from collections.abc import Generator
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 REPO_ROOT = pathlib.Path(__file__).parents[3]
 """Root of the kanon repository (3 levels up from tests/unit/repo/)."""
@@ -46,12 +43,11 @@ def _expected_wheel_version() -> str:
 
 EXPECTED_WHEEL_VERSION = _expected_wheel_version()
 
-# Wheel package prefix for kanon_cli.repo files
+
 _REPO_PREFIX = "kanon_cli/repo/"
 _SUBCMDS_PREFIX = "kanon_cli/repo/subcmds/"
 
-# The 25 root Python files (excluding __init__.py) per AC-TEST-002.
-# Source: SPEC-repo-to-kanon-migration.md, section 2.1
+
 ROOT_PYTHON_FILES = [
     "color.py",
     "command.py",
@@ -80,8 +76,7 @@ ROOT_PYTHON_FILES = [
     "wrapper.py",
 ]
 
-# The 28 subcmd Python files including __init__.py per AC-TEST-003.
-# Source: SPEC-repo-to-kanon-migration.md, section 2.1
+
 SUBCMD_PYTHON_FILES = [
     "__init__.py",
     "abandon.py",
@@ -112,8 +107,7 @@ SUBCMD_PYTHON_FILES = [
     "upload.py",
 ]
 
-# Non-Python runtime files relative to kanon_cli/repo/ per AC-TEST-004.
-# Source: SPEC-repo-to-kanon-migration.md, section 2.1, Non-Python files table
+
 NON_PYTHON_RUNTIME_FILES = [
     "repo",
     "git_ssh",
@@ -121,11 +115,6 @@ NON_PYTHON_RUNTIME_FILES = [
     "hooks/pre-auto-gc",
     "requirements.jsonc",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 _UV_EXECUTABLE = shutil.which("uv")
@@ -196,11 +185,6 @@ def _unique_wheel_names(wheel_path: pathlib.Path) -> set[str]:
         raise RuntimeError(f"Failed to open wheel as zip archive: {wheel_path}: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Session-scoped wheel fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def built_wheel() -> Generator[pathlib.Path, None, None]:
     """Build the wheel once for the module and return its path.
@@ -233,11 +217,6 @@ def wheel_names(built_wheel: pathlib.Path) -> set[str]:
     return _unique_wheel_names(built_wheel)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Wheel builds successfully
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_wheel_builds_successfully(built_wheel: pathlib.Path) -> None:
     """Verify the wheel builds without error and produces a valid .whl file.
@@ -250,15 +229,10 @@ def test_wheel_builds_successfully(built_wheel: pathlib.Path) -> None:
     """
     assert built_wheel.exists(), f"Expected wheel file to exist at {built_wheel} but it does not"
     assert built_wheel.suffix == ".whl", f"Expected a .whl file but got: {built_wheel}"
-    # Verify it's a readable zip archive
+
     assert zipfile.is_zipfile(built_wheel), (
         f"Built file {built_wheel} is not a valid zip archive. The wheel may be corrupted or the build failed silently."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: Wheel version matches pyproject.toml
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -271,7 +245,7 @@ def test_wheel_version_matches_pyproject(built_wheel: pathlib.Path) -> None:
     When: The wheel filename is inspected
     Then: The version segment of the filename equals EXPECTED_WHEEL_VERSION
     """
-    # Wheel filenames follow the pattern: {name}-{version}-{pythontag}-...whl
+
     filename = built_wheel.name
     parts = filename.split("-")
     assert len(parts) >= 2, (
@@ -283,11 +257,6 @@ def test_wheel_version_matches_pyproject(built_wheel: pathlib.Path) -> None:
         f"Expected wheel version '{EXPECTED_WHEEL_VERSION}' but got '{actual_version}' "
         f"from wheel filename '{filename}'. Update pyproject.toml [project] version."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: All 25 root .py files from repo/ are in the wheel
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -327,11 +296,6 @@ def test_wheel_contains_root_repo_init_py(wheel_names: set[str]) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: All 28 subcmds .py files from repo/subcmds/ are in the wheel
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize("filename", SUBCMD_PYTHON_FILES)
 def test_wheel_contains_subcmds_py_file(wheel_names: set[str], filename: str) -> None:
@@ -349,11 +313,6 @@ def test_wheel_contains_subcmds_py_file(wheel_names: set[str], filename: str) ->
         f"Check [tool.hatch.build.targets.wheel] packages in pyproject.toml includes "
         f"'src/kanon_cli/repo/subcmds'. Wheel contains {len(wheel_names)} entries."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Non-Python runtime files are in the wheel
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

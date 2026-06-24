@@ -30,9 +30,6 @@ from kanon_cli import constants
 from kanon_cli.constants import CATALOG_DEFAULT_BRANCH_ENV_VAR
 from kanon_cli.core.catalog import DefaultBranchResolutionError, resolve_default_branch
 
-# ---------------------------------------------------------------------------
-# Constants (no inline literals in assertions / fixtures).
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Default Branch Journey User"
 _GIT_USER_EMAIL = "default-branch-journey@example.com"
@@ -120,12 +117,12 @@ class TestDefaultBranchJourney:
         resolved = resolve_default_branch(url, inline_ref=None, flag_value=None)
         captured = capsys.readouterr()
         assert resolved == _DEFAULT_BRANCH_NAME
-        # stdout stays clean so --format json / pipes are never corrupted.
+
         assert captured.out == ""
         assert _WARN_TOKEN in captured.err
         assert _DEFAULT_BRANCH_NAME in captured.err
         assert url in captured.err
-        # The WARN is rendered in ANSI yellow when color is active.
+
         assert _ANSI_YELLOW in captured.err
         assert _ANSI_RESET in captured.err
 
@@ -156,8 +153,7 @@ class TestDefaultBranchJourney:
         """An explicit inline @ref is returned verbatim with no WARN and no resolution."""
         url = _make_empty_bare(tmp_path)
         monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, _AUTO)
-        # Even against a symref-absent remote, a pinned inline ref short-circuits:
-        # the precedence never reaches the auto/symref step.
+
         resolved = resolve_default_branch(url, inline_ref="v9.9.9", flag_value=None)
         captured = capsys.readouterr()
         assert resolved == "v9.9.9"
@@ -174,7 +170,7 @@ class TestDefaultBranchJourney:
         message = str(exc_info.value)
         assert "cannot resolve the default branch" in message
         assert url in message
-        # The actionable next steps are all named.
+
         assert "KANON_CATALOG_DEFAULT_BRANCH" in message
         assert "--catalog-default-branch" in message
         assert "@<ref>" in message
@@ -182,7 +178,7 @@ class TestDefaultBranchJourney:
     def test_missing_defaulted_branch_fails_fast(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A defaulted branch absent from the remote fails fast on the existence check."""
         url = _make_bare_with_default_branch(tmp_path, _DEFAULT_BRANCH_NAME)
-        # The env names a branch that does not exist on the remote.
+
         monkeypatch.setenv(CATALOG_DEFAULT_BRANCH_ENV_VAR, "does-not-exist")
         with pytest.raises(DefaultBranchResolutionError) as exc_info:
             resolve_default_branch(url, inline_ref=None, flag_value=None)

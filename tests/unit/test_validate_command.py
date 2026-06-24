@@ -17,7 +17,7 @@ from kanon_cli.commands.validate import (
 )
 from kanon_cli.core.lockfile import Lockfile, SourceEntry, write_lockfile
 
-# Lock-file field constants reused across the lockfile-consistency tests.
+
 _VALID_SHA40 = "a" * 40
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 _LOCK_FILENAME = ".kanon.lock"
@@ -148,11 +148,6 @@ class TestRunMarketplace:
             assert exc_info.value.code == 0
 
 
-# ---------------------------------------------------------------------------
-# Tests for validate_metadata_command JSON output via _build_findings_payload
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestValidateMetadataCommandJsonOutput:
     """validate_metadata_command JSON output uses _build_findings_payload."""
@@ -180,11 +175,6 @@ class TestValidateMetadataCommandJsonOutput:
         parsed = json.loads(captured.out)
         assert "findings" in parsed
         assert isinstance(parsed["findings"], list)
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_kanonenv_path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -216,11 +206,6 @@ class TestResolveKanonenvPath:
                 _resolve_kanonenv_path(None)
         assert exc_info.value.code == 1
         assert "No .kanon file found anywhere" in capsys.readouterr().err
-
-
-# ---------------------------------------------------------------------------
-# Tests for validate_lockfile_command (.kanon <-> .kanon.lock drift, AC-22 / FR-24)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for PEP 440 edge cases: wildcard-with-range and XML escaping.
 
 Covers:
@@ -33,9 +19,6 @@ import pytest
 
 from kanon_cli.repo import version_constraints
 
-# ---------------------------------------------------------------------------
-# Shared constants
-# ---------------------------------------------------------------------------
 
 _TAG_PREFIX = "refs/tags/project"
 
@@ -47,11 +30,6 @@ _RANGE_TAGS = [
     f"{_TAG_PREFIX}/2.0.0",
     f"{_TAG_PREFIX}/3.0.0",
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Wildcard combined with range constraint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -129,11 +107,6 @@ class TestWildcardWithRange:
         assert result != f"{_TAG_PREFIX}/0.9.0"
         assert result != f"{_TAG_PREFIX}/2.0.0"
         assert result != f"{_TAG_PREFIX}/3.0.0"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: XML escaping of < (less-than)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -272,11 +245,6 @@ class TestXmlEscapeLessThan:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: XML escaping of & (ampersand)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestXmlEscapeAmpersand:
     """AC-TEST-003: XML must represent & as &amp; in attribute values.
@@ -325,7 +293,7 @@ class TestXmlEscapeAmpersand:
         assert "&amp;" in serialized, (
             f"Serialized XML must contain '&amp;' for revision '{revision}', got: {serialized!r}"
         )
-        # A raw & in the attribute position (not followed by amp;) must not appear.
+
         import re
 
         raw_amp_pattern = re.compile(r"&(?!amp;|lt;|gt;|quot;|apos;|#)")

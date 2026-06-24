@@ -28,9 +28,7 @@ class TestInstallAutoDiscoveryFunctional:
         """install with no arg discovers .kanon in cwd and attempts to proceed past path resolution."""
         write_kanonenv(tmp_path)
         result = _run_kanon("install", cwd=tmp_path)
-        # The CLI finds the file and prints the discovered path to stdout; then
-        # it proceeds to the network/repo phase which may fail -- but the file
-        # was found and path resolution succeeded.
+
         assert ".kanon file not found" not in result.stderr, (
             f"Auto-discovery should have found .kanon in cwd. stderr={result.stderr!r}"
         )
@@ -68,7 +66,7 @@ class TestInstallRelativePathFunctional:
         """install .kanon (relative) finds the file and proceeds past path resolution."""
         write_kanonenv(tmp_path)
         result = _run_kanon("install", ".kanon", cwd=tmp_path)
-        # The .kanon exists and should be resolved -- no "file not found" error.
+
         assert ".kanon file not found" not in result.stderr, (
             f"Relative '.kanon' should resolve to the file in cwd. stderr={result.stderr!r}"
         )
@@ -152,9 +150,7 @@ class TestInstallChannelDiscipline:
         """AC-CHANNEL-001: successful auto-discovery prints found path to stdout."""
         write_kanonenv(tmp_path)
         result = _run_kanon("install", cwd=tmp_path)
-        # Auto-discovery emits "kanon install: found <path>" to stdout (from commands/install.py:112)
-        # The install will then fail in the repo phase but the path-found message must be on stdout.
-        # We only check channel discipline -- not that install succeeds end-to-end.
+
         assert "kanon install: found" in result.stdout, (
             f"Auto-discovery 'found' message must be on stdout not stderr. "
             f"stdout={result.stdout!r} stderr={result.stderr!r}"

@@ -35,41 +35,30 @@ import sys
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Constants (no inline literals scattered across assertions / fixtures).
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Add Alias Journey User"
 _GIT_USER_EMAIL = "add-alias-journey@example.com"
 _DEFAULT_BRANCH = "main"
 
-# The shared catalog manifest NAME published by BOTH source repos (the
-# cross-source collision driver, spec Section 4.2 / FR-6).
+
 _MANIFEST_NAME = "history"
 
-# The two source-repo basenames. The second is the spec worked-example repo so
-# the auto-suffixed alias is the spec's ``history_caylent_private_kanon``.
+
 _REPO_FIRST = "org-a-history"
 _REPO_SECOND = "caylent-private-kanon"
 
-# The single PEP 440 tag each source repo publishes.
+
 _RELEASE_TAG = "1.0.0"
 
-# The repo-relative manifest path under repo-specs/.
+
 _XML_FILENAME = "history-marketplace.xml"
 _XML_REL_PATH = f"repo-specs/{_XML_FILENAME}"
 
 _SOURCE_PREFIX = "KANON_SOURCE_"
 _LOCKFILE_NAME = ".kanon.lock"
 
-# A deliberately wrong placeholder SHA seeded into the lock so the --force re-pin
-# is observable (the re-pinned SHA must differ from this stale value).
+
 _STALE_SHA = "0" * 40
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -132,11 +121,6 @@ def _create_bare_catalog_repo(base: pathlib.Path, repo_name: str) -> pathlib.Pat
     return bare.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner (real black-box CLI invocation)
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path,
@@ -165,11 +149,6 @@ def _sanitized_repo_alias(base_alias: str, repo_name: str) -> str:
     return f"{base_alias}_{repo_name.replace('-', '_')}"
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def two_source_world(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str]:
     """Build two bare catalog repos and an empty project dir.
@@ -188,11 +167,6 @@ def two_source_world(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str]:
     project = tmp_path / "project"
     project.mkdir()
     return project, source_first, source_second
-
-
-# ---------------------------------------------------------------------------
-# J2 journey (AC-47)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -221,7 +195,7 @@ class TestAddAliasJourney:
             f"source-explicit add must succeed.\n  stdout={result.stdout!r}\n  stderr={result.stderr!r}"
         )
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
-        # The bare alias keys the block and _NAME carries the manifest name.
+
         assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") is not None
         assert _block_value(kanon_text, _MANIFEST_NAME, "_NAME") == _MANIFEST_NAME
         assert _block_value(kanon_text, _MANIFEST_NAME, "_REF") is not None
@@ -233,7 +207,7 @@ class TestAddAliasJourney:
         result = _run_kanon(["add", _MANIFEST_NAME, "--kanon-file", str(kanon_file)], cwd=project)
         assert result.returncode != 0, "add without an explicit source must fail fast"
         assert "catalog" in result.stderr.lower()
-        # No .kanon is written on the fail-fast path.
+
         assert not kanon_file.exists()
 
     def test_cross_source_add_auto_suffixes_deterministically(
@@ -252,18 +226,15 @@ class TestAddAliasJourney:
 
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
         expected_suffixed = _sanitized_repo_alias(_MANIFEST_NAME, _REPO_SECOND)
-        # First add keeps the bare alias; the second is suffixed with the source repo.
+
         assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") is not None
         assert _block_value(kanon_text, expected_suffixed, "_URL") is not None
-        # The two blocks point at distinct sources and never collapse to "__".
+
         assert "__" not in expected_suffixed
         first_url = _block_value(kanon_text, _MANIFEST_NAME, "_URL")
         second_url = _block_value(kanon_text, expected_suffixed, "_URL")
         assert first_url != second_url
 
-        # Determinism on re-read: re-adding the SAME first source@ref is now a
-        # true duplicate (no-op/error), not a third aliasing -- proving the alias
-        # set is reproducible from the committed .kanon and never grows.
         duplicate = self._add(project, source_first)
         assert duplicate.returncode != 0, "re-add of the identical name+source@ref must be a duplicate error"
         reread = (project / ".kanon").read_text(encoding="utf-8")
@@ -276,14 +247,12 @@ class TestAddAliasJourney:
         first = self._add(project, source_first)
         assert first.returncode == 0, f"first add failed: {first.stderr!r}"
 
-        # The bare alias is taken by source_first; reusing it via --as for the
-        # second (different) source is a hard error, not an auto-suffix.
         collision = self._add(project, source_second, "--as", _MANIFEST_NAME)
         assert collision.returncode != 0, "an --as alias already mapped to a different source must fail fast"
         assert _MANIFEST_NAME in collision.stderr
-        # Actionable message points to the remedy.
+
         assert "--force" in collision.stderr or "kanon remove" in collision.stderr
-        # The committed .kanon is unchanged by the failed add.
+
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
         assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") is not None
         assert kanon_text.count(f"{_SOURCE_PREFIX}{_MANIFEST_NAME}_URL=") == 1
@@ -297,7 +266,7 @@ class TestAddAliasJourney:
         assert result.returncode == 0, f"--as override add must succeed: {result.stderr!r}"
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
         assert _block_value(kanon_text, chosen, "_URL") is not None
-        # The auto-computed bare alias is NOT written when --as is given.
+
         assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") is None
 
     def test_invalid_as_override_fails_fast(self, two_source_world: tuple[pathlib.Path, str, str]) -> None:
@@ -318,14 +287,11 @@ class TestAddAliasJourney:
         first = self._add(project, source_first)
         assert first.returncode == 0, f"first add failed: {first.stderr!r}"
 
-        # The block's REF spec as written by add (verbatim from the committed .kanon).
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
         ref_spec = _block_value(kanon_text, _MANIFEST_NAME, "_REF")
         url = _block_value(kanon_text, _MANIFEST_NAME, "_URL")
         assert ref_spec is not None and url is not None
 
-        # Seed a committed .kanon.lock carrying the history alias with a STALE sha
-        # so the --force re-pin is observable.
         lock_path = project / _LOCKFILE_NAME
         lock_path.write_text(
             "schema_version = 4\n"
@@ -344,8 +310,6 @@ class TestAddAliasJourney:
             encoding="utf-8",
         )
 
-        # --force re-add of the SAME source@ref overwrites the block and re-pins
-        # the lock. The expected tip SHA is the real tag SHA on the source repo.
         expected_sha = _git_output(["ls-remote", url, f"refs/tags/{_RELEASE_TAG}"], cwd=project).split("\t")[0]
         assert expected_sha != _STALE_SHA
 
@@ -355,12 +319,12 @@ class TestAddAliasJourney:
         )
 
         lock_text = lock_path.read_text(encoding="utf-8")
-        # The lock entry is re-pinned to the real tip SHA (the stale SHA is gone).
+
         assert f'resolved_sha = "{expected_sha}"' in lock_text
         assert _STALE_SHA not in lock_text
-        # The dep's NAME is preserved across the overwrite (spec Section 4.2).
+
         assert f'name = "{_MANIFEST_NAME}"' in lock_text
-        # The alias block stays keyed by the bare alias (overwrite, not auto-suffix).
+
         kanon_after = (project / ".kanon").read_text(encoding="utf-8")
         assert _block_value(kanon_after, _MANIFEST_NAME, "_URL") == url
         assert _block_value(kanon_after, _sanitized_repo_alias(_MANIFEST_NAME, _REPO_FIRST), "_URL") is None

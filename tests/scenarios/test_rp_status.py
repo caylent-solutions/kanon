@@ -16,11 +16,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build a bare manifest repo (packages.xml) + content repos, return checkout dir.
 
@@ -93,11 +88,6 @@ def rp_ro_checkout(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return _build_rp_ro_repo(base)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPStatus:
     """RP-status-01..04: kanon repo status subcommand."""
@@ -116,7 +106,7 @@ class TestRPStatus:
             f"repo status --orphans exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         combined = result.stdout + result.stderr
-        # Pass criteria: output includes either "No orphan" message or lists entries
+
         assert combined, "Expected non-empty output from repo status --orphans"
 
     def test_rp_status_03_project_filtered(self, rp_ro_checkout: pathlib.Path) -> None:

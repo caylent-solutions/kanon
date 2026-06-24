@@ -1,17 +1,3 @@
-# Copyright (C) 2015 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the wrapper.py module."""
 
 import io
@@ -63,7 +49,7 @@ class RepoWrapperUnitTest(RepoWrapperTestCase):
         """The launcher should never require newer than main.py."""
         self.assertGreaterEqual(main.MIN_PYTHON_VERSION_HARD, self.wrapper.MIN_PYTHON_VERSION_HARD)
         self.assertGreaterEqual(main.MIN_PYTHON_VERSION_SOFT, self.wrapper.MIN_PYTHON_VERSION_SOFT)
-        # Make sure the versions are themselves in sync.
+
         self.assertGreaterEqual(
             self.wrapper.MIN_PYTHON_VERSION_SOFT,
             self.wrapper.MIN_PYTHON_VERSION_HARD,
@@ -115,8 +101,7 @@ class RunCommand(RepoWrapperTestCase):
     def test_capture(self):
         """Check capture_output handling."""
         ret = self.wrapper.run_command(["echo", "hi"], capture_output=True)
-        # echo command appends OS specific linesep, but on Windows + Git Bash
-        # we get UNIX ending, so we allow both.
+
         self.assertIn(ret.stdout, ["hi" + os.linesep, "hi\n"])
 
     def test_check(self):
@@ -219,9 +204,7 @@ class Requirements(RepoWrapperTestCase):
     def test_valid_data(self):
         """Make sure we can parse the file we ship."""
         self.assertIsNotNone(self.wrapper.Requirements.from_data(b"{}"))
-        # requirements.jsonc lives at src/kanon_cli/repo/requirements.jsonc;
-        # this test file is at tests/unit/repo/test_wrapper.py, so 4 dirname
-        # calls reach the repo root, then append the source subpackage path.
+
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
         rootdir = os.path.join(repo_root, "src", "kanon_cli", "repo")
         self.assertIsNotNone(self.wrapper.Requirements.from_dir(rootdir))
@@ -361,7 +344,7 @@ class GitCheckoutTestCase(RepoWrapperTestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Create a repo to operate on, but do it once per-class.
+
         cls.tempdirobj = tempfile.TemporaryDirectory(prefix="repo-rev-tests")
         cls.GIT_DIR = cls.tempdirobj.name
         run_git = wrapper.Wrapper().run_git
@@ -369,12 +352,9 @@ class GitCheckoutTestCase(RepoWrapperTestCase):
         remote = os.path.join(cls.GIT_DIR, "remote")
         os.mkdir(remote)
 
-        # Tests need to assume, that main is default branch at init,
-        # which is not supported in config until 2.28.
         if git_command.git_require((2, 28, 0)):
             initstr = "--initial-branch=main"
         else:
-            # Use template dir for init.
             templatedir = tempfile.mkdtemp(prefix=".test-template")
             with open(os.path.join(templatedir, "HEAD"), "w") as fp:
                 fp.write("ref: refs/heads/main\n")

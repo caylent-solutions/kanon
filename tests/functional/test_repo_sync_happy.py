@@ -42,36 +42,29 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Sync Happy Test User"
 _GIT_USER_EMAIL = "repo-sync-happy@example.com"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "sync-test-project"
 
-# CLI token constants
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_SYNC = "sync"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_JOBS = "--jobs=1"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT = 0
 
-# Phrase expected in stdout when sync completes without --quiet
+
 _SUCCESS_PHRASE = "repo sync has finished successfully."
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
-_ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo sync with default args exits 0
-# ---------------------------------------------------------------------------
+_ERROR_PREFIX = "Error:"
 
 
 @pytest.mark.functional
@@ -167,11 +160,6 @@ class TestRepoSyncHappyPathDefaultArgs:
         assert project_dir.is_dir(), (
             f"Expected project worktree at {project_dir!r} after 'kanon repo sync', but it does not exist."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo sync has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -273,11 +261,6 @@ class TestRepoSyncPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

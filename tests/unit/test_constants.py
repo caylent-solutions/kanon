@@ -22,6 +22,28 @@ class TestTagErrorDisplayCap:
 
 
 @pytest.mark.unit
+class TestRevisionWildcard:
+    """AC-27: the wildcard revision token is defined as a constant, not a literal.
+
+    The marketplace validator's PEP 440 grammar references REVISION_WILDCARD
+    instead of embedding the bare "*" string (spec Section 4.5 / FR-23 -- no
+    hard-coded values in the validator).
+    """
+
+    def test_revision_wildcard_is_asterisk(self) -> None:
+        from kanon_cli.constants import REVISION_WILDCARD
+
+        assert REVISION_WILDCARD == "*"
+
+    def test_validator_uses_the_constant(self) -> None:
+        from kanon_cli.constants import REVISION_WILDCARD
+        from kanon_cli.core.marketplace_validator import _is_valid_revision
+
+        assert _is_valid_revision(REVISION_WILDCARD) is True
+        assert _is_valid_revision(f"refs/tags/ex/{REVISION_WILDCARD}") is True
+
+
+@pytest.mark.unit
 class TestNoColorConstants:
     """Assert NO_COLOR_ENV and _NO_COLOR_ACTIVE exist with correct defaults (AC-TEST-003)."""
 

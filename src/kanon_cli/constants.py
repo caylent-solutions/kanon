@@ -34,6 +34,19 @@ EXIT_CODE_DEPRECATED = 3
 # -- Marketplace validation --
 MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
 ALLOWED_BRANCHES = frozenset({"main"})
+
+# Wildcard revision token accepted by the marketplace validator and the version
+# resolver: a bare "*" (or a "*" trailing component of a refs/tags/<path>/* tag)
+# means "resolve to the highest available tag". Defined here so the validator
+# does not embed the literal (spec Section 4.5 / FR-23 -- no hard-coded values).
+REVISION_WILDCARD = "*"
+
+# Legacy SemVer-floored revision regexes. These are NO LONGER the marketplace
+# validator's version grammar: the validator now parses the trailing component
+# of a refs/tags/<path>/<version> tag as full PEP 440 via
+# kanon_cli.version.is_pep440_version / packaging.specifiers.SpecifierSet (spec
+# Section 4.5 / FR-23, no \d+\.\d+\.\d+ floor). They are retained only as
+# compiled-regex smoke-test data referenced by the integration suite.
 REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
 CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 

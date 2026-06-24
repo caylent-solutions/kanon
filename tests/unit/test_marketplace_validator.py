@@ -125,6 +125,73 @@ class TestTagFormat:
     def test_invalid_revisions(self, revision: str) -> None:
         assert not _is_valid_revision(revision)
 
+    @pytest.mark.parametrize(
+        ("revision", "shape"),
+        [
+            ("refs/tags/example/proj/1", "one-part-release"),
+            ("refs/tags/example/proj/1.2", "two-part-release"),
+            ("refs/tags/example/proj/1.0.0", "three-part-release"),
+            ("refs/tags/example/proj/1.2.0a1", "prerelease-alpha"),
+            ("refs/tags/example/proj/1.0.0rc1", "release-candidate"),
+            ("refs/tags/example/proj/1.0.0b3", "prerelease-beta"),
+            ("refs/tags/example/proj/2024.6", "calendar-version"),
+            ("refs/tags/example/proj/1!2.0.0", "epoch"),
+            ("refs/tags/example/proj/1.0.0.post1", "post-release"),
+            ("refs/tags/example/proj/1.0.0.dev0", "dev-release"),
+            ("refs/tags/example/proj/1.0.0+local.build", "local-version"),
+            ("refs/tags/example/proj/v1.0.0", "v-prefixed-pep440"),
+            ("refs/tags/example/proj/*", "wildcard-trailing"),
+            ("refs/tags/example/proj/~=1.0.0", "prefixed-constraint"),
+            ("refs/tags/example/proj/>=1.0.0,<2.0.0", "prefixed-compound-constraint"),
+        ],
+    )
+    def test_widened_pep440_trailing_components_accepted(self, revision: str, shape: str) -> None:
+        """AC-27: the trailing component is full PEP 440 (no \\d+\\.\\d+\\.\\d+ floor)."""
+        assert _is_valid_revision(revision)
+
+    @pytest.mark.parametrize(
+        ("revision", "reason"),
+        [
+            ("refs/tags/example/proj/1.2.x", "wildcard-suffix-is-not-pep440"),
+            ("refs/tags/example/proj/release-1.0.0", "named-tag-is-not-pep440"),
+            ("refs/tags/example/proj/not-a-version", "non-numeric-is-not-pep440"),
+            ("refs/tags/example/proj/", "empty-trailing-component"),
+        ],
+    )
+    def test_non_pep440_trailing_components_rejected(self, revision: str, reason: str) -> None:
+        """AC-27: a non-PEP-440 trailing component is rejected."""
+        assert not _is_valid_revision(revision)
+
+    @pytest.mark.parametrize(
+        "revision",
+        ["1", "1.2", "1.0.0", "1.2.0a1", "2024.6"],
+    )
+    def test_bare_pep440_version_without_operator_rejected_as_top_level(self, revision: str) -> None:
+        """A bare PEP 440 version (no operator) is not a valid top-level revision.
+
+        It must be pinned with the refs/tags/ prefix; a bare operatorless
+        version is ambiguous with a branch name at the top level.
+        """
+        assert not _is_valid_revision(revision)
+
+    def test_validate_tag_format_accepts_widened_pep440(self, tmp_path: Path) -> None:
+        """AC-27: validate_tag_format accepts a calver trailing component."""
+        f1 = _write_xml(
+            tmp_path / "m.xml",
+            '<manifest><project name="p" path=".packages/p" remote="r" revision="refs/tags/ex/2024.6" /></manifest>',
+        )
+        assert validate_tag_format([f1]) == []
+
+    def test_validate_tag_format_rejects_non_pep440_trailing(self, tmp_path: Path) -> None:
+        """AC-27: validate_tag_format rejects a non-PEP-440 trailing component."""
+        f1 = _write_xml(
+            tmp_path / "m.xml",
+            '<manifest><project name="p" path=".packages/p" remote="r" revision="refs/tags/ex/1.2.x" /></manifest>',
+        )
+        errors = validate_tag_format([f1])
+        assert len(errors) == 1
+        assert "1.2.x" in errors[0]
+
     def test_validate_tag_format_valid(self, tmp_path: Path) -> None:
         f1 = _write_xml(
             tmp_path / "m.xml",

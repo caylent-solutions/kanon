@@ -133,6 +133,41 @@ def resolve_version(url: str, rev_spec: str) -> str:
         sys.exit(1)
 
 
+def is_pep440_version(component: str) -> bool:
+    """Return True if *component* parses cleanly as a PEP 440 version.
+
+    This is the single PEP 440 grammar definition shared by the resolver in
+    this module and the marketplace validator
+    (``kanon_cli.core.marketplace_validator``). Both call this predicate so the
+    accepted version grammar is defined once (DRY), via the same
+    ``packaging.version.Version`` parse the resolver already uses, rather than a
+    duplicated ``\\d+\\.\\d+\\.\\d+`` regex.
+
+    The full PEP 440 grammar is accepted (no SemVer floor): 1-/2-part releases
+    (``1``, ``1.2``), three-part releases (``1.0.0``), pre-releases
+    (``1.0.0a1``, ``1.0.0rc1``), calendar versions (``2024.6``), epochs
+    (``1!2.0.0``), post-releases (``1.0.0.post1``), dev-releases
+    (``1.0.0.dev0``), and local versions (``1.0.0+local``). PEP 440 wins over
+    SemVer on any conflict.
+
+    The *component* must be a single version token; it is parsed verbatim and is
+    NOT split on ``/``. Callers validating a ``refs/tags/<path>/<pep440>`` tag
+    split on the last ``/`` themselves and pass only the trailing component.
+
+    Args:
+        component: A single version token (e.g. ``1.0.0a1``, ``2024.6``).
+
+    Returns:
+        True if *component* parses cleanly as a ``packaging.version.Version``;
+        False if ``packaging`` raises ``InvalidVersion``.
+    """
+    try:
+        Version(component)
+        return True
+    except InvalidVersion:
+        return False
+
+
 def _is_bare_pep440_version(spec: str) -> bool:
     """Return True if spec parses as a PEP 440 Version and contains no '/'.
 
@@ -140,6 +175,9 @@ def _is_bare_pep440_version(spec: str) -> bool:
     ``1.0.0+local``) that should be normalized to ``refs/tags/<spec>``.
     Inputs containing ``/`` are never bare versions -- they are either
     already-prefixed refs or monorepo-prefixed tags.
+
+    Delegates the PEP 440 parse to :func:`is_pep440_version` (the shared
+    grammar) after rejecting any input containing ``/``.
 
     Args:
         spec: A revision string with no leading whitespace.
@@ -150,11 +188,7 @@ def _is_bare_pep440_version(spec: str) -> bool:
     """
     if "/" in spec:
         return False
-    try:
-        Version(spec)
-        return True
-    except InvalidVersion:
-        return False
+    return is_pep440_version(spec)
 
 
 def _normalize_bare_semver_to_tag(rev_spec: str) -> str:

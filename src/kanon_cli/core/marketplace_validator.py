@@ -12,13 +12,16 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
 from kanon_cli.constants import (
     ALLOWED_BRANCHES,
-    CONSTRAINT_RE,
     MARKETPLACE_DIR_PREFIX,
-    REFS_TAGS_RE,
+    REVISION_REF_PREFIX_TAGS,
+    REVISION_WILDCARD,
 )
 from kanon_cli.core.metadata import find_catalog_entry_files
+from kanon_cli.version import is_pep440_version
 
 
 def validate_linkfile_dest(xml_path: Path) -> list[str]:
@@ -46,7 +49,7 @@ def validate_linkfile_dest(xml_path: Path) -> list[str]:
             if not dest.startswith(MARKETPLACE_DIR_PREFIX):
                 errors.append(
                     f"{xml_path}: project '{project_name}' has "
-                    f"invalid linkfile dest='{dest}' — "
+                    f"invalid linkfile dest='{dest}' -- "
                     f"must start with {MARKETPLACE_DIR_PREFIX}"
                 )
 
@@ -136,44 +139,113 @@ def validate_name_uniqueness(xml_files: list[Path]) -> list[str]:
     return errors
 
 
+def _is_pep440_constraint(component: str) -> bool:
+    """Return True if *component* is a valid PEP 440 version constraint set.
+
+    A single token (e.g. ``~=1.2.0``, ``>=1.0.0``) or a comma-separated
+    compound set (e.g. ``>=1.0.0,<2.0.0``) is accepted when it parses cleanly
+    via :class:`packaging.specifiers.SpecifierSet`. ``SpecifierSet`` is the same
+    constraint grammar the resolver in ``kanon_cli.version`` uses, so the
+    accepted constraint operands are full PEP 440 (no ``\\d+\\.\\d+\\.\\d+``
+    floor) and the grammar is defined once (DRY).
+
+    A bare token with no operator (e.g. ``1.0.0``) is rejected here because
+    ``SpecifierSet`` does not accept an operatorless version; bare versions are
+    validated as PEP 440 releases by :func:`is_pep440_version` on the
+    tag-trailing-component path instead.
+
+    Args:
+        component: A single revision token (already split off any tag prefix).
+
+    Returns:
+        True if *component* parses as a non-empty ``SpecifierSet``; False on
+        ``InvalidSpecifier`` or an empty specifier set.
+    """
+    try:
+        specifier = SpecifierSet(component)
+    except InvalidSpecifier:
+        return False
+    return len(specifier) > 0
+
+
+def _is_valid_version_component(component: str) -> bool:
+    """Return True if a tag-trailing component is a valid version token.
+
+    The trailing component of a ``refs/tags/<path>/<component>`` tag (and a
+    bare top-level revision) is valid when it is the wildcard, a full PEP 440
+    version, or a PEP 440 constraint set:
+
+    - the wildcard ``*`` (resolves to the highest available tag),
+    - a canonical PEP 440 version (e.g. ``1``, ``1.2``, ``1.2.0a1``,
+      ``1.0.0rc1``, ``2024.6``) accepted via :func:`is_pep440_version`, or
+    - a PEP 440 version constraint set (e.g. ``~=1.2.0``, ``>=1.0.0,<2.0.0``)
+      accepted via :func:`_is_pep440_constraint`.
+
+    Args:
+        component: A single revision token with no tag prefix and no ``/``.
+
+    Returns:
+        True if *component* is the wildcard, a PEP 440 version, or a PEP 440
+        constraint set; False otherwise.
+    """
+    if component == REVISION_WILDCARD:
+        return True
+    if is_pep440_version(component):
+        return True
+    return _is_pep440_constraint(component)
+
+
 def _is_valid_revision(revision: str) -> bool:
     """Check if a revision string is a valid format.
 
+    The version grammar is full PEP 440 (no ``\\d+\\.\\d+\\.\\d+`` SemVer
+    floor): the trailing component is parsed by the same
+    ``packaging.version.Version`` / ``packaging.specifiers.SpecifierSet`` path
+    the resolver in ``kanon_cli.version`` uses (DRY), so 1-/2-part releases,
+    pre-releases, release candidates, and calendar versions are all accepted.
+
     Valid formats:
-    - refs/tags/<path>/<semver> (e.g., refs/tags/example/proj/1.0.0)
+    - refs/tags/<path>/<pep440> (e.g., refs/tags/example/proj/1.0.0,
+      refs/tags/example/proj/1.2.0a1, refs/tags/example/proj/2024.6)
     - refs/tags/<path>/<constraint> (e.g., refs/tags/example/proj/~=1.0.0)
+    - refs/tags/<path>/* (wildcard trailing component)
     - Single version constraints (~=1.2.0, >=1.0.0, <2.0.0)
     - Compound version constraints (>=1.0.0,<2.0.0)
     - Wildcard (*)
     - Branch names (main)
+
+    The trailing version component is split on the last ``/`` and validated as
+    canonical PEP 440; the prefix path before it is not constrained beyond
+    being non-empty.
+
+    Args:
+        revision: The ``revision`` attribute value of a manifest ``<project>``.
+
+    Returns:
+        True if *revision* matches one of the valid formats above.
     """
     if revision in ALLOWED_BRANCHES:
         return True
-    if revision == "*":
+    if revision == REVISION_WILDCARD:
         return True
-    if REFS_TAGS_RE.match(revision):
-        return True
-    # Support compound constraints separated by commas (e.g., >=1.0.0,<2.0.0)
-    parts = revision.split(",")
-    if all(CONSTRAINT_RE.match(part) for part in parts):
-        return True
-    # Support prefixed constraints: refs/tags/<path>/<constraint>
-    # Extract the last path component and check if it's a constraint or wildcard.
-    if revision.startswith("refs/tags/") and "/" in revision[len("refs/tags/") :]:
+    # refs/tags/<path>/<trailing>: split on the last '/' and validate the
+    # trailing component as a PEP 440 version, constraint set, or wildcard.
+    # The path between the prefix and the trailing component must be non-empty.
+    if revision.startswith(REVISION_REF_PREFIX_TAGS) and "/" in revision[len(REVISION_REF_PREFIX_TAGS) :]:
         last_component = revision.rsplit("/", 1)[-1]
-        if last_component == "*":
-            return True
-        constraint_parts = last_component.split(",")
-        if all(CONSTRAINT_RE.match(part) for part in constraint_parts):
-            return True
-    return False
+        return _is_valid_version_component(last_component)
+    # Bare top-level revision (no tag prefix): a PEP 440 constraint set or the
+    # wildcard. A bare PEP 440 version with no operator is intentionally not
+    # accepted here as a top-level revision; pin it with the refs/tags/ prefix.
+    return _is_pep440_constraint(revision)
 
 
 def validate_tag_format(xml_files: list[Path]) -> list[str]:
     """Validate that all project revision attributes follow valid formats.
 
     Checks that each <project> element's revision attribute is either a
-    refs/tags/<path>/<semver> tag, a version constraint, a wildcard, or
+    refs/tags/<path>/<pep440> tag (full PEP 440 trailing component, no
+    \\d+\\.\\d+\\.\\d+ floor), a PEP 440 version constraint, a wildcard, or
     an allowed branch name. Returns errors for any invalid revisions.
 
     Args:
@@ -194,9 +266,9 @@ def validate_tag_format(xml_files: list[Path]) -> list[str]:
                 project_name = project.get("name", "<unknown>")
                 errors.append(
                     f"{xml_file}: project '{project_name}' has "
-                    f"invalid revision='{revision}' — must be "
-                    f"refs/tags/<path>/<semver>, a version constraint, "
-                    f"or an allowed branch"
+                    f"invalid revision='{revision}' -- must be "
+                    f"refs/tags/<path>/<pep440>, a PEP 440 version constraint, "
+                    f"a wildcard, or an allowed branch"
                 )
 
     return errors

@@ -8,12 +8,14 @@ from kanon_cli.version import (
     RevisionShape,
     _classify_revision_shape,
     _format_zero_pep440_tags_error,
+    _is_bare_pep440_version,
     _list_branch_head,
     _list_tags,
     _normalize_bare_semver_to_tag,
     _resolve_constraint_from_tags,
     _resolve_symref_default_branch,
     _truncate_sha,
+    is_pep440_version,
     is_version_constraint,
     resolve_version,
 )
@@ -314,6 +316,69 @@ class TestNormalizeBareWidenedPep440:
     )
     def test_passthrough_and_narrow_preserved(self, spec: str, expected: str) -> None:
         assert _normalize_bare_semver_to_tag(spec) == expected
+
+
+@pytest.mark.unit
+class TestIsPep440VersionSharedGrammar:
+    """AC-27: the validator and resolver share one PEP 440 grammar definition.
+
+    ``is_pep440_version`` is the single ``packaging.version.Version`` parse used
+    by both ``kanon_cli.version`` (the resolver) and
+    ``kanon_cli.core.marketplace_validator`` (the validator), so the grammar is
+    defined once (DRY) rather than as a duplicated ``\\d+\\.\\d+\\.\\d+`` regex.
+    """
+
+    @pytest.mark.parametrize(
+        "component",
+        [
+            "1",
+            "1.2",
+            "1.0.0",
+            "1.2.0a1",
+            "1.0.0rc1",
+            "1.0.0b3",
+            "2024.6",
+            "1!2.0.0",
+            "1.0.0.post1",
+            "1.0.0.dev0",
+            "1.0.0+local.build",
+            "v1.0.0",
+        ],
+    )
+    def test_accepts_full_pep440_grammar(self, component: str) -> None:
+        assert is_pep440_version(component) is True
+
+    @pytest.mark.parametrize(
+        "component",
+        ["1.2.x", "release-1.0.0", "not-a-version", "", "main"],
+    )
+    def test_rejects_non_pep440(self, component: str) -> None:
+        assert is_pep440_version(component) is False
+
+    def test_bare_helper_delegates_to_shared_grammar(self) -> None:
+        """``_is_bare_pep440_version`` reuses ``is_pep440_version`` after the
+        no-slash guard, so the two never diverge on a slashless token."""
+        assert _is_bare_pep440_version("1.2.0a1") is True
+        assert _is_bare_pep440_version("1.2.0a1") == is_pep440_version("1.2.0a1")
+        # The slash guard rejects monorepo-prefixed inputs the shared parse alone
+        # would otherwise mis-handle.
+        assert _is_bare_pep440_version("subpackage/1.0.0") is False
+
+    def test_validator_and_resolver_agree_on_each_input(self) -> None:
+        """The validator's tag path and the resolver share is_pep440_version.
+
+        For the same slashless version token, the validator's acceptance of a
+        ``refs/tags/ex/<token>`` tag matches ``is_pep440_version(token)`` and
+        the resolver's bare-version normalization.
+        """
+        from kanon_cli.core.marketplace_validator import _is_valid_revision
+
+        for token in ["1", "1.2", "1.2.0a1", "2024.6", "1.2.x", "not-a-version"]:
+            shared = is_pep440_version(token)
+            validator = _is_valid_revision(f"refs/tags/ex/{token}")
+            resolver_normalized = _normalize_bare_semver_to_tag(token) == f"refs/tags/{token}"
+            assert validator == shared, f"validator disagrees with shared grammar on {token!r}"
+            assert resolver_normalized == shared, f"resolver disagrees with shared grammar on {token!r}"
 
 
 @pytest.mark.unit

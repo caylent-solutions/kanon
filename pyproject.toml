@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
     "defusedxml>=0.7.1",
     "packaging>=23.0",
+    "pywin32>=312 ; sys_platform == 'win32'",
     "shtab>=1.7.0",
 ]
 

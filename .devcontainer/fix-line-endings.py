@@ -10,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 
-# Thread-safe counters
 stats_lock = Lock()
 converted_count = 0
 skipped_count = 0
@@ -30,19 +29,16 @@ def convert_file(file_path):
                 skipped_count += 1
             return False
 
-        # Skip binary files (contain null bytes)
         if b"\x00" in content:
             with stats_lock:
                 skipped_count += 1
             return False
 
-        # Skip if no CRLF to convert
         if b"\r\n" not in content:
             with stats_lock:
                 skipped_count += 1
             return False
 
-        # Convert CRLF to LF
         converted_content = content.replace(b"\r\n", b"\n")
 
         with open(file_path, "wb") as f:
@@ -70,10 +66,8 @@ def main():
 
     print(f"Converting line endings in: {workspace_path}")
 
-    # Find all files
     files_to_process = []
     for root, dirs, files in os.walk(workspace_path):
-        # Skip .git directory for performance
         if ".git" in dirs:
             dirs.remove(".git")
 
@@ -87,7 +81,6 @@ def main():
 
     print(f"Processing {len(files_to_process)} files...")
 
-    # Process files in parallel
     max_workers = os.cpu_count() or 1
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -104,7 +97,6 @@ def main():
                 with stats_lock:
                     error_count += 1
 
-    # Print summary
     print(f"Line ending conversion complete:")
     print(f"  Converted: {converted_count} files")
     print(f"  Skipped: {skipped_count} files")

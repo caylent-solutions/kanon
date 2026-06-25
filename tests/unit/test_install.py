@@ -972,7 +972,7 @@ class TestInstallImportsGitRunner:
 
 
 @pytest.mark.unit
-class TestAggregateSymlinksUsesJunctionHelper:
+class TestAggregateSymlinksUsesSymlink:
     """aggregate_symlinks must route its directory link through create_dirsymlink (AC-10)."""
 
     def test_aggregate_symlinks_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:

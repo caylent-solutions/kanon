@@ -9,6 +9,9 @@ that the python-comment-purge (E18) depends on:
   flagged (an intrinsic property of ``tokenize`` token types).
 - The vendored ``src/kanon_cli/repo`` subtree is excluded by default and
   ``--exclude`` replaces the default exclusion set.
+- With no ``PATH`` arguments the check scans its default roots
+  (``src/kanon_cli``, ``tests``, ``scripts``, ``tools`` and ``.devcontainer``),
+  the complete first-party kanon Python tree, and that tree is comment-clean.
 - Directory arguments are walked recursively for ``*.py`` files.
 - A missing path and an untokenizable file both fail fast with a clear stderr
   message and a non-zero exit.
@@ -307,3 +310,70 @@ def test_non_py_file_argument_ignored(tmp_path, capsys):
 
     assert exit_code == 0
     assert SUCCESS_LINE in out
+
+
+@pytest.mark.unit
+def test_default_roots_cover_all_first_party_trees():
+    """The default roots span the complete first-party kanon Python tree.
+
+    The no-comments policy applies to all first-party kanon Python, not just
+    ``src/kanon_cli`` and ``tests``. The default scan roots must therefore also
+    include the standalone first-party trees ``scripts``, ``tools`` and
+    ``.devcontainer`` so a bare invocation covers everything.
+    """
+    assert check_module.DEFAULT_ROOTS == (
+        "src/kanon_cli",
+        "tests",
+        "scripts",
+        "tools",
+        ".devcontainer",
+    )
+
+
+@pytest.mark.unit
+def test_default_invocation_scans_only_first_party_tree(monkeypatch):
+    """With no path args, the resolved targets are exactly the first-party tree.
+
+    Resolving the default roots (minus the default vendored exclude) against the
+    real repository yields every first-party ``*.py`` file and no vendored file
+    under ``src/kanon_cli/repo`` and no generated-directory file (``__pycache__``,
+    ``.venv`` and the other pruned trees). This pins the broadened scope: the
+    default scan is the first-party tree, with zero vendored or generated leakage.
+    """
+    monkeypatch.chdir(REPO_ROOT)
+
+    roots = [pathlib.Path(root) for root in check_module.DEFAULT_ROOTS]
+    excludes = [pathlib.Path(prefix) for prefix in check_module.DEFAULT_EXCLUDES]
+    resolved = check_module._resolve_targets(roots, excludes)
+
+    assert resolved, "the default scan must resolve at least one first-party file"
+
+    vendored = pathlib.Path("src/kanon_cli/repo")
+    pruned = check_module.SKIP_DIR_NAMES
+    for target in resolved:
+        assert not target.is_relative_to(vendored), f"vendored leakage: {target}"
+        assert not (set(target.parts) & pruned), f"generated-dir leakage: {target}"
+        assert target.suffix == ".py"
+        assert target.parts[0] in {root.parts[0] for root in roots}
+
+    standalone_first_party = pathlib.Path(".devcontainer/fix-line-endings.py")
+    assert standalone_first_party in resolved, (
+        "the broadened scan must include the standalone first-party .devcontainer file"
+    )
+
+
+@pytest.mark.unit
+def test_default_invocation_over_real_tree_is_clean(monkeypatch, capsys):
+    """A bare default invocation over the real repo finds zero disallowed comments.
+
+    This is the end-to-end gate assertion: the entire first-party kanon Python
+    tree (the broadened default roots) is comment-clean, so ``make
+    lint-no-comments`` -- which invokes the check with no arguments -- exits 0.
+    """
+    monkeypatch.chdir(REPO_ROOT)
+
+    exit_code, out, err = _run_in_process(capsys, [])
+
+    assert exit_code == 0, f"first-party tree must be comment-clean; stderr:\n{err}"
+    assert SUCCESS_LINE in out
+    assert err == ""

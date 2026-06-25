@@ -58,8 +58,10 @@ make pre-commit-check
 
 ### No-Comments Policy
 
-Kanon-owned Python (everything under `src/kanon_cli/` and `tests/`, excluding the
-vendored `src/kanon_cli/repo/` subtree) must contain no `#` comments. Docstrings
+All first-party kanon Python (everything under `src/kanon_cli/`, `tests/`,
+`scripts/`, `tools/` and `.devcontainer/`, excluding the vendored
+`src/kanon_cli/repo/` subtree and generated directories such as `__pycache__`
+and `.venv`) must contain no `#` comments. Docstrings
 are the sanctioned way to describe what code does: put intent in module, class,
 and function docstrings rather than inline comments. Code that needs an inline
 `#` note to be understood should be refactored or renamed so it reads clearly on

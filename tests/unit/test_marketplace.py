@@ -711,7 +711,7 @@ class TestCreateDirsymlink:
 
 
 @pytest.mark.unit
-class TestRegisterDirectCheckoutMarketplacesUsesJunctionHelper:
+class TestRegisterDirectCheckoutMarketplacesUsesSymlink:
     """register_direct_checkout_marketplaces must route its directory link through create_dirsymlink."""
 
     def test_register_direct_checkout_marketplaces_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:

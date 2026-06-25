@@ -15,12 +15,16 @@ Usage::
 
     python tools/lint/check_no_comments.py [PATH ...] [--exclude DIR ...]
 
-When ``PATH`` is omitted the check scans its default roots ``src/kanon_cli`` and
-``tests``; the default ``--exclude`` is the vendored ``src/kanon_cli/repo``
-subtree. Supplying ``--exclude`` replaces the default exclusion set. The exit
-code contract is binary: ``0`` means clean, non-zero means at least one offense
-or an operational error. The check is read-only: it never imports or executes
-the scanned files and writes no files.
+When ``PATH`` is omitted the check scans its default roots ``src/kanon_cli``,
+``tests``, ``scripts``, ``tools`` and ``.devcontainer`` -- the complete
+first-party kanon Python tree. The default ``--exclude`` is the vendored
+``src/kanon_cli/repo`` subtree; canonical generated directories
+(``__pycache__``, ``.venv``, ``.git``, ``dist``, ``build``, ``.ruff_cache``,
+``.pytest_cache``) are always pruned during the directory walk. Supplying
+``--exclude`` replaces the default exclusion set. The exit code contract is
+binary: ``0`` means clean, non-zero means at least one offense or an
+operational error. The check is read-only: it never imports or executes the
+scanned files and writes no files.
 """
 
 from __future__ import annotations
@@ -31,10 +35,15 @@ import re
 import sys
 import tokenize
 
-DEFAULT_ROOTS: tuple[str, ...] = ("src/kanon_cli", "tests")
+DEFAULT_ROOTS: tuple[str, ...] = (
+    "src/kanon_cli",
+    "tests",
+    "scripts",
+    "tools",
+    ".devcontainer",
+)
 DEFAULT_EXCLUDES: tuple[str, ...] = ("src/kanon_cli/repo",)
 
-# Canonical generated / vendored directory names skipped during a directory walk.
 SKIP_DIR_NAMES: frozenset[str] = frozenset(
     {
         "__pycache__",
@@ -50,7 +59,6 @@ SKIP_DIR_NAMES: frozenset[str] = frozenset(
 PYTHON_SUFFIX = ".py"
 SHEBANG_PREFIX = "#!"
 
-# PEP 263 encoding-cookie pattern, allowed only on line 1 or line 2.
 ENCODING_COOKIE_PATTERN = re.compile(r"coding[:=]\s*[-\w.]+")
 ENCODING_COOKIE_MAX_LINE = 2
 

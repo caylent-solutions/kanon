@@ -14,7 +14,6 @@ via mocking so the suite runs without spawning a real child process.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,9 +37,6 @@ def test_spawn_detached_success_posix(
     We mock os.fork to return a non-zero PID (parent path) to verify that
     the parent branch exits after fork without executing refresh_fn itself.
     """
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
-
     called: list[str] = []
 
     def refresh_fn() -> None:
@@ -59,9 +55,6 @@ def test_spawn_detached_child_executes_refresh_fn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Child path (fork returns 0) executes refresh_fn then calls os._exit(0)."""
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
-
     called: list[str] = []
 
     def refresh_fn() -> None:
@@ -88,8 +81,6 @@ def test_spawn_detached_child_exits_1_on_refresh_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Child path: if refresh_fn raises, child calls os._exit(1) (fail-fast)."""
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
 
     def refresh_fn() -> None:
         raise RuntimeError("refresh broke")
@@ -118,9 +109,6 @@ def test_spawn_detached_posix_child_records_error_to_log(
     before os._exit(1); the extracted spawn helper must be behaviorally
     substitutable and never swallow a child failure without a record.
     """
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
-
     log_path = tmp_path / "secured" / "errors.log"
 
     def refresh_fn() -> None:
@@ -152,9 +140,6 @@ def test_spawn_detached_fork_failure_raises(
     """If os.fork raises OSError, spawn_detached raises RuntimeError with an
     actionable message (fail-fast; no silent fallback).
     """
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
-
     with patch("os.fork", side_effect=OSError("fork failed: out of memory")):
         with pytest.raises(RuntimeError, match="spawn_detached: failed to fork"):
             spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
@@ -174,9 +159,6 @@ def test_spawn_detached_posix_log_dir_mode_0700(
     The test simulates the parent path (fork returns non-zero PID) so that the
     log directory creation code in spawn.py runs but the child code does not.
     """
-    if sys.platform == "win32":
-        pytest.skip("POSIX branch not applicable on Windows")
-
     log_dir = tmp_path / "spawn_log_dir"
     log_path = log_dir / "errors.log"
 

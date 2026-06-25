@@ -18,8 +18,8 @@ lint: lint-check format-check ## Run all lint checks (ruff check + ruff format -
 lint-check: lint-no-comments ## Lint Python files (ruff check + no-comments gate)
 	ruff check .
 
-lint-no-comments: ## Forbid '#' comments in kanon-owned Python (allows line-1 shebang + PEP 263 encoding cookie)
-	python tools/lint/check_no_comments.py src/kanon_cli tests --exclude src/kanon_cli/repo
+lint-no-comments: ## Forbid '#' comments in all first-party kanon Python (allows line-1 shebang + PEP 263 encoding cookie)
+	python tools/lint/check_no_comments.py
 
 lint-markdown: ## Lint kanon's own Markdown under docs/ and README.md (pymarkdownlnt, config in [tool.pymarkdown]: MD013 off, MD024 siblings_only; vendored docs/repo/ excluded)
 	uv run pymarkdownlnt scan -r -e 'docs/repo/*' docs/ README.md

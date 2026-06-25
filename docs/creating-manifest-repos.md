@@ -28,8 +28,8 @@ Key terminology (canonical form from spec Section 1.1):
   repo; identified by `<catalog-metadata><name>`.
 - **entry name** -- the value of `<catalog-metadata><name>`; must be
   unique across the manifest repo.
-- **source name** -- the `<source-name>` token in
-  `KANON_SOURCE_<source-name>_*` triples in a `.kanon` file; derived
+- **source name** -- the `<source-name>` token (the alias) in the
+  `KANON_SOURCE_<source-name>_*` block in a `.kanon` file; derived
   from the entry name by normalization (always lowercase, always replace
   `-` with `_`).
 

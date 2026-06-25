@@ -1,7 +1,7 @@
 # Version Resolution
 
 The `kanon` CLI resolves PEP 440 version specifiers against git tags using
-`git ls-remote`. This applies to `KANON_SOURCE_<name>_REVISION` values in
+`git ls-remote`. This applies to `KANON_SOURCE_<name>_REF` values in
 `.kanon` and to `--catalog-source` revision arguments.
 
 ---
@@ -60,7 +60,7 @@ ref path usable directly with `repo init -b`.
 ### Prefixed (recommended)
 
 ```properties
-KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
+KANON_SOURCE_build_REF=refs/tags/~=1.1.0
 ```
 
 Resolves against all tags under `refs/tags/`. Returns the full ref,
@@ -69,7 +69,7 @@ e.g. `refs/tags/1.1.2`.
 ### Namespaced prefix
 
 ```properties
-KANON_SOURCE_build_REVISION=refs/tags/dev/python/my-lib/~=1.2.0
+KANON_SOURCE_build_REF=refs/tags/dev/python/my-lib/~=1.2.0
 ```
 
 Filters to tags under `refs/tags/dev/python/my-lib/` only. Returns
@@ -78,7 +78,7 @@ e.g. `refs/tags/dev/python/my-lib/1.2.7`.
 ### Bare (no prefix)
 
 ```properties
-KANON_SOURCE_build_REVISION=~=1.1.0
+KANON_SOURCE_build_REF=~=1.1.0
 ```
 
 Resolves against all available tags. Returns the full ref,
@@ -143,25 +143,25 @@ pass through unmodified.
 
 ## Where Resolution Applies
 
-### KANON_SOURCE_\<name\>_REVISION
+### KANON_SOURCE_\<name\>_REF
 
 Resolves the manifest repository revision before `repo init -b`. The
 resolved value must be a ref usable by `repo init`, so using the
 `refs/tags/` prefix is recommended:
 
 ```properties
-KANON_SOURCE_build_REVISION=refs/tags/~=1.1.0
-KANON_SOURCE_marketplaces_REVISION=refs/tags/>=1.0.0,<2.0.0
+KANON_SOURCE_build_REF=refs/tags/~=1.1.0
+KANON_SOURCE_marketplaces_REF=refs/tags/>=1.0.0,<2.0.0
 ```
 
-### KANON_CATALOG_SOURCE / --catalog-source
+### KANON_CATALOG_SOURCES / --catalog-source
 
 Resolves the catalog repository version before `git clone --branch`.
 Supports the same constraint syntax as other revision fields:
 
 ```bash
 # Pin to current major, allow minor/patch updates
-export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@>=2.0.0,<3.0.0'
+export KANON_CATALOG_SOURCES='https://github.com/org/repo.git@>=2.0.0,<3.0.0'
 
 # Compatible release (>=2.0.0, <2.1.0)
 kanon add <entry> --catalog-source \
@@ -179,8 +179,8 @@ Plain branch names and exact tags pass through without resolution:
 
 ```bash
 # These do not trigger constraint resolution
-export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@main'
-export KANON_CATALOG_SOURCE='https://github.com/org/repo.git@2.2.0'
+export KANON_CATALOG_SOURCES='https://github.com/org/repo.git@main'
+export KANON_CATALOG_SOURCES='https://github.com/org/repo.git@2.2.0'
 ```
 
 ---
@@ -441,7 +441,7 @@ zero-PEP-440-tags scenario and workarounds (branch pin, explicit
 tags).
 
 For additional context see [docs/configuration.md](configuration.md) for
-`KANON_CATALOG_SOURCE` and related environment variables.
+`KANON_CATALOG_SOURCES` and related environment variables.
 
 ---
 

@@ -25,17 +25,16 @@ This model had two problems:
    kanon now reads all configuration from the root `.kanon` file; the
    `catalog/` directory is unused and must not exist.
 
-`kanon bootstrap` was **removed in a major release** (a breaking
-change). It no longer performs any work. The command name is retained
-only as a uniform deprecation shim so that operators get a clear,
-actionable message instead of an "unknown command" error.
+`kanon bootstrap` was **removed in kanon 3.0.0** (a breaking
+change). There is **no compatibility shim**: `bootstrap` is no longer a
+registered subcommand, so the command name is gone entirely.
 
 **Forced migration at the CI / script boundary.** Every `kanon
-bootstrap` invocation now exits with status `3`
-(`EXIT_CODE_DEPRECATED`) and prints a deprecation message to stderr
-naming the closest replacement command WITHOUT performing any work.
-Scripts that call `kanon bootstrap` fail immediately, forcing operators
-to update their pipelines rather than silently running stale tooling.
+bootstrap` invocation now fails at argument parsing with an argparse
+`invalid choice: 'bootstrap'` error (exit code `2`) that lists the valid
+subcommands. No work is performed. Scripts that call `kanon bootstrap`
+fail immediately, forcing operators to update their pipelines rather than
+silently running stale tooling.
 
 See [docs/exit-codes.md](exit-codes.md) for the full exit-code table.
 
@@ -58,11 +57,11 @@ See [docs/list-and-add.md](list-and-add.md) for the full reference for
 
 ## No bootstrap flags remain
 
-`kanon bootstrap` no longer accepts any flags. There is nothing to
-translate per-flag: every argument and every flag is swallowed and
-routed to the same deprecation message. This includes:
+`kanon bootstrap` accepts no flags because the subcommand no longer
+exists. There is nothing to translate per-flag -- argparse rejects the
+`bootstrap` token before any flag is parsed. This includes:
 
-- `--help` / `-h` (no exit-0 help; see "The exit-3 contract" below)
+- `--help` / `-h`
 - the former `--output-dir` and `--catalog-source` flags
 - any unknown flag (for example `--marketplace-install`)
 - the `list` positional and any other positional
@@ -73,86 +72,38 @@ environment variable. The canonical `--catalog-source` flag definition
 lives in `core/cli_args.py`; `kanon search`, `kanon add`, and the other
 catalog-aware commands import it from there.
 
-The replacement install artifacts (`.packages/` and `.kanon-data/`)
-land beside `.kanon` by default; setting `KANON_HOME` relocates the
-shared store and cache to that directory instead (the directory is
-created if absent; an unwritable value causes a non-zero exit with an
-actionable message and no silent fallback to cwd). `kanon clean`
-resolves the same directory so it removes exactly what `kanon install`
-wrote.
+`kanon install` writes its artifacts into the shared `KANON_HOME` store
+(`$KANON_HOME`, default `~/.kanon`); the `--home` / `--store-dir` flag
+relocates the store and caches for a single invocation (precedence:
+flag > `KANON_HOME` > `~/.kanon`). The store directory is created if
+absent; an unwritable value causes a non-zero exit with an actionable
+message and no silent fallback. `kanon clean` resolves the same
+directory so it removes exactly what `kanon install` wrote.
 
 See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCES`
 and `KANON_HOME`.
 
 ---
 
-## The exit-3 contract
+## What happens when you run `kanon bootstrap`
 
-`kanon bootstrap` exits **3** (`EXIT_CODE_DEPRECATED`) on **every**
-invocation -- any args, any flags, including `--help`/`-h`, unknown
-flags, `kanon bootstrap list`, and bare `kanon bootstrap`. There is no
-invocation that exits `0` and no argparse "unrecognized arguments"
-error. The shim:
-
-- Prints the deprecation message to stderr.
-- Exits with status `3`.
-- Performs **no work** -- it does not read the manifest repo, does not
-  parse catalog metadata, and does not touch the filesystem.
-- Does **not delegate** to the replacement command. The operator must
-  copy the suggested command and run it explicitly.
-
-The message has a per-invocation "CLOSEST REPLACEMENT FOR WHAT YOU RAN"
-line derived from what was typed:
-
-- `kanon bootstrap list` -> `kanon search --catalog-source <git-url>@<ref>`
-- any other entry `<x>` (and the no-argument case) ->
-  `kanon add <entry> --catalog-source <git-url>@<ref>`
-
-The rest of the message is identical for every invocation.
-
-Example (`kanon bootstrap kanon`, or any non-`list` entry):
+`bootstrap` is no longer a registered subcommand. Running `kanon
+bootstrap` (with any args or flags, including `kanon bootstrap list` and
+bare `kanon bootstrap`) fails at argument parsing: argparse prints an
+`invalid choice: 'bootstrap'` usage error listing the valid subcommands
+and exits with code `2`. There is no compatibility shim, no crafted
+deprecation message, and no exit code `3` -- the command name is simply
+gone.
 
 ```text
-DEPRECATED: `kanon bootstrap` was removed in a major release (a breaking change).
-This command no longer performs any work and exits non-zero.
-
-WHY IT CHANGED
-The catalog model changed. A manifest repo no longer has a separate
-catalog/<name>/ location, and the kanon wheel no longer bundles a catalog.
-The catalog is now the manifest repo itself: each XML manifest under
-repo-specs/ that carries a <catalog-metadata> block is a catalog entry,
-identified by its <catalog-metadata><name>. (A marketplace is one kind of
-entry; other manifest types live under repo-specs/ too.)
-
-MANAGE KANON DEPENDENCIES INSTEAD
-  search    kanon search --catalog-source <git-url>@<ref>
-            (narrow with a <substring>, --regex, or --match-fields)
-  add       kanon add <entry> --catalog-source <git-url>@<ref>
-            (writes the entry into .kanon, creating .kanon for you if absent)
-  install   kanon install
-
-CLOSEST REPLACEMENT FOR WHAT YOU RAN
-  kanon add kanon --catalog-source <git-url>@<ref>
-
-RELATED COMMANDS
-  search  add  remove  install  clean  outdated  why  doctor  validate
-  catalog  completion        (run `kanon <command> --help` for details)
-
-See docs/migration-to-add.md.
+kanon: error: argument command: invalid choice: 'bootstrap' (choose from 'add',
+'catalog', 'clean', 'completion', 'doctor', 'install', 'marketplace', 'search',
+'outdated', 'remove', 'validate', 'repo', 'why')
 ```
 
-Example (`kanon bootstrap list`): identical to the above except the
-"CLOSEST REPLACEMENT FOR WHAT YOU RAN" line reads:
-
-```text
-CLOSEST REPLACEMENT FOR WHAT YOU RAN
-  kanon search --catalog-source <git-url>@<ref>
-```
-
-`kanon bootstrap --help`, `kanon bootstrap --marketplace-install`, and
-bare `kanon bootstrap` all print the same message and exit `3`; the
-"CLOSEST REPLACEMENT" line falls back to
-`kanon add <entry> --catalog-source <git-url>@<ref>`.
+The same applies to `kanon list`, which was renamed to `kanon search`
+with no alias: `kanon list` also exits `2` with an `invalid choice`
+error.
 
 See [docs/exit-codes.md](exit-codes.md) for the canonical exit-code
 reference.
@@ -218,15 +169,14 @@ See [docs/configuration.md](configuration.md) for the full
 
 | Event | Release |
 | ----- | ------- |
-| Bundled catalog removed from the kanon wheel | major release (breaking change) |
-| Legacy `catalog/<name>/` audit warning added | same major release |
-| `kanon bootstrap` removed; replaced by a uniform deprecation shim (exit 3) | same major release |
-| Removal of the `kanon bootstrap` name from the CLI entirely | TBD |
+| Bundled catalog removed from the kanon wheel | kanon 3.0.0 (breaking change) |
+| Legacy `catalog/<name>/` audit warning added | kanon 3.0.0 |
+| `kanon bootstrap` removed entirely (no shim; `invalid choice` exit 2) | kanon 3.0.0 |
+| `kanon list` renamed to `kanon search` (no alias; `invalid choice` exit 2) | kanon 3.0.0 |
 
-The shim retains the `bootstrap` name only so the deprecation message
-can be shown. Removing the name from the CLI entirely is a separate
-future decision. Until then, every `kanon bootstrap` invocation exits
-`3` immediately.
+The `bootstrap` name was removed from the CLI entirely -- it is not a
+registered subcommand, so `kanon bootstrap` fails with an argparse
+`invalid choice` usage error (exit `2`).
 
 ---
 
@@ -237,6 +187,6 @@ future decision. Until then, every `kanon bootstrap` invocation exits
 - [docs/catalogs-explained.md](catalogs-explained.md) -- what a
   manifest repo is and how catalog entries are structured
 - [docs/exit-codes.md](exit-codes.md) -- canonical exit-code table,
-  including exit 3 (`EXIT_CODE_DEPRECATED`)
+  including the argparse `invalid choice` exit 2 for removed commands
 - [docs/configuration.md](configuration.md) -- `KANON_CATALOG_SOURCES`
   and other environment variables

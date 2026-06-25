@@ -37,10 +37,11 @@ full CLI documentation.
 
 ### 1. Add Catalog Entries to Your Project
 
-> **Note:** `kanon bootstrap` was removed in a major release (a breaking
-> change). It performs no work and exits 3 on every invocation. Use the
-> commands below instead. See
-> [docs/migration-to-add.md](migration-to-add.md).
+> **Note:** `kanon bootstrap` was removed in kanon 3.0.0 (a breaking
+> change). There is no compatibility shim: `bootstrap` is no longer a
+> registered subcommand, so `kanon bootstrap` exits non-zero with an
+> argparse `invalid choice: 'bootstrap'` error. Use the commands below
+> instead. See [docs/migration-to-add.md](migration-to-add.md).
 
 Search the catalog and add an entry to your `.kanon` with `kanon search` and
 `kanon add`. A catalog source is required, supplied via `--catalog-source

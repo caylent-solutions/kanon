@@ -107,8 +107,7 @@ with a non-zero code and prints each finding to stderr:
 ```text
 ERROR: .kanon contains unresolved placeholders
        -- resolve each before running kanon install
-  Line 3: GITBASE=<YOUR_GIT_ORG_BASE_URL>
-  Line 7: KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+  Line 4: KANON_SOURCE_build_GITBASE=<YOUR_GIT_ORG_BASE_URL>
 ```
 
 Each line reports the line number and the full `KEY=VALUE` line as it
@@ -119,10 +118,10 @@ immediately.
 
 Three paths are available, listed in decreasing order of preference:
 
-1. **Re-run `kanon add`** -- `kanon add` now auto-derives `GITBASE`
-   from the catalog-source URL and defaults
-   `KANON_MARKETPLACE_INSTALL` to `false`. Re-running `kanon add`
-   overwrites the stale placeholder lines without manual editing.
+1. **Re-run `kanon add`** -- `kanon add` auto-derives the per-dependency
+   `KANON_SOURCE_<alias>_GITBASE` from the catalog-source URL. Re-running
+   `kanon add` overwrites the stale placeholder lines without manual
+   editing.
 
 2. **Set the corresponding environment variable** -- if the
    placeholder represents a value that should come from the
@@ -138,41 +137,37 @@ Three paths are available, listed in decreasing order of preference:
 
    ```properties
    # Before (triggers error):
-   GITBASE=<YOUR_GIT_ORG_BASE_URL>
+   KANON_SOURCE_build_GITBASE=<YOUR_GIT_ORG_BASE_URL>
 
    # After (valid):
-   GITBASE=https://github.com/your-org
+   KANON_SOURCE_build_GITBASE=https://github.com/your-org
    ```
 
 ### Worked example
 
-Given a `.kanon` file with the following content at lines 3 and 7:
+Given a `.kanon` file with the following content at line 4:
 
 ```properties
 # .kanon
-KANON_CATALOG_SOURCES=https://github.com/your-org/catalog.git@main
-GITBASE=<YOUR_GIT_ORG_BASE_URL>
-KANON_SOURCE_build_URL=${GITBASE}/build.git
-KANON_SOURCE_build_REVISION=main
+KANON_SOURCE_build_URL=${KANON_SOURCE_build_GITBASE}/build.git
+KANON_SOURCE_build_REF=main
 KANON_SOURCE_build_PATH=repo-specs/meta.xml
-KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+KANON_SOURCE_build_GITBASE=<YOUR_GIT_ORG_BASE_URL>
 ```
 
-Running `kanon install .kanon` before resolving the placeholders
+Running `kanon install .kanon` before resolving the placeholder
 produces:
 
 ```text
 ERROR: .kanon contains unresolved placeholders
        -- resolve each before running kanon install
-  Line 3: GITBASE=<YOUR_GIT_ORG_BASE_URL>
-  Line 7: KANON_MARKETPLACE_INSTALL=<TRUE_OR_FALSE>
+  Line 5: KANON_SOURCE_build_GITBASE=<YOUR_GIT_ORG_BASE_URL>
 ```
 
-After correcting both lines:
+After correcting the line:
 
 ```properties
-GITBASE=https://github.com/your-org
-KANON_MARKETPLACE_INSTALL=false
+KANON_SOURCE_build_GITBASE=https://github.com/your-org
 ```
 
 `kanon install .kanon` proceeds normally.
@@ -216,25 +211,24 @@ kanon search
 
 1. `--catalog-source` CLI flag
 2. `KANON_CATALOG_SOURCES` environment variable
-3. `lockfile.[catalog].source` -- fallback for `kanon install` and
-   `kanon doctor` when in the `LOCKFILE_CONSISTENT` state and both
-   the CLI flag and env var are unset
-4. `[catalog]` block in `.kanon` -- written by `kanon add` on file
-   creation; the lowest-priority fallback for `kanon install` when the
-   three layers above all return no value
 
-When none of these sources is set and the lockfile fallback is
-not applicable, kanon raises `MissingCatalogSourceError` with
-remediation text. See
+These are the only two layers. There is no lockfile or `.kanon`
+fallback: the schema-v4 lockfile carries no catalog block, and `.kanon`
+records no catalog source.
+
+When neither source is set, a catalog-requiring command (`kanon search`,
+`kanon add`, `kanon outdated`, `kanon why`, `kanon catalog audit`) exits
+with a hard error and remediation text. See
 [docs/catalogs-explained.md](catalogs-explained.md) for details.
 
-When the CLI flag or env var is set and differs from the lockfile's
-recorded `[catalog].source`, `kanon install` raises
-`CatalogSourceMismatchError`. The lockfile is authoritative; run
-`kanon install --refresh-lock` to intentionally change catalogs.
+**`kanon install` is hermetic.** Install never reads a catalog source: it
+does not accept `--catalog-source`, and a populated `KANON_CATALOG_SOURCES`
+is ignored. Install is driven solely by the committed `.kanon` and
+`.kanon.lock`, so it neither resolves nor records a catalog source and
+never raises a catalog-source mismatch.
 
 See [docs/architecture.md](architecture.md) for the full precedence
-and mismatch-detection logic.
+logic.
 
 **Shell-profile leakage warning.** If `KANON_CATALOG_SOURCES` is set
 in a shell profile (e.g., `~/.bashrc`, `~/.zshrc`, `~/.profile`),
@@ -258,10 +252,14 @@ each `git ls-remote` call in `kanon install`, `kanon outdated`,
 `kanon why`, and `kanon doctor`. Bounded per call; not a global wall
 clock. Defined in `src/kanon_cli/constants.py`.
 
-**`KANON_KANON_FILE`** (default: `./.kanon`) -- Default target
-`.kanon` file for `kanon add` / `kanon remove` writes and default
-`--kanon-file` argument for all commands. Overridden by
-`--kanon-file` CLI flag.
+**`KANON_KANON_FILE`** (default: `./.kanon`) -- Default `.kanon` file
+path. It supplies the default target for `kanon add` / `kanon remove`
+writes and the default `--kanon-file` value for the commands that accept
+that flag (`kanon add`, `kanon remove`, `kanon doctor`). On `kanon install`
+and `kanon validate lockfile` the `.kanon` path is given as a positional
+argument (these commands do not expose a `--kanon-file` flag). The
+`--kanon-file` CLI flag takes precedence over this variable when both are
+set.
 
 **`KANON_LIST_FORMAT`** (default: `names`) -- Default output format
 for `kanon search`. Supported values: `names`, `json`. Overridden by
@@ -545,6 +543,40 @@ number of completion error lines surfaced by `kanon doctor` (subcheck
 
 ---
 
+### Update check
+
+kanon performs a best-effort PyPI check for a newer `kanon-cli` release
+and prints an upgrade hint when one is available. The check is cached and
+never blocks a command on failure.
+
+**`KANON_SKIP_UPDATE_CHECK`** (default: unset) -- When set to exactly `1`,
+the PyPI update-available check is skipped entirely. The global
+`--no-update-check` flag has the same effect for a single invocation.
+
+```bash
+# Skip the update check for one run
+kanon --no-update-check install .kanon
+
+# Skip it for the whole session
+export KANON_SKIP_UPDATE_CHECK=1
+```
+
+**`KANON_UPDATE_CHECK_TTL`** (default: `86400`) -- Seconds the cached
+"latest version" result is considered fresh before the next check refetches
+it. Must be a positive integer.
+
+**`KANON_UPDATE_CONNECT_TIMEOUT`** (default: `2`) -- Connect timeout in
+seconds for the PyPI request. Must be a positive integer.
+
+**`KANON_UPDATE_READ_TIMEOUT`** (default: `3`) -- Read timeout in seconds
+for the PyPI request. Must be a positive integer.
+
+**`KANON_UPDATE_BODY_SIZE_CAP`** (default: `204800`) -- Maximum number of
+response bytes read from the PyPI JSON endpoint. Must be a positive
+integer.
+
+---
+
 ### Retry policy
 
 kanon retries `git ls-remote` calls on transient errors. Auth-failure
@@ -575,34 +607,62 @@ KANON_GIT_RETRY_DELAY=3 kanon install .kanon
 
 ## Multi-Source Groups
 
-Sources are auto-discovered from `KANON_SOURCE_<name>_URL` variable
-patterns and processed in alphabetical order by name:
+Sources are alias-keyed: each is auto-discovered from a
+`KANON_SOURCE_<alias>_URL` variable and processed in alphabetical order
+by alias. Each source block carries the alias-keyed suffixes
+`_{URL,REF,PATH,NAME,GITBASE}`:
 
 ```properties
-KANON_SOURCE_build_URL=https://github.com/org/build-repo.git
-KANON_SOURCE_build_REVISION=main
+KANON_SOURCE_build_URL=${KANON_SOURCE_build_GITBASE}/build-repo.git
+KANON_SOURCE_build_REF=main
 KANON_SOURCE_build_PATH=repo-specs/meta.xml
+KANON_SOURCE_build_NAME=build
+KANON_SOURCE_build_GITBASE=https://github.com/org
 
-KANON_SOURCE_marketplaces_URL=https://github.com/org/mp-repo.git
-KANON_SOURCE_marketplaces_REVISION=main
+KANON_SOURCE_marketplaces_URL=${KANON_SOURCE_marketplaces_GITBASE}/mp-repo.git
+KANON_SOURCE_marketplaces_REF=main
 KANON_SOURCE_marketplaces_PATH=repo-specs/marketplaces.xml
+KANON_SOURCE_marketplaces_NAME=marketplaces
+KANON_SOURCE_marketplaces_GITBASE=https://github.com/org
 ```
 
-Each source requires `_URL`, `_REVISION`, and `_PATH` suffixed
-variables.
+Each source requires the `_URL`, `_REF`, and `_PATH` suffixed variables;
+`_NAME` and `_GITBASE` are written by `kanon add`.
 
 ---
 
-## KANON\_MARKETPLACE\_INSTALL Toggle
+## Per-dependency marketplace install flag
 
-When `KANON_MARKETPLACE_INSTALL=true`:
+There is no global marketplace-install toggle. Marketplace install is a
+per-dependency setting stored in `.kanon` as
+`KANON_SOURCE_<alias>_MARKETPLACE=true`. Absence of the line is the
+canonical "disabled" state; kanon never writes `=false` itself.
 
-- `kanon install` creates and cleans `CLAUDE_MARKETPLACES_DIR`, then
-  runs the install script post-sync
-- `kanon clean` runs the uninstall script and removes
-  `CLAUDE_MARKETPLACES_DIR`
+When `KANON_SOURCE_<alias>_MARKETPLACE=true` for a dependency:
 
-When `false` (default), marketplace lifecycle is skipped entirely.
+- `kanon install` registers that dependency's marketplace plugin under
+  `CLAUDE_MARKETPLACES_DIR` and records the registration in the
+  per-source `registered_marketplaces` ledger in `.kanon.lock`.
+- `kanon clean` unregisters the plugins kanon recorded and removes the
+  marketplace directory it used.
+
+Manage the flag with the `kanon marketplace` subcommand, which edits only
+`.kanon` (it never touches `.kanon.lock` and performs no re-resolution):
+
+```bash
+# Enable marketplace install for one dependency (writes =true)
+kanon marketplace enable <alias>
+
+# Disable it (removes the =true line)
+kanon marketplace disable <alias>
+
+# Show each dependency, its catalog <type>, and its effective setting
+kanon marketplace status
+kanon marketplace status --all
+```
+
+See [docs/lockfile.md](lockfile.md#marketplace-ownership-and-pruning) for
+how the per-source ledger drives marketplace pruning.
 
 ---
 

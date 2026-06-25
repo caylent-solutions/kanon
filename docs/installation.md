@@ -1,8 +1,8 @@
 # kanon install
 
 Operator-facing reference for `kanon install` -- the command that
-resolves and installs dependencies declared in `.kanon` using
-the catalog source.
+resolves and installs the dependencies declared in `.kanon` and pins
+them in `.kanon.lock`.
 
 For the canonical environment-variable table see
 [docs/configuration.md](configuration.md).
@@ -13,8 +13,7 @@ For lifecycle details see [docs/lifecycle.md](lifecycle.md).
 ## Synopsis
 
 ```text
-kanon install [--catalog-source <git-url>@<ref>]
-              [--refresh-lock | --refresh-lock-source <name>]
+kanon install [--refresh-lock | --refresh-lock-source <name>]
               [--strict-lock] [--strict-drift]
               [--lock-file <path>]
               [<kanonenv_path>]
@@ -22,128 +21,79 @@ kanon install [--catalog-source <git-url>@<ref>]
 
 ## How it works
 
-`kanon install` reads the `.kanon` file, resolves the effective
-catalog source (see [Catalog source precedence](#catalog-source-precedence)
-below), clones the manifest repo, fetches all declared sources, and
-writes the aggregated packages into `.packages/`.
+`kanon install` is **hermetic** (spec Section 4.3 / FR-14): it reads
+only the committed `.kanon` file and its `.kanon.lock`, fetches every
+declared source, resolves the transitive include/project graph, and
+publishes the result into the shared `KANON_HOME` store. It does **not**
+resolve or record a catalog source: the `--catalog-source` flag is not
+accepted (passing it exits non-zero), and a populated
+`KANON_CATALOG_SOURCES` environment variable is ignored, not read.
+
+A catalog source is needed only by the discovery commands (`kanon
+search`, `kanon add`, `kanon outdated`, `kanon why`, `kanon catalog
+audit`). You supply it there; `kanon add` writes the resolved,
+alias-keyed `KANON_SOURCE_<alias>_*` blocks into `.kanon`, and from then
+on `kanon install` works from those blocks with no catalog source.
 
 On first run -- or when `--refresh-lock` is passed -- the lockfile
-`.kanon.lock` is written. Subsequent runs in a consistent state
-install directly from the lockfile without re-cloning the catalog.
+`.kanon.lock` is written at schema v4. Subsequent runs in a consistent
+state install directly from the lockfile without re-resolving.
 
-## Catalog source precedence
+## The reconcile model
 
-`kanon install` needs to know which manifest repo (catalog) to use.
-The effective catalog source is resolved by
-`_resolve_catalog_source` following this four-layer precedence chain
-(highest priority first):
+`kanon install` follows an npm-like reconcile model:
 
-1. `--catalog-source <git-url>@<ref>` -- the CLI flag. Always wins
-   when provided. Example:
-   `kanon install --catalog-source https://example.com/org/catalog.git@main`
+- **Lockfile consistent** (`.kanon.lock` present and its `kanon_hash`
+  matches `.kanon`): replay the pinned SHAs verbatim. No re-resolution.
+- **Lockfile drifted** (`.kanon.lock` present but `kanon_hash` differs,
+  e.g. after editing `.kanon`): by default, reconcile -- prune orphaned
+  entries, resolve added/changed sources fresh, replay unchanged ones,
+  and rewrite the lock once on success. With `--strict-lock` this drift
+  is a hard error instead (npm-ci style).
+- **No lockfile**: resolve everything from `.kanon` and write
+  `.kanon.lock`.
 
-2. `KANON_CATALOG_SOURCE` environment variable. Wins when the CLI
-   flag is absent. Example:
-   `KANON_CATALOG_SOURCE=https://example.com/org/catalog.git@main kanon install`
+To re-resolve from scratch, pass `--refresh-lock`. To re-resolve exactly
+one top-level source while preserving every other lockfile entry, pass
+`--refresh-lock-source <name>`.
 
-3. `[catalog].source` from `.kanon.lock` -- the lockfile's recorded
-   catalog source. This fallback applies **only** in the
-   `LOCKFILE_CONSISTENT` state and **only** when neither the CLI flag
-   nor the env var is set. It is disabled on `--refresh-lock` and
-   `--refresh-lock-source` paths because those paths are explicitly
-   rebuilding the lockfile and must receive a fresh source from the
-   operator.
+## Where artifacts live
 
-4. `[catalog]` block inside the `.kanon` file -- written automatically
-   by `kanon add` when the `.kanon` file is first created. Applies
-   when the block is present and the three higher-priority layers all
-   return no value. See [.kanon catalog block format](#kanon-catalog-block-format)
-   below.
+`kanon install` publishes fetched data into the shared `KANON_HOME`
+store, content-addressed and deduped across projects:
 
-When all four layers return no value, `kanon install` exits with a
-non-zero code and the canonical error:
+- The store root resolves with precedence `--home` / `--store-dir`
+  flag > `KANON_HOME` environment variable > the default `~/.kanon`.
+- The store directory is created if absent. If it cannot be created or is
+  not writable, `kanon install` exits non-zero with an actionable
+  message naming the path and the `KANON_HOME` variable -- there is no
+  silent fallback.
+- `kanon clean` resolves the same store root, so it removes exactly what
+  `kanon install` wrote.
 
-```text
-ERROR: install requires a catalog source.
-Provide one of:
-  --catalog-source <git-url>@<ref>
-  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run
-```
-
-## One-step workflow after kanon add
-
-`kanon add` writes the `[catalog]` block to the `.kanon` file when
-the file is first created. This means subsequent bare `kanon install`
-invocations succeed without the operator having to re-pass
-`--catalog-source`:
-
-```bash
-# First use: declare the catalog source explicitly.
-kanon add my-entry --catalog-source https://example.com/org/catalog.git@main
-
-# .kanon now contains a [catalog] block recording the catalog source.
-# All subsequent installs in this project can omit the flag.
-kanon install
-```
-
-The `[catalog]` block recorded by `kanon add` is the fourth-priority
-fallback. If the env var or a consistent lockfile is also present,
-those take precedence over the block.
-
-## Hand-edited .kanon files
-
-If you author a `.kanon` file by hand without adding a `[catalog]`
-block, bare `kanon install` will still raise the missing-source
-diagnostic above. The fix is to either:
-
-- Pass `--catalog-source <url>@<ref>` on the command line (or set
-  `KANON_CATALOG_SOURCE`), or
-- Add the `[catalog]` block to your hand-written `.kanon` file
-  (see format below).
-
-## .kanon catalog block format
-
-`kanon add` writes the following INI-style block at the top of a
-freshly-created `.kanon` file:
-
-```properties
-[catalog]
-KANON_CATALOG_SOURCE=<git-url>@<ref>
-```
-
-For example:
-
-```properties
-[catalog]
-KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
-```
-
-The `[catalog]` header must appear on its own line (no leading or
-trailing whitespace). The `KANON_CATALOG_SOURCE=` key-value line must
-immediately follow (blank lines between them are not allowed and
-produce a `CatalogBlockParseError`). The value must be non-empty.
-
-A hand-written `.kanon` that includes this block gains the same
-auto-derive behaviour as one created by `kanon add`.
+The legacy per-project `.packages/` / `.kanon-data/` locations and their
+`KANON_WORKSPACE_DIR` / `KANON_CACHE_DIR` environment variables were
+removed; the shared `KANON_HOME` store subsumes them.
 
 ## Flags
 
 | Flag | Description |
 |------|-------------|
-| `--catalog-source <git-url>@<ref>` | Override or supply the catalog source. Wins over env var, lockfile, and `.kanon` block. |
-| `--refresh-lock` | Rebuild the full lockfile from `.kanon`. Requires `--catalog-source` or `KANON_CATALOG_SOURCE`; the lockfile fallback is disabled on this path. |
-| `--refresh-lock-source <name>` | Rebuild the lockfile entry for a single named source. Same catalog-source requirement as `--refresh-lock`. |
-| `--strict-lock` | Promote orphaned lock entries to a hard error instead of pruning them (see [Orphaned lockfile entries](#orphaned-lockfile-entries)). |
+| `--refresh-lock` | Ignore the existing lockfile, re-resolve every transitive version from scratch against the committed `.kanon`, and overwrite `.kanon.lock`. |
+| `--refresh-lock-source <name>` | Re-resolve exactly one top-level source's full chain while preserving every other source's lockfile entries verbatim. `<name>` may be the `KANON_SOURCE_<name>` alias or a catalog entry name. |
+| `--strict-lock` | Promote orphaned lock entries (and a `kanon_hash` drift) to a hard error instead of reconciling them (see [Orphaned lockfile entries](#orphaned-lockfile-entries)). |
 | `--strict-drift` | Promote branch drift (a locked SHA differing from the branch's current tip) to a hard error instead of reusing the locked SHA. |
 | `--lock-file <path>` | Path to the lock file (default: `<kanon-file>.lock`; env `KANON_LOCK_FILE`). |
+
+`kanon install` accepts no `--catalog-source` flag: it is hermetic.
 
 ## Orphaned lockfile entries
 
 An orphaned lockfile entry is a `[[sources]]` row in `.kanon.lock` whose
-`name` no longer has a matching `KANON_SOURCE_<name>_URL` triple in `.kanon`.
-This happens when a source is removed from `.kanon` (for example, via
-`kanon remove`) but the lockfile has not yet been updated to reflect that
-removal.
+alias no longer has a matching `KANON_SOURCE_<alias>_URL` block in
+`.kanon`. This happens when a source is removed from `.kanon` (for
+example, via `kanon remove`) but the lockfile has not yet been updated to
+reflect that removal.
 
 ### Default behaviour: auto-prune
 
@@ -151,10 +101,10 @@ By default, `kanon install` detects orphaned lockfile entries, removes them
 from the in-memory lockfile, and emits one INFO line per orphan:
 
 ```text
-pruned orphaned lock entry: <name>
+pruned orphaned lock entry: <alias>
 ```
 
-For example, if a source named `alpha` was removed from `.kanon` and
+For example, if a source aliased `alpha` was removed from `.kanon` and
 `.kanon.lock` still contains its entry, running `kanon install` produces:
 
 ```text
@@ -180,18 +130,18 @@ resolve the error, see
 
 ### Worked example
 
-Suppose your `.kanon` file originally declares a source named `my-lib`, and
+Suppose your `.kanon` file originally declares a source aliased `my_lib`, and
 `kanon add` has already been run so `.kanon.lock` contains the corresponding
 entry. You then remove the source:
 
 ```bash
-kanon remove my-lib
+kanon remove my_lib
 ```
 
 The next bare `kanon install` automatically reconciles the lockfile:
 
 ```text
-pruned orphaned lock entry: my-lib
+pruned orphaned lock entry: my_lib
 ```
 
 Installation then completes with the remaining declared sources.

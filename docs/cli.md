@@ -246,9 +246,13 @@ A run that finds an orphan and a drift issue looks like:
 
 ```text
 [ok] kanon_hash consistency
-[fail] no orphaned lock entries: 2 orphaned entries -- run kanon install --prune to clean
-[fail] no branch drift: source 'mylib' is behind branch tip by 3 commits
+[fail] no orphaned lock entries: orphan lock entry: source 'oldlib' is in .kanon.lock but absent from .kanon
+[fail] no branch drift: source 'mylib' has drifted from its branch tip
 ```
+
+The orphaned-lock-entry remediation is to run `kanon install` (prunes the
+orphan) or `kanon install --strict-lock` (keeps the lockfile authoritative
+and fails on the orphan instead).
 
 ### Verbosity flag interaction
 
@@ -304,47 +308,61 @@ E33 for the specification decision record.
 
 ---
 
-## kanon add -- marketplace-install flag
+## kanon add -- marketplace-install flags
 
 `kanon add` accepts `--marketplace-install` and `--no-marketplace-install`
-flags that control the `KANON_MARKETPLACE_INSTALL` value written to the
-`.kanon` header when creating or updating the file.
+flags that override the per-dependency marketplace setting written to the
+added source block. In kanon 3.0.0 the marketplace setting is **per
+dependency** -- the flag controls whether a
+`KANON_SOURCE_<alias>_MARKETPLACE=true` line is written into that
+dependency's block. There is no global `KANON_MARKETPLACE_INSTALL` header
+(it was removed in 3.0.0); see
+[docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md).
 
-### Precedence
+### Resolution
 
-The value is resolved with the following precedence (highest to lowest):
+The value written for the added dependency is resolved as follows:
 
-1. **CLI flag** -- `--marketplace-install` forces `true`;
-   `--no-marketplace-install` forces `false`. The two flags are mutually
-   exclusive (passing both is a usage error).
-2. **Environment variable** -- `KANON_MARKETPLACE_INSTALL` is read when
-   no flag is passed.
-3. **Default** -- `false` is used when neither the flag nor the
-   environment variable is set.
+1. **`--marketplace-install`** -- forces the dependency to register as a
+   marketplace: writes `KANON_SOURCE_<alias>_MARKETPLACE=true`. It is an
+   error when the entry's `<catalog-metadata><type>` is not
+   `claude-marketplace`.
+2. **`--no-marketplace-install`** -- forces the dependency to NOT register
+   as a marketplace: the `KANON_SOURCE_<alias>_MARKETPLACE` line is omitted
+   (absence is the canonical "disabled"; kanon never writes `=false`).
+3. **Neither flag** -- the setting is auto-detected from the entry's
+   `<catalog-metadata><type>`: `claude-marketplace` entries get
+   `_MARKETPLACE=true`, all others omit the line.
+
+The two flags are mutually exclusive (passing both is a usage error).
 
 ### Usage examples
 
 ```bash
-# Force marketplace install enabled -- writes KANON_MARKETPLACE_INSTALL=true
-kanon add myentry@1.0.0 --marketplace-install
+# Force marketplace registration -- writes KANON_SOURCE_<alias>_MARKETPLACE=true
+kanon add myentry@1.0.0 --marketplace-install \
+  --catalog-source https://example.com/org/manifest-repo.git@main
 
-# Force marketplace install disabled -- writes KANON_MARKETPLACE_INSTALL=false
-kanon add myentry@1.0.0 --no-marketplace-install
+# Force no marketplace registration -- omits the _MARKETPLACE line
+kanon add myentry@1.0.0 --no-marketplace-install \
+  --catalog-source https://example.com/org/manifest-repo.git@main
 
-# Use environment variable (KANON_MARKETPLACE_INSTALL=true)
-KANON_MARKETPLACE_INSTALL=true kanon add myentry@1.0.0
-
-# Default: writes KANON_MARKETPLACE_INSTALL=false
-kanon add myentry@1.0.0
+# Default: setting is auto-detected from the entry's catalog <type>
+kanon add myentry@1.0.0 \
+  --catalog-source https://example.com/org/manifest-repo.git@main
 ```
+
+To toggle the per-dependency marketplace setting after the entry is added,
+use `kanon marketplace enable <alias>` / `kanon marketplace disable <alias>`
+(see [docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md)).
 
 ### Traceability
 
-The `--marketplace-install` / `--no-marketplace-install` flag pair was
-added as part of the E49 gap-closure (gap 6). See the `[Unreleased]`
-`### Added` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
-entry. For the full `kanon add` flag reference see
-[docs/list-and-add.md](list-and-add.md).
+The per-dependency `--marketplace-install` / `--no-marketplace-install` flag
+pair, the per-dependency `KANON_SOURCE_<alias>_MARKETPLACE` key, and the
+`kanon marketplace` subcommands replace the removed global
+`KANON_MARKETPLACE_INSTALL` header in kanon 3.0.0. For the full `kanon add`
+flag reference see [docs/list-and-add.md](list-and-add.md).
 
 ---
 
@@ -413,31 +431,37 @@ tree, leaving HEAD pointing to a deleted branch ref and raising an unhandled
 
 ### Usage examples
 
+`kanon install` is hermetic: it re-resolves from the committed `.kanon`
+source declarations and does not accept `--catalog-source`.
+
 ```bash
 # Re-resolve all lock entries on an already-installed workspace -- no error
-kanon install --refresh-lock \
-  --catalog-source https://github.com/my-org/manifest-repo.git@main
+kanon install --refresh-lock
 
 # Re-resolve one source on an already-installed workspace -- no error
-kanon install --refresh-lock-source mylib \
-  --catalog-source https://github.com/my-org/manifest-repo.git@main
+kanon install --refresh-lock-source mylib
 ```
 
 ### Traceability
 
-This fix was introduced in E51-F1-S1-T1 (BUG-1). See the `[Unreleased]`
-`### Fixed` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
-entry. For the full `--refresh-lock` / `--refresh-lock-source` flag
-reference see [docs/lockfile.md](lockfile.md).
+This fix was introduced in E51-F1-S1-T1 (BUG-1). For the full
+`--refresh-lock` / `--refresh-lock-source` flag reference see
+[docs/lockfile.md](lockfile.md).
 
 ---
 
 ## kanon install -- direct-checkout marketplace registration (BUG-3)
 
-`kanon install` with `KANON_MARKETPLACE_INSTALL=true` now registers the
-Claude marketplace for direct-checkout source entries that carry a
-`.claude-plugin/marketplace.json` file but no `<linkfile>` element in the
-source manifest XML.
+For source entries declared with `KANON_SOURCE_<alias>_MARKETPLACE=true`,
+`kanon install` registers the Claude marketplace even for direct-checkout
+entries that carry a `.claude-plugin/marketplace.json` file but no
+`<linkfile>` element in the source manifest XML.
+
+> **Note:** `kanon install` is hermetic. It does not accept `--catalog-source`
+> and ignores any catalog env var; it resolves entirely from `.kanon` and
+> `.kanon.lock`. Marketplace registration is driven by the per-dependency
+> `KANON_SOURCE_<alias>_MARKETPLACE=true` key, not by the removed global
+> `KANON_MARKETPLACE_INSTALL` env var.
 
 ### Behaviour before the fix
 
@@ -463,23 +487,25 @@ including sources installed via direct checkout.
 
 ### Preconditions
 
-- `KANON_MARKETPLACE_INSTALL=true` (or the `--marketplace-install` flag
-  passed to the command).
+- The source is declared with `KANON_SOURCE_<alias>_MARKETPLACE=true` in
+  `.kanon` (set by `kanon add --marketplace-install` or
+  `kanon marketplace enable <alias>`).
+- `CLAUDE_MARKETPLACES_DIR` is defined in `.kanon`; when a
+  marketplace-enabled dependency is declared without it, `kanon install`
+  fails fast with an actionable error.
 - The `claude` binary is available on `$PATH`; if absent, `kanon install`
   fails fast with a non-zero exit and an actionable error.
 
 ### Usage example
 
 ```bash
-# Direct-checkout source with .claude-plugin/marketplace.json will be
-# registered automatically -- no additional flags required
-KANON_MARKETPLACE_INSTALL=true kanon install \
-  --catalog-source https://github.com/my-org/manifest-repo.git@main
+# Direct-checkout source declared with KANON_SOURCE_<alias>_MARKETPLACE=true
+# is registered automatically -- install is hermetic (no --catalog-source)
+kanon install
 ```
 
 ### Traceability
 
-This fix was introduced in E51-F3-S1-T1 (BUG-3). See the `[Unreleased]`
-`### Fixed` section in [CHANGELOG.md](../CHANGELOG.md) for the changelog
-entry. For the full marketplace configuration reference see
+This fix was introduced in E51-F3-S1-T1 (BUG-3). For the full marketplace
+configuration reference see
 [docs/claude-marketplaces-guide.md](claude-marketplaces-guide.md).

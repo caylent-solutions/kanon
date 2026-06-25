@@ -83,7 +83,7 @@ cargo add package-a --version 1.4.2
 
 ```shell
 # Ensure your workspace is configured with a catalog source first:
-# KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
+# KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
 
 kanon add package-a@1.4.2
 # .kanon and .kanon.lock are updated automatically.

@@ -57,7 +57,7 @@ regardless of the `--check` value. It cannot be selected or deselected:
 
 | Check | Description |
 |-------|-------------|
-| Legacy `catalog/` directory | Detects the presence of a `catalog/<name>/` directory tree in the audit target (spec Section 4.8). This tree was created by the removed `kanon bootstrap` command and is unused by kanon >= 1.0.0. |
+| Legacy `catalog/` directory | Detects the presence of a `catalog/<name>/` directory tree in the audit target (spec Section 4.8). This tree was created by the `kanon bootstrap` command (removed in 3.0.0) and is unused by the current kanon. |
 
 **Finding code:** `L001` (WARN).
 
@@ -169,8 +169,10 @@ export KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS=7200
 The cache root directory is created with mode `0700` (owner-only access) per
 spec Section 3.6 (trust model / credential isolation).
 
-`KANON_HOME` must be set to use a remote audit target. If unset, `kanon
-catalog audit` exits with an error when a remote source is supplied.
+The cache lives under the shared `KANON_HOME` store root. `KANON_HOME`
+resolves from the `--home` / `--store-dir` flag, then the `KANON_HOME`
+environment variable, then the `~/.kanon` default, so a remote audit target
+works without setting `KANON_HOME` explicitly.
 
 ## Source-name-derivation check (`--check source-name-derivation`)
 
@@ -434,8 +436,7 @@ operators encounter resolver failures:
 # Inventory non-PEP-440 tags in a local manifest repo
 kanon catalog audit --check tag-format /path/to/manifest-repo
 
-# Inventory a remote manifest repo
-export KANON_HOME=~/.kanon
+# Inventory a remote manifest repo (uses the shared KANON_HOME store; ~/.kanon by default)
 kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
 ```
 
@@ -575,10 +576,6 @@ ERROR: <one-line summary>
   Cause: the supplied directory is not a manifest repo.
   Fix: point `kanon catalog audit` at the root of a manifest repo.
 
-- `ERROR: KANON_HOME must be set to use a remote audit target. Set the environment variable to a writable directory path.`
-  Cause: a remote source was supplied but `KANON_HOME` is not set.
-  Fix: `export KANON_HOME=/path/to/home` and re-run.
-
 - `ERROR: Failed to clone audit target <url>@<ref>:`
   Cause: git clone returned a non-zero exit code when attempting to clone the remote audit target.
   Fix: verify the URL is accessible, the ref exists in the remote repository, network connectivity is available, and git authentication is configured (SSH keys or credential helper).
@@ -604,8 +601,7 @@ kanon catalog audit
 # Audit an explicit local path
 kanon catalog audit /path/to/manifest-repo
 
-# Audit a remote repo (requires KANON_HOME)
-export KANON_HOME=~/.kanon
+# Audit a remote repo (cached under the shared KANON_HOME store; ~/.kanon by default)
 kanon catalog audit https://github.com/org/manifest-repo.git@main
 
 # Run only metadata and tag-format checks
@@ -628,7 +624,7 @@ kanon catalog audit https://github.com/org/repo.git@v1.0.0 \
 |----------|---------|-------------|
 | `KANON_CATALOG_AUDIT_FORMAT` | `text` | Default output format. CLI `--format` takes precedence. |
 | `KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS` | `3600` | Cache TTL in seconds for remote clones. Must be a positive integer. |
-| `KANON_HOME` | (unset) | Root kanon home directory; cache lives under `${KANON_HOME}/cache`. Required for remote audit targets. |
+| `KANON_HOME` | `~/.kanon` | Shared kanon home (store + caches); the audit cache lives under `${KANON_HOME}/cache`. Overridden by the `--home` / `--store-dir` flag. |
 | `KANON_ALLOW_INSECURE_REMOTES` | (unset) | When set to `1`, suppresses R002 findings for non-HTTPS/SSH remote URLs. Any value other than `1` is treated as unset. Intended for local test fixtures only; do not set in production CI pipelines. R001 and R003 findings are never suppressed by this variable. |
 
 ## Related commands

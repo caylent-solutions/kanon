@@ -107,36 +107,45 @@ kanon search
 ### Symptom
 
 `kanon install` exits non-zero with an error indicating that the
-lockfile schema version does not match the running CLI:
+lockfile schema version is incompatible with the running CLI. kanon 3.0.0
+writes schema v4; an older v3 (or earlier) lockfile **hard-fails** -- there
+is no automatic upgrade:
 
 ```text
-ERROR: .kanon.lock schema version mismatch.
-  Lockfile schema : 1
-  CLI expects     : 2
-  Remediation: upgrade kanon to the version that wrote this lockfile,
-  or regenerate the lockfile with 'kanon install --refresh-lock'.
+ERROR: lockfile schema v3 is incompatible with this kanon version (schema v4).
+  Path: .kanon.lock
+  Schema v4 is a breaking change: source entries are now keyed by alias,
+  the per-entry version-constraint field was renamed to 'ref_spec', and the
+  global [catalog] block was removed.
+  There is no automatic upgrade from schema v3.
+  Remediation: regenerate the lockfile by running 'kanon add' to refresh the
+  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v4.
 ```
 
 ### Reproducer
 
 ```bash
-# Install with an older kanon that wrote schema version 1,
-# then upgrade kanon and re-run:
+# Install with an older kanon that wrote schema version 3,
+# then upgrade to kanon 3.0.0 and re-run:
 kanon install
 ```
 
 ### Fix
 
-Regenerate the lockfile with the currently installed CLI:
+Regenerate the lockfile at schema v4. There is no in-place upgrade and
+`kanon install` is hermetic (it does not take `--catalog-source`), so refresh
+the alias-keyed declarations with `kanon add`, then rewrite the lock:
 
 ```bash
-kanon install --refresh-lock \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+# Re-add the entries so the .kanon blocks are alias-keyed (supply your catalog source):
+kanon add <entry> --catalog-source https://example.com/org/manifest-repo.git@main
+# Then rewrite the lockfile at schema v4:
+kanon install --refresh-lock
 ```
 
-If you need to stay on an older schema, downgrade kanon to the
-version that wrote the lockfile (check the lockfile's `schema_version`
-field to identify the required release).
+A newer lockfile (schema written by a future kanon) instead fails with
+`lockfile schema vN written by newer kanon; upgrade kanon-cli.` -- upgrade
+kanon-cli to read it.
 
 ### See also
 
@@ -177,11 +186,11 @@ kanon install
 
 ### Fix
 
-Accept the new branch tip by re-resolving the drifted source:
+Accept the new branch tip by re-resolving the drifted source (`kanon install`
+is hermetic and resolves from the committed `.kanon`):
 
 ```bash
-kanon install --refresh-lock-source mysource \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+kanon install --refresh-lock-source mysource
 ```
 
 To turn drift into a hard CI error (recommended for reproducible
@@ -875,8 +884,8 @@ the Claude Code CLI.
 
 ### Expected Behaviour After Fix
 
-With the DEFECT-004 fix, every `kanon install` run that has
-`KANON_MARKETPLACE_INSTALL=true` invokes:
+With the DEFECT-004 fix, every `kanon install` run that has at least one
+dependency with `KANON_SOURCE_<alias>_MARKETPLACE=true` invokes:
 
 ```text
 claude plugin marketplace add <absolute-path-to-marketplace-entry>
@@ -889,9 +898,9 @@ registered entry per source that ships a marketplace root
 
 ### Failure Mode: `claude` binary unavailable
 
-When `KANON_MARKETPLACE_INSTALL=true` and the `claude` binary is not on
-`$PATH`, `kanon install` now fails fast with exit code 1. The exact
-text written to stderr is:
+When a `KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is declared and the
+`claude` binary is not on `$PATH`, `kanon install` now fails fast with exit
+code 1. The exact text written to stderr is:
 
 ```text
 Error: claude binary not found on $PATH. Ensure claude is installed and available.
@@ -927,16 +936,18 @@ kanon install
 **Option 2: Skip marketplace registration.**
 
 If Claude Code marketplace integration is not required in this environment,
-set:
+disable the per-dependency marketplace flag on each marketplace source:
 
 ```bash
-export KANON_MARKETPLACE_INSTALL=false
+kanon marketplace disable <alias>
 kanon install
 ```
 
-With `KANON_MARKETPLACE_INSTALL=false`, `kanon install` skips all
-`claude plugin marketplace add` invocations. The source repos are still
-cloned; only the Claude Code plugin registration step is skipped.
+`kanon marketplace disable` removes the `KANON_SOURCE_<alias>_MARKETPLACE` line
+(absence is the canonical false). With no dependency opted in, `kanon install`
+skips all `claude plugin marketplace add` invocations. The source repos are
+still cloned; only the Claude Code plugin registration step is skipped. Use
+`kanon marketplace status` to confirm each dependency's effective setting.
 
 ### See also
 
@@ -983,17 +994,20 @@ including direct-checkout sources.
 
 ### Preconditions
 
-- `KANON_MARKETPLACE_INSTALL=true` (or the `--marketplace-install` flag).
+- The source's dependency block has `KANON_SOURCE_<alias>_MARKETPLACE=true`
+  (set it with `kanon marketplace enable <alias>`, or pass `--marketplace-install`
+  to `kanon add` when adding the entry).
 - The `claude` binary is available on `$PATH`.
 
 ### Remediation (if still missing after upgrade)
 
 If upgrading kanon does not resolve the missing registration, re-run
-install to trigger registration:
+install to trigger registration (`kanon install` is hermetic and resolves
+from the committed `.kanon` / `.kanon.lock`):
 
 ```bash
-KANON_MARKETPLACE_INSTALL=true kanon install \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+kanon marketplace enable <alias>
+kanon install
 ```
 
 This re-runs the full registration loop including the direct-checkout

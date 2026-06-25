@@ -44,17 +44,20 @@ emitted). Exit code is 1 when any error-level finding is detected.
 
 `--catalog-source <git-url>@<ref>`
 : Override the catalog source for this invocation. Takes the form
-  `<git-url>@<ref>` where `ref` is a branch, tag, or commit SHA.
+  `<git-url>@<ref>` where `ref` is a branch, tag, or `latest`.
   When supplied, this flag takes highest precedence in the effective
   catalog source resolution (see subcheck 6 below). Overrides the
-  `KANON_CATALOG_SOURCE` environment variable and any lockfile
-  `[catalog].source` value.
+  `KANON_CATALOG_SOURCES` environment variable. The lockfile no longer
+  carries a catalog source: schema v4 removed the `[catalog]` block, so
+  the lockfile does not participate in catalog-source resolution.
 
 `--refresh-completion-cache`
 : Subcheck 8: Invalidate all files under `${KANON_HOME}/cache/completion-cache/`,
   recreating the directory empty with mode `0700`. Reports an info finding
   with the count of files removed. This flag is independent of the health
-  checks. Has no effect when `KANON_HOME` is unset.
+  checks. `KANON_HOME` resolves from the `--home` / `--store-dir` flag, the
+  `KANON_HOME` env var, then the `~/.kanon` default, so the cache directory is
+  always resolved.
 
 `--prune-cache`
 : Subcheck 10: Remove files under `${KANON_HOME}/cache` whose last-access time
@@ -62,8 +65,9 @@ emitted). Exit code is 1 when any error-level finding is detected.
   info finding with the count and total byte size pruned. Also reports any
   stale `.kanon-data/.kanon-install.lock` files (mtime older than
   `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` hours) as advisory findings -- doctor
-  does NOT delete them. Has no effect on cache files when `KANON_HOME`
-  is unset; stale-lock scan always runs from the current working directory.
+  does NOT delete them. The cache directory is resolved from `KANON_HOME`
+  (flag, env var, or `~/.kanon` default); the stale-lock scan always runs from
+  the current working directory.
 
 ## Subchecks
 
@@ -109,10 +113,10 @@ ERROR: kanon_hash mismatch: .kanon was hand-edited since the last 'kanon install
 ### Subcheck 3: Orphaned lock entries
 
 For every source recorded in the lockfile, checks that the matching
-`KANON_SOURCE_<name>_{URL,REVISION,PATH}` triple still exists in `.kanon`.
-A source present in the lockfile but absent from `.kanon` is an orphan
-(e.g. the source was removed from `.kanon` without re-running
-`kanon install`).
+alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` block still
+exists in `.kanon` (matched by alias). A source present in the lockfile but
+absent from `.kanon` is an orphan (e.g. the source was removed from `.kanon`
+without re-running `kanon install`).
 
 **Error per orphan (exit 1):**
 
@@ -124,7 +128,7 @@ ERROR: orphan lock entry: source 'X' is in .kanon.lock but absent from .kanon
 
 ### Subcheck 4: Branch drift
 
-For every lockfile entry whose `revision_spec` resolves to a branch name
+For every lockfile entry whose `ref_spec` resolves to a branch name
 (not a SHA and not a `refs/...` ref), queries
 `git ls-remote refs/heads/<branch>` against the source URL and compares
 the current branch tip SHA with the locked SHA.
@@ -145,7 +149,7 @@ ERROR: branch drift: source 'X' is locked to <old-sha> but 'main' is now at <new
 
 ### Subcheck 5: Dangling SHA
 
-For every lockfile entry whose `revision_spec` is a SHA (40 or 64 lowercase
+For every lockfile entry whose `ref_spec` is a SHA (40 or 64 lowercase
 hex characters), queries `git ls-remote <url>` and verifies the locked SHA
 appears in the first column of the remote's ref list. A SHA that is not
 found in any ref indicates the commit was force-pushed or pruned.
@@ -169,14 +173,22 @@ it. This check always runs, regardless of whether `.kanon.lock` is present.
 Resolution precedence (first non-empty wins):
 
 1. `--catalog-source <git-url>@<ref>` CLI flag (highest priority).
-2. `KANON_CATALOG_SOURCE` environment variable.
-3. Lockfile `[catalog].source` field (only when `.kanon.lock` is present
-   and its `catalog.source` field is non-empty).
-4. None -- no catalog source is configured.
+2. The single source configured in the `KANON_CATALOG_SOURCES` environment
+   variable. `KANON_CATALOG_SOURCES` (plural) is a newline-separated list; when
+   it configures exactly one entry that entry is the effective value, and when
+   it configures several the finding reports the ambiguity (single-source
+   commands require `--catalog-source` to select one).
+3. None -- no catalog source is configured.
+
+Schema v4 removed the lockfile `[catalog]` block, so the lockfile does NOT
+participate in catalog-source resolution. The catalog source for `kanon add`,
+`kanon search`, `kanon outdated`, and `kanon why` is supplied only by the CLI
+flag or the env var; `kanon install` is hermetic and does not consult a catalog
+source at all.
 
 The provenance suffix is mandatory in every output path: it tells the
 operator WHERE the effective value came from, not just what the value is.
-This is how operators detect `KANON_CATALOG_SOURCE` leakage from a shell
+This is how operators detect `KANON_CATALOG_SOURCES` leakage from a shell
 profile into an unrelated workspace (see spec Section 3.6).
 
 **Output printed to stdout:**
@@ -185,8 +197,14 @@ When a source is configured (examples for each precedence level):
 
 ```text
 Effective catalog source: https://example.com/org/catalog.git@main (from --catalog-source CLI flag)
-Effective catalog source: https://example.com/org/catalog.git@main (from KANON_CATALOG_SOURCE env var)
-Effective catalog source: https://example.com/org/catalog.git@main (from .kanon.lock [catalog].source)
+Effective catalog source: https://example.com/org/catalog.git@main (from KANON_CATALOG_SOURCES env var)
+```
+
+When `KANON_CATALOG_SOURCES` configures more than one source, the finding
+reports the ambiguity:
+
+```text
+KANON_CATALOG_SOURCES configures 2 catalog sources (https://example.com/org/a.git@main, https://example.com/org/b.git@main) (from KANON_CATALOG_SOURCES env var); single-source commands require --catalog-source to select one.
 ```
 
 When no source is configured (exit 0, but commands that need a catalog will fail):
@@ -197,23 +215,23 @@ Effective catalog source: (none configured); commands requiring a catalog source
 
 #### Example: detecting a leaked env var
 
-An operator has `KANON_CATALOG_SOURCE=https://corp.example.com/infra-catalog.git@main` in
+An operator has `KANON_CATALOG_SOURCES=https://corp.example.com/infra-catalog.git@main` in
 their `.bashrc`, exported globally. They `cd` into an unrelated project and run
-`kanon install`. To check before installing:
+a catalog-dependent command. To check first:
 
 ```text
 $ kanon doctor
 ...
-Effective catalog source: https://corp.example.com/infra-catalog.git@main (from KANON_CATALOG_SOURCE env var)
+Effective catalog source: https://corp.example.com/infra-catalog.git@main (from KANON_CATALOG_SOURCES env var)
 ```
 
-The provenance suffix `(from KANON_CATALOG_SOURCE env var)` immediately reveals that
-the catalog source comes from the environment, not from a local CLI flag or the
-project's lockfile. The operator can then unset the variable before running any
-side-effecting command:
+The provenance suffix `(from KANON_CATALOG_SOURCES env var)` immediately reveals that
+the catalog source comes from the environment, not from a local CLI flag. The
+operator can then unset the variable before running any catalog-dependent
+command:
 
 ```text
-$ unset KANON_CATALOG_SOURCE
+$ unset KANON_CATALOG_SOURCES
 $ kanon doctor
 ...
 Effective catalog source: (none configured); commands requiring a catalog source will fail.
@@ -224,30 +242,33 @@ whether it was intentional for this project or a stale variable from another ses
 
 ### Subcheck 8: Completion-cache invalidation (--refresh-completion-cache)
 
-When `--refresh-completion-cache` is set and `KANON_HOME` is configured,
-all files under `${KANON_HOME}/cache/completion-cache/` are deleted and the
-directory is recreated empty with mode `0700`. This invalidates any cached
-completion data so the next completion invocation rebuilds the cache from
-scratch.
+When `--refresh-completion-cache` is set, all files under
+`${KANON_HOME}/cache/completion-cache/` are deleted and the directory is
+recreated empty with mode `0700`. This invalidates any cached completion data
+so the next completion invocation rebuilds the cache from scratch.
 
 This subcheck runs BEFORE subchecks 1-5, 7, 9, 10, and 11.
 
 **Info finding after refresh:**
 
 ```text
-INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.cache/kanon/completion-cache
+INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.kanon/cache/completion-cache
 ```
 
-When `KANON_HOME` is not set, this subcheck is skipped silently.
+`KANON_HOME` resolves from the `--home` / `--store-dir` flag, the `KANON_HOME`
+env var, then the `~/.kanon` default, so the completion-cache directory is
+always resolved.
 
 ### Subcheck 7: Completion errors report
 
 Reads the most recent `KANON_COMPLETION_ERRORS_REPORT_LIMIT` lines (default 5)
 from `${KANON_HOME}/cache/completion-errors.log`. This log is written by shell
-completion callback failures (see E7 / `docs/shell-completions.md`).
+completion callback failures (see E7 / `docs/shell-completion.md`).
 
 `kanon doctor` only reads this log -- it does NOT modify, truncate, or rotate it.
-If `KANON_HOME` is not set, this subcheck is silently skipped.
+The cache directory is resolved from `KANON_HOME` (flag, env var, or `~/.kanon`
+default); when the log file does not exist this subcheck reports the info notice
+below.
 
 **Info notice when the log is absent or empty:**
 
@@ -393,8 +414,10 @@ INFO: Cache pruned: 2 file(s) removed (4096 bytes) with atime older than 30 days
 INFO: Advisory: stale install lock found at /path/to/.kanon-data/.kanon-install.lock (mtime older than 1h). fcntl.flock self-cleans on process exit; this file is harmless.
 ```
 
-When `KANON_HOME` is not set, only the stale-lock scan runs; no cache
-files are pruned.
+`KANON_HOME` resolves from the `--home` / `--store-dir` flag, the `KANON_HOME`
+env var, then the `~/.kanon` default, so the cache prune always runs against
+the resolved cache directory; the stale-lock scan runs independently from the
+current working directory.
 
 **Combining both flags:**
 
@@ -411,11 +434,11 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 |---|---|---|
 | `KANON_KANON_FILE` | `./.kanon` | Path to the `.kanon` configuration file |
 | `KANON_LOCK_FILE` | `<kanon-file>.lock` | Path to the `.kanon.lock` lockfile |
-| `KANON_CATALOG_SOURCE` | (none) | Catalog source as `<git-url>@<ref>`; overridden by `--catalog-source` CLI flag |
+| `KANON_CATALOG_SOURCES` | (none) | Newline-separated catalog sources as `<git-url>@<ref>`; the single configured entry is the effective value, overridden by the `--catalog-source` CLI flag |
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Inter-attempt delay in seconds (read by doctor; not applied to the `git ls-remote` retry path, which delegates to `git_runner.run_git_ls_remote` and uses immediate retries with no time-based delay) |
-| `KANON_HOME` | (none) | Root kanon home directory; cache lives under `${KANON_HOME}/cache`. When unset, subchecks 7, 8, and 10's cache prune are skipped |
+| `KANON_HOME` | `~/.kanon` | Shared kanon home (store + caches); cache lives under `${KANON_HOME}/cache`. Resolves from the `--home` / `--store-dir` flag, then this env var, then the `~/.kanon` default |
 | `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
 | `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |
 | `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth for the stale install-lock scan in `--prune-cache` (subcheck 10) |
@@ -461,12 +484,12 @@ Check which catalog source is active (subcheck 6) and override with a specific o
 kanon doctor --catalog-source https://example.com/org/catalog.git@main
 ```
 
-Detect a leaked `KANON_CATALOG_SOURCE` env var (look for the provenance suffix in stdout):
+Detect a leaked `KANON_CATALOG_SOURCES` env var (look for the provenance suffix in stdout):
 
 ```bash
 kanon doctor
 # Expected output when env var is set:
-# Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCE env var)
+# Effective catalog source: https://corp.example.com/catalog.git@main (from KANON_CATALOG_SOURCES env var)
 ```
 
 Invalidate the completion cache (removes all files under `${KANON_HOME}/cache/completion-cache/`):
@@ -474,7 +497,7 @@ Invalidate the completion cache (removes all files under `${KANON_HOME}/cache/co
 ```bash
 kanon doctor --refresh-completion-cache
 # Expected stderr output:
-# INFO: Completion cache refreshed: 5 file(s) removed from /home/user/.cache/kanon/completion-cache
+# INFO: Completion cache refreshed: 5 file(s) removed from /home/user/.kanon/cache/completion-cache
 ```
 
 Remove stale cache files older than 30 days and check for stale install locks:

@@ -5,6 +5,13 @@ This document maps every scenario row (1-85) from
 cover it. Each row carries an explicit "covered by" citation naming the
 automated test node (file + class/function) that exercises the scenario.
 
+The scenario labels in the table below are reproduced verbatim from the
+2026-05-30 findings matrix so that this doc stays row-for-row aligned with that
+source. Note that the `list / *` rows (7-19) predate the 3.0.0 rename of the
+discovery command from `kanon list` to `kanon search`: the command is named
+`kanon search` in the 3.0.0 release, and the cited tests invoke `kanon search`
+even though their file names retain the historical `test_list_*` prefix.
+
 The mechanical completeness guard for this document lives in
 `tests/functional/test_matrix_traceability_complete.py` (authored in
 E50-F2-S1-T2). That guard enforces that every row in the findings matrix has a
@@ -23,12 +30,12 @@ surface at the integration level and confirm the gap.
 
 | # | Scenario | Type | 2026-05-30 Result | Covered By |
 |---|----------|------|--------------------|------------|
-| 1 | per-entry / builders-plugins | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true`, `tests/scenarios/test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout::test_marketplace_registered_for_direct_checkout_entry` |
-| 2 | per-entry / history | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
-| 3 | per-entry / immutable-audit-trail | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
-| 4 | per-entry / security-code-review | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
-| 5 | per-entry / py-quality-review | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
-| 6 | per-entry / devbench-backlog-builder | lifecycle | FAIL | `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_no_flag_writes_false_default`, `tests/integration/test_add_marketplace_flag.py::TestAddMarketplaceFlag::test_flag_true_writes_true` |
+| 1 | per-entry / builders-plugins | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line`, `tests/scenarios/test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout::test_marketplace_registered_for_direct_checkout_entry` |
+| 2 | per-entry / history | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line` |
+| 3 | per-entry / immutable-audit-trail | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line` |
+| 4 | per-entry / security-code-review | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line` |
+| 5 | per-entry / py-quality-review | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line` |
+| 6 | per-entry / devbench-backlog-builder | lifecycle | FAIL | `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_regular_entry_writes_no_marketplace_line`, `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice::test_marketplace_entry_writes_marketplace_true_line` |
 | 7 | list / basic | coverage | PASS | `tests/integration/test_list_default.py::TestListDefaultHappyPath::test_exits_0`, `tests/integration/test_list_default.py::TestListDefaultHappyPath::test_stdout_contains_three_sorted_entry_names` |
 | 8 | list / format-json | coverage | PASS | `tests/integration/test_list_format_json.py::TestDefaultModeJsonFormat::test_three_entries_produce_three_element_array`, `tests/integration/test_list_format_json.py::TestDefaultModeJsonFormat::test_json_output_parseable_by_json_loads` |
 | 9 | list / detail | coverage | PASS | `tests/integration/test_list_detail.py::TestListDetailThreeEntries::test_exits_0`, `tests/integration/test_list_detail.py::TestListDetailThreeEntries::test_stdout_has_three_name_headers` |
@@ -113,12 +120,14 @@ surface at the integration level and confirm the gap.
 
 ## Notes on 2026-05-30 FAIL Rows
 
-**Row 1 (per-entry / builders-plugins):** `--marketplace-install` writes true,
-but builders-plugins uses a direct `path=` checkout with no `<linkfile>`, so
+**Row 1 (per-entry / builders-plugins):** the per-dependency
+`KANON_SOURCE_<alias>_MARKETPLACE=true` flag is written, but builders-plugins
+uses a direct `path=` checkout with no `<linkfile>`, so
 `_process_manifest_linkfiles` registers nothing. DEFECT-004 fix only covered
 linkfile-pattern entries. E49 tests in
-`tests/integration/test_add_marketplace_flag.py` document the flag behaviour.
-E51-F3 test `test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout`
+`tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice`
+document the per-entry marketplace-flag behaviour. E51-F3 test
+`test_marketplace_direct_checkout.py::TestMarketplaceDirectCheckout`
 covers the direct-checkout registration gap (spec BUG-3).
 
 **Row 10 (list / tree):** kanon emits ASCII `--` tree connectors; the runbook

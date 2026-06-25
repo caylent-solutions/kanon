@@ -37,10 +37,9 @@ in-process Python API call.
 
 ## Bootstrap (removed)
 
-`kanon bootstrap` was removed in a major release (a breaking change).
-It no longer performs any work and accepts no flags. Every invocation
--- any args, any flags, including `--help` -- prints a deprecation
-message to stderr and exits with code `3` (`EXIT_CODE_DEPRECATED`).
+`kanon bootstrap` was removed in 3.0.0 (a breaking change). There is no
+compatibility shim: the command is no longer registered, so any invocation
+fails with an argparse "invalid choice" error and a non-zero exit code.
 
 Use `kanon search` to search a catalog, `kanon add <entry>
 --catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
@@ -56,7 +55,7 @@ The command performs these steps:
 
 1. **Parse `.kanon`** -- Reads configuration via the kanon parser module, auto-discovering sources from `KANON_SOURCE_<name>_URL` patterns
 2. **Validate sources** -- Verifies all required variables present for each source (fail-fast if missing)
-3. **Pre-sync marketplace setup** -- If `KANON_MARKETPLACE_INSTALL=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
+3. **Pre-sync marketplace setup** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
 4. **For each source in alphabetical order:**
    `kanonenv_path` is resolved via `Path.resolve()` before its parent is used, so a symlinked `.kanon` file will cause source directories to be created under the real project directory rather than the symlink's containing directory.
    - Creates `.kanon-data/sources/<name>/` directory
@@ -66,7 +65,7 @@ The command performs these steps:
 5. **Aggregate symlinks** -- For each `.kanon-data/sources/<name>/.packages/*`, creates a symlink in `.packages/`
 6. **Collision detection** -- If two sources produce the same package name, fails fast with error identifying both sources
 7. **Update `.gitignore`** -- Ensures `.packages/` and `.kanon-data/` entries are present
-8. **Post-sync marketplace install** -- If `KANON_MARKETPLACE_INSTALL=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
+8. **Post-sync marketplace install** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
 
 ## Clean Lifecycle
 
@@ -76,7 +75,7 @@ The command performs these steps in order:
 
 1. **Resolve `.kanon` symlinks** -- `kanonenv_path.resolve()` is called before deriving the base directory, so `.packages/` and `.kanon-data/` are removed from the real project directory even when `.kanon` is a symlink.
 2. **Parse `.kanon`** -- Reads configuration via the kanon parser module
-3. **If `KANON_MARKETPLACE_INSTALL=true`:**
+3. **If a marketplace was registered (any source set `KANON_SOURCE_<alias>_MARKETPLACE=true`):**
    - Uninstalls marketplace plugins via the Claude Code CLI (discovers entries, uninstalls each plugin, removes marketplace registrations)
    - Removes `CLAUDE_MARKETPLACES_DIR` entirely
 4. **Remove `.packages/`** -- `shutil.rmtree` with `ignore_errors=True`

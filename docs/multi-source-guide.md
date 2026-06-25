@@ -37,14 +37,16 @@ and organizations.
 ## Named Source Format (.kanon)
 
 Kanon auto-discovers sources from `KANON_SOURCE_<name>_URL` variable
-patterns in `.kanon`. Each source is defined by a set of three variables
-following the `KANON_SOURCE_<name>_<property>` naming convention:
+patterns in `.kanon`. Each source is defined by three required variables
+(plus an optional `_MARKETPLACE` toggle) following the
+`KANON_SOURCE_<name>_<property>` naming convention:
 
-|Suffix|Purpose|
-|---|---|
-|`_URL`|Git repository URL for the manifest source|
-|`_REF`|Branch name, exact tag ref, or PEP 440 version constraint|
-|`_PATH`|Path to the entry-point manifest XML within the repository|
+|Suffix|Required?|Purpose|
+|---|---|---|
+|`_URL`|Required|Git repository URL for the manifest source|
+|`_REF`|Required|Branch name, exact tag ref, or PEP 440 version constraint|
+|`_PATH`|Required|Path to the entry-point manifest XML within the repository|
+|`_MARKETPLACE`|Optional|Set to `true` to enable the Claude marketplace lifecycle for this source; absence means disabled (kanon never writes `=false`)|
 
 Sources are processed in alphabetical order by name.
 
@@ -69,10 +71,11 @@ delivers marketplace plugins when its manifest contains `<project>` entries
 with `<linkfile>` elements that create symlinks into
 `${CLAUDE_MARKETPLACES_DIR}`. It is the symlink destination -- not the
 source name -- that causes the synced content to be recognized as a
-marketplace plugin. When `KANON_MARKETPLACE_INSTALL=true`, the CLI scans
-the entire `${CLAUDE_MARKETPLACES_DIR}` directory after all sources have
-synced and installs every plugin found there, regardless of which source
-created the symlink.
+marketplace plugin. When any source sets
+`KANON_SOURCE_<alias>_MARKETPLACE=true`, the CLI scans the entire
+`${CLAUDE_MARKETPLACES_DIR}` directory after all sources have synced and
+installs every plugin found there, regardless of which source created the
+symlink.
 
 ### Recommended Naming Convention
 
@@ -106,7 +109,7 @@ KANON_SOURCE_<name>_URL
 
 Field 1: KANON_SOURCE_   (fixed prefix)
 Field 2: <name>          (free-form identifier -- use hyphens for multi-word names)
-Field 3: _URL            (fixed suffix: _URL, _REF, or _PATH)
+Field 3: _URL            (fixed suffix: _URL, _REF, _PATH, or _MARKETPLACE)
 ```
 
 **Single source per concern:**
@@ -179,19 +182,21 @@ KANON_SOURCE_build-security_URL=https://example.com/org/kanon-build-security.git
 KANON_SOURCE_build-security_REF=refs/tags/~=1.4.0
 KANON_SOURCE_build-security_PATH=repo-specs/build-meta.xml
 
-# Marketplace sources -- each provides Claude Code plugins
+# Marketplace sources -- each provides Claude Code plugins and opts in to
+# the marketplace lifecycle with its own per-source KANON_SOURCE_<alias>_MARKETPLACE flag
 KANON_SOURCE_marketplaces-core_URL=https://example.com/org/kanon-marketplace-core.git
 KANON_SOURCE_marketplaces-core_REF=main
 KANON_SOURCE_marketplaces-core_PATH=repo-specs/common/core/core-marketplace.xml
+KANON_SOURCE_marketplaces-core_MARKETPLACE=true
 
 KANON_SOURCE_marketplaces-team_URL=https://example.com/org/kanon-marketplace-team.git
 KANON_SOURCE_marketplaces-team_REF=main
 KANON_SOURCE_marketplaces-team_PATH=repo-specs/common/team/team-marketplace.xml
+KANON_SOURCE_marketplaces-team_MARKETPLACE=true
 
 # Global variables available to all sources
 GITBASE=https://example.com/org/
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
-KANON_MARKETPLACE_INSTALL=true
 ```
 
 Processing order (alphabetical): `build-core` → `build-infra` →

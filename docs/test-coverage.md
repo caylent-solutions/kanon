@@ -215,7 +215,7 @@ declarations.
 | findings.md row | Behaviour | Test file | Class | Line |
 |----------------:|-----------|-----------|-------|-----:|
 | 53 | install / basic (bare after add) | `tests/integration/test_install_after_add.py` | `TestInstallAfterAdd` | 42 |
-| 53 | install / basic (flag-passed deprecation path) | `tests/integration/test_install_command.py` | `TestInstallDeprecationWarningSubprocess` | 90 |
+| 53 | install / basic (legacy env-var deprecation path) | `tests/integration/test_install_command.py` | `TestInstallDeprecationWarningSubprocess` | 90 |
 | 54 | install / lockfile-consistent-replay | `tests/integration/test_install_lockfile_replay.py` | `TestLockfileReplay` | 191 |
 | 55 | install / refresh-lock | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockRebuildsLockfile` | 184 |
 | 55 | install / refresh-lock (cycle) | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockCycle` | 271 |
@@ -230,8 +230,9 @@ declarations.
 
 - Row 53 maps to two test classes. `TestInstallAfterAdd` (E22) guards the defect-fixed
   path where bare `kanon install` after `kanon add` must succeed without re-passing
-  `--catalog-source`. `TestInstallDeprecationWarningSubprocess` covers the flag-present
-  path and legacy env-var deprecation notices.
+  `--catalog-source` (install is hermetic and accepts no catalog source).
+  `TestInstallDeprecationWarningSubprocess` covers the legacy `REPO_URL` / `REPO_REV`
+  env-var deprecation notices, which emit a `--catalog-source` migration hint on stderr.
 - Row 54 maps to `TestLockfileReplay` (class name `TestLockfileReplay`, not `TestReplay`
   as the spec draft used). The class exercises first-install lockfile creation and
   second-install lockfile-consistent replay at lines 194-306.

@@ -245,7 +245,7 @@ Use descriptive branch names with type prefixes:
 
 The PR title **must** follow conventional commit format because it becomes the squash commit message that drives semantic versioning:
 
-- `feat: add new bootstrap template` -> triggers MINOR bump
+- `feat: add new search filter option` -> triggers MINOR bump
 - `fix(install): handle missing kanon config` -> triggers PATCH bump
 - `docs: update CLI reference` -> no version bump
 - `feat!: redesign manifest format` -> triggers MAJOR bump

@@ -52,7 +52,7 @@ The trust model is:
 
 - **The catalog source is surfaced.** `kanon doctor` prints the effective
   catalog source so the operator can verify before running side-effecting
-  commands. This catches accidental leakage of `KANON_CATALOG_SOURCE` from
+  commands. This catches accidental leakage of `KANON_CATALOG_SOURCES` from
   a shell profile into an unrelated workspace. See
   [`docs/doctor.md`](cli/doctor.md) for the full `kanon doctor` reference.
 
@@ -68,7 +68,7 @@ The trust model is:
 See [`docs/configuration.md`](configuration.md) for the full set of
 environment variables that control kanon's behaviour, including
 `KANON_ALLOW_INSECURE_REMOTES`, `KANON_HOME`, and
-`KANON_CATALOG_SOURCE`.
+`KANON_CATALOG_SOURCES`.
 
 ## What manifest repos can do to you
 
@@ -84,8 +84,8 @@ following threat surface:
 - **Arbitrary tag-name pinning.** A manifest repo controls the exact tag
   each `<project>` resolves to. A catalog author can change what a tag
   reference points to on their git host. Lockfiles pin the SHA at lock
-  time; always verify the lockfile after `kanon add` or `kanon lock
-  --refresh`.
+  time; always verify the lockfile after `kanon add` or
+  `kanon install --refresh-lock`.
 
 - **Arbitrary `<include>` chain extension.** Manifest files can include
   other manifest files via `<include>`. A manifest repo can extend its
@@ -97,7 +97,7 @@ following threat surface:
   the catalog author in subsequent commits.
 
 Mitigations: pin catalog sources to a specific git SHA via
-`KANON_CATALOG_SOURCE=<url>@<sha>`, review lockfile diffs before applying
+`KANON_CATALOG_SOURCES=<url>@<sha>`, review lockfile diffs before applying
 them, and restrict write access to your manifest repo. See
 [`docs/configuration.md`](configuration.md) for catalog-source pinning.
 
@@ -169,7 +169,7 @@ specification and tracked as future work (spec Section 3.6):
   helpers, SSH agents, and `url.insteadOf` rewrites so kanon can reach
   your manifest repos without interactive prompts.
 - [`docs/configuration.md`](configuration.md) -- full reference for
-  environment variables including `KANON_CATALOG_SOURCE`,
+  environment variables including `KANON_CATALOG_SOURCES`,
   `KANON_ALLOW_INSECURE_REMOTES`, `KANON_GIT_RETRY_COUNT`,
   `KANON_GIT_RETRY_DELAY`, and `KANON_HOME`.
 - [`docs/doctor.md`](cli/doctor.md) -- `kanon doctor` command reference,

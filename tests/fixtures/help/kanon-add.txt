@@ -4,7 +4,8 @@ usage: kanon add [-h] [--catalog-source <git-url>@<ref>] [--as <alias>]
                  <name>[@<spec>] [<name>[@<spec>] ...]
 
 Resolve catalog entries from a manifest repo and append the
-alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block
+alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus an
+optional per-dependency env-var line per ${VAR} the manifest needs)
 to the destination .kanon file. No global header is written.
 
 Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440

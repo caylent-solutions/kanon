@@ -1,8 +1,9 @@
 usage: kanon remove [-h] [--kanon-file <path>] [--force] [--dry-run]
                     <name> [<name> ...]
 
-Remove the KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block for
-one or more entries from the .kanon file.
+Remove the KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus any
+optional per-dependency env-var and _MARKETPLACE lines) for one or
+more entries from the .kanon file.
 
 Each <name> may be EITHER the canonical alias (e.g. foo_bar) OR
 the original entry name (e.g. Foo-Bar); both are normalised via

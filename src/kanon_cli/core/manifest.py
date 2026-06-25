@@ -125,6 +125,29 @@ def walk_includes_collecting_remotes(
     return remotes
 
 
+def join_project_repo_url(fetch_url: str, project_name: str) -> str:
+    """Join a remote ``fetch`` base URL with a ``<project name>`` repo path.
+
+    A repo-tool manifest declares a ``<remote fetch="...">`` base (typically the
+    GITBASE org URL, e.g. ``https://github.com/caylent``) and a
+    ``<project name="...">`` whose ``name`` is the repo path beneath that base.
+    The actual repository URL a project resolves to is the base joined to the
+    project name with a single ``/`` separator.
+
+    This is the single canonical construction for that join; both the live
+    ``why`` resolver and the marketplace revision-existence check call it so the
+    URL passed to ``git ls-remote`` / ``git clone`` is the same shape (DRY).
+
+    Args:
+        fetch_url: The resolved remote ``fetch`` base URL (already expanded).
+        project_name: The ``<project name>`` repo path beneath the base.
+
+    Returns:
+        ``<fetch_url without trailing slash>/<project_name>``.
+    """
+    return f"{fetch_url.rstrip('/')}/{project_name}"
+
+
 _PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
 
 

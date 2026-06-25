@@ -60,7 +60,7 @@ from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.install import _resolve_ref_to_sha
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
-from kanon_cli.core.manifest import walk_includes_collecting_remotes
+from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
@@ -447,7 +447,7 @@ def _build_project_nodes_from_xml(
             resolved_kanon_file,
         )
 
-        raw_url = f"{fetch_url.rstrip('/')}/{project_name}"
+        raw_url = join_project_repo_url(fetch_url, project_name)
         try:
             canonical = canonicalize_repo_url(raw_url)
         except ValueError:

@@ -30,7 +30,7 @@ from kanon_cli.constants import (
     REVISION_REF_PREFIX_TAGS,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
-from kanon_cli.core.manifest import walk_includes_collecting_remotes
+from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
 from kanon_cli.core.metadata import find_catalog_entry_files
 from kanon_cli.version import is_pep440_version
 
@@ -403,13 +403,21 @@ def _resolve_project_remote_urls(
     repo_root: Path,
     env: dict[str, str],
 ) -> dict[str, str]:
-    """Return a ``project_name -> resolved fetch URL`` map for *xml_file*.
+    """Return a ``project_name -> resolved project repo URL`` map for *xml_file*.
 
-    Resolves each ``<project remote="X">`` to the fetch URL of the matching
+    Resolves each ``<project remote="X" name="N">`` to the actual repository URL
+    the project points at: the fetch URL of the matching
     ``<remote name="X" fetch="...">`` definition reachable through the include
-    chain, expanding ``${VAR}`` placeholders from *env*. Projects whose remote
-    cannot be resolved are omitted (the unresolved-remote error is the remote-url
-    audit check's responsibility, not the revision existence check's).
+    chain (with ``${VAR}`` placeholders expanded from *env*), joined to the
+    project ``name`` via :func:`kanon_cli.core.manifest.join_project_repo_url`.
+
+    The ``fetch`` value is the GITBASE org base (e.g.
+    ``https://github.com/caylent``); the project ``name`` is the repo path
+    beneath it. The existence check must query the joined repo URL -- not the
+    bare base -- so ``git ls-remote <repo> <tag>`` actually verifies the tag in
+    the project's own repository. Projects whose remote cannot be resolved are
+    omitted (the unresolved-remote error is the remote-url audit check's
+    responsibility, not the revision existence check's).
 
     Args:
         xml_file: The marketplace manifest file being validated.
@@ -418,7 +426,7 @@ def _resolve_project_remote_urls(
             URLs.
 
     Returns:
-        Mapping of project name to its expanded fetch URL.
+        Mapping of project name to its resolved project repository URL.
     """
     try:
         remote_map = walk_includes_collecting_remotes(xml_file, repo_root)
@@ -435,8 +443,9 @@ def _resolve_project_remote_urls(
         fetch_url = remote_map.get(remote_attr)
         if not fetch_url:
             continue
+        project_name = project.get("name", "<unknown>")
         expanded = _expand_env(fetch_url, env)
-        resolved[project.get("name", "<unknown>")] = expanded
+        resolved[project_name] = join_project_repo_url(expanded, project_name)
     return resolved
 
 

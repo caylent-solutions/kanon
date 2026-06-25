@@ -323,6 +323,60 @@ class TestRevisionExistence:
         f1 = self._manifest_with_remote(tmp_path, "main", "https://example.com/repo.git")
         assert validate_revision_existence([f1], tmp_path, {}, _ls_remote_offline) == []
 
+    def test_existence_query_targets_resolved_project_repo_url(self, tmp_path: Path) -> None:
+        """The ls-remote query must hit the joined project repo URL, not the bare GITBASE base.
+
+        Falsifiable: if the existence check queried the bare ``<remote fetch>``
+        org base (the pre-fix bug), the recorded URL would be the GITBASE base
+        without the project name appended, and this assertion would fail.
+        """
+        captured: list[tuple[str, str]] = []
+
+        def _record(url: str, ref: str) -> tuple[int, str, str]:
+            captured.append((url, ref))
+            return (0, f"deadbeef\t{ref}\n", "")
+
+        f1 = _write_xml(
+            tmp_path / "m.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <remote name="r" fetch="https://github.com/caylent" />
+                  <project name="my-plugin" path=".packages/my-plugin" remote="r"
+                           revision="refs/tags/ex/proj/1.0.0" />
+                </manifest>
+            """),
+        )
+        errors = validate_revision_existence([f1], tmp_path, {}, _record)
+
+        assert errors == []
+        assert captured == [("https://github.com/caylent/my-plugin", "refs/tags/ex/proj/1.0.0")], (
+            f"existence check must query the resolved project repo URL, got: {captured!r}"
+        )
+
+    def test_trailing_slash_on_fetch_base_yields_single_separator(self, tmp_path: Path) -> None:
+        """A GITBASE base with a trailing slash still joins with exactly one separator."""
+        captured: list[str] = []
+
+        def _record(url: str, ref: str) -> tuple[int, str, str]:
+            captured.append(url)
+            return (0, f"deadbeef\t{ref}\n", "")
+
+        f1 = _write_xml(
+            tmp_path / "m.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <remote name="r" fetch="https://github.com/caylent/" />
+                  <project name="my-plugin" path=".packages/my-plugin" remote="r"
+                           revision="refs/tags/ex/proj/1.0.0" />
+                </manifest>
+            """),
+        )
+        validate_revision_existence([f1], tmp_path, {}, _record)
+
+        assert captured == ["https://github.com/caylent/my-plugin"], (
+            f"trailing slash must collapse to one separator, got: {captured!r}"
+        )
+
 
 @pytest.mark.unit
 class TestValidateMarketplace:

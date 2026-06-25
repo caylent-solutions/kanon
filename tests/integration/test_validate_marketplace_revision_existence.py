@@ -31,13 +31,13 @@ from kanon_cli.constants import REVISION_EXISTENCE_REQUIRED_ENV_VAR
 _GIT_USER_NAME = "Revision Existence Test User"
 _GIT_USER_EMAIL = "revision-existence@example.com"
 
-_PROJECT_NAME = "proj"
+_PROJECT_NAME = "proj.git"
 _PROJECT_PATH = ".packages/proj"
 _TAG_NAME = "example/proj/1.0.0"
 _EXISTING_REVISION = "refs/tags/example/proj/1.0.0"
 _MISSING_REVISION = "refs/tags/example/proj/9.9.9"
 
-_UNREACHABLE_REMOTE_URL = "git://127.0.0.1:9/proj.git"
+_UNREACHABLE_REMOTE_BASE = "git://127.0.0.1:9"
 
 _FAST_GIT_ENV = {
     "KANON_GIT_LS_REMOTE_TIMEOUT": "5",
@@ -68,15 +68,18 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
 def _build_local_tagged_bare_repo(base: pathlib.Path) -> pathlib.Path:
     """Create a real bare git repo carrying the exact tag ``example/proj/1.0.0``.
 
-    Initialises a working repo with one commit, tags it, and clones it bare so
-    the bare path can serve as a ``file://`` remote that ``git ls-remote``
-    resolves offline.
+    Initialises a working repo with one commit, tags it, and clones it bare to
+    ``<base>/proj.git`` so the bare repo can serve as a ``file://`` remote that
+    ``git ls-remote`` resolves offline. The bare repo dir name (``proj.git``)
+    is the ``<project name>`` the manifest joins onto the remote ``fetch`` base.
 
     Args:
         base: Parent directory under which the work and bare repos are created.
+            This directory IS the remote ``fetch`` base; the manifest's
+            ``<project name>`` (``proj.git``) is joined onto it.
 
     Returns:
-        The resolved absolute path to the bare repository.
+        The resolved absolute path to the ``fetch`` base directory (``base``).
     """
     base.mkdir(parents=True, exist_ok=True)
     work_dir = base / "content-work"
@@ -90,9 +93,9 @@ def _build_local_tagged_bare_repo(base: pathlib.Path) -> pathlib.Path:
     _git(["commit", "-m", "Initial commit"], cwd=work_dir)
     _git(["tag", _TAG_NAME], cwd=work_dir)
 
-    bare_dir = base / "proj.git"
+    bare_dir = base / _PROJECT_NAME
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=base)
-    return bare_dir.resolve()
+    return base.resolve()
 
 
 def _write_marketplace_manifest(
@@ -162,9 +165,9 @@ class TestRevisionExistenceLocalSource:
 
     def test_existing_exact_tag_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """An exact tag that exists in the local repo passes with a clean stderr."""
-        bare = _build_local_tagged_bare_repo(tmp_path / "repos")
+        fetch_base = _build_local_tagged_bare_repo(tmp_path / "repos")
         repo_root = tmp_path / "repo"
-        _write_marketplace_manifest(repo_root, f"file://{bare}", _EXISTING_REVISION)
+        _write_marketplace_manifest(repo_root, f"file://{fetch_base}", _EXISTING_REVISION)
 
         result = _run_validate_marketplace(repo_root)
 
@@ -176,9 +179,9 @@ class TestRevisionExistenceLocalSource:
 
     def test_missing_exact_tag_exits_one_with_does_not_exist(self, tmp_path: pathlib.Path) -> None:
         """An exact tag absent from the reachable local repo is a hard error."""
-        bare = _build_local_tagged_bare_repo(tmp_path / "repos")
+        fetch_base = _build_local_tagged_bare_repo(tmp_path / "repos")
         repo_root = tmp_path / "repo"
-        _write_marketplace_manifest(repo_root, f"file://{bare}", _MISSING_REVISION)
+        _write_marketplace_manifest(repo_root, f"file://{fetch_base}", _MISSING_REVISION)
 
         result = _run_validate_marketplace(repo_root)
 
@@ -203,7 +206,7 @@ class TestRevisionExistenceUnreachableRemote:
     def test_unreachable_remote_default_warns_and_exits_zero(self, tmp_path: pathlib.Path) -> None:
         """By default an unreachable remote degrades to a format-only WARNING."""
         repo_root = tmp_path / "repo"
-        _write_marketplace_manifest(repo_root, _UNREACHABLE_REMOTE_URL, _EXISTING_REVISION)
+        _write_marketplace_manifest(repo_root, _UNREACHABLE_REMOTE_BASE, _EXISTING_REVISION)
 
         result = _run_validate_marketplace(repo_root, extra_env=_FAST_GIT_ENV)
 
@@ -222,7 +225,7 @@ class TestRevisionExistenceUnreachableRemote:
     def test_unreachable_remote_required_existence_exits_one(self, tmp_path: pathlib.Path) -> None:
         """With ``KANON_VALIDATE_REQUIRE_EXISTENCE=1`` the unconfirmable tag is fatal."""
         repo_root = tmp_path / "repo"
-        _write_marketplace_manifest(repo_root, _UNREACHABLE_REMOTE_URL, _EXISTING_REVISION)
+        _write_marketplace_manifest(repo_root, _UNREACHABLE_REMOTE_BASE, _EXISTING_REVISION)
 
         extra_env = dict(_FAST_GIT_ENV)
         extra_env[REVISION_EXISTENCE_REQUIRED_ENV_VAR] = "1"

@@ -830,28 +830,33 @@ class TestFullJourneyMultiSourceWithMarketplace:
 
 @pytest.mark.integration
 class TestFullJourneyEnvVarOverrides:
-    """AC-TEST-007: GITBASE env var overrides .kanon value during install."""
+    """AC-TEST-007: per-alias _GITBASE env var overrides .kanon value during install."""
 
     def test_full_journey_env_var_overrides(self, tmp_path: pathlib.Path) -> None:
-        """Env var override of GITBASE is applied during envsubst.
+        """Env var override of a source's per-alias _GITBASE is applied during envsubst.
+
+        ``kanon add`` records the org base per dependency in
+        ``KANON_SOURCE_<alias>_GITBASE`` and writes no global ``GITBASE`` line, so
+        install promotes the source's per-alias value into ``GITBASE`` for that
+        source's substitution. CI/CD can override a dependency's base by setting
+        ``KANON_SOURCE_<alias>_GITBASE`` in the environment (env values take
+        precedence over file values).
 
         Steps:
-        1. Create .kanon with GITBASE=default-base.
-        2. Run install with GITBASE=override-base in environment.
+        1. Create .kanon with KANON_SOURCE_main_GITBASE=default-base.
+        2. Run install with KANON_SOURCE_main_GITBASE=override-base in environment.
         3. Verify repo_envsubst was called with env_vars containing GITBASE=override-base.
-        4. Clean.
         """
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            "GITBASE=default-base\n"
             "KANON_SOURCE_main_URL=https://example.com/repo.git\n"
             "KANON_SOURCE_main_REF=main\n"
             "KANON_SOURCE_main_PATH=default.xml\n"
             "KANON_SOURCE_main_NAME=main\n"
-            "KANON_SOURCE_main_GITBASE=https://example.com\n",
+            "KANON_SOURCE_main_GITBASE=default-base\n",
             encoding="utf-8",
         )
 
@@ -863,9 +868,9 @@ class TestFullJourneyEnvVarOverrides:
         def fake_repo_sync_env(repo_dir: str, **kwargs) -> None:
             _write_empty_manifest(repo_dir)
 
-        original_gitbase = os.environ.get("GITBASE")
+        original_gitbase = os.environ.get("KANON_SOURCE_main_GITBASE")
         try:
-            os.environ["GITBASE"] = "override-base"
+            os.environ["KANON_SOURCE_main_GITBASE"] = "override-base"
             with (
                 patch("kanon_cli.repo.repo_init"),
                 patch("kanon_cli.repo.repo_envsubst", side_effect=fake_repo_envsubst),
@@ -877,9 +882,9 @@ class TestFullJourneyEnvVarOverrides:
                 )
         finally:
             if original_gitbase is None:
-                os.environ.pop("GITBASE", None)
+                os.environ.pop("KANON_SOURCE_main_GITBASE", None)
             else:
-                os.environ["GITBASE"] = original_gitbase
+                os.environ["KANON_SOURCE_main_GITBASE"] = original_gitbase
 
         assert len(envsubst_calls) == 1, f"Expected one repo_envsubst call, got: {len(envsubst_calls)}"
         called_env = envsubst_calls[0]

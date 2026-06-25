@@ -66,9 +66,16 @@ def _minimal_source_block(name: str = "primary", *, marketplace: bool = False) -
 class TestGitbaseEnvOverride:
     """AC-TEST-001 / AC-FUNC-001: GITBASE resolves correctly from file and env.
 
-    Verifies that when GITBASE is set in both the .kanon file and the
-    environment, the environment value wins. Also verifies that when only
-    the file value is present, it is used correctly.
+    Verifies that when a global GITBASE is set in both the .kanon file and the
+    environment, the environment value wins in the parsed globals, and that the
+    file value is used when only the file value is present.
+
+    The org base that actually drives ``repo envsubst`` is the per-dependency
+    ``KANON_SOURCE_<alias>_GITBASE`` (spec Section 5.1 / FR-5): ``kanon add``
+    records it per source and writes no global ``GITBASE`` header line, so
+    ``install`` promotes each source's per-alias gitbase into the ``GITBASE``
+    key for that source's substitution. The per-alias value is source-targeted
+    and therefore takes precedence over any hand-written global ``GITBASE``.
     """
 
     def test_gitbase_from_file_is_used_when_env_absent(
@@ -127,16 +134,21 @@ class TestGitbaseEnvOverride:
             "GITBASE set only in env (not in .kanon file) must not appear in parsed globals"
         )
 
-    def test_gitbase_passed_to_envsubst_when_present_in_file(
+    def test_per_alias_gitbase_passed_to_envsubst(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() must pass GITBASE from globals_dict to repo_envsubst when present."""
+        """install() must pass each source's per-alias _GITBASE to repo_envsubst.
+
+        ``kanon add`` records the org base per dependency in
+        ``KANON_SOURCE_<alias>_GITBASE`` and writes no global ``GITBASE`` line, so
+        install must promote the per-alias value into ``GITBASE`` for that source.
+        """
         monkeypatch.delenv("GITBASE", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "GITBASE=https://file.example.com/org/\n" + _minimal_source_block(),
+            _minimal_source_block(),
         )
 
         captured_env_vars: list[dict] = []
@@ -155,22 +167,61 @@ class TestGitbaseEnvOverride:
         assert "GITBASE" in captured_env_vars[0], (
             f"GITBASE must be passed to repo_envsubst; got env_vars={captured_env_vars[0]!r}"
         )
-        assert captured_env_vars[0]["GITBASE"] == "https://file.example.com/org/", (
-            f"GITBASE value mismatch: {captured_env_vars[0]['GITBASE']!r}"
+        assert captured_env_vars[0]["GITBASE"] == "https://example.com", (
+            f"per-alias GITBASE value mismatch: {captured_env_vars[0]['GITBASE']!r}"
         )
 
-    def test_gitbase_env_override_flows_through_to_envsubst(
+    def test_per_alias_gitbase_takes_precedence_over_global(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When env var GITBASE overrides the file value, install() must pass
-        the env-overridden value to repo_envsubst.
+        """A source's per-alias _GITBASE wins over a hand-written global GITBASE.
+
+        The per-alias value is the source-targeted org base, so install must use
+        it for that source's substitution even when a global ``GITBASE`` header
+        line is also present.
         """
-        monkeypatch.setenv("GITBASE", "https://env-override.example.com/org/")
+        monkeypatch.delenv("GITBASE", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "GITBASE=https://file-value.example.com/org/\n" + _minimal_source_block(),
+            "GITBASE=https://global.example.com/org/\n" + _minimal_source_block(),
+        )
+
+        captured_env_vars: list[dict] = []
+
+        def capture_envsubst(source_dir: str, env_vars: dict) -> None:
+            captured_env_vars.append(dict(env_vars))
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
+            patch("kanon_cli.repo.repo_sync"),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+        assert len(captured_env_vars) == 1
+        assert captured_env_vars[0]["GITBASE"] == "https://example.com", (
+            f"per-alias GITBASE must override the global header value; got {captured_env_vars[0].get('GITBASE')!r}"
+        )
+
+    def test_per_alias_gitbase_env_override_flows_through_to_envsubst(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When an env var overrides the per-alias _GITBASE file value, install()
+        must pass the env-overridden value to repo_envsubst.
+
+        The kanonenv env-override applies to keys present in the file, so setting
+        ``KANON_SOURCE_<alias>_GITBASE`` in the environment overrides the file's
+        per-alias value, and that override is what install promotes into
+        ``GITBASE`` for the source's substitution.
+        """
+        monkeypatch.setenv("KANON_SOURCE_primary_GITBASE", "https://env-override.example.com/org/")
+        kanonenv = _write_kanonenv(
+            tmp_path,
+            _minimal_source_block(),
         )
 
         captured_env_vars: list[dict] = []
@@ -187,7 +238,7 @@ class TestGitbaseEnvOverride:
 
         assert len(captured_env_vars) == 1
         assert captured_env_vars[0]["GITBASE"] == "https://env-override.example.com/org/", (
-            f"install() must use env-overridden GITBASE; got {captured_env_vars[0].get('GITBASE')!r}"
+            f"install() must use env-overridden per-alias GITBASE; got {captured_env_vars[0].get('GITBASE')!r}"
         )
 
 

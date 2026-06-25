@@ -84,7 +84,9 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
+    SOURCE_GITBASE_SUFFIX,
     SOURCE_MARKETPLACE_KEY,
+    SOURCE_PREFIX,
     resolve_kanon_home,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
@@ -1436,6 +1438,51 @@ def run_repo_init(
     _repo.repo_init(str(source_dir), url, revision, manifest_path, repo_rev)
 
 
+def build_source_envsubst_vars(
+    base_env_vars: dict[str, str],
+    source_name: str,
+    source_gitbase: str,
+) -> dict[str, str]:
+    """Build the envsubst environment for one source's manifest substitution.
+
+    Each source declares its own ``KANON_SOURCE_<alias>_GITBASE`` org base
+    (spec Section 5.1 / FR-5): ``kanon add`` records the org base per dependency
+    and never writes a global ``GITBASE`` header line. The repo-tool ``envsubst``
+    resolves ``${GITBASE}`` from the process environment, so install must promote
+    the source's per-alias gitbase into the ``GITBASE`` key for that source's
+    substitution rather than relying on a global value that ``add`` does not
+    write.
+
+    The per-alias gitbase takes precedence over any global ``GITBASE`` carried in
+    ``base_env_vars`` because it is the source-targeted value; a global
+    ``GITBASE`` line (only present when hand-written) governs no source whose own
+    ``_GITBASE`` is defined.
+
+    Args:
+        base_env_vars: Shared envsubst variables (``CLAUDE_MARKETPLACES_DIR`` and
+            an optional global ``GITBASE``). Not mutated.
+        source_name: The source alias, used for the fail-fast diagnostic.
+        source_gitbase: The source's ``KANON_SOURCE_<alias>_GITBASE`` value.
+
+    Returns:
+        A new dict combining the base variables with ``GITBASE`` set to the
+        source's per-alias gitbase.
+
+    Raises:
+        ValueError: If ``source_gitbase`` is empty, naming the source and the
+            exact ``.kanon`` key to populate.
+    """
+    if not source_gitbase:
+        raise ValueError(
+            f"source '{source_name}' has an empty {SOURCE_PREFIX}{source_name}{SOURCE_GITBASE_SUFFIX} value; "
+            f"set {SOURCE_PREFIX}{source_name}{SOURCE_GITBASE_SUFFIX}=<org base url> in .kanon so "
+            "the manifest's ${GITBASE} placeholder can be resolved"
+        )
+    source_env_vars = dict(base_env_vars)
+    source_env_vars["GITBASE"] = source_gitbase
+    return source_env_vars
+
+
 def run_repo_envsubst(
     source_dir: pathlib.Path,
     env_vars: dict[str, str],
@@ -2011,11 +2058,11 @@ def _run_install(
 
     repo_rev = globals_dict.get("REPO_REV", "")
 
-    env_vars: dict[str, str] = {}
+    base_env_vars: dict[str, str] = {}
     if "GITBASE" in globals_dict:
-        env_vars["GITBASE"] = globals_dict["GITBASE"]
+        base_env_vars["GITBASE"] = globals_dict["GITBASE"]
     if marketplace_dir_str:
-        env_vars["CLAUDE_MARKETPLACES_DIR"] = marketplace_dir_str
+        base_env_vars["CLAUDE_MARKETPLACES_DIR"] = marketplace_dir_str
 
     source_dirs = create_source_dirs(source_names, base_dir)
 
@@ -2215,7 +2262,12 @@ def _run_install(
                 repo_rev,
             )
         print("  repo envsubst...")
-        run_repo_envsubst(source_dir, env_vars)
+        source_env_vars = build_source_envsubst_vars(
+            base_env_vars,
+            name,
+            str(source_data["gitbase"]),
+        )
+        run_repo_envsubst(source_dir, source_env_vars)
         print("  repo sync...")
         run_repo_sync(source_dir)
 

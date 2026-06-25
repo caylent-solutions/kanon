@@ -5951,10 +5951,13 @@ KANON_SOURCE_alpha_NAME=alpha
 KANON_SOURCE_alpha_GITBASE=https://example.com
 KANONEOF
 kanon marketplace status --kanon-file .kanon
+kanon marketplace status --all --kanon-file .kanon
 ```
 
-**Pass criteria:** Exit code 0. stdout contains the `ALIAS`, `TYPE`, and `SETTING`
-column headers; the `alpha` row renders as disabled (no `_MARKETPLACE` line).
+**Pass criteria:** Exit code 0. The base `status` (no `--all`) prints the `ALIAS`,
+`TYPE`, and `SETTING` column headers with no dependency rows -- `alpha` is a
+non-marketplace dependency and is filtered out by default. `status --all`
+additionally renders the `alpha` row as disabled (no `_MARKETPLACE` line).
 
 ### NS-02: `kanon marketplace enable` rejects a non-marketplace dependency
 

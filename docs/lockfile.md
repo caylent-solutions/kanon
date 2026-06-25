@@ -266,9 +266,11 @@ hash to the lockfile's `kanon_hash` to detect consumer-side drift.
 
 1. Parse the `.kanon` file via `parse_kanonenv`.
 2. Extract every source's `{URL, REF, PATH}` keyed by alias. Discard
-   comments, blank lines, declaration order, the per-source `_NAME` and
-   `_GITBASE` keys, the per-dependency `KANON_SOURCE_<alias>_MARKETPLACE`
-   flag, and the `CLAUDE_MARKETPLACES_DIR` workspace key.
+   comments, blank lines, declaration order, the per-source `_NAME` key,
+   every optional per-dependency env-var key (`_GITBASE` and any other
+   `KANON_SOURCE_<alias>_<VAR>`), the per-dependency
+   `KANON_SOURCE_<alias>_MARKETPLACE` flag, and the
+   `CLAUDE_MARKETPLACES_DIR` workspace key.
 3. Sort sources by alias (lexicographic, case-sensitive).
 4. Serialize as bytes `alias\turl\tref\tpath\n` per source.
    If any of `alias`, `url`, `ref`, or `path` contains a literal
@@ -286,7 +288,8 @@ The following changes to `.kanon` do NOT change `kanon_hash`:
 - Re-ordering source blocks.
 - Adding, removing, or changing comments.
 - Adding or removing blank lines.
-- Changing any `KANON_SOURCE_<alias>_GITBASE` value.
+- Adding, removing, or changing any per-dependency env-var line
+  (`KANON_SOURCE_<alias>_GITBASE` or any other `KANON_SOURCE_<alias>_<VAR>`).
 - Changing any `KANON_SOURCE_<alias>_NAME` value.
 - Changing `CLAUDE_MARKETPLACES_DIR`.
 - Toggling any `KANON_SOURCE_<alias>_MARKETPLACE` flag.

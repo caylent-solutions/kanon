@@ -908,9 +908,12 @@ class TestStrictLockDefaultAutoPrune:
     ) -> None:
         """Remove the KANON_SOURCE_<source_name>_* lines from .kanon.
 
-        Reads the file, filters out the per-source key lines (URL, REF, PATH,
-        NAME, GITBASE), and writes back the remainder.  Raises RuntimeError if
-        fewer than five lines are removed (guard against misconfigured test setup).
+        Reads the file, filters out the per-source key lines (the four
+        structural keys URL, REF, PATH, NAME, plus any optional env-var line),
+        and writes back the remainder.  Raises RuntimeError if fewer than the
+        four structural lines are removed (guard against misconfigured test
+        setup). The catalog manifest these tests use references no ${VAR}, so
+        kanon add writes only the four structural keys (no _GITBASE line).
 
         The source_name must match the token written by 'kanon add' exactly,
         which is the derive_source_name() output (lowercase, hyphens -> underscores).
@@ -925,11 +928,11 @@ class TestStrictLockDefaultAutoPrune:
         prefix = f"KANON_SOURCE_{source_name}_"
         filtered = [ln for ln in lines if not ln.startswith(prefix)]
         removed_count = len(lines) - len(filtered)
-        if removed_count < 5:
+        if removed_count < 4:
             raise RuntimeError(
-                f"Expected to remove 5 KANON_SOURCE_{source_name}_* lines from "
+                f"Expected to remove the 4 structural KANON_SOURCE_{source_name}_* lines from "
                 f"{kanon_path}; only removed {removed_count}. "
-                f"Check that kanon add wrote all five keys for {source_name!r}."
+                f"Check that kanon add wrote all four structural keys for {source_name!r}."
             )
         kanon_path.write_text("".join(filtered))
         kanon_path.chmod(0o600)

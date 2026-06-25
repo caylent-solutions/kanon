@@ -1,18 +1,24 @@
 """kanon add subcommand: append alias-keyed dependency blocks to a .kanon file.
 
 Resolves one or more catalog entries from a manifest repo and writes the
-alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block to the
-destination .kanon file (spec Section 5.1 / FR-5, FR-6), plus an optional
-per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE=true`` line when the entry is
-(or is forced to) a Claude marketplace (spec Section 4.2 / FR-17). There is no
-global ``[catalog]`` block and no standard header: the per-dependency blocks
-fully replace the single global header, so ``add`` writes neither a global
-marketplace-install header line nor a ``GITBASE`` header line. The ``GITBASE``
-org base is recorded per dependency in ``KANON_SOURCE_<alias>_GITBASE``.
+alias-keyed required structural block KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}
+to the destination .kanon file (spec Section 5.1 / FR-5, FR-6). Beyond the
+structural keys, ``add`` writes one optional per-dependency env-var line
+``KANON_SOURCE_<alias>_<VAR>=<value>`` for EACH ``${VAR}`` placeholder the
+entry's resolved manifest references (its ``<remote>`` fetch fields and the
+entry's ``<project>`` attributes). The value is auto-derived from the
+catalog-source URL for the var named exactly ``GITBASE`` and left empty (a
+placeholder for the operator to fill in) for every other var name. An entry
+whose manifest references no ``${VAR}`` remote gets no env-var line at all.
+A per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE=true`` line is appended when
+the entry is (or is forced to) a Claude marketplace (spec Section 4.2 / FR-17).
+There is no global ``[catalog]`` block and no standard header: the per-dependency
+blocks fully replace the single global header, so ``add`` writes neither a global
+marketplace-install header line nor a global ``GITBASE`` header line.
 
 Spec reference: ``specs/kanon-refinements.md`` Section 5.1 (alias-keyed
-``.kanon`` blocks, ``_REVISION`` -> ``_REF``, ``_NAME`` / ``_GITBASE``, no
-``[catalog]``), Section 4.2 (``add`` alias keying), plus
+``.kanon`` blocks, ``_REVISION`` -> ``_REF``, ``_NAME``, optional per-dependency
+env vars, no ``[catalog]``), Section 4.2 (``add`` alias keying), plus
 ``spec/kanon-list-add-lock-features-spec.md`` Section 4.0 (last-@ spec split),
 Section 4.2 collision detection pre-flight, Section 4.2 flag-table rows
 --force and --dry-run.
@@ -26,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
+import xml.etree.ElementTree as ET
 
 from packaging.version import InvalidVersion, Version
 
@@ -36,15 +43,19 @@ from kanon_cli.constants import (
     KANON_LOCK_FILE,
     MARKETPLACE_FLAG_TRUE,
     MISSING_CATALOG_ERROR_TEMPLATE,
+    SHELL_VAR_PATTERN,
+    SOURCE_GITBASE_VAR,
     SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_PATH_SUFFIX,
     SOURCE_PREFIX,
     SOURCE_REF_SUFFIX,
+    SOURCE_RESERVED_SUFFIXES,
     SOURCE_SUFFIXES,
     SOURCE_URL_SUFFIX,
     TAG_ERROR_DISPLAY_CAP,
 )
 from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
+from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present
@@ -89,7 +100,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         help="Add one or more catalog entries to the .kanon file.",
         description=(
             "Resolve catalog entries from a manifest repo and append the\n"
-            "alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE} block\n"
+            "alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus an\n"
+            "optional per-dependency env-var line per ${VAR} the manifest needs)\n"
             "to the destination .kanon file. No global header is written.\n\n"
             "Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440\n"
             "constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in\n"
@@ -342,6 +354,145 @@ def _derive_gitbase_from_catalog_source(url: str) -> str:
         return f"{parsed.scheme}://{parsed.netloc}/{org_segment}"
 
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _vars_in_attributes(element: ET.Element) -> set[str]:
+    """Return the set of ``${VAR}`` names referenced in an element's attributes.
+
+    Scans every attribute value of ``element`` for ``${VAR}`` placeholders and
+    returns the bare ``VAR`` names (without the ``${...}`` wrapper).
+
+    Args:
+        element: An XML element whose attribute values are scanned.
+
+    Returns:
+        The set of placeholder variable names found across all attributes.
+    """
+    found: set[str] = set()
+    for value in element.attrib.values():
+        for match in SHELL_VAR_PATTERN.finditer(value):
+            found.add(match.group(1))
+    return found
+
+
+def _collect_manifest_tree_files(
+    include_tree: IncludeTree,
+    manifest_root: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Flatten an ``IncludeTree`` into absolute manifest file paths (DFS pre-order).
+
+    Args:
+        include_tree: The resolved include tree for the entry's root manifest.
+        manifest_root: Absolute path to the cloned manifest repo root.
+
+    Returns:
+        The deduplicated list of absolute manifest file paths in the tree.
+    """
+    ordered: list[pathlib.Path] = []
+    seen: set[pathlib.Path] = set()
+
+    def _visit(node: IncludeTree) -> None:
+        abs_path = manifest_root / node.path
+        if abs_path not in seen:
+            seen.add(abs_path)
+            ordered.append(abs_path)
+        for child in node.includes:
+            _visit(child)
+
+    _visit(include_tree)
+    return ordered
+
+
+def _detect_manifest_env_vars(xml_path: pathlib.Path, manifest_root: pathlib.Path) -> list[str]:
+    """Detect the ``${VAR}`` names an entry's manifest depends on for substitution.
+
+    Resolves the entry manifest's ``<include>`` chain, aggregates every
+    ``<remote>`` definition and ``<default>`` remote across the root manifest
+    and its includes, then determines which remotes the entry's ``<project>``
+    elements reference (by explicit ``remote="NAME"`` or, when omitted, the
+    ``<default>`` remote). The detected variable set is the union of the
+    ``${VAR}`` placeholders in those referenced remotes' attributes plus any
+    ``${VAR}`` in the projects' own attributes.
+
+    A manifest that references no ``${VAR}`` remote yields an empty list, so
+    ``kanon add`` writes no env-var line for the entry.
+
+    Args:
+        xml_path: Absolute path to the entry's root manifest XML file.
+        manifest_root: Absolute path to the cloned manifest repo root (used to
+            resolve ``<include name=...>`` references).
+
+    Returns:
+        The sorted, deduplicated list of detected ``${VAR}`` names.
+
+    Raises:
+        IncludeCycleError: If the manifest's include chain contains a cycle.
+        MalformedIncludeError: If an ``<include>`` element lacks a ``name``.
+        xml.etree.ElementTree.ParseError: If any manifest file is malformed.
+    """
+    include_tree = _walk_includes(xml_path, manifest_root)
+    manifest_files = _collect_manifest_tree_files(include_tree, manifest_root)
+
+    remotes: dict[str, ET.Element] = {}
+    default_remotes: set[str] = set()
+    projects: list[ET.Element] = []
+
+    for manifest_file in manifest_files:
+        if not manifest_file.is_file():
+            continue
+        root = ET.parse(str(manifest_file)).getroot()
+        for remote_el in root.findall("remote"):
+            remote_name = remote_el.get("name")
+            if remote_name:
+                remotes[remote_name] = remote_el
+        for default_el in root.findall("default"):
+            default_remote = default_el.get("remote")
+            if default_remote:
+                default_remotes.add(default_remote)
+        projects.extend(root.findall("project"))
+
+    referenced_remotes: set[str] = set()
+    detected: set[str] = set()
+    for project_el in projects:
+        detected |= _vars_in_attributes(project_el)
+        project_remote = project_el.get("remote")
+        if project_remote:
+            referenced_remotes.add(project_remote)
+        else:
+            referenced_remotes |= default_remotes
+
+    for remote_name in referenced_remotes:
+        remote_el = remotes.get(remote_name)
+        if remote_el is not None:
+            detected |= _vars_in_attributes(remote_el)
+
+    return sorted(detected)
+
+
+def _build_env_var_lines(source_name: str, env_vars: list[str], gitbase: str) -> list[str]:
+    """Build the optional per-dependency env-var block lines for one entry.
+
+    For each detected ``${VAR}`` name, emits ``KANON_SOURCE_<alias>_<VAR>=...``.
+    The value is auto-derived for the variable named exactly ``GITBASE`` (the
+    org base derived from the entry's catalog-source URL) and empty for every
+    other variable name (a placeholder the operator fills in). When ``env_vars``
+    is empty, no lines are emitted.
+
+    Args:
+        source_name: The local alias for the entry.
+        env_vars: The detected ``${VAR}`` names (sorted) the manifest needs.
+        gitbase: The org base auto-derived from the entry's catalog-source URL,
+            used as the value for a detected ``GITBASE`` var.
+
+    Returns:
+        The list of ``KANON_SOURCE_<alias>_<VAR>=<value>`` lines (possibly empty).
+    """
+    prefix = f"{SOURCE_PREFIX}{source_name}"
+    lines: list[str] = []
+    for var in env_vars:
+        value = gitbase if var == SOURCE_GITBASE_VAR else ""
+        lines.append(f"{prefix}_{var}={value}")
+    return lines
 
 
 def _split_name_spec(raw: str) -> tuple[str, str | None]:
@@ -670,17 +821,21 @@ def _build_source_block_lines(
     ref: str,
     path: str,
     name: str,
-    gitbase: str,
+    env_var_lines: list[str],
     marketplace: bool,
 ) -> list[str]:
     """Construct the alias-keyed KANON_SOURCE_<alias>_* block lines.
 
-    Emits the alias-keyed per-dependency block (spec Section 5.1 / FR-5, FR-6):
-    ``_URL``, ``_REF`` (the verbatim version spec), ``_PATH``, ``_NAME`` (the
-    original catalog manifest name), and ``_GITBASE`` (the org base for
-    ``${GITBASE}`` resolution). The optional ``_MARKETPLACE`` flag (spec Section
-    5.1 / FR-17) is appended as ``=true`` only when ``marketplace`` is true;
-    when false the line is omitted entirely (absence is the canonical false, so
+    Emits the alias-keyed per-dependency block (spec Section 5.1 / FR-5, FR-6).
+    The four required structural keys are always written: ``_URL``, ``_REF``
+    (the verbatim version spec), ``_PATH``, and ``_NAME`` (the original catalog
+    manifest name). Any per-dependency env-var lines in ``env_var_lines``
+    (``KANON_SOURCE_<alias>_<VAR>=...``, e.g. a ``_GITBASE`` line) are appended
+    next; these are written only when the entry's manifest references the
+    matching ``${VAR}`` placeholder, so an entry that needs no substitution
+    gets no env-var line. The optional ``_MARKETPLACE`` flag (spec Section 5.1 /
+    FR-17) is appended last as ``=true`` only when ``marketplace`` is true; when
+    false the line is omitted entirely (absence is the canonical false, so
     kanon never emits ``=false``). There is no ``_REVISION`` line and no global
     ``[catalog]`` block.
 
@@ -690,13 +845,14 @@ def _build_source_block_lines(
         ref: Verbatim version spec (e.g. ``1.2.0``, ``main``, ``>=1.0,<2.0``).
         path: Repo-relative path to the marketplace XML file.
         name: Original catalog manifest name (the pre-sanitization entry name).
-        gitbase: Org base for ``${GITBASE}`` resolution (derived from the URL).
+        env_var_lines: The optional per-dependency env-var block lines detected
+            for this entry's manifest (possibly empty).
         marketplace: Whether this dependency registers as a Claude marketplace.
             ``True`` appends ``_MARKETPLACE=true``; ``False`` omits the line.
 
     Returns:
-        A list of the URL, REF, PATH, NAME, GITBASE lines, plus a trailing
-        ``_MARKETPLACE=true`` line when ``marketplace`` is true.
+        A list of the URL, REF, PATH, NAME lines, then any env-var lines, plus a
+        trailing ``_MARKETPLACE=true`` line when ``marketplace`` is true.
     """
     prefix = f"{SOURCE_PREFIX}{source_name}"
 
@@ -705,8 +861,8 @@ def _build_source_block_lines(
         f"{prefix}_REF={ref}",
         f"{prefix}_PATH={path}",
         f"{prefix}_NAME={name}",
-        f"{prefix}_GITBASE={gitbase}",
     ]
+    lines.extend(env_var_lines)
     if marketplace:
         lines.append(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}={MARKETPLACE_FLAG_TRUE}")
     return lines
@@ -719,10 +875,41 @@ def _source_block_key_names(source_name: str) -> str:
         source_name: The local alias.
 
     Returns:
-        The comma-joined list of every key in the alias-keyed source block, in
-        the canonical suffix order from ``SOURCE_SUFFIXES``.
+        The comma-joined list of the required structural keys in the alias-keyed
+        source block, in the canonical suffix order from ``SOURCE_SUFFIXES``.
     """
     return ", ".join(f"{SOURCE_PREFIX}{source_name}{suffix}" for suffix in SOURCE_SUFFIXES)
+
+
+def _is_alias_block_key(key: str, source_name: str, other_aliases: set[str]) -> bool:
+    """Return True when ``key`` is a ``.kanon`` line key for ``source_name``'s block.
+
+    A block key is any ``KANON_SOURCE_<source_name>_<VAR>`` key: the required
+    structural suffixes, the optional ``_MARKETPLACE`` flag, and every open
+    per-dependency env-var line. A key is rejected when its ``<VAR>`` portion is
+    instead a structural/marketplace suffix of a longer alias in
+    ``other_aliases`` whose name begins with ``source_name`` (so that, when one
+    alias is a textual prefix of another, the longer alias' keys are not
+    swallowed into the shorter alias' block).
+
+    Args:
+        key: The ``.kanon`` line key (text before ``=``).
+        source_name: The local alias whose block membership is tested.
+        other_aliases: The set of all other aliases present in the file.
+
+    Returns:
+        True iff ``key`` belongs to ``source_name``'s alias-keyed block.
+    """
+    prefix = f"{SOURCE_PREFIX}{source_name}_"
+    if not key.startswith(prefix):
+        return False
+    for other in other_aliases:
+        if other == source_name or not other.startswith(source_name):
+            continue
+        for suffix in SOURCE_RESERVED_SUFFIXES:
+            if key == f"{SOURCE_PREFIX}{other}{suffix}":
+                return False
+    return True
 
 
 def _append_source_block(
@@ -1057,21 +1244,21 @@ def _overwrite_source_block(
 ) -> None:
     """Replace the KANON_SOURCE_<alias>_* block lines in dest.
 
-    Reads the entire file, removes any line whose key is one of the alias-keyed
-    block keys (every suffix in ``SOURCE_SUFFIXES`` plus the optional
-    ``_MARKETPLACE`` flag), and inserts the new block lines in place of the first
-    removed line (preserving order). Including ``_MARKETPLACE`` in the removed set
-    means a ``--no-marketplace-install`` overwrite drops a previously written
-    ``_MARKETPLACE=true`` line rather than leaving it stale.
+    Reads the entire file, removes any line whose key belongs to the alias-keyed
+    block (the required structural suffixes, the optional ``_MARKETPLACE`` flag,
+    and every open per-dependency env-var line), and inserts the new block lines
+    in place of the first removed line (preserving order). Removing the full
+    block means a ``--no-marketplace-install`` overwrite drops a previously
+    written ``_MARKETPLACE=true`` line, and a re-add whose manifest no longer
+    references a ``${VAR}`` drops the stale env-var line, rather than leaving
+    either stale.
 
     Args:
         dest: Destination .kanon file (must exist and contain the block).
         source_name: The local alias.
         lines: The replacement KANON_SOURCE_<alias>_* block lines.
     """
-    prefix = f"{SOURCE_PREFIX}{source_name}"
-    block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
-    block_keys.add(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}")
+    other_aliases = set(_read_all_source_aliases(dest).keys())
 
     existing_lines = dest.read_text(encoding="utf-8").splitlines(keepends=True)
     result: list[str] = []
@@ -1080,7 +1267,7 @@ def _overwrite_source_block(
     for raw_line in existing_lines:
         stripped = raw_line.rstrip("\n").rstrip("\r")
         key = stripped.split("=", 1)[0] if "=" in stripped else stripped
-        if key in block_keys:
+        if _is_alias_block_key(key, source_name, other_aliases):
             if not inserted:
                 for new_line in lines:
                     result.append(new_line + "\n")
@@ -1172,14 +1359,12 @@ def _existing_block_lines(dest: pathlib.Path, source_name: str) -> list[str]:
     """
     if not dest.exists():
         return []
-    prefix = f"{SOURCE_PREFIX}{source_name}"
-    block_keys = {f"{prefix}{suffix}" for suffix in SOURCE_SUFFIXES}
-    block_keys.add(f"{prefix}{SOURCE_MARKETPLACE_SUFFIX}")
+    other_aliases = set(_read_all_source_aliases(dest).keys())
     matched: list[str] = []
     for raw_line in dest.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.strip()
         key = stripped.split("=", 1)[0] if "=" in stripped else stripped
-        if key in block_keys:
+        if _is_alias_block_key(key, source_name, other_aliases):
             matched.append(stripped)
     return matched
 
@@ -1232,7 +1417,8 @@ def run_add(args: argparse.Namespace) -> int:
     - **Write phase** (Step 5): only after every entry is fully resolved and
       validated does the alias-block append/overwrite execute. There is no
       standard-header write (spec Section 5.1): the per-dependency block carries
-      its own ``_GITBASE`` and there is no global ``[catalog]`` header line.
+      its own optional env-var lines (one per ``${VAR}`` the manifest needs,
+      e.g. ``_GITBASE``) and there is no global ``[catalog]`` header line.
 
     Marketplace auto-detect (FR-17, spec Section 4.2): each entry's
     ``KANON_SOURCE_<alias>_MARKETPLACE`` flag is auto-detected from its
@@ -1292,13 +1478,6 @@ def run_add(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-    catalog_source_url = catalog_source[: catalog_source.rfind("@")] if "@" in catalog_source else catalog_source
-    try:
-        _derive_gitbase_from_catalog_source(catalog_source_url)
-    except CatalogSourceURLDerivationError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
     _check_within_request_collisions(raw_names)
 
@@ -1322,11 +1501,14 @@ def run_add(args: argparse.Namespace) -> int:
 
         rel_path = _xml_repo_relative_path(manifest_root, xml_path)
 
-        try:
-            entry_gitbase = _derive_gitbase_from_catalog_source(entry_url)
-        except CatalogSourceURLDerivationError as exc:
-            print(str(exc), file=sys.stderr)
-            sys.exit(1)
+        detected_env_vars = _detect_manifest_env_vars(xml_path, manifest_root)
+        entry_gitbase = ""
+        if SOURCE_GITBASE_VAR in detected_env_vars:
+            try:
+                entry_gitbase = _derive_gitbase_from_catalog_source(entry_url)
+            except CatalogSourceURLDerivationError as exc:
+                print(str(exc), file=sys.stderr)
+                sys.exit(1)
 
         if alias_override is not None:
             alias, mode = _resolve_override_alias(existing_aliases, alias_override, entry_url, resolved_revision, force)
@@ -1362,13 +1544,15 @@ def run_add(args: argparse.Namespace) -> int:
                 "registration for this dependency."
             )
 
+        env_var_lines = _build_env_var_lines(alias, detected_env_vars, entry_gitbase)
+
         lines = _build_source_block_lines(
             source_name=alias,
             url=entry_url,
             ref=resolved_revision,
             path=rel_path,
             name=metadata.name,
-            gitbase=entry_gitbase,
+            env_var_lines=env_var_lines,
             marketplace=marketplace,
         )
 

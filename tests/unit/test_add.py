@@ -44,9 +44,10 @@ def _make_metadata(
 class TestBuildSourceBlockLines:
     """Unit tests for the alias-keyed block-line constructor."""
 
-    def test_returns_five_lines_when_not_marketplace(self) -> None:
-        """_build_source_block_lines returns exactly five strings when marketplace
-        is False (no _MARKETPLACE line is appended).
+    def test_returns_four_structural_lines_when_no_env_no_marketplace(self) -> None:
+        """_build_source_block_lines returns exactly the four structural strings
+        when env_var_lines is empty and marketplace is False (no env-var or
+        _MARKETPLACE line is appended).
         """
         from kanon_cli.commands.add import _build_source_block_lines
 
@@ -56,15 +57,16 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.2.0",
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
-        assert len(lines) == 5
+        assert len(lines) == 4
         joined = "\n".join(lines)
         assert "_MARKETPLACE" not in joined
+        assert "_GITBASE" not in joined
 
-    def test_marketplace_true_appends_marketplace_line(self) -> None:
-        """marketplace=True appends a sixth line: KANON_SOURCE_<alias>_MARKETPLACE=true."""
+    def test_env_var_lines_appended_after_structural(self) -> None:
+        """Detected env-var lines are appended after the four structural keys."""
         from kanon_cli.commands.add import _build_source_block_lines
 
         lines = _build_source_block_lines(
@@ -73,10 +75,47 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.2.0",
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
-            gitbase="https://example.com",
+            env_var_lines=["KANON_SOURCE_my_entry_GITBASE=https://example.com/org"],
+            marketplace=False,
+        )
+        assert len(lines) == 5
+        assert lines[4] == "KANON_SOURCE_my_entry_GITBASE=https://example.com/org"
+
+    def test_marketplace_true_appends_marketplace_line_last(self) -> None:
+        """marketplace=True appends a trailing KANON_SOURCE_<alias>_MARKETPLACE=true.
+
+        With no env-var lines the four structural keys come first, so the
+        _MARKETPLACE line is the fifth (index 4) line.
+        """
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=True,
+        )
+        assert len(lines) == 5
+        assert lines[4] == "KANON_SOURCE_my_entry_MARKETPLACE=true"
+
+    def test_marketplace_after_env_var_lines(self) -> None:
+        """The _MARKETPLACE line is always last, after any env-var lines."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=["KANON_SOURCE_my_entry_GITBASE=https://example.com/org"],
             marketplace=True,
         )
         assert len(lines) == 6
+        assert lines[4] == "KANON_SOURCE_my_entry_GITBASE=https://example.com/org"
         assert lines[5] == "KANON_SOURCE_my_entry_MARKETPLACE=true"
 
     def test_marketplace_false_omits_marketplace_line(self) -> None:
@@ -89,7 +128,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.2.0",
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
 
@@ -106,7 +145,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.0.0",
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         assert lines[0] == "KANON_SOURCE_my_entry_URL=https://example.com/repo.git"
@@ -121,7 +160,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/2.1.0",
             path="repo-specs/entry-marketplace.xml",
             name="foo-bar",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         assert lines[1] == "KANON_SOURCE_foo_bar_REF=refs/tags/2.1.0"
@@ -136,7 +175,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.0.0",
             path="repo-specs/entry-marketplace.xml",
             name="foo-bar",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         assert lines[2] == "KANON_SOURCE_foo_bar_PATH=repo-specs/entry-marketplace.xml"
@@ -151,25 +190,10 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.0.0",
             path="repo-specs/entry-marketplace.xml",
             name="Foo-Bar",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         assert lines[3] == "KANON_SOURCE_foo_bar_NAME=Foo-Bar"
-
-    def test_gitbase_line_format(self) -> None:
-        """GITBASE line is KANON_SOURCE_<alias>_GITBASE=<org base>."""
-        from kanon_cli.commands.add import _build_source_block_lines
-
-        lines = _build_source_block_lines(
-            source_name="foo_bar",
-            url="https://example.com/org/repo.git",
-            ref="refs/tags/1.0.0",
-            path="repo-specs/entry-marketplace.xml",
-            name="foo-bar",
-            gitbase="https://example.com/org",
-            marketplace=False,
-        )
-        assert lines[4] == "KANON_SOURCE_foo_bar_GITBASE=https://example.com/org"
 
     def test_no_revision_key_emitted(self) -> None:
         """The block never emits a _REVISION key (renamed to _REF)."""
@@ -181,7 +205,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.0.0",
             path="repo-specs/my-entry-marketplace.xml",
             name="my-entry",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         joined = "\n".join(lines)
@@ -199,7 +223,7 @@ class TestBuildSourceBlockLines:
             ref="refs/tags/1.0.0",
             path="repo-specs/foo-bar-marketplace.xml",
             name="Foo-Bar",
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         for line in lines:
@@ -223,8 +247,8 @@ class TestBuildSourceBlockLines:
         ],
         ids=["simple-name", "underscore-name-ssh-url"],
     )
-    def test_all_five_keys_present(self, source_name: str, url: str, ref: str, path: str) -> None:
-        """All five KANON_SOURCE_* keys appear in the output."""
+    def test_all_four_structural_keys_present(self, source_name: str, url: str, ref: str, path: str) -> None:
+        """All four required structural KANON_SOURCE_* keys appear in the output."""
         from kanon_cli.commands.add import _build_source_block_lines
 
         lines = _build_source_block_lines(
@@ -233,7 +257,7 @@ class TestBuildSourceBlockLines:
             ref=ref,
             path=path,
             name=source_name,
-            gitbase="https://example.com",
+            env_var_lines=[],
             marketplace=False,
         )
         joined = "\n".join(lines)
@@ -241,7 +265,6 @@ class TestBuildSourceBlockLines:
         assert f"KANON_SOURCE_{source_name}_REF" in joined
         assert f"KANON_SOURCE_{source_name}_PATH" in joined
         assert f"KANON_SOURCE_{source_name}_NAME" in joined
-        assert f"KANON_SOURCE_{source_name}_GITBASE" in joined
 
 
 @pytest.mark.unit
@@ -261,8 +284,9 @@ class TestNoStandardHeader:
         """A fresh .kanon written by add carries only the per-dep block, no header.
 
         No global [catalog] block, no KANON_MARKETPLACE_INSTALL header line, and
-        no bare GITBASE= header line (the org base lives in the per-dep
-        KANON_SOURCE_<alias>_GITBASE field).
+        no bare GITBASE= header line. This entry's manifest declares no <remote>
+        and no ${VAR} placeholder, so add writes NO per-dependency env-var line
+        either (not even a _GITBASE line) -- only the four structural keys.
         """
         import argparse
         import textwrap
@@ -326,7 +350,12 @@ class TestNoStandardHeader:
 
         for line in content.splitlines():
             assert not line.startswith("GITBASE="), f"unexpected GITBASE header line: {line!r}"
-        assert "KANON_SOURCE_entry_a_GITBASE=https://example.com/org" in content
+        assert "KANON_SOURCE_entry_a_GITBASE" not in content, (
+            "no env-var line is written when the manifest references no ${VAR}"
+        )
+        assert "KANON_SOURCE_entry_a_URL=https://example.com/org/repo.git" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
 
 
 @pytest.mark.unit
@@ -947,26 +976,82 @@ class TestRunAddMissingCatalogSource:
 
 @pytest.mark.unit
 class TestRunAddGitbaseDerivationError:
-    """run_add exits non-zero when GITBASE cannot be derived from the catalog-source URL."""
+    """run_add exits non-zero when a ${GITBASE} manifest has an unparseable entry URL.
 
-    def test_unparseable_catalog_source_url_exits_nonzero(
-        self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    GITBASE is derived only when the entry's manifest references ${GITBASE}; a
+    manifest with no ${GITBASE} placeholder never triggers derivation. This
+    exercises the per-entry derivation-error path: a manifest that DOES use
+    ${GITBASE} combined with an entry URL that cannot be parsed.
+    """
+
+    def test_gitbase_manifest_with_unparseable_url_exits_nonzero(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """run_add exits non-zero and prints ERROR when catalog-source URL has no scheme."""
+        """run_add exits non-zero and prints a GITBASE ERROR when the manifest
+        needs ${GITBASE} but the entry URL has no scheme.
+        """
         import argparse
+        import textwrap
+        from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
 
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
+        meta = CatalogMetadata(
+            name="entry-a",
+            display_name="Entry A",
+            description="Test.",
+            version="1.0.0",
+        )
+        manifest_root = tmp_path / "repo"
+        xml_path = manifest_root / "repo-specs" / "entry-a-marketplace.xml"
+        xml_path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-a</name>
+                    <display-name>Entry A</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
+                  <remote name="origin" fetch="${GITBASE}/repos" />
+                  <default revision="main" remote="origin" />
+                  <project name="pkg" path="pkg" />
+                </manifest>
+            """),
+            encoding="utf-8",
+        )
+        unparseable_url = "not-valid-url/org/repo"
         args = argparse.Namespace(
-            catalog_source="not-valid-url/org/repo@main",
-            kanon_file="./.kanon",
+            catalog_source=f"{unparseable_url}@main",
+            kanon_file=str(tmp_path / ".kanon"),
             entries=["entry-a"],
             force=False,
             dry_run=False,
+            alias_override=None,
+            marketplace_install=None,
         )
-        with pytest.raises(SystemExit) as exc_info:
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, unparseable_url, "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, unparseable_url)],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
             run_add(args)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
@@ -2220,6 +2305,8 @@ class TestRunAddMarketplaceLine:
 
         from kanon_cli.commands.add import run_add
 
+        import textwrap
+
         meta = CatalogMetadata(
             name="entry-a",
             display_name="Entry A",
@@ -2229,6 +2316,21 @@ class TestRunAddMarketplaceLine:
         )
         manifest_root = kanon_file.parent / "repo"
         xml_path = manifest_root / "repo-specs" / "entry-a-marketplace.xml"
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-a</name>
+                    <display-name>Entry A</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
+                </manifest>
+            """),
+            encoding="utf-8",
+        )
         url = "https://example.com/org/repo.git"
         args = TestRunAddMarketplaceLine._make_args(kanon_file, marketplace_install)
         with (

@@ -50,8 +50,10 @@ class TestDiscoverSourceNamesMissingUrl:
             _discover_source_names(expanded)
         assert "KANON_SOURCE_testsource_URL" in str(exc_info.value)
 
-    def test_source_with_all_five_variables_does_not_raise(self) -> None:
-        """A source with URL, REF, PATH, NAME, and GITBASE does not raise."""
+    def test_source_with_all_structural_variables_does_not_raise(self) -> None:
+        """A source with all required structural keys (plus an optional env var)
+        does not raise.
+        """
         expanded = {
             "KANON_SOURCE_good_URL": "https://example.com",
             "KANON_SOURCE_good_REF": "main",
@@ -61,6 +63,21 @@ class TestDiscoverSourceNamesMissingUrl:
         }
         names = _discover_source_names(expanded)
         assert names == ["good"]
+
+    def test_lone_optional_env_var_does_not_imply_a_source(self) -> None:
+        """An optional env-var key alone (no structural suffix) infers no source.
+
+        _GITBASE (and any other non-structural suffix) is an optional
+        per-dependency env var, so it must NOT be treated as a partial source
+        that requires a _URL. A lone env-var key yields zero sources, which
+        raises NoSourcesError (not a missing-URL error for that alias).
+        """
+        from kanon_cli.core.kanonenv import NoSourcesError
+
+        for suffix in ("_GITBASE", "_MYBASE"):
+            expanded = {f"KANON_SOURCE_lonely{suffix}": "https://example.com"}
+            with pytest.raises(NoSourcesError):
+                _discover_source_names(expanded)
 
     def test_missing_url_for_one_source_among_multiple_raises(self) -> None:
         """When one source among multiple is missing URL, ValueError names the missing variable."""
@@ -77,10 +94,12 @@ class TestDiscoverSourceNamesMissingUrl:
 
     @pytest.mark.parametrize(
         "suffix",
-        ["_REF", "_PATH", "_NAME", "_GITBASE"],
+        ["_REF", "_PATH", "_NAME"],
     )
-    def test_parametrized_single_suffix_without_url_raises(self, suffix: str) -> None:
-        """Each non-URL suffix alone without URL raises ValueError naming the URL var."""
+    def test_parametrized_single_structural_suffix_without_url_raises(self, suffix: str) -> None:
+        """Each required structural non-URL suffix alone without URL raises
+        ValueError naming the URL var.
+        """
         name = "paramtest"
         expanded = {f"KANON_SOURCE_{name}{suffix}": "value"}
         with pytest.raises(ValueError, match=f"KANON_SOURCE_{name}_URL"):

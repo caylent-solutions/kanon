@@ -350,7 +350,6 @@ class TestDoctorJourney:
 
         gone_url = f"file://{tmp_path / 'repos' / 'gone.git'}"
         _set_kanon_field(kanon_file, _CATALOG_ENTRY_NAME, "URL", gone_url)
-        _set_kanon_field(kanon_file, _CATALOG_ENTRY_NAME, "GITBASE", gone_url)
 
         lock_text = lock_file.read_text(encoding="utf-8")
         lock_text = re.sub(r'(?m)^url = ".*"$', f'url = "{gone_url}"', lock_text)

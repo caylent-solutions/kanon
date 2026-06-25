@@ -7,7 +7,7 @@ Covers:
 - Entry-name input path (Foo-Bar -> foo_bar)
 - Source-name input path (foo_bar stays as foo_bar)
 - Non-contiguous lines removed while other content preserved byte-for-byte
-- Fewer-than-five-keys hard error with spec-canonical wording
+- Fewer-than-structural-keys hard error with spec-canonical wording
 - Missing .kanon file hard error
 - Multi-source atomicity (all-or-nothing)
 - Summary line on stdout
@@ -135,7 +135,10 @@ class TestRemoveCoreHappyPath:
         assert "OTHER_VAR=kept" in content
 
     def test_stdout_summary_names_removed_keys(self, tmp_path: pathlib.Path) -> None:
-        """stdout includes all five removed key names."""
+        """stdout names the four structural removed keys; the optional _GITBASE
+        env-var line is still removed from the file even though the summary names
+        only the structural keys.
+        """
         kanon_file = _kanon_simple(tmp_path)
 
         result = _run_kanon(["remove", "foo_bar", "--kanon-file", str(kanon_file)])
@@ -145,7 +148,9 @@ class TestRemoveCoreHappyPath:
         assert "KANON_SOURCE_foo_bar_REF" in result.stdout
         assert "KANON_SOURCE_foo_bar_PATH" in result.stdout
         assert "KANON_SOURCE_foo_bar_NAME" in result.stdout
-        assert "KANON_SOURCE_foo_bar_GITBASE" in result.stdout
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in kanon_file.read_text(), (
+            "the optional _GITBASE env-var line must be removed along with the structural block"
+        )
 
 
 @pytest.mark.integration
@@ -178,7 +183,7 @@ class TestRemoveCoreACCycle001:
         assert "# trailing comment about baz" in content
 
     def test_interleaved_stdout_summary_present(self, tmp_path: pathlib.Path) -> None:
-        """Summary line names all five removed keys."""
+        """Summary line names the four structural removed keys."""
         kanon_file = _kanon_interleaved(tmp_path)
 
         result = _run_kanon(["remove", "Foo-Bar", "--kanon-file", str(kanon_file)])
@@ -188,9 +193,8 @@ class TestRemoveCoreACCycle001:
         assert "KANON_SOURCE_foo_bar_REF" in result.stdout
         assert "KANON_SOURCE_foo_bar_PATH" in result.stdout
         assert "KANON_SOURCE_foo_bar_NAME" in result.stdout
-        assert "KANON_SOURCE_foo_bar_GITBASE" in result.stdout
 
-    def test_rerun_on_clean_file_produces_fewer_than_five_error(self, tmp_path: pathlib.Path) -> None:
+    def test_rerun_on_clean_file_produces_fewer_than_structural_error(self, tmp_path: pathlib.Path) -> None:
         """Re-running remove on an already-clean file produces spec-canonical hard error."""
         kanon_file = _kanon_interleaved(tmp_path)
 
@@ -201,7 +205,7 @@ class TestRemoveCoreACCycle001:
         assert second.returncode != 0, "Expected non-zero exit on second remove"
         assert "foo_bar" in second.stderr
         assert "not fully present in .kanon" in second.stderr
-        assert "found 0 of 5 expected" in second.stderr
+        assert "found 0 of 4 expected" in second.stderr
 
 
 @pytest.mark.integration
@@ -220,12 +224,12 @@ class TestRemoveCoreErrorPaths:
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2, 3, 4],
-        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
+        [0, 1, 2, 3],
+        ids=["found=0", "found=1", "found=2", "found=3"],
     )
-    def test_fewer_than_five_keys_exits_nonzero(self, found_count: int, tmp_path: pathlib.Path) -> None:
-        """Fewer than 5 matching keys produces non-zero exit with spec-canonical error."""
-        suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
+    def test_fewer_than_structural_keys_exits_nonzero(self, found_count: int, tmp_path: pathlib.Path) -> None:
+        """Fewer than the 4 structural keys produces non-zero exit with spec-canonical error."""
+        suffixes = ["_URL", "_REF", "_PATH", "_NAME"]
         lines = ["GITBASE=x\n"] + [f"KANON_SOURCE_foo_bar{suffix}=value\n" for suffix in suffixes[:found_count]]
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text("".join(lines))
@@ -234,7 +238,7 @@ class TestRemoveCoreErrorPaths:
 
         assert result.returncode != 0
         assert "foo_bar" in result.stderr
-        assert f"found {found_count} of 5 expected" in result.stderr
+        assert f"found {found_count} of 4 expected" in result.stderr
 
     def test_atomicity_file_unchanged_when_one_name_fails(self, tmp_path: pathlib.Path) -> None:
         """Multi-remove: if one name fails, the file is not written."""

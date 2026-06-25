@@ -84,7 +84,8 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
-    SOURCE_GITBASE_SUFFIX,
+    SHELL_VAR_PATTERN,
+    SOURCE_ENV_KEY,
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
     resolve_kanon_home,
@@ -517,6 +518,44 @@ class UnresolvedPlaceholderError(InstallError):
             "  Remediation: replace all placeholder tokens with real values before "
             "running kanon install. See docs/configuration.md for details."
         )
+
+
+class UnresolvedManifestVarError(InstallError):
+    """Raised when a synced manifest still references an unprovided ``${VAR}``.
+
+    The repo-tool ``envsubst`` only warns (and exits 0) when a ``${VAR}``
+    placeholder cannot be resolved from the environment, leaving it verbatim in
+    the manifest XML. Proceeding to ``repo sync`` with an unresolved fetch URL
+    would surface as an opaque git-remote error, so kanon performs its own
+    post-envsubst scan of the resolved manifest (and its ``<include>`` chain)
+    and fails fast with an actionable diagnostic naming the exact ``.kanon`` key
+    to set.
+
+    A source declares an env var only when its manifest references the matching
+    ``${VAR}``; ``kanon add`` writes the per-dependency key (auto-derived for
+    ``GITBASE``, empty placeholder otherwise) so the operator only needs to fill
+    in a value.
+
+    Args:
+        source_name: The source alias whose manifest carries the unresolved
+            var(s).
+        var_names: The sorted list of unresolved ``${VAR}`` names found in the
+            source's resolved manifest after envsubst.
+    """
+
+    def __init__(self, source_name: str, var_names: list[str]) -> None:
+        self.source_name = source_name
+        self.var_names = var_names
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        lines = []
+        for var in self.var_names:
+            lines.append(
+                f"ERROR: source '{self.source_name}' manifest needs ${{{var}}} but no value was provided; "
+                f"set {SOURCE_PREFIX}{self.source_name}_{var} in .kanon"
+            )
+        return "\n".join(lines)
 
 
 class RefreshRepoInitError(InstallError):
@@ -1440,46 +1479,38 @@ def run_repo_init(
 
 def build_source_envsubst_vars(
     base_env_vars: dict[str, str],
-    source_name: str,
-    source_gitbase: str,
+    source_env: dict[str, str],
 ) -> dict[str, str]:
     """Build the envsubst environment for one source's manifest substitution.
 
-    Each source declares its own ``KANON_SOURCE_<alias>_GITBASE`` org base
-    (spec Section 5.1 / FR-5): ``kanon add`` records the org base per dependency
-    and never writes a global ``GITBASE`` header line. The repo-tool ``envsubst``
-    resolves ``${GITBASE}`` from the process environment, so install must promote
-    the source's per-alias gitbase into the ``GITBASE`` key for that source's
-    substitution rather than relying on a global value that ``add`` does not
-    write.
+    Each source declares its own open, optional per-dependency env-var map
+    (spec Section 5.1 / FR-5): ``kanon add`` records a
+    ``KANON_SOURCE_<alias>_<VAR>`` line for every ``${VAR}`` the entry's
+    manifest references (``GITBASE`` is the common case, auto-derived from the
+    source URL; any other var name is written empty as a placeholder). The
+    repo-tool ``envsubst`` resolves ``${VAR}`` from the process environment, so
+    install promotes each source's per-dependency env vars into that source's
+    substitution environment.
 
-    The per-alias gitbase takes precedence over any global ``GITBASE`` carried in
-    ``base_env_vars`` because it is the source-targeted value; a global
-    ``GITBASE`` line (only present when hand-written) governs no source whose own
-    ``_GITBASE`` is defined.
+    Per-source env vars take precedence over any same-named value carried in
+    ``base_env_vars`` (e.g. a hand-written global ``GITBASE`` line) because they
+    are the source-targeted values. The merge is per-source and isolated: only
+    the vars this source declares are injected, with no global set leaking
+    across sources.
 
     Args:
         base_env_vars: Shared envsubst variables (``CLAUDE_MARKETPLACES_DIR`` and
             an optional global ``GITBASE``). Not mutated.
-        source_name: The source alias, used for the fail-fast diagnostic.
-        source_gitbase: The source's ``KANON_SOURCE_<alias>_GITBASE`` value.
+        source_env: The source's open per-dependency env-var map
+            (``source_data["env"]``); each key is a bare ``${VAR}`` name and the
+            value is the substitution value (possibly empty).
 
     Returns:
-        A new dict combining the base variables with ``GITBASE`` set to the
-        source's per-alias gitbase.
-
-    Raises:
-        ValueError: If ``source_gitbase`` is empty, naming the source and the
-            exact ``.kanon`` key to populate.
+        A new dict combining the base variables with this source's per-dependency
+        env vars overlaid on top.
     """
-    if not source_gitbase:
-        raise ValueError(
-            f"source '{source_name}' has an empty {SOURCE_PREFIX}{source_name}{SOURCE_GITBASE_SUFFIX} value; "
-            f"set {SOURCE_PREFIX}{source_name}{SOURCE_GITBASE_SUFFIX}=<org base url> in .kanon so "
-            "the manifest's ${GITBASE} placeholder can be resolved"
-        )
     source_env_vars = dict(base_env_vars)
-    source_env_vars["GITBASE"] = source_gitbase
+    source_env_vars.update(source_env)
     return source_env_vars
 
 
@@ -1491,12 +1522,77 @@ def run_repo_envsubst(
 
     Args:
         source_dir: Path to ``.kanon-data/sources/<name>/``.
-        env_vars: Environment variables to export (GITBASE, CLAUDE_MARKETPLACES_DIR).
+        env_vars: Environment variables to export (the source's per-dependency
+            env vars, e.g. ``GITBASE``, plus ``CLAUDE_MARKETPLACES_DIR``).
 
     Raises:
         RepoCommandError: If repo envsubst exits non-zero.
     """
     _repo.repo_envsubst(str(source_dir), env_vars)
+
+
+def _collect_manifest_tree_paths(
+    include_tree: IncludeTree,
+    manifest_repo_root: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Flatten an ``IncludeTree`` into absolute manifest file paths.
+
+    The root node and every transitively-included node carry a repo-relative
+    ``path``; this resolves each against ``manifest_repo_root`` and returns the
+    deduplicated absolute paths in DFS pre-order.
+
+    Args:
+        include_tree: The resolved include tree for the source's root manifest.
+        manifest_repo_root: Absolute path to the synced ``.repo/manifests`` dir.
+
+    Returns:
+        The deduplicated list of absolute manifest file paths in the tree.
+    """
+    ordered: list[pathlib.Path] = []
+    seen: set[pathlib.Path] = set()
+
+    def _visit(node: IncludeTree) -> None:
+        abs_path = manifest_repo_root / node.path
+        if abs_path not in seen:
+            seen.add(abs_path)
+            ordered.append(abs_path)
+        for child in node.includes:
+            _visit(child)
+
+    _visit(include_tree)
+    return ordered
+
+
+def assert_manifest_vars_resolved(
+    source_name: str,
+    manifest_paths: list[pathlib.Path],
+) -> None:
+    """Fail fast when any synced manifest still references an unprovided ``${VAR}``.
+
+    The repo-tool ``envsubst`` only warns on an unresolved ``${VAR}`` and exits
+    0, leaving the placeholder verbatim in the manifest XML. This scans each
+    manifest file's text for remaining ``${VAR}`` tokens and raises
+    :class:`UnresolvedManifestVarError` (naming the exact ``.kanon`` key to set)
+    so kanon never proceeds to ``repo sync`` with an unresolved fetch URL.
+
+    Args:
+        source_name: The source alias (used in the diagnostic).
+        manifest_paths: Absolute paths to the source's resolved manifest files
+            (the root manifest plus its ``<include>`` chain).
+
+    Raises:
+        UnresolvedManifestVarError: If any manifest file still contains a
+            ``${VAR}`` placeholder after envsubst.
+    """
+    unresolved: set[str] = set()
+    for manifest_path in manifest_paths:
+        if not manifest_path.is_file():
+            continue
+        text = manifest_path.read_text(encoding="utf-8")
+        for match in SHELL_VAR_PATTERN.finditer(text):
+            unresolved.add(match.group(1))
+    if unresolved:
+        raise UnresolvedManifestVarError(source_name=source_name, var_names=sorted(unresolved))
 
 
 def run_repo_sync(source_dir: pathlib.Path) -> None:
@@ -2264,15 +2360,22 @@ def _run_install(
         print("  repo envsubst...")
         source_env_vars = build_source_envsubst_vars(
             base_env_vars,
-            name,
-            str(source_data["gitbase"]),
+            cast(dict[str, str], source_data[SOURCE_ENV_KEY]),
         )
         run_repo_envsubst(source_dir, source_env_vars)
-        print("  repo sync...")
-        run_repo_sync(source_dir)
 
         manifest_repo_root = source_dir / ".repo" / "manifests"
         manifest_xml_path = manifest_repo_root / source_data["path"]
+
+        include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
+
+        assert_manifest_vars_resolved(
+            name,
+            _collect_manifest_tree_paths(include_tree, manifest_repo_root),
+        )
+
+        print("  repo sync...")
+        run_repo_sync(source_dir)
 
         if source_marketplace[name]:
             marketplace_dir = pathlib.Path(marketplace_dir_str)
@@ -2283,7 +2386,6 @@ def _run_install(
             after_names = set(discover_registered_marketplace_names(marketplace_dir))
             attributed_marketplaces[name] = sorted(after_names - before_marketplace_names)
             resolved_entries[-1].registered_marketplaces = attributed_marketplaces[name]
-        include_tree = _walk_includes(manifest_xml_path, manifest_repo_root)
 
         resolved_entries[-1].includes = _include_tree_to_entries(
             include_tree,

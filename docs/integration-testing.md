@@ -1111,7 +1111,7 @@ kanon validate
 
 ### EC-10: doctor on zero-source .kanon
 
-A `.kanon` that declares no `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` source blocks is
+A `.kanon` that declares no `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}` source blocks is
 invalid. With a lockfile present, `kanon doctor` recomputes the `kanon_hash`,
 which forces source discovery and raises the "No sources found" error. The
 command must surface this as a clean finding, not a raw Python traceback.

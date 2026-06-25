@@ -195,18 +195,26 @@ class TestPerAliasGitbaseDrivesEnvsubst:
 class TestBuildSourceEnvsubstVars:
     """Unit-level contract for the per-source envsubst environment builder."""
 
-    def test_per_alias_gitbase_wins_over_global(self) -> None:
-        """The source-targeted per-alias gitbase overrides a global GITBASE."""
+    def test_per_source_env_wins_over_global(self) -> None:
+        """A source's per-dependency env var overrides a same-named global."""
         base = {"CLAUDE_MARKETPLACES_DIR": "/tmp/mp", "GITBASE": "https://global.example.com"}
-        result = build_source_envsubst_vars(base, "alpha", "https://github.com/org-alpha")
+        result = build_source_envsubst_vars(base, {"GITBASE": "https://github.com/org-alpha"})
         assert result["GITBASE"] == "https://github.com/org-alpha"
         assert result["CLAUDE_MARKETPLACES_DIR"] == "/tmp/mp"
         assert base["GITBASE"] == "https://global.example.com", "the base mapping must not be mutated"
 
-    def test_empty_per_alias_gitbase_fails_fast(self) -> None:
-        """An empty per-alias gitbase raises a ValueError naming the .kanon key."""
-        with pytest.raises(ValueError) as exc_info:
-            build_source_envsubst_vars({}, "gamma", "")
-        message = str(exc_info.value)
-        assert "gamma" in message, message
-        assert "KANON_SOURCE_gamma_GITBASE" in message, message
+    def test_empty_source_env_returns_base_copy(self) -> None:
+        """An empty per-source env map leaves the base variables unchanged.
+
+        A source whose manifest references no ${VAR} declares no env var, so the
+        envsubst environment is exactly the shared base (no fail-fast).
+        """
+        base = {"CLAUDE_MARKETPLACES_DIR": "/tmp/mp"}
+        result = build_source_envsubst_vars(base, {})
+        assert result == {"CLAUDE_MARKETPLACES_DIR": "/tmp/mp"}
+        assert result is not base, "the base mapping must not be returned by reference"
+
+    def test_custom_per_source_var_is_injected(self) -> None:
+        """A non-GITBASE per-dependency env var is injected verbatim."""
+        result = build_source_envsubst_vars({}, {"MYBASE": "https://example.com/custom"})
+        assert result == {"MYBASE": "https://example.com/custom"}

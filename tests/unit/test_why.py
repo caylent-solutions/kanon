@@ -845,7 +845,8 @@ class TestLiveResolveTree:
                     "ref": revision,
                     "path": "./foo",
                     "name": source_name,
-                    "gitbase": "https://github.com/org",
+                    "marketplace": False,
+                    "env": {"GITBASE": "https://github.com/org"},
                 }
             },
             "globals": {},

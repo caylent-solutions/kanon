@@ -67,7 +67,9 @@ class TestConstantsModule:
         assert "_REF" in SOURCE_SUFFIXES
         assert "_PATH" in SOURCE_SUFFIXES
         assert "_NAME" in SOURCE_SUFFIXES
-        assert "_GITBASE" in SOURCE_SUFFIXES
+        assert "_GITBASE" not in SOURCE_SUFFIXES, (
+            "_GITBASE is now an optional per-dependency env var, not a required structural suffix"
+        )
 
     def test_kanonenv_filename(self) -> None:
         assert KANONENV_FILENAME == ".kanon"

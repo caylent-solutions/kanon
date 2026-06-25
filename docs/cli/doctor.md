@@ -113,10 +113,11 @@ ERROR: kanon_hash mismatch: .kanon was hand-edited since the last 'kanon install
 ### Subcheck 3: Orphaned lock entries
 
 For every source recorded in the lockfile, checks that the matching
-alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` block still
-exists in `.kanon` (matched by alias). A source present in the lockfile but
-absent from `.kanon` is an orphan (e.g. the source was removed from `.kanon`
-without re-running `kanon install`).
+alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}` block still exists in
+`.kanon` (matched by alias; optional per-dependency env-var lines do not affect
+presence). A source present in the lockfile but absent from `.kanon` is an
+orphan (e.g. the source was removed from `.kanon` without re-running
+`kanon install`).
 
 **Error per orphan (exit 1):**
 

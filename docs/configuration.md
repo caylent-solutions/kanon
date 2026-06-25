@@ -609,8 +609,10 @@ KANON_GIT_RETRY_DELAY=3 kanon install .kanon
 
 Sources are alias-keyed: each is auto-discovered from a
 `KANON_SOURCE_<alias>_URL` variable and processed in alphabetical order
-by alias. Each source block carries the alias-keyed suffixes
-`_{URL,REF,PATH,NAME,GITBASE}`:
+by alias. Each source block carries the required structural suffixes
+`_{URL,REF,PATH,NAME}`, plus an open, optional set of per-dependency
+env-var suffixes (`KANON_SOURCE_<alias>_<VAR>`) used to resolve `${VAR}`
+placeholders in that source's manifest at install time:
 
 ```properties
 KANON_SOURCE_build_URL=${KANON_SOURCE_build_GITBASE}/build-repo.git
@@ -626,8 +628,15 @@ KANON_SOURCE_marketplaces_NAME=marketplaces
 KANON_SOURCE_marketplaces_GITBASE=https://github.com/org
 ```
 
-Each source requires the `_URL`, `_REF`, and `_PATH` suffixed variables;
-`_NAME` and `_GITBASE` are written by `kanon add`.
+Each source requires the `_URL`, `_REF`, `_PATH`, and `_NAME` suffixed
+variables. The per-dependency env-var suffixes (`_GITBASE` above, or any
+other `${VAR}` name) are OPTIONAL and open-ended: `kanon add` writes one
+line per `${VAR}` the entry's manifest actually references (the `GITBASE`
+var is auto-derived from the source URL; every other var name is written
+empty for you to fill in), and writes none when the manifest references no
+`${VAR}`. At install time each declared var is injected into that source's
+manifest substitution; an unresolved `${VAR}` after substitution fails the
+install fast, naming the `KANON_SOURCE_<alias>_<VAR>` key to set.
 
 ---
 

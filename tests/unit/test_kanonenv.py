@@ -24,8 +24,9 @@ def _block(
 ) -> str:
     """Render a complete alias-keyed .kanon source block (spec Section 5.1).
 
-    Every required suffix (_URL, _REF, _PATH, _NAME, _GITBASE) is emitted so the
-    block parses. ``name`` defaults to the alias when not given.
+    Every required structural suffix (_URL, _REF, _PATH, _NAME) is emitted, plus
+    an optional _GITBASE env-var line (one member of the open per-dependency
+    env-var set). ``name`` defaults to the alias when not given.
     """
     manifest_name = alias if name is None else name
     return (
@@ -68,7 +69,8 @@ class TestValidParsing:
         assert source["ref"] == ">=1.0.0,<2.0.0"
         assert source["path"] == "repo-specs/build.xml"
         assert source["name"] == "build-manifest"
-        assert source["gitbase"] == "https://example.com/org"
+        assert source["env"]["GITBASE"] == "https://example.com/org"
+        assert "gitbase" not in source, "_GITBASE is now collected into source['env'], not a top-level key"
         assert "revision" not in source
 
     def test_parses_globals(self, tmp_path: pathlib.Path) -> None:

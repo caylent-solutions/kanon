@@ -338,8 +338,10 @@ kanon add my-tool --marketplace-install # also enable the marketplace lifecycle
 ```
 
 `kanon add` resolves each entry against the catalog and writes the
-alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` block into
-`.kanon` (plus a `_MARKETPLACE=true` line for marketplace entries),
+alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}` block into
+`.kanon` (plus one optional `KANON_SOURCE_<alias>_<VAR>` env-var line per
+`${VAR}` the entry's manifest references -- `GITBASE` auto-derived, others
+empty -- and a `_MARKETPLACE=true` line for marketplace entries),
 creating the file when it does not yet exist. There is no global header.
 
 **3. Install (sync all packages, write `.kanon.lock`):**
@@ -460,9 +462,10 @@ exclusive; `--format json` is incompatible with `--tree`.
 ### kanon add
 
 Resolves catalog entries from the catalog source and appends the alias-keyed
-`KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` block to `.kanon` (plus a
-`_MARKETPLACE=true` line for marketplace entries), creating the file when
-absent. There is no global header.
+`KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}` block to `.kanon` (plus one optional
+`KANON_SOURCE_<alias>_<VAR>` env-var line per `${VAR}` the entry's manifest
+references and a `_MARKETPLACE=true` line for marketplace entries), creating the
+file when absent. There is no global header.
 
 ```bash
 kanon add my-tool                       # pin to highest PEP 440 tag
@@ -480,9 +483,10 @@ overriding the auto-detected `<catalog-metadata><type>`).
 
 ### kanon remove
 
-Removes the alias-keyed `KANON_SOURCE_<alias>_*` block (`_URL`, `_REF`,
-`_PATH`, `_NAME`, `_GITBASE`, and the optional `_MARKETPLACE`) for one or
-more entries from `.kanon`.
+Removes the alias-keyed `KANON_SOURCE_<alias>_*` block (the structural `_URL`,
+`_REF`, `_PATH`, `_NAME`, plus any optional per-dependency env-var line such as
+`_GITBASE` and the optional `_MARKETPLACE`) for one or more entries from
+`.kanon`.
 
 ```bash
 kanon remove my-tool                      # canonical source OR entry name
@@ -725,10 +729,16 @@ Path to the entry-point manifest XML for the source.
 **`KANON_SOURCE_<alias>_NAME`** (Required)
 The original catalog entry name (the pre-normalization manifest name).
 
-**`KANON_SOURCE_<alias>_GITBASE`** (Required)
-The per-dependency org base exported as `${GITBASE}` while this source's
-manifests are processed (e.g. `https://github.com/your-org`). Replaces the
-removed global `GITBASE` header.
+**`KANON_SOURCE_<alias>_<VAR>`** (Optional, open-ended)
+Per-dependency env vars used to resolve `${VAR}` placeholders in this source's
+manifest at install time. `kanon add` writes one line per `${VAR}` the entry's
+manifest actually references: the var named exactly `GITBASE` is auto-derived
+from the source URL (e.g. `KANON_SOURCE_<alias>_GITBASE=https://github.com/your-org`,
+replacing the removed global `GITBASE` header), and every other var name is
+written empty for you to fill in. An entry whose manifest references no `${VAR}`
+gets no env-var line. At install time each declared var is injected into that
+source's manifest substitution; if a `${VAR}` remains unresolved, install fails
+fast naming the `KANON_SOURCE_<alias>_<VAR>` key to set.
 
 **`KANON_SOURCE_<alias>_MARKETPLACE`** (Optional)
 Per-source marketplace toggle. Set to `true` to enable the marketplace
@@ -766,7 +776,9 @@ environment-variable reference.
 # Required only when a source enables the marketplace lifecycle
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 
-# Source: build -- build tooling packages
+# Source: build -- build tooling packages.
+# The _GITBASE line below is present only because this source's manifest
+# references ${GITBASE}; a manifest with fully-literal remotes has no env-var line.
 KANON_SOURCE_build_URL=https://github.com/your-org/kanon-manifests.git
 KANON_SOURCE_build_REF=main
 KANON_SOURCE_build_PATH=repo-specs/build/meta.xml

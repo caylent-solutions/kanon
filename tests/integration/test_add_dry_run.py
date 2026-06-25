@@ -657,7 +657,9 @@ class TestAddCycleEvidence:
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_add
         assert "KANON_SOURCE_entry_a_PATH=" in content_after_add
         assert "KANON_SOURCE_entry_a_NAME=" in content_after_add
-        assert "KANON_SOURCE_entry_a_GITBASE=" in content_after_add
+        assert "KANON_SOURCE_entry_a_GITBASE=" not in content_after_add, (
+            "this entry's manifest references no ${GITBASE}, so add writes no env-var line"
+        )
 
         result2 = _run_kanon(
             [

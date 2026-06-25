@@ -334,8 +334,10 @@ def _check_orphan_locks(
     """Check for lockfile entries whose source triples are absent from .kanon.
 
     Subcheck 3 in spec Section 4.6: For every source recorded in the lockfile,
-    verify that the matching KANON_SOURCE_<name>_{URL,REVISION,PATH} triple
-    exists in .kanon. Missing triples produce one error finding per orphan.
+    verify that the matching KANON_SOURCE_<name> source (discovered by its
+    required structural keys) exists in .kanon. Missing sources produce one
+    error finding per orphan; optional per-dependency env-var lines do not
+    affect presence.
 
     This function is pure: no stdout/stderr side effects.
 

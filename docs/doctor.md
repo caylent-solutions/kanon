@@ -154,8 +154,9 @@ the workspace may contain stale clones. This check is skipped when no
 lockfile is present.
 
 For every source recorded in the lockfile, doctor checks that the matching
-alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME,GITBASE}` block still
-exists in `.kanon` (matched by alias). One error finding is emitted per orphan.
+alias-keyed `KANON_SOURCE_<alias>_{URL,REF,PATH,NAME}` block still exists in
+`.kanon` (matched by alias; optional per-dependency env-var lines do not affect
+presence). One error finding is emitted per orphan.
 
 #### Pass message
 

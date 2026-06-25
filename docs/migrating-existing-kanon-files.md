@@ -151,19 +151,23 @@ KANON_SOURCE_package_a_NAME=Package-A
 KANON_SOURCE_package_a_GITBASE=https://example.invalid/org
 ```
 
-Rename every key in the block (`_URL`, `_REF`, `_PATH`, `_NAME`, `_GITBASE`, and
-the optional `_MARKETPLACE`) in the same edit. Do not leave any of the old-named
-keys in the file.
+Rename every key in the block in the same edit -- the required structural keys
+(`_URL`, `_REF`, `_PATH`, `_NAME`) plus any optional per-dependency env-var line
+(`_GITBASE` above, or any other `${VAR}` name your manifest uses) and the
+optional `_MARKETPLACE`. Do not leave any of the old-named keys in the file.
 
 ## Common fixes
 
 ### No global header is required
 
 There is **no required global header** in the current `.kanon` format. `kanon add`
-writes self-contained alias-keyed blocks; the org base is recorded per dependency
-in `KANON_SOURCE_<alias>_GITBASE` rather than a single global `GITBASE` line.
-There is also no global `KANON_MARKETPLACE_INSTALL` toggle: marketplace install is
-a per-dependency opt-in (see [Marketplace install is per-dependency](#marketplace-install-is-per-dependency)
+writes self-contained alias-keyed blocks; when a source's manifest references
+`${GITBASE}`, the org base is recorded per dependency in
+`KANON_SOURCE_<alias>_GITBASE` (auto-derived from the source URL) rather than a
+single global `GITBASE` line -- and a manifest that references no `${VAR}` gets
+no env-var line at all. There is also no global `KANON_MARKETPLACE_INSTALL`
+toggle: marketplace install is a per-dependency opt-in (see
+[Marketplace install is per-dependency](#marketplace-install-is-per-dependency)
 below).
 
 The only global that is sometimes required is `CLAUDE_MARKETPLACES_DIR`, and only

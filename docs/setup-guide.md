@@ -88,9 +88,13 @@ Install it with `pipx install kanon-cli` (production) or `pip install -e .`
 (local development on this repository). The `kanon repo` subsystem is part of
 the `kanon` CLI -- there is no separate tool to install.
 
-### `kanon repo envsubst` fails
+### `kanon install` fails with `manifest needs ${VAR} but no value was provided`
 
-Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`.
+A source's manifest references a `${VAR}` placeholder that has no value. Set the
+matching per-dependency key in `.kanon`: `KANON_SOURCE_<alias>_<VAR>=<value>`
+(for example `KANON_SOURCE_<alias>_GITBASE=https://github.com/your-org`). `kanon
+add` writes these lines automatically (auto-deriving `GITBASE` and leaving other
+vars empty); fill in any empty value before re-running `kanon install`.
 
 ### `kanon repo sync` fails with authentication errors
 

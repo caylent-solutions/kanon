@@ -20,7 +20,7 @@ _shtab_kanon_commands() {
     "install:Execute the full Kanon install lifecycle."
     "marketplace:Manage the per-dependency Claude marketplace install flag in .kanon."
     "outdated:Compare each KANON_SOURCE_\<name\>_\* block in the .kanon file against"
-    "remove:Remove the KANON_SOURCE_\<alias\>_\{URL,REF,PATH,NAME,GITBASE\} block for"
+    "remove:Remove the KANON_SOURCE_\<alias\>_\{URL,REF,PATH,NAME\} block (plus any"
     "repo:Run kanon\'s repo subcommands."
     "search:Print one catalog entry name per line to stdout, sorted"
     "validate:Validate manifest XML files for well-formedness and correctness."

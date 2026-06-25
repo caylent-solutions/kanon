@@ -199,10 +199,12 @@ class TestAddCoreCreateWithHeader:
 
         assert "\nGITBASE=" not in content
         assert not content.startswith("GITBASE=")
-        assert "KANON_SOURCE_entry_a_GITBASE=" in content
+        assert "KANON_SOURCE_entry_a_GITBASE=" not in content, (
+            "this entry's manifest references no ${GITBASE}, so add writes no env-var line"
+        )
 
     def test_file_contains_source_block_lines(self, tmp_path: pathlib.Path) -> None:
-        """Destination .kanon file contains the KANON_SOURCE_* block lines."""
+        """Destination .kanon file contains the KANON_SOURCE_* structural block lines."""
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -228,7 +230,9 @@ class TestAddCoreCreateWithHeader:
         assert "KANON_SOURCE_entry_a_REF=" in content
         assert "KANON_SOURCE_entry_a_PATH=" in content
         assert "KANON_SOURCE_entry_a_NAME=" in content
-        assert "KANON_SOURCE_entry_a_GITBASE=" in content
+        assert "KANON_SOURCE_entry_a_GITBASE=" not in content, (
+            "this entry's manifest references no ${GITBASE}, so no env-var line is written"
+        )
 
     def test_revision_is_highest_pep440_tag(self, tmp_path: pathlib.Path) -> None:
         """_REF line equals refs/tags/<highest tag> (AC-FUNC-009, AC-CYCLE-001)."""

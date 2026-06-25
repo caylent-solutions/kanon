@@ -252,15 +252,18 @@ class TestCollectRemovalLines:
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2, 3, 4],
-        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
+        [0, 1, 2, 3],
+        ids=["found=0", "found=1", "found=2", "found=3"],
     )
-    def test_raises_system_exit_on_fewer_than_five(
+    def test_raises_system_exit_on_fewer_than_structural(
         self, found_count: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Fewer than 5 matching keys is a hard error with spec-canonical message."""
-        key_suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
-        lines = [f"KANON_SOURCE_foo_bar{suffix}=value\n" for suffix in key_suffixes[:found_count]]
+        """Fewer than the required structural keys is a hard error with spec-canonical
+        message. Presence counts only the structural suffixes (URL/REF/PATH/NAME);
+        optional env-var lines never count toward presence.
+        """
+        structural_suffixes = ["_URL", "_REF", "_PATH", "_NAME"]
+        lines = [f"KANON_SOURCE_foo_bar{suffix}=value\n" for suffix in structural_suffixes[:found_count]]
         lines.insert(0, "GITBASE=x\n")
 
         with pytest.raises(SystemExit) as exc_info:
@@ -270,7 +273,24 @@ class TestCollectRemovalLines:
         stderr = capsys.readouterr().err
         assert "Foo-Bar" in stderr
         assert "foo_bar" in stderr
-        assert f"found {found_count} of 5 expected" in stderr
+        assert f"found {found_count} of 4 expected" in stderr
+
+    def test_optional_env_var_lines_do_not_count_toward_presence(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A block with optional env-var lines but a missing structural key still
+        fails: env vars (e.g. _GITBASE) and _MARKETPLACE never substitute for a
+        required structural key.
+        """
+        lines = [
+            "KANON_SOURCE_foo_bar_URL=https://example.com\n",
+            "KANON_SOURCE_foo_bar_REF=main\n",
+            "KANON_SOURCE_foo_bar_PATH=m.xml\n",
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n",
+            "KANON_SOURCE_foo_bar_MARKETPLACE=true\n",
+        ]
+        with pytest.raises(SystemExit):
+            _collect_removal_lines(lines, "foo_bar", "Foo-Bar")
+        stderr = capsys.readouterr().err
+        assert "found 3 of 4 expected" in stderr
 
     def test_error_message_contains_spec_canonical_wording(self, capsys: pytest.CaptureFixture[str]) -> None:
         """The error message follows the spec-canonical wording."""
@@ -282,7 +302,7 @@ class TestCollectRemovalLines:
         stderr = capsys.readouterr().err
 
         assert "not fully present in .kanon" in stderr
-        assert "found 1 of 5 expected" in stderr
+        assert "found 1 of 4 expected" in stderr
         assert "KANON_SOURCE_foo_bar_" in stderr
 
 
@@ -460,8 +480,8 @@ class TestRunRemoveFewerThanExpectedKeys:
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2, 3, 4],
-        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
+        [0, 1, 2, 3],
+        ids=["found=0", "found=1", "found=2", "found=3"],
     )
     def test_exits_nonzero_with_n_keys(
         self,
@@ -469,7 +489,7 @@ class TestRunRemoveFewerThanExpectedKeys:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
+        suffixes = ["_URL", "_REF", "_PATH", "_NAME"]
         lines = ["GITBASE=x\n"]
         for suffix in suffixes[:found_count]:
             lines.append(f"KANON_SOURCE_foo_bar{suffix}=value\n")
@@ -484,19 +504,19 @@ class TestRunRemoveFewerThanExpectedKeys:
         assert exc_info.value.code != 0
         stderr = capsys.readouterr().err
         assert "foo_bar" in stderr
-        assert f"found {found_count} of 5 expected" in stderr
+        assert f"found {found_count} of 4 expected" in stderr
 
     @pytest.mark.parametrize(
         "found_count",
-        [0, 1, 2, 3, 4],
-        ids=["found=0", "found=1", "found=2", "found=3", "found=4"],
+        [0, 1, 2, 3],
+        ids=["found=0", "found=1", "found=2", "found=3"],
     )
     def test_file_not_modified_on_error(
         self,
         found_count: int,
         tmp_path: pathlib.Path,
     ) -> None:
-        suffixes = ["_URL", "_REF", "_PATH", "_NAME", "_GITBASE"]
+        suffixes = ["_URL", "_REF", "_PATH", "_NAME"]
         lines = ["GITBASE=x\n"]
         for suffix in suffixes[:found_count]:
             lines.append(f"KANON_SOURCE_foo_bar{suffix}=value\n")
@@ -516,7 +536,9 @@ class TestRunRemoveFewerThanExpectedKeys:
 class TestRunRemoveSummaryOutput:
     """run_remove() writes one summary line to stdout per removed source (AC-FUNC-009)."""
 
-    def test_summary_line_mentions_five_keys(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_summary_line_mentions_structural_keys(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
@@ -536,7 +558,11 @@ class TestRunRemoveSummaryOutput:
         assert "KANON_SOURCE_foo_bar_REF" in stdout
         assert "KANON_SOURCE_foo_bar_PATH" in stdout
         assert "KANON_SOURCE_foo_bar_NAME" in stdout
-        assert "KANON_SOURCE_foo_bar_GITBASE" in stdout
+
+        remaining = kanon_file.read_text()
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in remaining, (
+            "the optional _GITBASE env-var line must be removed along with the structural block"
+        )
 
     def test_summary_mentions_kanon_file_path(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         content = (

@@ -34,7 +34,6 @@ class _FakeWorkGit:
         self._tag_list_output = tag_list_output
 
     def tag(self, *args: str) -> str:
-
         return self._tag_list_output
 
 

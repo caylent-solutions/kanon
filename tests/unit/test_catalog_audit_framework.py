@@ -501,7 +501,6 @@ class TestCloneAuditTargetErrors:
         monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def mock_clone_empty(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-
             dest = cmd[-1]
             pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")

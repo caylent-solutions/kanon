@@ -158,7 +158,6 @@ def _run_install_with_fake_catalog(
     """
 
     def _resolve_ref_to_sha_side_effect(url: str, ref: str) -> _RefResolution:
-
         if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo), ref],
@@ -178,7 +177,6 @@ def _run_install_with_fake_catalog(
         raise ValueError(f"unexpected URL passed to _resolve_ref_to_sha: {url!r}")
 
     def _check_sha_reachable_side_effect(url: str, sha: str, source_name: str) -> None:
-
         if str(url) in (str(fixture_repo), f"file://{fixture_repo}"):
             result = subprocess.run(
                 ["git", "ls-remote", str(fixture_repo)],
@@ -444,7 +442,6 @@ class TestStrictLockEndToEnd:
         fake_ref = _RefResolution(sha=sha_alpha, resolved_ref="refs/heads/main")
 
         def _check_reachable(url: str, sha: str, source_name: str) -> None:
-
             return None
 
         with (

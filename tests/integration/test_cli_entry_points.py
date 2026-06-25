@@ -71,14 +71,12 @@ class TestParserConstruction:
         assert args.validate_command == "marketplace"
 
     def test_bootstrap_subcommand_not_registered(self) -> None:
-
         parser = build_parser()
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["bootstrap", "kanon"])
         assert exc_info.value.code == 2
 
     def test_list_subcommand_not_registered(self) -> None:
-
         parser = build_parser()
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["list"])

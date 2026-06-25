@@ -733,7 +733,6 @@ class TestBackgroundRefreshClosure:
         captured: list = []
 
         def _fake_fork(refresh_fn: object) -> None:
-
             captured.append(refresh_fn)
 
         with patch.object(pv, "fork_background_refresh", side_effect=_fake_fork):

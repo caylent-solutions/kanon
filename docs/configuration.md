@@ -374,12 +374,20 @@ to cache files. See
 
 **`KANON_HOME` resolution order (highest wins):**
 
-1. `KANON_HOME` environment variable (when non-empty).
-2. `~/.kanon` -- default when the env var is unset or empty.
+1. `--home` / `--store-dir <path>` global CLI flag (when supplied).
+2. `KANON_HOME` environment variable (when non-empty).
+3. `~/.kanon` -- default when the env var is unset and no flag is given.
+
+The `--home` (alias `--store-dir`) flag is a global option accepted on
+every command; when supplied it overrides `KANON_HOME` for that
+invocation.
 
 ```bash
 # Store cache and artifacts under a non-default home
 export KANON_HOME=/tmp/my-kanon-home
+
+# Or per-invocation, overriding the env var and the default
+kanon --home /tmp/my-kanon-home install
 ```
 
 ---

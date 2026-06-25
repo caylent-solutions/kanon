@@ -344,7 +344,6 @@ class GitCheckoutTestCase(RepoWrapperTestCase):
 
     @classmethod
     def setUpClass(cls):
-
         cls.tempdirobj = tempfile.TemporaryDirectory(prefix="repo-rev-tests")
         cls.GIT_DIR = cls.tempdirobj.name
         run_git = wrapper.Wrapper().run_git

@@ -977,7 +977,6 @@ def _register_audit(
     )
 
     def _run_audit(args: argparse.Namespace) -> int:
-
         args.check_subset = args.check
         return audit_command(args)
 

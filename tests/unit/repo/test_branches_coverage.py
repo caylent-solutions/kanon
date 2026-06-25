@@ -227,7 +227,6 @@ class TestBranchesCommand:
         mock_get_context.return_value = {}
 
         def mock_callback(pool, output, results):
-
             pass
 
         mock_exec.return_value = None

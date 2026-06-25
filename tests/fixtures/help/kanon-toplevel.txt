@@ -28,6 +28,7 @@ Global options (always available):
   --quiet / --verbose            Logging verbosity (mutually exclusive).
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
   --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
+  --home / --store-dir <path>    Shared kanon home root (store + caches). Precedence: flag > KANON_HOME env > ~/.kanon.
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;

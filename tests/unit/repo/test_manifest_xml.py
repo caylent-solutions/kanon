@@ -1575,7 +1575,6 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
         os.environ[self.ENV_VAR_NAME] = self.marketplace_dir
 
     def tearDown(self):
-
         if self.orig_env is None:
             os.environ.pop(self.ENV_VAR_NAME, None)
         else:

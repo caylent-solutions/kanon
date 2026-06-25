@@ -104,11 +104,9 @@ class TestEqualityResolution:
 @pytest.mark.unit
 class TestInequalityResolution:
     def test_prefixed_inequality_excludes_named_tag(self) -> None:
-
         assert _resolve_constraint_from_tags("refs/tags/!=3.0.0", _TAGS) == "refs/tags/2.0.0"
 
     def test_inequality_excludes_lower_tag(self) -> None:
-
         assert _resolve_constraint_from_tags("refs/tags/!=1.0.0", _TAGS) == "refs/tags/3.0.0"
 
     def test_bare_inequality_resolves(self) -> None:
@@ -125,11 +123,9 @@ class TestBareVersionPassthrough:
 @pytest.mark.unit
 class TestCompatibleReleaseResolution:
     def test_compatible_release_minor_level_picks_highest_within_major(self) -> None:
-
         assert _resolve_constraint_from_tags("refs/tags/~=1.0", _TAGS) == "refs/tags/1.1.0"
 
     def test_compatible_release_patch_level_picks_highest_within_minor(self) -> None:
-
         assert _resolve_constraint_from_tags("refs/tags/~=1.0.0", _TAGS) == "refs/tags/1.0.0"
 
 
@@ -141,7 +137,6 @@ class TestInvalidConstraintRejected:
         assert "invalid version constraint" in str(exc_info.value).lower()
 
     def test_single_equals_rejected(self) -> None:
-
         assert is_version_constraint("=*") is True
         with pytest.raises(ValueError):
             _resolve_constraint_from_tags("=*", _TAGS)

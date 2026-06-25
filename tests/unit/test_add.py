@@ -2085,6 +2085,243 @@ class TestRunAddForce:
         assert "repo-specs/stale-path.xml" in content
 
 
+@pytest.mark.unit
+class TestResolveMarketplaceFlag:
+    """Branch coverage for _resolve_marketplace_flag (item 15, FR-17).
+
+    Precedence: --marketplace-install (flag_override=True) forces on but only on
+    a marketplace-typed entry (else a pretty MarketplaceInstallError);
+    --no-marketplace-install (flag_override=False) forces off;
+    no flag (flag_override=None) auto-detects from the catalog <type>.
+    """
+
+    def test_override_true_on_marketplace_type_returns_true(self) -> None:
+        """flag_override=True on a claude-marketplace entry resolves to True."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=True,
+        )
+        assert result is True
+
+    def test_override_true_on_non_marketplace_type_raises_with_actionable_message(self) -> None:
+        """flag_override=True on a regular type raises MarketplaceInstallError naming the entry."""
+        from kanon_cli.commands.add import MarketplaceInstallError, _resolve_marketplace_flag
+
+        with pytest.raises(MarketplaceInstallError) as exc_info:
+            _resolve_marketplace_flag(
+                entry_name="plain-entry",
+                entry_type="plugin",
+                flag_override=True,
+            )
+        message = str(exc_info.value)
+        assert "requires catalog entry" in message
+        assert "plain-entry" in message
+        assert "'plugin'" in message
+        assert exc_info.value.entry_name == "plain-entry"
+        assert exc_info.value.entry_type == "plugin"
+
+    def test_override_true_on_absent_type_raises_with_absent_in_message(self) -> None:
+        """flag_override=True on an entry with no <type> raises, rendering the type as absent."""
+        from kanon_cli.commands.add import MarketplaceInstallError, _resolve_marketplace_flag
+
+        with pytest.raises(MarketplaceInstallError) as exc_info:
+            _resolve_marketplace_flag(
+                entry_name="typeless-entry",
+                entry_type=None,
+                flag_override=True,
+            )
+        message = str(exc_info.value)
+        assert "requires catalog entry" in message
+        assert "typeless-entry" in message
+        assert "absent" in message
+
+    def test_override_false_returns_false_even_on_marketplace_type(self) -> None:
+        """flag_override=False forces off regardless of the catalog <type>."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=False,
+        )
+        assert result is False
+
+    def test_override_none_auto_detects_marketplace_type_as_true(self) -> None:
+        """flag_override=None defers to _is_marketplace_type, which is True for a marketplace type."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=None,
+        )
+        assert result is True
+
+    def test_override_none_auto_detects_regular_type_as_false(self) -> None:
+        """flag_override=None on a regular type auto-detects to False (no error)."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+
+        result = _resolve_marketplace_flag(
+            entry_name="plain-entry",
+            entry_type="plugin",
+            flag_override=None,
+        )
+        assert result is False
+
+    def test_override_none_auto_detects_absent_type_as_false(self) -> None:
+        """flag_override=None on an absent <type> auto-detects to False (None is not marketplace)."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+
+        result = _resolve_marketplace_flag(
+            entry_name="typeless-entry",
+            entry_type=None,
+            flag_override=None,
+        )
+        assert result is False
+
+
+@pytest.mark.unit
+class TestRunAddMarketplaceLine:
+    """run_add writes the per-alias _MARKETPLACE line + notice per FR-17 (item 15).
+
+    Exercises the full run_add path with the catalog clone / build mocked so the
+    only variable is the entry's <type> and the --marketplace-install flag.
+    """
+
+    @staticmethod
+    def _make_args(kanon_file: pathlib.Path, marketplace_install: bool | None) -> "argparse.Namespace":
+        """Build a run_add argparse namespace for a single entry."""
+        import argparse
+
+        return argparse.Namespace(
+            catalog_source="https://example.com/org/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["entry-a"],
+            force=False,
+            dry_run=False,
+            alias_override=None,
+            marketplace_install=marketplace_install,
+        )
+
+    @staticmethod
+    def _run_with_type(
+        kanon_file: pathlib.Path,
+        entry_type: str | None,
+        marketplace_install: bool | None,
+    ) -> int:
+        """Run run_add with a single mocked catalog entry of the given <type>."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        meta = CatalogMetadata(
+            name="entry-a",
+            display_name="Entry A",
+            description="Test.",
+            version="1.0.0",
+            type=entry_type,
+        )
+        manifest_root = kanon_file.parent / "repo"
+        xml_path = manifest_root / "repo-specs" / "entry-a-marketplace.xml"
+        url = "https://example.com/org/repo.git"
+        args = TestRunAddMarketplaceLine._make_args(kanon_file, marketplace_install)
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, url, "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, url)],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+        ):
+            return run_add(args)
+
+    def test_marketplace_type_writes_marketplace_true_line(self, tmp_path: pathlib.Path) -> None:
+        """Adding a claude-marketplace entry writes KANON_SOURCE_<alias>_MARKETPLACE=true."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, None) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in content
+
+    def test_marketplace_type_prints_auto_detect_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Auto-detected marketplace add prints a notice naming the type and the override flag."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, None) == 0
+        out = capsys.readouterr().out
+        assert "Note:" in out
+        assert CATALOG_TYPE_CLAUDE_MARKETPLACE in out
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in out
+        assert "--no-marketplace-install" in out
+
+    def test_regular_type_writes_no_marketplace_line(self, tmp_path: pathlib.Path) -> None:
+        """Adding a regular (plugin) entry writes no _MARKETPLACE line at all."""
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, "plugin", None) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "_MARKETPLACE" not in content
+
+    def test_regular_type_prints_no_auto_detect_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A regular add does not print the marketplace auto-detect notice."""
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, "plugin", None) == 0
+        out = capsys.readouterr().out
+        assert "MARKETPLACE" not in out
+
+    def test_force_flag_on_marketplace_type_writes_true_without_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--marketplace-install on a marketplace type writes =true and suppresses the auto-detect notice."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, True) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in content
+        out = capsys.readouterr().out
+        assert "Note:" not in out
+
+    def test_no_marketplace_install_on_marketplace_type_omits_line(self, tmp_path: pathlib.Path) -> None:
+        """--no-marketplace-install on a marketplace type omits the _MARKETPLACE line."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, False) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "_MARKETPLACE" not in content
+
+    def test_marketplace_install_on_non_marketplace_type_exits_nonzero_with_pretty_error(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--marketplace-install on a regular type exits non-zero with the pretty error, not a traceback."""
+        kanon_file = tmp_path / ".kanon"
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_with_type(kanon_file, "plugin", True)
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err
+        assert "--marketplace-install requires catalog entry" in err
+        assert "entry-a" in err
+        assert not kanon_file.exists()
+
+
 _ADD_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "commands" / "add.py"
 
 

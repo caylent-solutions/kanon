@@ -71,7 +71,6 @@ class TestZeroSourceCleanError:
     """Every entry command must fail cleanly on a zero-source .kanon."""
 
     def test_doctor_zero_source_no_traceback(self, tmp_path: pathlib.Path) -> None:
-
         kanon = _write_zero_source_kanon(tmp_path)
         write_lockfile_doctor_unit(tmp_path)
         result = _run_kanon("doctor", "--kanon-file", str(kanon))
@@ -90,7 +89,6 @@ class TestZeroSourceCleanError:
         _assert_clean_error(result, command="clean")
 
     def test_why_zero_source_no_traceback(self, tmp_path: pathlib.Path) -> None:
-
         kanon = _write_zero_source_kanon(tmp_path)
         result = _run_kanon(
             "why",

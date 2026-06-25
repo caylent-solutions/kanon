@@ -73,7 +73,6 @@ class TestEC:
         assert "no longer supported" in result.stderr, f"stderr={result.stderr!r}"
 
     def test_ec_06_marketplace_install_without_marketplaces_dir(self, tmp_path: pathlib.Path) -> None:
-
         (tmp_path / ".kanon").write_text(
             "KANON_SOURCE_primary_URL=file:///does/not/matter\n"
             "KANON_SOURCE_primary_REF=main\n"

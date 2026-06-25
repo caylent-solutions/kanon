@@ -1204,7 +1204,6 @@ class TestPublishStoreEntry:
         captured: dict[str, Exception] = {}
 
         def nested_materialize(dest: pathlib.Path) -> None:
-
             try:
                 publish_store_entry(store, address, lambda d: None)
             except WorkspaceLockReentranceError as exc:

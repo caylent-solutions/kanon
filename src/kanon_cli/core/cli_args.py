@@ -40,6 +40,7 @@ color-suppression flag in ``kanon_cli.constants._NO_COLOR_ACTIVE``.
 import argparse
 import logging
 import os
+import pathlib
 
 import kanon_cli.constants as constants
 
@@ -150,6 +151,19 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
             "Equivalent to setting KANON_SKIP_UPDATE_CHECK=1."
         ),
     )
+    parser.add_argument(
+        "--home",
+        "--store-dir",
+        dest="home",
+        type=pathlib.Path,
+        default=None,
+        metavar="<path>",
+        help=(
+            "Use <path> as the shared kanon home root (the content-addressed store and "
+            "caches live under it). Takes precedence over the KANON_HOME environment variable "
+            "and the ~/.kanon default. --store-dir is an accepted alias."
+        ),
+    )
 
 
 def _apply_global_flags(args: argparse.Namespace) -> None:
@@ -161,6 +175,13 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
       formatter helper (constants._NO_COLOR_ACTIVE) when --no-color is
       set OR when the NO_COLOR env var is non-empty. Precedence:
       --no-color flag > NO_COLOR env var > TTY auto-detect.
+    - Injects the ``--home`` / ``--store-dir`` flag (when given) into
+      ``KANON_HOME`` in the process environment so every downstream
+      ``constants.resolve_kanon_home()`` reader (the store base dir, the
+      completion / catalog-audit caches, the update-check cache) honors it
+      with precedence ``--home`` flag > ``KANON_HOME`` env > ``~/.kanon``
+      default. The flag value fully replaces any inherited ``KANON_HOME``
+      for the invocation.
 
     Idempotent: calling twice with the same args produces the same
     state. Fails fast (raises ValueError) if both args.quiet and
@@ -189,3 +210,7 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
 
     no_color_active = args.no_color or bool(os.environ.get(constants.NO_COLOR_ENV, ""))
     constants._NO_COLOR_ACTIVE = no_color_active
+
+    home_override = getattr(args, "home", None)
+    if home_override is not None:
+        os.environ[constants.KANON_HOME_ENV_VAR] = str(constants.resolve_kanon_home(override=home_override))

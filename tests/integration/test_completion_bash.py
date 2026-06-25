@@ -292,7 +292,7 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         "kanon --",
         ["kanon", "--"],
         1,
-        ["--help", "--version", "--quiet", "--verbose", "--no-color", "--no-update-check"],
+        ["--help", "--version", "--quiet", "--verbose", "--no-color", "--no-update-check", "--home", "--store-dir"],
         True,
     ),
     (

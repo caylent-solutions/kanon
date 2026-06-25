@@ -36,7 +36,6 @@ class TestMissingCatalogSourceError:
             raise MissingCatalogSourceError()
 
     def test_carries_no_required_fields(self) -> None:
-
         err = MissingCatalogSourceError()
         assert isinstance(err, MissingCatalogSourceError)
 

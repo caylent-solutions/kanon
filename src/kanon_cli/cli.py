@@ -43,6 +43,7 @@ from kanon_cli.completions.midtoken import register as register_resolve_entry_to
 from kanon_cli.completions.source_names import register as register_complete_source_names
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
+from kanon_cli.core.lockfile import LockfileSchemaError
 from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
@@ -120,6 +121,7 @@ Global options (always available):
   --quiet / --verbose            Logging verbosity (mutually exclusive).
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
   --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
+  --home / --store-dir <path>    Shared kanon home root (store + caches). Precedence: flag > KANON_HOME env > ~/.kanon.
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
@@ -286,7 +288,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         exit_code = args.func(args)
-    except InstallError as exc:
+    except (InstallError, LockfileSchemaError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:

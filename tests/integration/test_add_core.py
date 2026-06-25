@@ -549,6 +549,234 @@ class TestAddCustomKanonFile:
         assert not default_kanon.exists(), "Default .kanon must NOT be created when --kanon-file overrides it"
 
 
+_MARKETPLACE_TYPE_XML_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <catalog-metadata>
+        <name>{name}</name>
+        <display-name>{name} Display</display-name>
+        <description>Integration test marketplace entry for {name}.</description>
+        <version>1.0.0</version>
+        <type>claude-marketplace</type>
+        <owner-name>Integration Tester</owner-name>
+        <owner-email>integration@example.com</owner-email>
+        <keywords>integration, test</keywords>
+      </catalog-metadata>
+    </manifest>
+""")
+
+
+def _create_marketplace_manifest_repo(
+    base: pathlib.Path,
+    entry_name: str,
+    tags: list[str],
+) -> pathlib.Path:
+    """Create a bare manifest repo whose single entry is a claude-marketplace type.
+
+    Mirrors _create_manifest_repo_with_tags but stamps the entry's
+    <catalog-metadata><type> as claude-marketplace so 'kanon add' auto-detects a
+    marketplace dependency.
+
+    Args:
+        base: Parent directory under which work and bare dirs are created.
+        entry_name: The single catalog entry name.
+        tags: PEP 440-valid tag names to apply to the initial commit.
+
+    Returns:
+        The absolute path to the bare repo directory.
+    """
+    work_dir = base / "manifest-work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _init_git_work_dir(work_dir)
+
+    repo_specs_dir = work_dir / "repo-specs"
+    repo_specs_dir.mkdir()
+    (repo_specs_dir / ".gitkeep").write_text("")
+
+    xml_path = repo_specs_dir / f"{entry_name}-marketplace.xml"
+    xml_path.write_text(_MARKETPLACE_TYPE_XML_TEMPLATE.format(name=entry_name))
+
+    _git(["add", "."], cwd=work_dir)
+    _git(["commit", "-m", "Add marketplace entry"], cwd=work_dir)
+
+    for tag in tags:
+        _git(["tag", "-a", tag, "-m", f"Release {tag}"], cwd=work_dir)
+
+    bare_dir = _clone_as_bare(work_dir, base / "manifest-bare.git")
+    return bare_dir.resolve()
+
+
+@pytest.mark.integration
+class TestAddMarketplaceTypeWritesFlagAndNotice:
+    """A claude-marketplace catalog entry add writes _MARKETPLACE=true plus the auto-detect notice (item 15)."""
+
+    def test_marketplace_entry_writes_marketplace_true_line(self, tmp_path: pathlib.Path) -> None:
+        """Adding a claude-marketplace entry writes KANON_SOURCE_<alias>_MARKETPLACE=true."""
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        content = kanon_file.read_text()
+        assert "KANON_SOURCE_mp_entry_MARKETPLACE=true" in content
+
+    def test_marketplace_entry_prints_auto_detect_notice(self, tmp_path: pathlib.Path) -> None:
+        """stdout carries the auto-detect notice naming the type and the override flag."""
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert "claude-marketplace" in result.stdout
+        assert "--no-marketplace-install" in result.stdout
+
+    def test_regular_entry_writes_no_marketplace_line(self, tmp_path: pathlib.Path) -> None:
+        """A regular (plugin) entry from the shared fixture writes no _MARKETPLACE line."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        content = kanon_file.read_text()
+        assert "_MARKETPLACE" not in content
+
+
+@pytest.mark.integration
+class TestAddMarketplaceInstallOnNonMarketplaceType:
+    """--marketplace-install on a non-marketplace type exits non-zero with a pretty error (item 15)."""
+
+    def test_marketplace_install_on_plugin_type_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
+        """The plugin-typed fixture entry forced with --marketplace-install exits non-zero."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--marketplace-install",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode != 0, (
+            f"Expected non-zero exit, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+
+    def test_marketplace_install_on_plugin_type_prints_pretty_error_not_traceback(self, tmp_path: pathlib.Path) -> None:
+        """stderr carries the actionable 'requires catalog entry' message, with no Python traceback."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--marketplace-install",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert "--marketplace-install requires catalog entry" in result.stderr
+        assert "entry-a" in result.stderr
+        assert "Traceback (most recent call last)" not in result.stderr
+        assert "MarketplaceInstallError" not in result.stderr
+
+    def test_marketplace_install_on_plugin_type_does_not_write_kanon(self, tmp_path: pathlib.Path) -> None:
+        """A rejected --marketplace-install add leaves the destination .kanon untouched (absent)."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--marketplace-install",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert not kanon_file.exists(), "The .kanon must not be created when the marketplace add is rejected"
+
+
 @pytest.mark.integration
 class TestAddEnvKanonFilePrecedence:
     """CLI --kanon-file flag takes precedence over KANON_KANON_FILE env var (E38 row 45)."""

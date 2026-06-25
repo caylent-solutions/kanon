@@ -666,7 +666,6 @@ class InterleavedSyncTest(unittest.TestCase):
         mock.patch.object(self.cmd, "GetProjects", return_value=all_projects).start()
 
         def execute_side_effect(jobs, target, work_items, **kwargs):
-
             synced_relpaths_set = kwargs["callback"].args[0]
             projects_in_pass = self.cmd.get_parallel_context()["projects"]
             for item in work_items:

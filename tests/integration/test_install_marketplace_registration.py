@@ -363,3 +363,126 @@ class TestInstallMarketplaceRegistration:
             f"when KANON_MARKETPLACE_INSTALL=false, but got {len(add_calls)} such "
             f"call(s): {add_calls}"
         )
+
+
+def _write_kanonenv_mixed_marketplace(
+    directory: pathlib.Path,
+    marketplace_dir: pathlib.Path,
+    source_alpha_url: str,
+    source_bravo_url: str,
+) -> pathlib.Path:
+    """Write a .kanon with one per-dep marketplace flag set and the other absent.
+
+    source-alpha carries ``KANON_SOURCE_source_alpha_MARKETPLACE=true``; source-bravo
+    carries no ``_MARKETPLACE`` line at all (absence == false, the canonical 3.0.0
+    encoding). This isolates the per-dependency dispatch: only the flagged
+    dependency must trigger ``claude plugin marketplace add``.
+
+    Args:
+        directory: Directory in which to create the .kanon file (created if absent).
+        marketplace_dir: Absolute path to CLAUDE_MARKETPLACES_DIR.
+        source_alpha_url: Git URL for source-alpha (the marketplace=true dependency).
+        source_bravo_url: Git URL for source-bravo (the no-flag dependency).
+
+    Returns:
+        Absolute path to the written .kanon file.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    kanonenv = directory / ".kanon"
+    kanonenv.write_text(
+        f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
+        f"KANON_SOURCE_source_alpha_URL={source_alpha_url}\n"
+        f"KANON_SOURCE_source_alpha_REF=main\n"
+        f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
+        f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
+        f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
+        f"KANON_SOURCE_source_alpha_MARKETPLACE=true\n"
+        f"KANON_SOURCE_source_bravo_URL={source_bravo_url}\n"
+        f"KANON_SOURCE_source_bravo_REF=main\n"
+        f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
+        f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
+        f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n",
+        encoding="utf-8",
+    )
+    return kanonenv.resolve()
+
+
+@pytest.mark.integration
+class TestInstallMixedMarketplaceRegistration:
+    """Only the per-dep _MARKETPLACE=true source triggers 'claude plugin marketplace add' (item 15)."""
+
+    def test_only_flagged_source_registers_marketplace(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With alpha _MARKETPLACE=true and bravo absent, only alpha is registered.
+
+        Both sources expose a ``.claude-plugin/marketplace.json`` via their
+        linkfile manifest, so the difference in behaviour is driven solely by the
+        per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE`` flag, not by manifest
+        content: source-alpha registers, source-bravo does not.
+        """
+        monkeypatch.delenv("KANON_MARKETPLACE_INSTALL", raising=False)
+
+        marketplace_dir = tmp_path / "marketplace"
+        marketplace_dir.mkdir()
+
+        bare_alpha = _create_manifest_repo_with_tags(
+            tmp_path / "repo-alpha",
+            entry_names=["source-alpha"],
+            tags=["1.0.0"],
+        )
+        bare_bravo = _create_manifest_repo_with_tags(
+            tmp_path / "repo-bravo",
+            entry_names=["source-bravo"],
+            tags=["1.0.0"],
+        )
+
+        kanonenv = _write_kanonenv_mixed_marketplace(
+            tmp_path / "workspace",
+            marketplace_dir,
+            source_alpha_url=f"file://{bare_alpha}",
+            source_bravo_url=f"file://{bare_bravo}",
+        )
+
+        entry_alpha_path = marketplace_dir / "source-alpha"
+        entry_bravo_path = marketplace_dir / "source-bravo"
+
+        claude_bin = "/usr/bin/claude"
+        expected_alpha = (claude_bin, "plugin", "marketplace", "add", str(entry_alpha_path))
+        unexpected_bravo = (claude_bin, "plugin", "marketplace", "add", str(entry_bravo_path))
+
+        mock_completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "kanon_cli.repo.repo_init",
+                side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
+            ),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.core.marketplace.shutil.which",
+                return_value=claude_bin,
+            ),
+            patch(
+                "kanon_cli.core.marketplace.subprocess.run",
+                return_value=mock_completed,
+            ) as mock_run,
+        ):
+            install(
+                kanonenv,
+                lock_file_path=kanonenv.parent / ".kanon.lock",
+            )
+
+        recorded_add_argvs = _extract_marketplace_add_argvs(mock_run.call_args_list)
+
+        assert expected_alpha in recorded_add_argvs, (
+            f"Expected the flagged source-alpha to register via {expected_alpha!r}, "
+            f"but recorded 'claude plugin marketplace add' calls were: {recorded_add_argvs}."
+        )
+        assert unexpected_bravo not in recorded_add_argvs, (
+            f"source-bravo has no KANON_SOURCE_source_bravo_MARKETPLACE line (absence == false), "
+            f"so it must NOT register; recorded calls were: {recorded_add_argvs}."
+        )

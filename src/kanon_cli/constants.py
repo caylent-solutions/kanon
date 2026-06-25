@@ -102,10 +102,12 @@ KANON_HOME_STORE_GITIGNORE_ENTRY = "*"
 KANON_HOME_CACHE_SUBDIR = "cache"
 
 
-def resolve_kanon_home() -> pathlib.Path:
+def resolve_kanon_home(override: "pathlib.Path | None" = None) -> pathlib.Path:
     """Resolve the shared kanon home root directory.
 
     Resolution precedence (highest wins), per spec Section 7.1:
+    0. The ``--home`` / ``--store-dir`` CLI flag, passed here as *override*,
+       when it is not ``None``.
     1. The ``KANON_HOME`` environment variable, when set to a non-empty value.
     2. The default ``Path.home() / KANON_HOME_DIR_NAME`` (i.e. ``~/.kanon``).
 
@@ -115,12 +117,24 @@ def resolve_kanon_home() -> pathlib.Path:
     is responsible for creation and for failing fast on an unwritable target.
 
     The ``--home`` / ``--store-dir`` CLI flag override (precedence step 0) is
-    threaded by the command layer in a later store-concurrency task; this helper
-    is the env-and-default resolution shared by every reader.
+    threaded by the command layer: ``cli_args._apply_global_flags`` resolves the
+    parsed flag and injects it into ``KANON_HOME`` in the process environment
+    before any reader runs, so callers that do not have direct access to the
+    parsed namespace still observe the flag value through the env var. Passing
+    *override* directly to this helper is the equivalent in-process path and is
+    used by the resolution unit tests.
+
+    Args:
+        override: An explicit kanon home path that wins over both the env var
+            and the default when provided (the ``--home`` / ``--store-dir``
+            flag value). ``None`` (the default) defers to the env var and the
+            built-in default.
 
     Returns:
         A ``pathlib.Path`` to the resolved kanon home root.
     """
+    if override is not None:
+        return pathlib.Path(override)
     raw = os.environ.get(KANON_HOME_ENV_VAR)
     if raw:
         return pathlib.Path(raw)

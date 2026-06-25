@@ -136,7 +136,6 @@ def test_forall_saves_and_restores_signal_handlers(monkeypatch: pytest.MonkeyPat
         handler_before = signal.getsignal(signal.SIGINT)
 
         def _clobber_sigint_and_return(jobs, fn, rng, **kwargs):
-
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             return 0
 

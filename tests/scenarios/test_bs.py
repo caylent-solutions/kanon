@@ -44,7 +44,6 @@ def _assert_bootstrap_rejected(result) -> None:
 @pytest.mark.scenario
 class TestBS:
     def test_bs_01_list_bundled_packages(self) -> None:
-
         _assert_bootstrap_rejected(run_kanon("bootstrap", "list"))
 
     def test_bs_02_bootstrap_kanon_default_output_dir(self, tmp_path: pathlib.Path) -> None:

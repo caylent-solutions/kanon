@@ -54,7 +54,6 @@ class TestNormalizeBareSemverToTag:
         assert _normalize_bare_semver_to_tag(rev_spec) == rev_spec
 
     def test_pep440_constraint_passes_through(self) -> None:
-
         for c in ("~=1.0.0", ">=1.0", "==2.0.0", "!=2.0.0", "*", "latest"):
             assert _normalize_bare_semver_to_tag(c) == c
 
@@ -65,12 +64,10 @@ class TestResolveVersionDelegatesToBareNormalizer:
     rev_spec that is NOT recognised as a PEP 440 constraint."""
 
     def test_bare_semver_normalised_via_resolve_version(self) -> None:
-
         assert resolve_version("file:///fake", "1.0.0") == "refs/tags/1.0.0"
         assert resolve_version("file:///fake", "2.5") == "refs/tags/2.5"
 
     def test_v_prefixed_normalised_via_resolve_version(self) -> None:
-
         assert resolve_version("file:///fake", "v1.0.0") == "refs/tags/v1.0.0"
 
     def test_branch_name_passes_through_resolve_version(self) -> None:

@@ -169,7 +169,6 @@ class TestNonAdvancingUpgraderDetected:
         """Register a broken upgrader for (0, 1) that does not change schema_version."""
 
         def _non_advancing(data: dict) -> dict:
-
             return dict(data)
 
         _register_upgrader(0, 1, _non_advancing)

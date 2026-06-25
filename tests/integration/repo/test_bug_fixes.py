@@ -136,7 +136,6 @@ def test_bug1_malformed_xml_skipped_processing_continues_end_to_end(tmp_path: pa
     processed = []
 
     def _track_envsubst(infile: str) -> set:
-
         result = Envsubst.EnvSubst(cmd, infile)
         processed.append(infile)
         return result

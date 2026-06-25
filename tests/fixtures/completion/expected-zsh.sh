@@ -62,6 +62,7 @@ _shtab_kanon_options=(
   "--verbose[Enable debug-level output. Mutually exclusive with --quiet.]"
   "--no-color[Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection.]"
   "--no-update-check[Skip the best-effort \'update available\' PyPI lookup for this invocation. Equivalent to setting KANON_SKIP_UPDATE_CHECK\=1.]"
+  {--home,--store-dir}"[Use \<path\> as the shared kanon home root (the content-addressed store and caches live under it). Takes precedence over the KANON_HOME environment variable and the \~\/.kanon default. --store-dir is an accepted alias.]:home:"
 )
 
 # guard to ensure default positional specs are added only once per session

@@ -99,7 +99,6 @@ def walk_includes_collecting_remotes(
     visited: set[pathlib.Path] = set()
 
     def _visit(path: pathlib.Path) -> None:
-
         canonical = path.resolve()
 
         if canonical in visited:

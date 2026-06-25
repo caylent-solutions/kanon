@@ -2181,7 +2181,6 @@ def test_local_sync_state_prune_removed_projects():
     existing_data = json.dumps({"path1": {"last_fetch": 123.0}})
 
     def exists_side_effect(path):
-
         if ".git" in path:
             return False
 

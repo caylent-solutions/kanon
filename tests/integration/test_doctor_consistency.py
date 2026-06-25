@@ -478,6 +478,152 @@ class TestDoctorDanglingSha:
         assert fake_sha in result.stderr
 
 
+def _write_kanon_two_branch_sources(
+    directory: pathlib.Path,
+    sources: list[tuple[str, str]],
+) -> pathlib.Path:
+    """Write a multi-source .kanon with each source branch-pinned to 'main'.
+
+    Args:
+        directory: Directory in which to write the .kanon file.
+        sources: List of (alias, url) tuples; each gets a branch-pinned block
+            whose KANON_SOURCE_<alias>_REF is 'main' so the doctor branch-drift
+            subcheck applies to it.
+
+    Returns:
+        Path to the written .kanon file.
+    """
+    lines: list[str] = []
+    for alias, url in sources:
+        lines.append(f"KANON_SOURCE_{alias}_URL={url}")
+        lines.append(f"KANON_SOURCE_{alias}_REF=main")
+        lines.append(f"KANON_SOURCE_{alias}_PATH=repo-specs/meta.xml")
+        lines.append(f"KANON_SOURCE_{alias}_NAME={alias}")
+        lines.append(f"KANON_SOURCE_{alias}_GITBASE=https://example.com/org")
+    lines.append("KANON_MARKETPLACE_INSTALL=false")
+    kanon_file = directory / ".kanon"
+    kanon_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    kanon_file.chmod(0o644)
+    return kanon_file
+
+
+@pytest.mark.integration
+class TestDoctorStrictDriftListsEveryDriftedSource:
+    """--strict-drift error lists EVERY drifted branch-pinned source (not just one).
+
+    Builds two distinct branch-pinned sources whose locked SHA is the older
+    commit (sha_a) while each branch tip is at the newer commit (sha_b), so
+    BOTH sources have drifted. Under --strict-drift the doctor must surface one
+    error finding per drifted source -- the existing strict-drift integration
+    test only drifts a single source.
+    """
+
+    def _build_two_drifted_sources(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> tuple[pathlib.Path, pathlib.Path, dict[str, tuple[str, str]]]:
+        """Create two branch-pinned sources, both drifted, and write the workspace.
+
+        Each source repo has two commits on main; the lockfile pins the OLDER
+        commit (sha_a) while the branch tip is the NEWER commit (sha_b), so each
+        source is in a drifted state.
+
+        Args:
+            tmp_path: Per-test temp directory.
+
+        Returns:
+            A tuple (kanon_file, lock_file, details) where details maps each
+            alias to its (locked_sha, tip_sha) pair.
+        """
+        bare_alpha, alpha_a, alpha_b = _create_bare_repo_with_two_commits(tmp_path, "alpha")
+        bare_beta, beta_a, beta_b = _create_bare_repo_with_two_commits(tmp_path, "beta")
+
+        url_alpha = f"file://{bare_alpha}"
+        url_beta = f"file://{bare_beta}"
+
+        kanon_file = _write_kanon_two_branch_sources(
+            tmp_path,
+            [("alpha", url_alpha), ("beta", url_beta)],
+        )
+
+        from kanon_cli.core.kanon_hash import kanon_hash
+
+        real_hash = kanon_hash(kanon_file)
+
+        _write_lockfile_two_sources(
+            tmp_path,
+            kanon_hash_val=real_hash,
+            sources=[
+                {"name": "alpha", "url": url_alpha, "revision_spec": "main", "resolved_sha": alpha_a},
+                {"name": "beta", "url": url_beta, "revision_spec": "main", "resolved_sha": beta_a},
+            ],
+        )
+
+        details = {
+            "alpha": (alpha_a, alpha_b),
+            "beta": (beta_a, beta_b),
+        }
+        return kanon_file, tmp_path / ".kanon.lock", details
+
+    def test_strict_drift_exits_nonzero_with_two_drifted_sources(self, tmp_path: pathlib.Path) -> None:
+        """doctor --strict-drift exits non-zero when two branch sources have drifted."""
+        kanon_file, lock_file, _details = self._build_two_drifted_sources(tmp_path)
+
+        result = _run_kanon(
+            [
+                "doctor",
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--strict-drift",
+            ],
+            cwd=tmp_path,
+        )
+
+        assert result.returncode != 0, f"Expected non-zero exit. stderr: {result.stderr!r}"
+
+    def test_strict_drift_error_names_every_drifted_source(self, tmp_path: pathlib.Path) -> None:
+        """doctor --strict-drift surfaces an ERROR branch-drift finding for EACH drifted source.
+
+        Both source aliases ('alpha' and 'beta') and both current tip SHAs
+        (truncated to 12 chars, the doctor's render width) must appear as
+        ERROR-level branch-drift findings on stderr -- the error lists every
+        drifted source, not just the first one encountered.
+        """
+        kanon_file, lock_file, details = self._build_two_drifted_sources(tmp_path)
+
+        result = _run_kanon(
+            [
+                "doctor",
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--strict-drift",
+            ],
+            cwd=tmp_path,
+        )
+
+        error_drift_lines = [
+            line for line in result.stderr.splitlines() if line.startswith("ERROR:") and "branch drift" in line
+        ]
+        assert len(error_drift_lines) == 2, (
+            f"Expected exactly 2 ERROR branch-drift findings (one per drifted source); "
+            f"got {len(error_drift_lines)}.\nstderr: {result.stderr!r}"
+        )
+
+        joined = "\n".join(error_drift_lines)
+        for alias, (_locked_sha, tip_sha) in details.items():
+            assert f"source '{alias}'" in joined, (
+                f"Expected drifted source {alias!r} named in a strict-drift ERROR finding.\nstderr: {result.stderr!r}"
+            )
+            assert tip_sha[:12] in joined, (
+                f"Expected current tip SHA {tip_sha[:12]!r} for {alias!r} in the ERROR findings.\n"
+                f"stderr: {result.stderr!r}"
+            )
+
+
 @pytest.mark.integration
 class TestDoctorCycle:
     """AC-CYCLE-001: End-to-end tamper cycle."""

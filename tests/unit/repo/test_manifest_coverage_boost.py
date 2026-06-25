@@ -1548,7 +1548,6 @@ class TestCheckLocalPath:
         assert "path cannot be outside" in result
 
     def test_absolute_path_abs_ok(self):
-
         result = XmlManifest._CheckLocalPath("/foo/bar", abs_ok=True)
         assert result is None
 

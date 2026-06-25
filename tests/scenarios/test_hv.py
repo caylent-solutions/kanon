@@ -70,7 +70,6 @@ class TestHV:
         assert "--repo-root" in result.stdout
 
     def test_hv_08_bootstrap_help(self) -> None:
-
         result = run_kanon("bootstrap", "--help")
         assert result.returncode == 2, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"

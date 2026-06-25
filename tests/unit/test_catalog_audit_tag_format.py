@@ -271,7 +271,6 @@ class TestEmptyTagListZeroFindings:
         from kanon_cli.commands.catalog import _check_tag_format
 
         def _notab_stub(target_path: pathlib.Path) -> str:
-
             return "aaaa refs/tags/bad-format\n"
 
         findings = _check_tag_format(tmp_path, _notab_stub)

@@ -298,7 +298,6 @@ class TestDetectBranchDrift:
         lockfile = _build_lockfile("sha256:" + "a" * 64, sources)
 
         def _ls_remote_side_effect(*args, **kwargs):
-
             url = args[0][2]
             mock = MagicMock()
             mock.returncode = 0

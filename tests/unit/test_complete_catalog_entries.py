@@ -603,7 +603,6 @@ class TestInlineFetchTimeoutPassthrough:
         captured_env: dict[str, str] = {}
 
         def _fake_fetch_and_cache(url: str, ref: str, entry_dir: Path) -> list[str]:
-
             captured_env["KANON_COMPLETION_TIMEOUT"] = os.environ.get("KANON_COMPLETION_TIMEOUT", "")
             return ["ok"]
 

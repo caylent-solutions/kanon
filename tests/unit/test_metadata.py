@@ -265,7 +265,6 @@ class TestMissingRecommendedFields:
     def test_whitespace_only_optional_field_yields_none(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-
         xml_content = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             "<manifest><catalog-metadata>"

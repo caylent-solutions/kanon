@@ -1174,7 +1174,6 @@ class TestAdditionalCoverage:
         )
 
         def mock_callback(pool, pm, results_sets):
-
             for results in results_sets:
                 for result in results:
                     pm.update()

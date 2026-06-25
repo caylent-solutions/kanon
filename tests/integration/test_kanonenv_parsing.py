@@ -74,7 +74,6 @@ class TestKanonenvParsingSingleSource:
         assert result["sources"]["s"]["path"] == "repo-specs/manifest.xml"
 
     def test_marketplace_install_defaults_false(self, tmp_path: pathlib.Path) -> None:
-
         kanonenv = _write_kanonenv(
             tmp_path,
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"

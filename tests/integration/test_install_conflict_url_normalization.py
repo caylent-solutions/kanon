@@ -143,7 +143,6 @@ def _run_install_mocked(
         raise ValueError(f"Unexpected URL in test: {url!r}")
 
     def _fake_resolve_version(url: str, rev_spec: str) -> str:
-
         if url in sha_map:
             _sha, resolved_ref = sha_map[url]
             return resolved_ref

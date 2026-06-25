@@ -129,7 +129,6 @@ class TestValidateMetadataCommandMissingRecommendedField:
     def test_missing_recommended_field_exits_zero(
         self, tmp_path: Path, field: str, capsys: pytest.CaptureFixture[str]
     ) -> None:
-
         rec_fields = {
             "type": "<type>plugin</type>",
             "owner-name": "<owner-name>Alice</owner-name>",
@@ -221,7 +220,6 @@ class TestValidateMetadataCommandSourceNameDrift:
     """AC-FUNC-006: Source-name drift exits 0 with WARN finding."""
 
     def test_source_name_drift_exits_zero(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-
         body = textwrap.dedent("""\
             <package>
               <catalog-metadata>

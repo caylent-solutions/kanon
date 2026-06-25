@@ -66,7 +66,6 @@ def test_malformed_xml_is_skipped_and_processing_continues(tmp_path):
     processed_files = []
 
     def _fake_envsubst(infile):
-
         processed_files.append(infile)
 
     with mock.patch("glob.glob", return_value=[malformed_str, valid_str]):

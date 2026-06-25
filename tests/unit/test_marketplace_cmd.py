@@ -153,7 +153,6 @@ class TestEnable:
         assert text.count("KANON_SOURCE_foo_MARKETPLACE=true") == 1
 
     def test_enable_accepts_original_entry_name(self, tmp_path: pathlib.Path) -> None:
-
         kanon_file = _write_kanon(tmp_path, _source_block("foo_bar", marketplace="false"))
         rc = run_enable(_namespace("Foo-Bar", kanon_file))
         assert rc == 0
@@ -171,7 +170,6 @@ class TestEnable:
         assert "KANON_SOURCE_foo_MARKETPLACE=true" in kanon_file.read_text(encoding="utf-8")
 
     def test_enable_non_marketplace_type_errors(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
-
         kanon_file = _write_kanon(tmp_path, _source_block("plain", marketplace=None))
         with pytest.raises(SystemExit) as exc_info:
             run_enable(_namespace("plain", kanon_file))

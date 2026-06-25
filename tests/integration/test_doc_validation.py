@@ -13,6 +13,12 @@ Covered acceptance criteria:
     ".kanon" as a positional argument in those invocations
   - AC-TEST-005: test_catalog_no_repo_url -- catalog/.kanon does not contain
     any uncommented REPO_URL or REPO_REV lines
+  - item 33 (E15-F1-S1): TestInitDefaultBranchPrerequisiteEnforced --
+    docs/integration-testing.md documents the init.defaultBranch=main test
+    prerequisite, AND both CI (.github/actions/setup-kanon/action.yml) and the
+    devcontainer (.devcontainer/.devcontainer.postcreate.sh) run
+    'git config --global init.defaultBranch main', so drift in any of the three
+    enforcement points fails CI.
 """
 
 import re
@@ -25,6 +31,12 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
 _README = _REPO_ROOT / "README.md"
 _CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
+
+_INTEGRATION_TESTING_DOC = _DOCS_DIR / "integration-testing.md"
+_SETUP_KANON_ACTION = _REPO_ROOT / ".github" / "actions" / "setup-kanon" / "action.yml"
+_DEVCONTAINER_POSTCREATE = _REPO_ROOT / ".devcontainer" / ".devcontainer.postcreate.sh"
+
+_INIT_DEFAULT_BRANCH_CONFIG_RE = re.compile(r"git\s+config\s+--global\s+init\.defaultBranch\s+main")
 
 
 _ALL_DOC_FILES: list[Path] = sorted(list(_DOCS_DIR.glob("**/*.md")) + [_README, _CHANGELOG])
@@ -190,4 +202,58 @@ class TestDocsUseAutoDiscover:
             f"{doc_path.name} contains 'kanon install/clean .kanon' in code blocks.\n"
             "Onboarding docs should use the auto-discovery form ('kanon install' with no path).\n"
             "Found:\n" + "\n".join(f"  {v!r}" for v in violations)
+        )
+
+
+@pytest.mark.integration
+class TestInitDefaultBranchPrerequisiteEnforced:
+    """item 33 (E15-F1-S1): the init.defaultBranch=main test prerequisite is
+    documented and enforced in all three places.
+
+    Local/file:// default-branch resolution (item 3) and the integration suite
+    rely on freshly ``git init``-ed repos defaulting to ``main``. That only holds
+    when ``init.defaultBranch`` is configured to ``main``. This prerequisite is
+    documented in ``docs/integration-testing.md`` and applied automatically by
+    CI (``.github/actions/setup-kanon/action.yml``) and the devcontainer
+    (``.devcontainer/.devcontainer.postcreate.sh``). If any of the three drifts,
+    the suite would silently regress to ``master`` defaults, so these assertions
+    fail CI on drift.
+    """
+
+    def test_doc_documents_the_prerequisite_section(self) -> None:
+        """integration-testing.md has the init.defaultBranch=main prerequisite section."""
+        assert _INTEGRATION_TESTING_DOC.is_file(), f"Expected doc to exist: {_INTEGRATION_TESTING_DOC}"
+        text = _INTEGRATION_TESTING_DOC.read_text(encoding="utf-8")
+        assert "## Test prerequisites" in text, (
+            f"{_INTEGRATION_TESTING_DOC.name} is missing the 'Test prerequisites' section heading."
+        )
+        assert "### `init.defaultBranch=main`" in text, (
+            f"{_INTEGRATION_TESTING_DOC.name} is missing the '### `init.defaultBranch=main`' "
+            "prerequisite subsection heading."
+        )
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_INTEGRATION_TESTING_DOC.name} no longer shows the "
+            "'git config --global init.defaultBranch main' prerequisite command."
+        )
+
+    def test_ci_setup_action_sets_init_default_branch(self) -> None:
+        """The setup-kanon composite action runs 'git config --global init.defaultBranch main'."""
+        assert _SETUP_KANON_ACTION.is_file(), f"Expected CI action to exist: {_SETUP_KANON_ACTION}"
+        text = _SETUP_KANON_ACTION.read_text(encoding="utf-8")
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_SETUP_KANON_ACTION} no longer runs "
+            "'git config --global init.defaultBranch main'. CI runners default new "
+            "repos to 'master', so dropping this would break the @main integration fixtures."
+        )
+
+    def test_devcontainer_postcreate_sets_init_default_branch(self) -> None:
+        """The devcontainer postcreate script runs 'git config --global init.defaultBranch main'."""
+        assert _DEVCONTAINER_POSTCREATE.is_file(), (
+            f"Expected devcontainer postcreate script to exist: {_DEVCONTAINER_POSTCREATE}"
+        )
+        text = _DEVCONTAINER_POSTCREATE.read_text(encoding="utf-8")
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_DEVCONTAINER_POSTCREATE} no longer runs "
+            "'git config --global init.defaultBranch main'. The dev environment must "
+            "satisfy the prerequisite automatically; dropping this would regress local runs."
         )

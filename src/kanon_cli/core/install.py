@@ -84,7 +84,6 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
-    SHELL_VAR_PATTERN,
     SOURCE_ENV_KEY,
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
@@ -108,6 +107,7 @@ from kanon_cli.core.include_walker import (
     _canonicalize_include_path,
     _walk_includes,
 )
+from kanon_cli.core.manifest_vars import functional_vars_in_manifest_files
 from kanon_cli.core.marketplace import (
     create_dirsymlink,
     discover_registered_marketplace_names,
@@ -1570,10 +1570,23 @@ def assert_manifest_vars_resolved(
     """Fail fast when any synced manifest still references an unprovided ``${VAR}``.
 
     The repo-tool ``envsubst`` only warns on an unresolved ``${VAR}`` and exits
-    0, leaving the placeholder verbatim in the manifest XML. This scans each
-    manifest file's text for remaining ``${VAR}`` tokens and raises
-    :class:`UnresolvedManifestVarError` (naming the exact ``.kanon`` key to set)
-    so kanon never proceeds to ``repo sync`` with an unresolved fetch URL.
+    0, leaving the placeholder verbatim in the manifest XML. This parses each
+    resolved manifest's XML and flags a remaining ``${VAR}`` ONLY when it appears
+    in a *functional* attribute value -- the attributes of the ``<remote>``
+    elements a ``<project>`` references and the projects' own attributes -- which
+    are exactly what ``repo sync`` consumes. ``${VAR}`` in XML comments,
+    ``<![CDATA[...]]>`` blocks, or element text is documentation prose and is
+    ignored, so a manifest whose functional substitution succeeded never fails on
+    a placeholder that survives only in prose.
+
+    Detection (:func:`kanon_cli.commands.add._detect_manifest_env_vars`) and this
+    guard call the SAME shared helper
+    (:func:`kanon_cli.core.manifest_vars.functional_vars_in_manifest_files`), so
+    the set of var names ``add`` records and the set this guard checks are
+    consistent by construction. On an unresolved functional ``${VAR}`` this
+    raises :class:`UnresolvedManifestVarError` (naming the exact ``.kanon`` key to
+    set) BEFORE ``repo sync`` so kanon never proceeds with an unresolved fetch
+    URL.
 
     Args:
         source_name: The source alias (used in the diagnostic).
@@ -1581,16 +1594,11 @@ def assert_manifest_vars_resolved(
             (the root manifest plus its ``<include>`` chain).
 
     Raises:
-        UnresolvedManifestVarError: If any manifest file still contains a
-            ``${VAR}`` placeholder after envsubst.
+        UnresolvedManifestVarError: If any functional attribute value in the
+            resolved manifest tree still contains a ``${VAR}`` placeholder after
+            envsubst.
     """
-    unresolved: set[str] = set()
-    for manifest_path in manifest_paths:
-        if not manifest_path.is_file():
-            continue
-        text = manifest_path.read_text(encoding="utf-8")
-        for match in SHELL_VAR_PATTERN.finditer(text):
-            unresolved.add(match.group(1))
+    unresolved = functional_vars_in_manifest_files(manifest_paths)
     if unresolved:
         raise UnresolvedManifestVarError(source_name=source_name, var_names=sorted(unresolved))
 

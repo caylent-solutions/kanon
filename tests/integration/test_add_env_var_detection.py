@@ -180,6 +180,38 @@ class TestAddEnvVarDetection:
             f"  expected: {expected_gitbase!r}\n  got: {env['GITBASE']!r}"
         )
 
+    def test_prose_var_in_comment_and_cdata_writes_no_env_var_line(self, tmp_path: pathlib.Path) -> None:
+        """A ${VAR} that appears only in an XML comment / CDATA is documentation, not detected.
+
+        Mirrors the install-side guard: add and install share
+        ``functional_vars_in_manifest_files`` via ``detect_functional_manifest_vars``,
+        so a ${HOME} that survives only in a <description> CDATA block (and not in
+        any functional <remote>/<default>/<project> attribute) writes no env-var
+        line, exactly as the install guard ignores it.
+        """
+        body = textwrap.dedent("""\
+              <!-- Set ${GITBASE} to your org base, e.g. https://github.com/caylent -->
+              <remote name="origin" fetch="https://example.com/repos" />
+              <default revision="main" remote="origin" />
+              <project name="pkg" path="pkg">
+                <description><![CDATA[Override ${HOME} to relocate the cache.]]></description>
+              </project>
+        """)
+        bare = _make_manifest_repo_with_body(tmp_path / "catalog", "prose", body, ["1.0.0"])
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        result = _run_kanon(
+            ["add", "prose", "--catalog-source", f"file://{bare}@main"],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+
+        content = (workspace / ".kanon").read_text()
+        assert _env_var_lines(content, "prose") == {}, (
+            f"a ${{VAR}} only in a comment / CDATA must write no env-var line; got:\n{content}"
+        )
+
     def test_project_attribute_var_is_detected(self, tmp_path: pathlib.Path) -> None:
         """A ${VAR} in the entry's <project> attributes is detected even with a literal remote."""
         body = textwrap.dedent("""\

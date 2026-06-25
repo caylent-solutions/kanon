@@ -53,6 +53,18 @@ _CUSTOM_VAR_MANIFEST = """\
 </manifest>
 """
 
+_PROSE_VAR_MANIFEST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- Set ${GITBASE} to your org base, e.g. https://github.com/caylent -->
+  <remote name="origin" fetch="${GITBASE}/repos" />
+  <default revision="main" remote="origin" />
+  <project name="pkg" path="pkg">
+    <description><![CDATA[Override ${HOME} to relocate the cache.]]></description>
+  </project>
+</manifest>
+"""
+
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising RuntimeError on non-zero exit."""
@@ -185,6 +197,45 @@ class TestInstallEnvVarResolution:
         assert "custom" in message, message
         assert "${MYBASE}" in message, message
         assert "KANON_SOURCE_custom_MYBASE" in message, message
+
+    def test_prose_var_in_comment_and_cdata_is_ignored(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        _no_network_sync,
+    ) -> None:
+        """A ${VAR} that survives only in an XML comment / CDATA must not fail install.
+
+        Regression for the ef86a2b scope mismatch: the guard scanned the raw
+        resolved-manifest TEXT, so a ${GITBASE} in an XML comment and a ${HOME}
+        in a <description> CDATA block tripped UnresolvedManifestVarError even
+        though the FUNCTIONAL <remote fetch> resolved correctly. The rewritten
+        guard scans only functional attribute values, so install must succeed.
+
+        Falsifiability: under the pre-fix text-scan guard, the surviving comment
+        ${GITBASE} and CDATA ${HOME} raise UnresolvedManifestVarError and install
+        fails; under the fixed functional-scope guard install exits 0.
+        """
+        monkeypatch.delenv("GITBASE", raising=False)
+        monkeypatch.delenv("HOME", raising=False)
+        monkeypatch.setenv(KANON_ALLOW_INSECURE_REMOTES, "1")
+
+        repos = tmp_path / "repos"
+        repos.mkdir()
+        bare = _make_manifest_bare_repo(repos, "prose", _PROSE_VAR_MANIFEST)
+
+        org_base = "https://github.com/caylent"
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanonenv = workspace / ".kanon"
+        kanonenv.write_text(_block("prose", bare, env_lines=f"KANON_SOURCE_prose_GITBASE={org_base}\n"))
+
+        install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
+
+        manifest_text = _substituted_manifest_path("prose").read_text(encoding="utf-8")
+        assert f'fetch="{org_base}/repos"' in manifest_text, (
+            f"functional <remote fetch> must resolve to {org_base!r}; got {manifest_text!r}"
+        )
 
     def test_mixed_gitbase_and_no_var_sources_install(
         self,

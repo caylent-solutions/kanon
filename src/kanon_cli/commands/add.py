@@ -32,7 +32,6 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
-import xml.etree.ElementTree as ET
 
 from packaging.version import InvalidVersion, Version
 
@@ -43,7 +42,6 @@ from kanon_cli.constants import (
     KANON_LOCK_FILE,
     MARKETPLACE_FLAG_TRUE,
     MISSING_CATALOG_ERROR_TEMPLATE,
-    SHELL_VAR_PATTERN,
     SOURCE_GITBASE_VAR,
     SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_PATH_SUFFIX,
@@ -55,7 +53,7 @@ from kanon_cli.constants import (
     TAG_ERROR_DISPLAY_CAP,
 )
 from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
-from kanon_cli.core.include_walker import IncludeTree, _walk_includes
+from kanon_cli.core.manifest_vars import detect_functional_manifest_vars
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present
@@ -356,66 +354,22 @@ def _derive_gitbase_from_catalog_source(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def _vars_in_attributes(element: ET.Element) -> set[str]:
-    """Return the set of ``${VAR}`` names referenced in an element's attributes.
-
-    Scans every attribute value of ``element`` for ``${VAR}`` placeholders and
-    returns the bare ``VAR`` names (without the ``${...}`` wrapper).
-
-    Args:
-        element: An XML element whose attribute values are scanned.
-
-    Returns:
-        The set of placeholder variable names found across all attributes.
-    """
-    found: set[str] = set()
-    for value in element.attrib.values():
-        for match in SHELL_VAR_PATTERN.finditer(value):
-            found.add(match.group(1))
-    return found
-
-
-def _collect_manifest_tree_files(
-    include_tree: IncludeTree,
-    manifest_root: pathlib.Path,
-) -> list[pathlib.Path]:
-    """Flatten an ``IncludeTree`` into absolute manifest file paths (DFS pre-order).
-
-    Args:
-        include_tree: The resolved include tree for the entry's root manifest.
-        manifest_root: Absolute path to the cloned manifest repo root.
-
-    Returns:
-        The deduplicated list of absolute manifest file paths in the tree.
-    """
-    ordered: list[pathlib.Path] = []
-    seen: set[pathlib.Path] = set()
-
-    def _visit(node: IncludeTree) -> None:
-        abs_path = manifest_root / node.path
-        if abs_path not in seen:
-            seen.add(abs_path)
-            ordered.append(abs_path)
-        for child in node.includes:
-            _visit(child)
-
-    _visit(include_tree)
-    return ordered
-
-
 def _detect_manifest_env_vars(xml_path: pathlib.Path, manifest_root: pathlib.Path) -> list[str]:
     """Detect the ``${VAR}`` names an entry's manifest depends on for substitution.
 
-    Resolves the entry manifest's ``<include>`` chain, aggregates every
-    ``<remote>`` definition and ``<default>`` remote across the root manifest
-    and its includes, then determines which remotes the entry's ``<project>``
-    elements reference (by explicit ``remote="NAME"`` or, when omitted, the
-    ``<default>`` remote). The detected variable set is the union of the
-    ``${VAR}`` placeholders in those referenced remotes' attributes plus any
-    ``${VAR}`` in the projects' own attributes.
+    Delegates to :func:`kanon_cli.core.manifest_vars.detect_functional_manifest_vars`,
+    the single source of truth for "which ``${VAR}`` names are functional in a
+    manifest + its ``<include>`` tree". The shared helper resolves the include
+    chain, then unions the ``${VAR}`` placeholders in the attributes of the
+    ``<remote>`` elements the entry's ``<project>`` elements reference (explicitly
+    via ``remote="NAME"`` or via the ``<default>`` remote) and the projects' own
+    attributes. ``${VAR}`` in comments, CDATA, or element text is documentation
+    prose and is ignored.
 
-    A manifest that references no ``${VAR}`` remote yields an empty list, so
-    ``kanon add`` writes no env-var line for the entry.
+    A manifest that references no functional ``${VAR}`` yields an empty list, so
+    ``kanon add`` writes no env-var line for the entry. The install-side guard
+    (``assert_manifest_vars_resolved``) calls the SAME helper against the
+    resolved manifest, so detection and verification agree by construction.
 
     Args:
         xml_path: Absolute path to the entry's root manifest XML file.
@@ -423,50 +377,14 @@ def _detect_manifest_env_vars(xml_path: pathlib.Path, manifest_root: pathlib.Pat
             resolve ``<include name=...>`` references).
 
     Returns:
-        The sorted, deduplicated list of detected ``${VAR}`` names.
+        The sorted, deduplicated list of detected functional ``${VAR}`` names.
 
     Raises:
         IncludeCycleError: If the manifest's include chain contains a cycle.
         MalformedIncludeError: If an ``<include>`` element lacks a ``name``.
         xml.etree.ElementTree.ParseError: If any manifest file is malformed.
     """
-    include_tree = _walk_includes(xml_path, manifest_root)
-    manifest_files = _collect_manifest_tree_files(include_tree, manifest_root)
-
-    remotes: dict[str, ET.Element] = {}
-    default_remotes: set[str] = set()
-    projects: list[ET.Element] = []
-
-    for manifest_file in manifest_files:
-        if not manifest_file.is_file():
-            continue
-        root = ET.parse(str(manifest_file)).getroot()
-        for remote_el in root.findall("remote"):
-            remote_name = remote_el.get("name")
-            if remote_name:
-                remotes[remote_name] = remote_el
-        for default_el in root.findall("default"):
-            default_remote = default_el.get("remote")
-            if default_remote:
-                default_remotes.add(default_remote)
-        projects.extend(root.findall("project"))
-
-    referenced_remotes: set[str] = set()
-    detected: set[str] = set()
-    for project_el in projects:
-        detected |= _vars_in_attributes(project_el)
-        project_remote = project_el.get("remote")
-        if project_remote:
-            referenced_remotes.add(project_remote)
-        else:
-            referenced_remotes |= default_remotes
-
-    for remote_name in referenced_remotes:
-        remote_el = remotes.get(remote_name)
-        if remote_el is not None:
-            detected |= _vars_in_attributes(remote_el)
-
-    return sorted(detected)
+    return sorted(detect_functional_manifest_vars(xml_path, manifest_root))
 
 
 def _build_env_var_lines(source_name: str, env_vars: list[str], gitbase: str) -> list[str]:

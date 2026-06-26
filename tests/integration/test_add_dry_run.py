@@ -270,6 +270,113 @@ class TestAddDryRun:
         assert _sha256(kanon_file) == sha_before, "File content changed during --dry-run --force"
 
 
+_CLAUDE_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
+
+
+@pytest.mark.integration
+class TestAddMarketplaceDryRun:
+    """kanon add <claude-marketplace> --dry-run previews the header but writes nothing (Feature A)."""
+
+    def test_dry_run_previews_marketplaces_dir_header_line(self, tmp_path: pathlib.Path) -> None:
+        """The dry-run diff includes a +CLAUDE_MARKETPLACES_DIR=... preview line for a marketplace entry."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert f"+{_CLAUDE_MARKETPLACES_DIR_HEADER}" in result.stdout, (
+            f"Expected the marketplace header preview line in the dry-run diff; got:\n{result.stdout!r}"
+        )
+
+    def test_dry_run_does_not_create_or_modify_file(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace --dry-run leaves an absent .kanon absent (no header write)."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert not kanon_file.exists(), "kanon add --dry-run must not create the .kanon file"
+
+    def test_dry_run_leaves_existing_file_byte_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace --dry-run against an existing headerless .kanon leaves it byte-for-byte unchanged."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+        kanon_file.write_text("GITBASE=<YOUR_GIT_ORG_BASE_URL>\n")
+        sha_before = _sha256(kanon_file)
+        mtime_before = kanon_file.stat().st_mtime
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert _sha256(kanon_file) == sha_before, "File content changed during marketplace --dry-run"
+        assert kanon_file.stat().st_mtime == mtime_before, "File mtime changed during marketplace --dry-run"
+        assert "CLAUDE_MARKETPLACES_DIR" not in kanon_file.read_text(), (
+            "the dry-run must not write the header into the file"
+        )
+
+
 @pytest.mark.integration
 class TestAddForce:
     """kanon add --force overwrites an existing block preserving line order."""

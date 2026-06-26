@@ -589,6 +589,27 @@ def _create_marketplace_manifest_repo(
     Returns:
         The absolute path to the bare repo directory.
     """
+    return _create_marketplace_manifest_repo_multi(base, [entry_name], tags)
+
+
+def _create_marketplace_manifest_repo_multi(
+    base: pathlib.Path,
+    entry_names: list[str],
+    tags: list[str],
+) -> pathlib.Path:
+    """Create a bare manifest repo with one claude-marketplace entry per name.
+
+    Each entry is stamped with the ``claude-marketplace`` catalog type so
+    ``kanon add`` auto-detects each as a marketplace dependency.
+
+    Args:
+        base: Parent directory under which work and bare dirs are created.
+        entry_names: The catalog entry names (each a claude-marketplace type).
+        tags: PEP 440-valid tag names to apply to the initial commit.
+
+    Returns:
+        The absolute path to the bare repo directory.
+    """
     work_dir = base / "manifest-work"
     work_dir.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(work_dir)
@@ -597,17 +618,21 @@ def _create_marketplace_manifest_repo(
     repo_specs_dir.mkdir()
     (repo_specs_dir / ".gitkeep").write_text("")
 
-    xml_path = repo_specs_dir / f"{entry_name}-marketplace.xml"
-    xml_path.write_text(_MARKETPLACE_TYPE_XML_TEMPLATE.format(name=entry_name))
+    for entry_name in entry_names:
+        xml_path = repo_specs_dir / f"{entry_name}-marketplace.xml"
+        xml_path.write_text(_MARKETPLACE_TYPE_XML_TEMPLATE.format(name=entry_name))
 
     _git(["add", "."], cwd=work_dir)
-    _git(["commit", "-m", "Add marketplace entry"], cwd=work_dir)
+    _git(["commit", "-m", "Add marketplace entries"], cwd=work_dir)
 
     for tag in tags:
         _git(["tag", "-a", tag, "-m", f"Release {tag}"], cwd=work_dir)
 
     bare_dir = _clone_as_bare(work_dir, base / "manifest-bare.git")
     return bare_dir.resolve()
+
+
+_CLAUDE_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
 
 
 @pytest.mark.integration
@@ -694,6 +719,163 @@ class TestAddMarketplaceTypeWritesFlagAndNotice:
         )
         content = kanon_file.read_text()
         assert "_MARKETPLACE" not in content
+
+
+@pytest.mark.integration
+class TestAddMarketplaceWritesMarketplacesDirHeader:
+    """A claude-marketplace add auto-inserts the CLAUDE_MARKETPLACES_DIR header exactly once (Feature A)."""
+
+    def test_marketplace_entry_writes_header_exact_value_once(self, tmp_path: pathlib.Path) -> None:
+        """Adding a claude-marketplace entry writes the exact header value exactly once."""
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        content = kanon_file.read_text()
+        assert content.count(_CLAUDE_MARKETPLACES_DIR_HEADER) == 1, (
+            f"Expected the literal header {_CLAUDE_MARKETPLACES_DIR_HEADER!r} exactly once; got:\n{content}"
+        )
+
+    def test_two_marketplace_entries_one_add_writes_header_once(self, tmp_path: pathlib.Path) -> None:
+        """Two claude-marketplace entries added in one invocation write the header exactly once."""
+        bare = _create_marketplace_manifest_repo_multi(
+            tmp_path / "repo",
+            entry_names=["mp-one", "mp-two"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-one",
+                "mp-two",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        content = kanon_file.read_text()
+        assert "KANON_SOURCE_mp_one_MARKETPLACE=true" in content
+        assert "KANON_SOURCE_mp_two_MARKETPLACE=true" in content
+        assert content.count(_CLAUDE_MARKETPLACES_DIR_HEADER) == 1, (
+            f"Two marketplace entries must still write the header exactly once; got:\n{content}"
+        )
+
+    def test_second_marketplace_add_does_not_duplicate_header(self, tmp_path: pathlib.Path) -> None:
+        """A second claude-marketplace add against an existing file keeps the header at one occurrence."""
+        bare = _create_marketplace_manifest_repo_multi(
+            tmp_path / "repo",
+            entry_names=["mp-one", "mp-two"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        first = _run_kanon(
+            ["add", "mp-one", "--catalog-source", f"file://{bare}@main", "--kanon-file", str(kanon_file)],
+            cwd=workspace,
+        )
+        assert first.returncode == 0, f"stdout: {first.stdout!r}\nstderr: {first.stderr!r}"
+
+        second = _run_kanon(
+            ["add", "mp-two", "--catalog-source", f"file://{bare}@main", "--kanon-file", str(kanon_file)],
+            cwd=workspace,
+        )
+        assert second.returncode == 0, f"stdout: {second.stdout!r}\nstderr: {second.stderr!r}"
+
+        content = kanon_file.read_text()
+        assert content.count(_CLAUDE_MARKETPLACES_DIR_HEADER) == 1, (
+            f"A second marketplace add must not duplicate the header; got:\n{content}"
+        )
+
+    def test_regular_entry_writes_no_marketplaces_dir_header(self, tmp_path: pathlib.Path) -> None:
+        """A regular (plugin) entry writes no CLAUDE_MARKETPLACES_DIR header."""
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "repo",
+            entry_names=["entry-a"],
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "entry-a",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        content = kanon_file.read_text()
+        assert "CLAUDE_MARKETPLACES_DIR" not in content
+
+    def test_marketplace_add_keeps_cwd_clean_no_kanon_data(self, tmp_path: pathlib.Path) -> None:
+        """add serialises under KANON_HOME, leaving no .kanon-data in the project CWD (Feature B)."""
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert not (workspace / ".kanon-data").exists(), (
+            "kanon add must not create a .kanon-data lock dir in the project CWD"
+        )
+        cwd_entries = {child.name for child in workspace.iterdir()}
+        assert cwd_entries == {".kanon"}, (
+            f"The project CWD must hold only .kanon after add; found: {sorted(cwd_entries)}"
+        )
 
 
 @pytest.mark.integration

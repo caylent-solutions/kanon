@@ -141,6 +141,7 @@ __all__ = [
     "kanon_home_inside_git_repo",
     "prune_store",
     "publish_store_entry",
+    "resolve_kanon_lock_root",
     "resolve_workspace_base_dir",
     "store_entries_dir",
     "write_store_gitignore_if_in_git_repo",
@@ -1216,6 +1217,20 @@ def resolve_workspace_base_dir() -> pathlib.Path:
         sys.exit(1)
 
     return store_path
+
+
+def resolve_kanon_lock_root(kanon_file: pathlib.Path) -> pathlib.Path:
+    """Return the store-side lock root for serialising edits to one .kanon file.
+
+    Keyed by a stable hash of the RESOLVED .kanon path so concurrent edits to the
+    same file serialise, while the CWD stays free of a .kanon-data lock dir (spec
+    G8: the CWD holds only .kanon + .kanon.lock). The lock lives under the shared
+    KANON_HOME store, so it follows KANON_HOME and only lands in the CWD when the
+    operator deliberately points KANON_HOME there.
+    """
+    store_base = resolve_workspace_base_dir()
+    address = hashlib.sha256(str(kanon_file.resolve()).encode("utf-8")).hexdigest()
+    return store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
 
 
 def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:

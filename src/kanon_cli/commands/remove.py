@@ -44,6 +44,8 @@ from kanon_cli.constants import (
     SOURCE_RESERVED_SUFFIXES,
     SOURCE_SUFFIXES,
 )
+from kanon_cli.core.install import resolve_kanon_lock_root
+from kanon_cli.core.kanonenv_writer import prune_claude_marketplaces_dir_if_unused
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
@@ -435,8 +437,7 @@ def run_remove(args: argparse.Namespace) -> int:
         _render_remove_dry_run_diff(lines, all_removal_indices)
         return 0
 
-    workspace_root = kanon_file.resolve().parent
-    with kanon_workspace_lock(workspace_root):
+    with kanon_workspace_lock(resolve_kanon_lock_root(kanon_file)):
         dominant_ending = _detect_dominant_line_ending(raw_text)
         if dominant_ending is None:
             print(
@@ -451,6 +452,8 @@ def run_remove(args: argparse.Namespace) -> int:
         final_text = _apply_file_writing_rules(kept_text, dominant_ending)
 
         kanon_file.write_bytes(final_text.encode("utf-8"))
+
+        prune_claude_marketplaces_dir_if_unused(kanon_file, hold_lock=False)
 
     for _input_name, normalized, _indices in removal_plan:
         key_names = ", ".join(f"{SOURCE_PREFIX}{normalized}{suffix}" for suffix in SOURCE_SUFFIXES)

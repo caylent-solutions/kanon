@@ -39,7 +39,6 @@ def _run_kanon(
 
 _STANDARD_HEADER = textwrap.dedent("""\
     GITBASE=https://example.com
-    CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
     OTHER_VAR=kept
 """)
 
@@ -123,7 +122,13 @@ class TestRemoveCoreHappyPath:
         assert "KANON_SOURCE_foo_bar_GITBASE" not in content
 
     def test_header_preserved_after_removal(self, tmp_path: pathlib.Path) -> None:
-        """Standard header lines survive the removal."""
+        """Non-source config lines survive removal; no marketplace header is left behind.
+
+        ``foo_bar`` is a plain (non-marketplace) source: the fixture carries no
+        ``KANON_SOURCE_<alias>_MARKETPLACE=true`` flag, so the auto-managed
+        ``CLAUDE_MARKETPLACES_DIR`` header is never present and ``kanon remove``
+        leaves the remaining ``GITBASE`` / ``OTHER_VAR`` config lines intact.
+        """
         kanon_file = _kanon_simple(tmp_path)
 
         result = _run_kanon(["remove", "foo_bar", "--kanon-file", str(kanon_file)])
@@ -131,8 +136,8 @@ class TestRemoveCoreHappyPath:
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         content = kanon_file.read_text()
         assert "GITBASE=https://example.com" in content
-        assert "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces" in content
         assert "OTHER_VAR=kept" in content
+        assert "CLAUDE_MARKETPLACES_DIR" not in content
 
     def test_stdout_summary_names_removed_keys(self, tmp_path: pathlib.Path) -> None:
         """stdout names the four structural removed keys; the optional _GITBASE
@@ -307,3 +312,75 @@ class TestRemoveCoreErrorPaths:
         combined = result.stdout + result.stderr
         assert "--kanon-file" in combined
         assert "KANON_KANON_FILE" in combined
+
+
+_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
+
+
+def _marketplace_block(alias: str) -> str:
+    """Return the .kanon block for one marketplace-flagged source alias.
+
+    Args:
+        alias: The canonical source alias.
+
+    Returns:
+        The block text (trailing newline) including the ``_MARKETPLACE=true`` flag.
+    """
+    return (
+        f"KANON_SOURCE_{alias}_URL=https://example.com/{alias}.git\n"
+        f"KANON_SOURCE_{alias}_REF=refs/tags/1.0.0\n"
+        f"KANON_SOURCE_{alias}_PATH=repo-specs/{alias}-marketplace.xml\n"
+        f"KANON_SOURCE_{alias}_NAME={alias}\n"
+        f"KANON_SOURCE_{alias}_MARKETPLACE=true\n"
+    )
+
+
+@pytest.mark.integration
+class TestRemovePrunesMarketplacesDirHeader:
+    """remove of the last marketplace dependency prunes the auto-managed header (Feature A)."""
+
+    def test_remove_last_marketplace_prunes_header(self, tmp_path: pathlib.Path) -> None:
+        """Removing the only marketplace source drops the CLAUDE_MARKETPLACES_DIR header."""
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(_MARKETPLACES_DIR_HEADER + "\n" + _marketplace_block("only_mp"))
+
+        result = _run_kanon(["remove", "only_mp", "--kanon-file", str(kanon_file)])
+
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        content = kanon_file.read_text()
+        assert "KANON_SOURCE_only_mp_" not in content
+        assert "CLAUDE_MARKETPLACES_DIR" not in content, (
+            "the header must be pruned once the last _MARKETPLACE=true dependency is removed"
+        )
+
+    def test_remove_one_of_two_marketplaces_keeps_header(self, tmp_path: pathlib.Path) -> None:
+        """Removing one of two marketplace sources keeps the header (one remains)."""
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(
+            _MARKETPLACES_DIR_HEADER + "\n" + _marketplace_block("first_mp") + _marketplace_block("second_mp")
+        )
+
+        result = _run_kanon(["remove", "first_mp", "--kanon-file", str(kanon_file)])
+
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        content = kanon_file.read_text()
+        assert "KANON_SOURCE_first_mp_" not in content
+        assert "KANON_SOURCE_second_mp_MARKETPLACE=true" in content
+        assert content.count("CLAUDE_MARKETPLACES_DIR") == 1, (
+            "the header must remain while a _MARKETPLACE=true dependency still exists"
+        )
+
+    def test_remove_keeps_cwd_clean_no_kanon_data(self, tmp_path: pathlib.Path) -> None:
+        """remove serialises under KANON_HOME, leaving no .kanon-data in the project CWD (Feature B)."""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+        kanon_file.write_text(_MARKETPLACES_DIR_HEADER + "\n" + _marketplace_block("only_mp"))
+
+        result = _run_kanon(["remove", "only_mp", "--kanon-file", str(kanon_file)], cwd=workspace)
+
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        assert not (workspace / ".kanon-data").exists(), (
+            "kanon remove must not create a .kanon-data lock dir in the project CWD"
+        )
+        assert kanon_file.exists()

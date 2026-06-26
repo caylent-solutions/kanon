@@ -350,7 +350,6 @@ class TestRunRemoveInputPaths:
 
     _EXPECTED_AFTER_REMOVAL = textwrap.dedent("""\
         GITBASE=https://example.com
-        CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
         KANON_MARKETPLACE_INSTALL=true
     """)
 
@@ -399,7 +398,13 @@ class TestRunRemoveInputPaths:
         assert kanon_a.read_text() == kanon_b.read_text()
 
     def test_other_content_preserved_byte_for_byte(self, tmp_path: pathlib.Path) -> None:
-        """Non-removed lines are preserved byte-for-byte."""
+        """Unrelated lines are preserved; the auto-managed header is pruned.
+
+        Removing the last source leaves no ``KANON_SOURCE_<alias>_MARKETPLACE=true``
+        flag, so the auto-managed ``CLAUDE_MARKETPLACES_DIR`` header is pruned (it is
+        re-added automatically on the next marketplace add/enable). Genuinely
+        unrelated content (``GITBASE``, the legacy global flag) is preserved.
+        """
         kanon_file = tmp_path / ".kanon"
         _write_kanon(kanon_file, self._KANON_CONTENT)
         args = _make_args(["foo_bar"], str(kanon_file))
@@ -408,7 +413,7 @@ class TestRunRemoveInputPaths:
 
         result = kanon_file.read_text()
         assert "GITBASE=https://example.com" in result
-        assert "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces" in result
+        assert "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces" not in result
         assert "KANON_MARKETPLACE_INSTALL=true" in result
 
 
@@ -666,16 +671,27 @@ class TestRunRemoveAtomicity:
 class TestRunRemoveWorkspaceLock:
     """run_remove wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
 
-    def test_run_remove_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
-        """run_remove creates .kanon-data/ via workspace lock acquisition.
+    def test_run_remove_creates_store_lock_not_cwd_kanon_data(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_remove creates the edit lock under the KANON_HOME store, not in the CWD.
 
-        The kanon_workspace_lock context manager creates .kanon-data/ eagerly;
-        a normal run_remove call in a fresh workspace must create the directory
-        as a side effect of acquiring the write lock.
+        The workspace lock now keys on the store-side lock root for the resolved
+        ``.kanon`` path (spec G8: the CWD holds only ``.kanon`` + ``.kanon.lock``).
+        A normal run_remove call therefore creates ``.kanon-data/`` under
+        ``<KANON_HOME>/store/.locks/<address>/`` and leaves the project directory
+        free of a ``.kanon-data/`` directory.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture (used to point KANON_HOME).
         """
+        from kanon_cli.constants import KANON_HOME_STORE_LOCKS_SUBDIR, KANON_HOME_STORE_SUBDIR
+
+        kanon_home = tmp_path / "home"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        store = kanon_home / KANON_HOME_STORE_SUBDIR
+
         content = (
             "GITBASE=https://git.example.com\n"
             "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
@@ -692,9 +708,15 @@ class TestRunRemoveWorkspaceLock:
         args = _make_args(["alpha"], str(kanon_file))
         run_remove(args)
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "run_remove must create .kanon-data/ via kanon_workspace_lock eager-create "
-            "when the workspace has no prior .kanon-data/ directory"
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "run_remove must NOT create .kanon-data/ in the project directory; "
+            "the edit lock now lives under the KANON_HOME store (spec G8)"
+        )
+        store_locks = store / KANON_HOME_STORE_LOCKS_SUBDIR
+        lock_dirs = [path for path in store_locks.rglob(".kanon-data") if path.is_dir()]
+        assert lock_dirs, (
+            "run_remove must create the edit lock's .kanon-data/ under "
+            "<KANON_HOME>/store/.locks/<address>/ via kanon_workspace_lock eager-create"
         )
 
     def test_run_remove_dry_run_does_not_create_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:

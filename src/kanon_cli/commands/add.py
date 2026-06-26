@@ -37,6 +37,7 @@ from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     CATALOG_TYPE_CLAUDE_MARKETPLACE,
+    KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
@@ -61,7 +62,11 @@ from kanon_cli.core.catalog import (
 from kanon_cli.core.manifest_vars import detect_functional_manifest_vars
 from kanon_cli.core.cli_args import add_catalog_default_branch_arg, add_catalog_source_arg
 from kanon_cli.core.kanon_hash import kanon_hash
-from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present
+from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present, resolve_kanon_lock_root
+from kanon_cli.core.kanonenv_writer import (
+    ensure_claude_marketplaces_dir,
+    has_claude_marketplaces_dir_header,
+)
 from kanon_cli.core.lockfile import write_lockfile
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
@@ -105,7 +110,11 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "Resolve catalog entries from a manifest repo and append the\n"
             "alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus an\n"
             "optional per-dependency env-var line per ${VAR} the manifest needs)\n"
-            "to the destination .kanon file. No global header is written.\n\n"
+            "to the destination .kanon file. The only global header written is the\n"
+            "single CLAUDE_MARKETPLACES_DIR line, auto-added once when a\n"
+            "claude-marketplace entry is added (and pruned by 'kanon remove' /\n"
+            "'kanon marketplace disable' once the last marketplace dependency is\n"
+            "gone); hand-set that line to override the directory.\n\n"
             "Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440\n"
             "constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in\n"
             "each argument is the delimiter -- see spec Section 4.0 resolver rules.\n"
@@ -1353,8 +1362,11 @@ def run_add(args: argparse.Namespace) -> int:
 
     Resolves each requested catalog entry, constructs the alias-keyed
     KANON_SOURCE_<alias>_* block lines, and appends (or overwrites) them in the
-    destination .kanon file. Creates the file when absent; no standard header is
-    written (spec Section 5.1).
+    destination .kanon file. Creates the file when absent. The only global header
+    written is the single ``CLAUDE_MARKETPLACES_DIR`` line, auto-added once when a
+    ``claude-marketplace`` entry is added (and pruned by ``kanon remove`` /
+    ``kanon marketplace disable`` once the last marketplace dependency is gone);
+    no other standard header is written (spec Section 5.1).
 
     The implementation uses a two-phase approach to satisfy AC-FUNC-004
     (destination .kanon is unchanged after any error):
@@ -1439,7 +1451,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     existing_aliases = _read_all_source_aliases(kanon_file)
 
-    resolved_entries: list[tuple[str, str, str, str, list[str]]] = []
+    resolved_entries: list[tuple[str, str, str, str, list[str], bool]] = []
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
 
@@ -1509,21 +1521,24 @@ def run_add(args: argparse.Namespace) -> int:
         )
 
         existing_aliases[alias] = (entry_url, resolved_revision)
-        resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines))
+        resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines, marketplace))
+
+    any_marketplace = any(entry[5] for entry in resolved_entries)
 
     if dry_run:
-        for alias, mode, _entry_url, _lock_ref_spec, lines in resolved_entries:
+        for alias, mode, _entry_url, _lock_ref_spec, lines, _marketplace in resolved_entries:
             _render_dry_run_diff(
                 dest=kanon_file,
                 source_name=alias,
                 lines=lines,
                 force=(mode == "force_overwrite"),
             )
+        if any_marketplace and not has_claude_marketplaces_dir_header(kanon_file):
+            print(f"+{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}")
         return 0
 
-    workspace_root = kanon_file.resolve().parent
-    with kanon_workspace_lock(workspace_root):
-        for alias, mode, entry_url, lock_ref_spec, lines in resolved_entries:
+    with kanon_workspace_lock(resolve_kanon_lock_root(kanon_file)):
+        for alias, mode, entry_url, lock_ref_spec, lines, _marketplace in resolved_entries:
             if mode == "force_overwrite":
                 _overwrite_source_block(
                     dest=kanon_file,
@@ -1543,5 +1558,8 @@ def run_add(args: argparse.Namespace) -> int:
                     source_name=alias,
                     lines=lines,
                 )
+
+        if any_marketplace:
+            ensure_claude_marketplaces_dir(kanon_file, hold_lock=False)
 
     return 0

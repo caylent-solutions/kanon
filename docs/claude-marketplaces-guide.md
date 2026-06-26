@@ -126,6 +126,16 @@ unregistration. Toggle it with `kanon marketplace enable <alias>` /
 `kanon marketplace disable <alias>`, or inspect the effective setting with
 `kanon marketplace status`.
 
+The global `CLAUDE_MARKETPLACES_DIR` header that `kanon install` needs is
+auto-managed: `kanon add` of a `claude-marketplace` entry and
+`kanon marketplace enable` insert
+`CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` once when it is absent,
+and `kanon remove` / `kanon marketplace disable` prune it once the last
+marketplace dependency is gone. Hand-set the line only to override the
+directory; a custom value is preserved and never clobbered. So the canonical
+`kanon add <claude-marketplace> ; kanon install` flow works with no manual
+edit to `.kanon`.
+
 ### Install Lifecycle
 
 When a user runs `kanon install .kanon`:

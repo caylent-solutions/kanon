@@ -7,7 +7,11 @@ usage: kanon add [-h] [--catalog-source <git-url>@<ref>]
 Resolve catalog entries from a manifest repo and append the
 alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus an
 optional per-dependency env-var line per ${VAR} the manifest needs)
-to the destination .kanon file. No global header is written.
+to the destination .kanon file. The only global header written is the
+single CLAUDE_MARKETPLACES_DIR line, auto-added once when a
+claude-marketplace entry is added (and pruned by 'kanon remove' /
+'kanon marketplace disable' once the last marketplace dependency is
+gone); hand-set that line to override the directory.
 
 Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440
 constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in

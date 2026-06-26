@@ -490,9 +490,13 @@ including sources installed via direct checkout.
 - The source is declared with `KANON_SOURCE_<alias>_MARKETPLACE=true` in
   `.kanon` (set by `kanon add --marketplace-install` or
   `kanon marketplace enable <alias>`).
-- `CLAUDE_MARKETPLACES_DIR` is defined in `.kanon`; when a
-  marketplace-enabled dependency is declared without it, `kanon install`
-  fails fast with an actionable error.
+- `CLAUDE_MARKETPLACES_DIR` is present in `.kanon`. It is auto-added by
+  `kanon add` of a `claude-marketplace` entry and by `kanon marketplace enable`
+  (and pruned by `kanon remove` / `kanon marketplace disable` on the last
+  marketplace dependency); hand-set it only to override the directory. As a
+  defense-in-depth check, when a marketplace-enabled dependency is declared
+  without it (e.g. a hand-edited `.kanon`), `kanon install` fails fast with an
+  actionable error.
 - The `claude` binary is available on `$PATH`; if absent, `kanon install`
   fails fast with a non-zero exit and an actionable error.
 

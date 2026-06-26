@@ -1230,21 +1230,31 @@ class TestRunAddHappyPath:
 class TestRunAddWorkspaceLock:
     """run_add wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
 
-    def test_run_add_creates_kanon_data_dir(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """run_add creates .kanon-data/ as part of workspace lock acquisition.
+    def test_run_add_creates_store_lock_not_cwd_kanon_data(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_add creates the edit lock under the KANON_HOME store, not in the CWD.
 
-        The kanon_workspace_lock context manager creates .kanon-data/ eagerly;
-        this test confirms that a normal run_add call in a fresh workspace
-        (with no pre-existing .kanon-data/) creates the directory.
+        The workspace lock now keys on the store-side lock root for the resolved
+        ``.kanon`` path (spec G8: the CWD holds only ``.kanon`` + ``.kanon.lock``).
+        A normal run_add call therefore creates ``.kanon-data/`` under
+        ``<KANON_HOME>/store/.locks/<address>/`` and leaves the project directory
+        free of a ``.kanon-data/`` directory.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
             capsys: Pytest stdout/stderr capture fixture.
+            monkeypatch: Pytest monkeypatch fixture (used to point KANON_HOME).
         """
         import textwrap
         from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
+        from kanon_cli.constants import KANON_HOME_STORE_LOCKS_SUBDIR, KANON_HOME_STORE_SUBDIR
+
+        kanon_home = tmp_path / "home"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        store = kanon_home / KANON_HOME_STORE_SUBDIR
 
         kanon_file = tmp_path / ".kanon"
         meta = CatalogMetadata(
@@ -1300,9 +1310,15 @@ class TestRunAddWorkspaceLock:
         ):
             run_add(args)
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "run_add must create .kanon-data/ via kanon_workspace_lock eager-create "
-            "when the workspace has no prior .kanon-data/ directory"
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "run_add must NOT create .kanon-data/ in the project directory; "
+            "the edit lock now lives under the KANON_HOME store (spec G8)"
+        )
+        store_locks = store / KANON_HOME_STORE_LOCKS_SUBDIR
+        lock_dirs = [path for path in store_locks.rglob(".kanon-data") if path.is_dir()]
+        assert lock_dirs, (
+            "run_add must create the edit lock's .kanon-data/ under "
+            "<KANON_HOME>/store/.locks/<address>/ via kanon_workspace_lock eager-create"
         )
 
     def test_run_add_dry_run_does_not_create_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:

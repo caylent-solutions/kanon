@@ -29,13 +29,23 @@ import pathlib
 import subprocess
 import sys
 import tomllib
+from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.install import install
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
+    _create_marketplace_manifest_repo,
     _run_kanon,
 )
+from tests.integration.test_install_marketplace_registration import (
+    _extract_marketplace_add_argvs,
+    _make_repo_init_with_linkfiles,
+)
+
+
+_CLAUDE_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
 
 
 @pytest.mark.integration
@@ -173,4 +183,103 @@ class TestInstallAfterAdd:
             f"kanon install --catalog-source must be rejected as an unrecognized argument.\n"
             f"  exit code: {install_result.returncode}\n"
             f"  stderr   : {install_result.stderr!r}"
+        )
+
+
+@pytest.mark.integration
+class TestMarketplaceInstallAfterAdd:
+    """`kanon add <claude-marketplace>` then `kanon install` works with no manual header (Feature A)."""
+
+    def test_marketplace_add_then_install_succeeds_with_one_header(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """add of a marketplace entry writes one header; the subsequent install consumes it and exits cleanly.
+
+        The end-to-end gap the auto-managed header closes: before the fix a bare
+        ``kanon add <marketplace> ; kanon install`` failed because ``add`` wrote no
+        ``CLAUDE_MARKETPLACES_DIR`` header and ``install`` requires it.  Here ``add``
+        runs as a real subprocess (writing the literal ``${HOME}`` header exactly
+        once) and ``install`` runs in-process with the marketplace registration
+        mocks (so it never shells out to a real ``claude`` binary).  ``HOME`` is
+        redirected to a tmp dir so the expanded marketplace directory stays
+        hermetic.
+        """
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "catalog",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        catalog_source = f"file://{bare}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        add_result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                catalog_source,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add failed (expected 0, got {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+
+        content_after_add = kanon_file.read_text()
+        assert content_after_add.count(_CLAUDE_MARKETPLACES_DIR_HEADER) == 1, (
+            f"kanon add must auto-write the marketplace header exactly once; got:\n{content_after_add}"
+        )
+        assert "KANON_SOURCE_mp_entry_MARKETPLACE=true" in content_after_add
+        assert not (workspace / ".kanon-data").exists(), (
+            "kanon add must not create a .kanon-data lock dir in the project CWD"
+        )
+
+        tmp_home = tmp_path / "home"
+        tmp_home.mkdir()
+        monkeypatch.setenv("HOME", str(tmp_home))
+        marketplace_dir = tmp_home / ".claude-marketplaces"
+
+        claude_bin = "/usr/bin/claude"
+        mock_completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with (
+            patch(
+                "kanon_cli.repo.repo_init",
+                side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
+            ),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.core.marketplace.shutil.which",
+                return_value=claude_bin,
+            ),
+            patch(
+                "kanon_cli.core.marketplace.subprocess.run",
+                return_value=mock_completed,
+            ) as mock_run,
+        ):
+            install(
+                kanon_file,
+                lock_file_path=workspace / ".kanon.lock",
+            )
+
+        recorded_add_argvs = _extract_marketplace_add_argvs(mock_run.call_args_list)
+        expected = (claude_bin, "plugin", "marketplace", "add", str(marketplace_dir / "mp-entry"))
+        assert expected in recorded_add_argvs, (
+            f"Expected the marketplace entry to register via {expected!r} after add->install; "
+            f"recorded calls: {recorded_add_argvs}"
+        )
+
+        assert (workspace / ".kanon.lock").exists(), "install must write .kanon.lock"
+        content_after_install = kanon_file.read_text()
+        assert content_after_install.count(_CLAUDE_MARKETPLACES_DIR_HEADER) == 1, (
+            f"install must leave exactly one marketplace header; got:\n{content_after_install}"
         )

@@ -712,9 +712,13 @@ customize behavior without modifying the file.
 
 There is no required global header. The only global variable kanon reads is:
 
-**`CLAUDE_MARKETPLACES_DIR`** (Conditional)
-Directory for marketplace symlinks. Required only when at least one source
-enables the marketplace lifecycle via `KANON_SOURCE_<alias>_MARKETPLACE=true`.
+**`CLAUDE_MARKETPLACES_DIR`** (Auto-managed)
+Directory for marketplace symlinks. Auto-added (as
+`CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces`) by `kanon add` of a
+`claude-marketplace` entry and by `kanon marketplace enable`, and pruned by
+`kanon remove` / `kanon marketplace disable` once the last
+`KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is gone. Hand-set the line
+only to override the directory; a custom value is preserved and never clobbered.
 
 ### Source Variables
 
@@ -767,7 +771,10 @@ and `kanon catalog audit`. `kanon install` is hermetic: it reads only
 Root of the shared kanon store and caches (default `~/.kanon`). The
 `--home` / `--store-dir <path>` global flag overrides it for a single
 invocation; precedence is flag > `KANON_HOME` > `~/.kanon`. Replaces the
-removed `KANON_WORKSPACE_DIR` / `KANON_CACHE_DIR` variables.
+removed `KANON_WORKSPACE_DIR` / `KANON_CACHE_DIR` variables. Synced artifacts
+and the per-`.kanon` workspace lock both live under `${KANON_HOME}/store/`,
+so the project directory holds only `.kanon` (plus `.kanon.lock` after the
+first install) and never a `.kanon-data/` lock directory.
 
 **`KANON_SKIP_UPDATE_CHECK`**
 Set to `1` to skip the PyPI update-available check (equivalent to the
@@ -779,7 +786,9 @@ environment-variable reference.
 ### Example .kanon
 
 ```properties
-# Required only when a source enables the marketplace lifecycle
+# Auto-added by `kanon add` of a claude-marketplace entry / `kanon marketplace
+# enable`; pruned on the last `kanon remove` / `kanon marketplace disable`.
+# Hand-set it only to override the directory.
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 
 # Source: build -- build tooling packages.
@@ -1162,7 +1171,8 @@ specialized plugins at each level.
 - Each `<project path>` must be unique across all manifests
 - The per-source `KANON_SOURCE_<alias>_MARKETPLACE` flag in `.kanon` must be
   set to `true` for the marketplace source
-- `CLAUDE_MARKETPLACES_DIR` must be defined in `.kanon`
+- `CLAUDE_MARKETPLACES_DIR` must be present in `.kanon` (auto-added by
+  `kanon add` / `kanon marketplace enable`; hand-set only to override the dir)
 
 ### Naming Convention
 

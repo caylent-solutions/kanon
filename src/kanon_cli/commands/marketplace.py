@@ -45,6 +45,11 @@ from kanon_cli.constants import (
     SOURCE_PREFIX,
     SOURCE_URL_SUFFIX,
 )
+from kanon_cli.core.install import resolve_kanon_lock_root
+from kanon_cli.core.kanonenv_writer import (
+    ensure_claude_marketplaces_dir,
+    prune_claude_marketplaces_dir_if_unused,
+)
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
@@ -450,8 +455,7 @@ def _write_lines(kanon_file: pathlib.Path, lines: list[str]) -> None:
         kanon_file: Path to the ``.kanon`` file.
         lines: The full file content as a list of lines (newlines retained).
     """
-    workspace_root = kanon_file.resolve().parent
-    with kanon_workspace_lock(workspace_root):
+    with kanon_workspace_lock(resolve_kanon_lock_root(kanon_file)):
         kanon_file.write_text("".join(lines), encoding="utf-8")
 
 
@@ -495,6 +499,7 @@ def run_enable(args: argparse.Namespace) -> int:
     lines[idx] = enabled_line + existing_newline
 
     _write_lines(kanon_file, lines)
+    ensure_claude_marketplaces_dir(kanon_file)
     print(f"Enabled marketplace install for '{alias}' in {kanon_file}")
     return 0
 
@@ -535,6 +540,7 @@ def run_disable(args: argparse.Namespace) -> int:
 
     del lines[idx]
     _write_lines(kanon_file, lines)
+    prune_claude_marketplaces_dir_if_unused(kanon_file)
     print(f"Disabled marketplace install for '{alias}' in {kanon_file}")
     return 0
 

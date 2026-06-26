@@ -1327,3 +1327,64 @@ class TestPruneStore:
         store.mkdir()
         prune_store(store)
         assert store.exists()
+
+
+@pytest.mark.unit
+class TestResolveKanonLockRoot:
+    """resolve_kanon_lock_root keys the edit lock under the KANON_HOME store.
+
+    The store-side lock keeps the CWD free of a ``.kanon-data`` lock dir (spec
+    G8: the CWD holds only ``.kanon`` + ``.kanon.lock``) while still serialising
+    concurrent edits to the same resolved ``.kanon`` path.
+    """
+
+    def test_lock_root_is_under_kanon_home_store_locks(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The lock root lands under ``<KANON_HOME>/store/.locks`` and not beside .kanon."""
+        from kanon_cli.constants import KANON_HOME_STORE_LOCKS_SUBDIR, KANON_HOME_STORE_SUBDIR
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        kanon_home = tmp_path / "home"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+        kanon_file = cwd_dir / ".kanon"
+        kanon_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        lock_root = resolve_kanon_lock_root(kanon_file)
+
+        locks_dir = (kanon_home / KANON_HOME_STORE_SUBDIR / KANON_HOME_STORE_LOCKS_SUBDIR).resolve()
+        assert locks_dir in lock_root.parents, "lock root must live under <KANON_HOME>/store/.locks"
+        assert cwd_dir.resolve() not in lock_root.parents, "lock root must NOT live under the .kanon parent"
+
+    def test_lock_root_is_stable_for_same_path(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The lock root is deterministic for repeated calls on the same .kanon path."""
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+        kanon_file = tmp_path / "project" / ".kanon"
+        kanon_file.parent.mkdir()
+        kanon_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        first = resolve_kanon_lock_root(kanon_file)
+        second = resolve_kanon_lock_root(kanon_file)
+
+        assert first == second
+
+    def test_lock_root_distinct_for_different_paths(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two different resolved .kanon paths produce distinct lock roots."""
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+        first_file = tmp_path / "a" / ".kanon"
+        second_file = tmp_path / "b" / ".kanon"
+        first_file.parent.mkdir()
+        second_file.parent.mkdir()
+        first_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+        second_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        assert resolve_kanon_lock_root(first_file) != resolve_kanon_lock_root(second_file)

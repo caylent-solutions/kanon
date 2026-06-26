@@ -133,3 +133,55 @@ def test_marketplace_help_advertises_subcommands(tmp_path: pathlib.Path) -> None
     assert result.returncode == 0, result.stderr
     for token in ("enable", "disable", "status"):
         assert token in result.stdout
+
+
+_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
+
+
+@pytest.mark.functional
+def test_marketplace_enable_adds_header_and_disable_prunes_it(tmp_path: pathlib.Path) -> None:
+    """enable inserts the CLAUDE_MARKETPLACES_DIR header; disable of the last marketplace prunes it (Feature A)."""
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    kanon_file = workspace / ".kanon"
+    kanon_file.write_text("\n".join(_block(_ALIAS, marketplace="false")) + "\n", encoding="utf-8")
+
+    assert "CLAUDE_MARKETPLACES_DIR" not in kanon_file.read_text(encoding="utf-8")
+
+    enable_result = _run_kanon("marketplace", "enable", _ALIAS, cwd=workspace)
+    assert enable_result.returncode == 0, enable_result.stderr
+    after_enable = kanon_file.read_text(encoding="utf-8")
+    assert after_enable.count(_MARKETPLACES_DIR_HEADER) == 1, (
+        f"enable must auto-insert the marketplace header exactly once; got:\n{after_enable}"
+    )
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=true" in after_enable
+    assert not (workspace / ".kanon-data").exists(), (
+        "kanon marketplace enable must not create a .kanon-data lock dir in the project CWD"
+    )
+
+    disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
+    assert disable_result.returncode == 0, disable_result.stderr
+    after_disable = kanon_file.read_text(encoding="utf-8")
+    assert "CLAUDE_MARKETPLACES_DIR" not in after_disable, (
+        f"disable of the last marketplace must prune the header; got:\n{after_disable}"
+    )
+
+
+@pytest.mark.functional
+def test_marketplace_disable_keeps_header_when_another_marketplace_remains(tmp_path: pathlib.Path) -> None:
+    """Disabling one of two enabled marketplaces keeps the header (one remains) (Feature A)."""
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    kanon_file = workspace / ".kanon"
+    second_alias = "second_market"
+    body = _block(_ALIAS, marketplace="true") + [""] + _block(second_alias, marketplace="true")
+    kanon_file.write_text(_MARKETPLACES_DIR_HEADER + "\n" + "\n".join(body) + "\n", encoding="utf-8")
+
+    disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
+    assert disable_result.returncode == 0, disable_result.stderr
+    after_disable = kanon_file.read_text(encoding="utf-8")
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE" not in after_disable
+    assert f"KANON_SOURCE_{second_alias}_MARKETPLACE=true" in after_disable
+    assert after_disable.count(_MARKETPLACES_DIR_HEADER) == 1, (
+        f"the header must remain while another marketplace is still enabled; got:\n{after_disable}"
+    )

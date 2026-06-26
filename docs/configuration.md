@@ -429,12 +429,16 @@ calls during lockfile resolution.
 
 ### Concurrency
 
-`kanon install`, `kanon add`, `kanon remove`, and
+`kanon install`, `kanon add`, `kanon remove`, `kanon marketplace`, and
 `kanon doctor --refresh-completion-cache` use an exclusive file lock
-(`fcntl.flock(LOCK_EX)`) on `.kanon-data/.kanon-install.lock` to
-serialize concurrent invocations within the same workspace. The
-kernel releases the lock on process exit (graceful or crash); a
-leftover `.kanon-install.lock` file on disk is harmless.
+(`fcntl.flock(LOCK_EX)`) on a `.kanon-install.lock` to serialize concurrent
+invocations against the same `.kanon` file. The lock lives in the shared
+`KANON_HOME` store under `${KANON_HOME}/store/.locks/<address>/`, keyed by a
+hash of the resolved `.kanon` path, so concurrent edits to the same file
+serialize while the project directory stays clean: the working directory holds
+only `.kanon` (and `.kanon.lock` after the first install), never a
+`.kanon-data/` lock directory. The kernel releases the lock on process exit
+(graceful or crash); a leftover `.kanon-install.lock` file on disk is harmless.
 
 The following variables control how `kanon doctor --prune-cache`
 handles stale lock files and cache entries.
@@ -688,6 +692,22 @@ kanon marketplace disable <alias>
 kanon marketplace status
 kanon marketplace status --all
 ```
+
+### Auto-managed `CLAUDE_MARKETPLACES_DIR` header
+
+The global `CLAUDE_MARKETPLACES_DIR` header is auto-managed alongside the
+per-dependency marketplace flags, so the canonical
+`kanon add <claude-marketplace> ; kanon install` workflow needs no manual
+edit:
+
+- `kanon add` of a `claude-marketplace` entry and `kanon marketplace enable`
+  insert `CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` once, as the
+  first non-comment line, when it is absent.
+- `kanon remove` and `kanon marketplace disable` prune the line once the last
+  `KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is gone; it is re-added
+  automatically on the next add or enable.
+- A hand-set custom value is preserved (never duplicated, never clobbered);
+  set the line by hand only to override the directory.
 
 See [docs/lockfile.md](lockfile.md#marketplace-ownership-and-pruning) for
 how the per-source ledger drives marketplace pruning.

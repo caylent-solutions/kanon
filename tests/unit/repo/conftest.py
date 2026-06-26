@@ -28,6 +28,7 @@ import pytest
 import kanon_cli.repo.color as color
 import kanon_cli.repo.platform_utils as platform_utils
 import kanon_cli.repo.repo_trace as repo_trace
+from kanon_cli.repo.command import Command
 from tests.conftest import managed_repo_dir
 
 SMOKE_TEST_TIMEOUT_ENV_VAR = "SMOKE_TEST_TIMEOUT"
@@ -69,6 +70,24 @@ def reset_color_default():
     saved = color.DEFAULT
     yield
     color.DEFAULT = saved
+
+
+@pytest.fixture(autouse=True)
+def reset_parallel_context():
+    """Reset the Command._parallel_context class attribute before each test.
+
+    Command.ParallelContext asserts the class attribute is None on entry, and
+    Command._InitParallelWorker sets it without a paired reset (it normally runs
+    in a child worker process). Tests that exercise that worker entry point in
+    process leave the attribute populated on the shared class object. Under
+    pytest-xdist loadscope grouping that leaked state survives into later tests
+    in the same worker (for example the Branches/Diff Execute tests), tripping
+    the ParallelContext assertion. Reset it before and after each test so the
+    leak cannot cross test boundaries.
+    """
+    Command._parallel_context = None
+    yield
+    Command._parallel_context = None
 
 
 @pytest.fixture(autouse=True)

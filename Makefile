@@ -35,29 +35,29 @@ check: lint ## Run all static analysis checks
 validate: check test-unit ## Run per-unit validation (lint + unit tests). Full suite + coverage are enforced in CI (test / test-integration / test-functional / test-scenarios).
 
 test: ## Run full test suite with coverage
-	uv run pytest --cov=kanon_cli --cov-report=term-missing
+	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
 test-unit: ## Run unit tests only
-	uv run pytest -m "unit"
+	uv run pytest -n auto --dist loadscope -m "unit"
 
 test-integration: ## Run integration tests only
-	uv run pytest -m "integration"
+	uv run pytest -n auto --dist loadscope -m "integration"
 
 security-scan: ## Run security scan with bandit (high severity, high confidence, excludes vendored repo submodule)
 	uv run bandit -r src/kanon_cli/ -x src/kanon_cli/repo -lll -iii
 
 test-functional: SMOKE_TEST_TIMEOUT ?= 300
 test-functional: ## Run functional tests only
-	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m "functional"
+	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -n auto --dist loadscope -m "functional"
 
 test-scenarios: ## Run end-to-end scenario tests (mirrors docs/integration-testing.md)
-	uv run pytest -m "scenario"
+	uv run pytest -n auto --dist loadscope -m "scenario"
 
 test-operator-path: ## Run operator-path scenario tests (E49 subprocess path tests -- fast lane for tests/scenarios/test_why_url_path.py etc.)
 	uv run pytest -m scenario tests/scenarios/test_why_url_path.py tests/scenarios/test_doctor_cache.py tests/scenarios/test_rls_exact_vs_range.py
 
 test-cov: ## Run tests with coverage report
-	uv run pytest --cov=kanon_cli --cov-report=term-missing
+	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
 clean: ## Remove build artifacts and caches
 	find . -depth -type d -name __pycache__ -exec rm -rf {} +
@@ -76,7 +76,7 @@ distcheck: ## Check the built distribution
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
 coverage-json: ## Generate JSON coverage report
-	uv run pytest -m unit --cov=kanon_cli --cov-report=json
+	uv run pytest -n auto --dist loadscope -m unit --cov=kanon_cli --cov-report=json
 	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks

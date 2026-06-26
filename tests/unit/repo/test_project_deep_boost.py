@@ -12,6 +12,22 @@ from kanon_cli.repo.error import GitError
 from kanon_cli.repo.error import ManifestInvalidRevisionError
 
 
+@pytest.fixture(autouse=True)
+def restore_project_useremail():
+    """Restore the Project.UserEmail descriptor after each test.
+
+    The _make_project helper installs a PropertyMock on type(proj).UserEmail,
+    which mutates the shared project.Project class object rather than a single
+    instance. Without restoration that PropertyMock leaks into later tests in
+    the same pytest-xdist worker (under loadscope grouping), making the real
+    UserEmail property return the helper's value instead of running. Snapshot
+    the original descriptor and put it back so the mutation cannot escape.
+    """
+    original = project.Project.UserEmail
+    yield
+    project.Project.UserEmail = original
+
+
 def _make_project(**kwargs):
     """Helper to create a mock Project instance."""
     manifest = mock.MagicMock()

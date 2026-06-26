@@ -106,7 +106,7 @@ jobs:
       - name: Run unit tests with 90% coverage gate
         shell: bash
         run: |
-          python -m pytest -m "unit" --cov=kanon_cli --cov-report=term-missing
+          python -m pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -127,7 +127,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run integration tests
         shell: bash
-        run: python -m pytest -m "integration"
+        run: python -m pytest -n auto --dist loadscope -m "integration"
 
   functional-tests-linux:
     name: Functional tests (Linux)
@@ -141,7 +141,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run functional tests
         shell: bash
-        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -m "functional"
+        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -n auto --dist loadscope -m "functional"
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)

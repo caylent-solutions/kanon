@@ -77,6 +77,8 @@ markers = [
 [tool.coverage.run]
 source = ["src/kanon_cli"]
 data_file = ".coverage-data/.coverage"
+parallel = true
+concurrency = ["multiprocessing"]
 
 [tool.coverage.report]
 show_missing = true
@@ -128,6 +130,7 @@ dev = [
     "pymarkdownlnt>=0.9.38",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.6",
     "types-defusedxml>=0.7.0",
     "yamllint>=1.38.0",
 ]

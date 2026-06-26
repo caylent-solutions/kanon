@@ -1,10 +1,13 @@
 """Unittests for the subcmds/sync.py module."""
 
 import os
+import pathlib
 import shutil
+import subprocess
 import tempfile
 import time
 import unittest
+import uuid
 from unittest import mock
 
 import pytest
@@ -14,6 +17,10 @@ from kanon_cli.repo.error import GitError
 from kanon_cli.repo.error import RepoExitError
 from kanon_cli.repo.project import SyncNetworkHalfResult
 from kanon_cli.repo.subcmds import sync
+from kanon_cli.repo.wrapper import Wrapper
+
+_GNUPG_TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
+_GNUPG_TMP_ROOT_DEFAULT = "/var/tmp/kanon-test-runs"
 
 
 @pytest.mark.parametrize(
@@ -874,6 +881,48 @@ class PreciousObjectsSharedStoreVerification(unittest.TestCase):
 @pytest.mark.unit
 class TestPostRepoUpgrade:
     """Tests for _PostRepoUpgrade function."""
+
+    @pytest.fixture(autouse=True)
+    def short_gnupg_homedir(self):
+        """Redirect the vendored repo tool's gnupg homedir to a short per-test path.
+
+        _PostRepoUpgrade calls the real SetupGnuPG (the dynamically loaded repo
+        wrapper module), which runs gpg with the homedir built from HOME. Under
+        pytest-xdist HOME is a deeply nested per-worker temp dir, so the
+        gpg-agent AF_UNIX socket path exceeds the kernel's sun_path limit and
+        gpg-agent fails to start, making gpg exit non-zero even though the key
+        import itself succeeds. Point the wrapper module's homedir globals at a
+        short path under KANON_TEST_TMP_ROOT so the agent socket stays well
+        within the limit and the agent starts reliably under contention.
+        """
+        wrapper = Wrapper()
+        tmp_root = pathlib.Path(os.environ.get(_GNUPG_TMP_ROOT_ENV, _GNUPG_TMP_ROOT_DEFAULT))
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        base = tmp_root / f"g-{worker}-{uuid.uuid4().hex[:8]}"
+        base.mkdir(parents=True, exist_ok=True)
+        home_dot_repo = base / ".repoconfig"
+        gpg_dir = home_dot_repo / "gnupg"
+
+        saved = {
+            "repo_config_dir": wrapper.repo_config_dir,
+            "home_dot_repo": wrapper.home_dot_repo,
+            "gpg_dir": wrapper.gpg_dir,
+        }
+        wrapper.repo_config_dir = str(base)
+        wrapper.home_dot_repo = str(home_dot_repo)
+        wrapper.gpg_dir = str(gpg_dir)
+        try:
+            yield
+        finally:
+            wrapper.repo_config_dir = saved["repo_config_dir"]
+            wrapper.home_dot_repo = saved["home_dot_repo"]
+            wrapper.gpg_dir = saved["gpg_dir"]
+            subprocess.run(
+                ["gpgconf", "--homedir", str(gpg_dir), "--kill", "all"],
+                capture_output=True,
+                check=False,
+            )
+            shutil.rmtree(base, ignore_errors=True)
 
     def test_creates_symlink_if_not_exists(self, tmp_path):
         """Test that internal-fs-layout.md symlink is created."""

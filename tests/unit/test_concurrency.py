@@ -33,8 +33,8 @@ from kanon_cli.utils.concurrency import (
 
 import os
 
-_LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "10.0"))
-_LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "5.0"))
+_LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "60.0"))
+_LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "30.0"))
 
 
 _MP_CONTEXT = multiprocessing.get_context("fork")

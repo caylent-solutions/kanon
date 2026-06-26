@@ -11,6 +11,31 @@ import sys
 
 import pytest
 
+import kanon_cli
+
+_CONSTANTS_MODULE = "kanon_cli.constants"
+
+
+@pytest.fixture(autouse=True)
+def restore_constants_module():
+    """Restore the original kanon_cli.constants module object after each test.
+
+    These tests delete kanon_cli.constants from sys.modules and re-import it to
+    pick up environment-driven values, which installs a fresh module object.
+    Modules that bound ``import kanon_cli.constants as constants`` at import
+    time (for example kanon_cli.core.cli_args) keep their reference to the
+    original object, so the fresh one leaks a divergent constants module into
+    later tests in the same pytest-xdist worker (under loadscope grouping),
+    making writes through the stale reference invisible. Snapshot the original
+    object and put it back in both sys.modules and the parent package attribute
+    so the swap cannot escape this test.
+    """
+    original = sys.modules.get(_CONSTANTS_MODULE)
+    yield
+    if original is not None:
+        sys.modules[_CONSTANTS_MODULE] = original
+        kanon_cli.constants = original
+
 
 def _reload_constants_with_env(monkeypatch, env_updates: dict) -> object:
     """Reload kanon_cli.constants in a subprocess-equivalent manner.

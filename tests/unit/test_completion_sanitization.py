@@ -60,7 +60,7 @@ def test_nul_entry_is_dropped() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("metachar", list(SHELL_METACHARS))
+@pytest.mark.parametrize("metachar", sorted(SHELL_METACHARS))
 def test_shell_metachar_entry_is_dropped(metachar: str) -> None:
     """Entry containing a shell metacharacter is dropped; reason names the char."""
     entry = f"pre{metachar}post"

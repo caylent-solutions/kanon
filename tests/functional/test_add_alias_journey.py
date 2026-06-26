@@ -294,7 +294,7 @@ class TestAddAliasJourney:
 
         lock_path = project / _LOCKFILE_NAME
         lock_path.write_text(
-            "schema_version = 4\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'

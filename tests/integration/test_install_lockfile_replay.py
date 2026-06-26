@@ -7,9 +7,10 @@ newer tag), runs kanon install() again, asserts the second run uses the
 ORIGINAL SHA from the lockfile (lockfile replay ignores the newer tag) and
 the lockfile is unchanged on disk.
 
-Hash-mismatch cycle (npm-like reconcile contract): plain install reconciles a
-changed revision spec to the new pin; ``--strict-lock`` errors cleanly and never
-mutates the lockfile.
+Hash-mismatch cycle (opt-in reconcile contract): ``kanon install --reconcile``
+reconciles a changed revision spec to the new pin; the default and
+``--strict-lock`` paths error cleanly (LockfileConsistencyError) and never
+mutate the lockfile.
 
 The tests in this module use a real fixture git repo (no remote network) to
 exercise the state-machine branches end-to-end through install().  The fixture
@@ -29,10 +30,9 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import (
-    KanonHashMismatchError,
     install,
 )
-from kanon_cli.core.lockfile import read_lockfile
+from kanon_cli.core.lockfile import LockfileConsistencyError, read_lockfile
 
 
 @pytest.fixture(autouse=True)
@@ -136,6 +136,7 @@ def _run_install_mocked(
     kanon_path: pathlib.Path,
     *,
     strict_lock: bool = False,
+    reconcile: bool = False,
 ) -> None:
     """Call install() with repo tool calls mocked out.
 
@@ -147,8 +148,9 @@ def _run_install_mocked(
     catalog source, so ``_resolve_ref_to_sha`` runs against the real local
     source repos so that lockfile replay tests can verify pinned SHAs.
 
-    ``strict_lock`` is forwarded to ``install()`` so the npm-ci path can be
-    exercised (clean error on drift, no lockfile mutation).
+    ``strict_lock`` and ``reconcile`` are forwarded to ``install()``: the
+    default and ``--strict-lock`` paths error cleanly on drift without mutating
+    the lock, while ``reconcile`` opts in to the lenient npm-install reconcile.
     """
     with (
         patch("kanon_cli.repo.repo_init"),
@@ -159,6 +161,7 @@ def _run_install_mocked(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
             strict_lock=strict_lock,
+            reconcile=reconcile,
         )
 
 
@@ -309,17 +312,17 @@ class TestLockfileReplay:
 
 @pytest.mark.integration
 class TestHashMismatchCycle:
-    """End-to-end hash-mismatch through install() under the reconcile contract.
+    """End-to-end hash-mismatch through install() under the opt-in reconcile contract.
 
     Fixture repo with tags 1.0.0 and 2.0.0; first install writes the lockfile at
-    1.0.0; modify .kanon REVISION to ==2.0.0 (changes kanon_hash).  Plain install
-    reconciles (re-resolves alpha to 2.0.0); `--strict-lock` raises
-    KanonHashMismatchError naming both kanon_hash values and leaves the lock
-    byte-for-byte unchanged.
+    1.0.0; modify .kanon REVISION to ==2.0.0 (changes kanon_hash).  ``--reconcile``
+    re-resolves alpha to 2.0.0; the default and ``--strict-lock`` paths raise
+    LockfileConsistencyError (the ref-specs differ check fires before resolving)
+    and leave the lock byte-for-byte unchanged.
     """
 
     def test_second_install_reconciles_on_hash_mismatch(self, tmp_path: pathlib.Path) -> None:
-        """After modifying .kanon, plain install() reconciles (re-resolves), no error."""
+        """After modifying .kanon, install --reconcile reconciles (re-resolves), no error."""
         fixture_dir = tmp_path / "fixture"
         fixture_dir.mkdir()
         repo_path, sha_v1 = _build_fixture_repo(fixture_dir)
@@ -338,15 +341,22 @@ class TestHashMismatchCycle:
 
         _write_kanon(project_dir, str(repo_path), revision="==2.0.0")
 
-        _run_install_mocked(kanon_path)
+        _run_install_mocked(kanon_path, reconcile=True)
 
         lf_after = read_lockfile(lock_path)
         assert lf_after.sources[0].resolved_sha == sha_v2, (
-            "plain install must reconcile a changed revision spec to the new pin"
+            "install --reconcile must reconcile a changed revision spec to the new pin"
         )
 
-    def test_strict_lock_raises_and_names_both_hashes(self, tmp_path: pathlib.Path) -> None:
-        """`--strict-lock` raises KanonHashMismatchError naming both hashes; lock unchanged."""
+    def test_strict_lock_raises_consistency_error_on_changed_spec(self, tmp_path: pathlib.Path) -> None:
+        """`--strict-lock` raises LockfileConsistencyError naming the drifted ref-specs; lock unchanged.
+
+        The default install runs the ``.kanon`` <-> ``.kanon.lock`` ref-spec parity
+        check before resolving, so a changed revision spec fails fast (exit 1) with a
+        LockfileConsistencyError that names both the ``.kanon`` revision and the
+        locked ``ref_spec`` and points at ``--reconcile`` / ``--refresh-lock``.  No
+        ``BUG:`` string is emitted and the lockfile is left byte-for-byte unchanged.
+        """
         from kanon_cli.core.kanon_hash import kanon_hash as compute_hash
 
         fixture_dir = tmp_path / "fixture"
@@ -369,11 +379,13 @@ class TestHashMismatchCycle:
         fresh_hash = compute_hash(kanon_path)
         assert fresh_hash != lockfile_hash
 
-        with pytest.raises(KanonHashMismatchError) as exc_info:
+        with pytest.raises(LockfileConsistencyError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
 
         msg = str(exc_info.value)
-        assert lockfile_hash in msg, f"Expected lockfile_hash {lockfile_hash!r} in error message"
-        assert fresh_hash in msg, f"Expected fresh_hash {fresh_hash!r} in error message"
+        assert "ref-specs differ" in msg
+        assert "==2.0.0" in msg, "Expected the .kanon revision in the error message"
+        assert "==1.0.0" in msg, "Expected the locked ref_spec in the error message"
         assert "--refresh-lock" in msg
+        assert "BUG:" not in msg
         assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile"

@@ -1,17 +1,19 @@
-"""Unit tests for kanon catalog audit --check tag-format covering <project revision> exactness.
+"""Unit tests for kanon catalog audit --check tag-format covering <project revision> pinnability.
 
 These tests verify that '--check tag-format' validates every '<project revision>'
-in the catalog against the SAME exact-only rule that 'kanon validate marketplace'
-enforces (spec Section 4.5 / Section 6 / FR-22): a revision must be an exact tag
-of the form 'refs/tags/<path>/<pep440>'. A branch, the '*' wildcard, and a single
-or compound version-range constraint (e.g. '>=0.1.0,<1.0.0') are all rejected as
-ERROR findings (code T002), so catalog audit and validate marketplace agree.
+in the catalog against the SAME pinnable rule that 'kanon validate marketplace'
+enforces (spec Section 4.5 / Section 6 / FR-22, AMENDED 2026-06-25): a revision
+must be a pinnable ref -- an exact tag 'refs/tags/<path>/<pep440>', a branch ref
+'refs/heads/<name>', or a 40-hex commit SHA. A bare branch, the '*' wildcard, and
+a single or compound version-range constraint (e.g. '>=0.1.0,<1.0.0') are all
+rejected as ERROR findings (code T002), so catalog audit and validate marketplace
+agree.
 
 This is the alignment fix: previously '--check tag-format' inspected only the
 manifest repo's git tag surface (T001 WARN about non-PEP-440 tag names) and never
 validated the '<project revision>' attribute, so it silently ACCEPTED a range
 revision that validate marketplace correctly REJECTED. The T002 check closes that
-gap by reusing the shared '_is_exact_tag_revision' predicate (DRY).
+gap by reusing the shared '_is_pinnable_revision' predicate (DRY).
 
 The tests use a synthetic in-memory catalog fixture (an XML file written under
 tmp_path/repo-specs/) with '<project revision="..."/>' elements, combined with an
@@ -113,8 +115,8 @@ _VALID_EXACT_REVISION = "refs/tags/tools/tool/1.0.0"
 
 
 @pytest.mark.unit
-class TestProjectRevisionExactTagHappyPath:
-    """An exact-tag '<project revision>' produces zero T002 findings."""
+class TestProjectRevisionPinnableHappyPath:
+    """A pinnable '<project revision>' (tag / branch-ref / sha) produces zero T002 findings."""
 
     @pytest.mark.parametrize(
         "revisions",
@@ -124,19 +126,23 @@ class TestProjectRevisionExactTagHappyPath:
             ["refs/tags/tools/tool/1.0.0a1"],
             ["refs/tags/tools/tool/2026.4.1"],
             ["refs/tags/deep/nested/path/tool/3.4.5"],
+            ["refs/heads/main"],
+            ["refs/heads/feature/my-branch"],
+            ["a" * 40],
+            ["refs/tags/tools/tool/1.0.0", "refs/heads/main", "b" * 40],
         ],
     )
-    def test_exact_tag_revisions_produce_zero_t002(
+    def test_pinnable_revisions_produce_zero_t002(
         self,
         tmp_path: pathlib.Path,
         revisions: list[str],
     ) -> None:
-        """A catalog whose every '<project revision>' is an exact tag emits no T002 findings."""
-        target_path = _build_catalog_fixture(tmp_path, "exact-tool", revisions)
+        """A catalog whose every '<project revision>' is pinnable emits no T002 findings."""
+        target_path = _build_catalog_fixture(tmp_path, "pinnable-tool", revisions)
         findings = _run_tag_format_check(target_path, ["1.0.0", "2.0.0"])
 
         t002 = [f for f in findings if f.code == "T002"]
-        assert t002 == [], f"Expected zero T002 findings for exact-tag revisions {revisions!r}, got: {t002}"
+        assert t002 == [], f"Expected zero T002 findings for pinnable revisions {revisions!r}, got: {t002}"
 
 
 @pytest.mark.unit
@@ -180,7 +186,7 @@ class TestProjectRevisionRangeRejected:
         This is the core finding-#4 assertion: validate marketplace's
         validate_tag_format rejects '>=0.1.0,<1.0.0'; catalog audit's
         tag-format check must reject it identically (both reuse the shared
-        '_is_exact_tag_revision' predicate, so the verdicts agree).
+        '_is_pinnable_revision' predicate, so the verdicts agree).
         """
         from pathlib import Path
 
@@ -278,6 +284,39 @@ class TestInheritedDefaultRevision:
         assert "inherited <default revision>" in t002[0].message, (
             f"Expected the inherited-default source named, got: {t002[0].message!r}"
         )
+
+    def test_inherited_branch_ref_default_revision_produces_no_t002(self, tmp_path: pathlib.Path) -> None:
+        """A '<project>' inheriting a refs/heads/<name> '<default revision>' produces no T002.
+
+        The project omits its own 'revision'; the inherited default
+        'refs/heads/main' is a pinnable branch ref, so the pinnable rule accepts
+        it and no T002 finding fires.
+        """
+        import xml.etree.ElementTree as ET
+
+        repo_specs_dir = tmp_path / "repo-specs"
+        repo_specs_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = ET.Element("manifest")
+        metadata = ET.SubElement(manifest, "catalog-metadata")
+        for tag, text in (
+            ("name", "inherit-ref-tool"),
+            ("display-name", "Inherit Ref Tool"),
+            ("description", "Inherited branch-ref default revision fixture."),
+            ("version", "1.0.0"),
+        ):
+            ET.SubElement(metadata, tag).text = text
+        ET.SubElement(manifest, "default", {"revision": "refs/heads/main", "remote": "origin"})
+        ET.SubElement(manifest, "remote", {"name": "origin", "fetch": "https://example.com/repo"})
+        ET.SubElement(manifest, "project", {"name": "tool-0", "remote": "origin", "path": "tools/tool-0"})
+
+        xml_file = repo_specs_dir / "inherit-ref-tool-marketplace.xml"
+        ET.ElementTree(manifest).write(str(xml_file), encoding="utf-8", xml_declaration=True)
+
+        findings = _run_tag_format_check(tmp_path, ["1.0.0"])
+        t002 = [f for f in findings if f.code == "T002"]
+
+        assert t002 == [], f"Expected no T002 for inherited branch-ref default, got: {t002}"
 
 
 @pytest.mark.unit

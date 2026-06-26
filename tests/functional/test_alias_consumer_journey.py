@@ -165,9 +165,9 @@ def _write_lockfile(
     sha_first: str,
     sha_second: str,
 ) -> pathlib.Path:
-    """Write a v4 .kanon.lock keyed by the two aliases (no network on why path)."""
+    """Write a v5 .kanon.lock keyed by the two aliases (no network on why path)."""
     content = (
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2026-01-01T00:00:00Z"\n'
         'generator = "kanon-cli/test"\n'
         f'kanon_hash = "sha256:{"a" * 64}"\n'

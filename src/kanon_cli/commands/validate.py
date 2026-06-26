@@ -347,7 +347,8 @@ def validate_lockfile_command(args) -> None:
     lock path (``--lock-file`` flag, ``KANON_LOCK_FILE`` env var, or the derived
     ``<kanon-file>.lock``), parses both, and runs the shared
     ``check_lockfile_consistency`` check from ``core/lockfile.py`` -- the same
-    check ``kanon install`` runs implicitly before it resolves (spec Section 4.3).
+    check ``kanon install`` runs before it resolves, so a drifted pair that this
+    command reports also makes the default install fail fast (spec Section 4.3).
 
     Exit code semantics:
       - Exit 0 if ``.kanon`` and ``.kanon.lock`` are consistent.

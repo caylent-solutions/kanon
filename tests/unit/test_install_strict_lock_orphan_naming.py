@@ -75,10 +75,10 @@ class TestOrphanedLockEntryErrorRemediation:
         assert "source_alpha" in rendered
         assert "source_bravo" in rendered
 
-    def test_remediation_option_auto_prune(self) -> None:
-        """Remediation mentions running kanon install without --strict-lock."""
+    def test_remediation_option_reconcile_prune(self) -> None:
+        """Remediation mentions running kanon install --reconcile to prune."""
         err = OrphanedLockEntryError(orphaned_names=["ghost"])
-        assert "--strict-lock" in str(err)
+        assert "kanon install --reconcile" in str(err)
 
     def test_remediation_option_restore_triples(self) -> None:
         """Remediation mentions restoring KANON_SOURCE_<name>_* triples."""

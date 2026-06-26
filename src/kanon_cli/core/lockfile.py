@@ -1,4 +1,4 @@
-"""TOML lockfile parser and atomic writer -- schema v4.
+"""TOML lockfile parser and atomic writer -- schema v5.
 
 Public entry points:
   - ``read_lockfile(path: Path) -> Lockfile``: parse and validate a TOML lockfile.
@@ -46,6 +46,19 @@ Schema changelog:
     There is NO silent v3 -> v4 upgrader: a loaded v3 (or older) lock fails fast
     with an actionable ``LockfileSchemaError`` instructing the operator to
     regenerate the lock via ``kanon add`` / ``kanon install``.
+  - v5 (spec Section 5.2, Section 3.6, FR-22, AMENDED 2026-06-25): npm-style
+    content-SHA locking.  Each ``[[sources]]`` entry gains a per-source
+    ``[[sources.content_pins]]`` array; each pin row carries ``name`` (the
+    manifest ``<project name>``), ``path`` (the project's checkout path), and
+    ``resolved_sha`` (the project's resolved content commit SHA captured after
+    ``repo sync``).  Reinstalls replay the locked content SHA byte-for-byte; a
+    branch ``<project revision>`` only advances on an explicit ``--refresh-lock``.
+    The content pins are RESOLVED outputs (like ``resolved_sha``), so they are
+    EXCLUDED from ``kanon_hash`` -- ``kanon_hash`` covers only the ``.kanon``
+    source triples, never lockfile resolved fields, so a captured pin never
+    perturbs the digest or triggers spurious drift.  Like v4, there is NO silent
+    v4 -> v5 upgrader: a loaded v4 (or older) lock fails fast with the same
+    "regenerate via ``kanon add`` / ``kanon install``" message.
 
 Spec source: spec Section 5 (Lockfile format and validation rules),
 Section 4.7.1 (atomicity contract for the lockfile writer), and
@@ -71,7 +84,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-CURRENT_SCHEMA_VERSION: int = 4
+CURRENT_SCHEMA_VERSION: int = 5
 
 
 _UPGRADERS: dict[tuple[int, int], Callable[[dict[str, Any]], dict[str, Any]]] = {}
@@ -277,6 +290,28 @@ class ProjectEntry:
 
 
 @dataclass
+class ContentPinEntry:
+    """A single row under ``[[sources.content_pins]]`` (schema v5).
+
+    Records the resolved content commit SHA of one ``<project>`` in a source's
+    resolved manifest tree, captured after ``repo sync``.  Reinstalls replay this
+    SHA byte-for-byte so a branch or tag ``<project revision>`` is frozen to the
+    locked commit until an explicit ``--refresh-lock`` (npm-style content-SHA
+    locking; spec Section 5.2 / FR-22, AMENDED 2026-06-25).
+
+    Fields:
+        name: The manifest ``<project name>`` the pin is for.
+        path: The project's checkout path (``<project path>``), used to locate
+            the checkout when re-capturing and to rewrite the replay revision.
+        resolved_sha: The 40- or 64-hex content commit SHA captured at lock time.
+    """
+
+    name: str
+    path: str
+    resolved_sha: str
+
+
+@dataclass
 class IncludeEntry:
     """A single row under ``[[sources.includes]]`` -- recursive, unbounded depth."""
 
@@ -306,6 +341,16 @@ class SourceEntry:
         wildcard, a ``refs/...`` ref, or a branch name).  This is the v4 rename of
         the former v3 version-constraint field; both the attribute and the on-disk
         TOML key are ``ref_spec``.
+
+    Schema v5 (spec Section 5.2, AMENDED 2026-06-25) adds a per-source
+    ``content_pins`` field:
+      - ``content_pins``: the list of :class:`ContentPinEntry` rows recording the
+        resolved content commit SHA of each ``<project>`` in this source's
+        resolved manifest tree, captured after ``repo sync``.  Reinstalls replay
+        these SHAs byte-for-byte (npm-style content-SHA locking).  Defaults to an
+        empty list (a source whose checkouts were not materialised -- e.g. a
+        mocked test sync -- captures no pins).  Like ``resolved_sha`` it is a
+        RESOLVED output and is excluded from ``kanon_hash``.
     """
 
     alias: str
@@ -318,6 +363,7 @@ class SourceEntry:
     includes: list[IncludeEntry] = field(default_factory=list)
     projects: list[ProjectEntry] = field(default_factory=list)
     registered_marketplaces: list[str] = field(default_factory=list)
+    content_pins: list[ContentPinEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -337,6 +383,10 @@ class Lockfile:
     block entirely: the lockfile no longer carries a catalog field and the lock
     neither serialises nor parses a ``[catalog]`` inline table.  The ``[[sources]]``
     entries are alias-keyed (see :class:`SourceEntry`).
+
+    Schema v5 (spec Section 5.2, AMENDED 2026-06-25) adds the per-source
+    ``content_pins`` array (see :class:`SourceEntry`); the root lockfile shape is
+    otherwise unchanged from v4.
     """
 
     schema_version: int
@@ -601,12 +651,40 @@ def _parse_project_entry(raw: dict[str, Any], field_path: str) -> ProjectEntry:
     )
 
 
-def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
-    """Parse a raw schema-v4 ``[[sources]]`` TOML dict into a ``SourceEntry``.
+def _parse_content_pin_entry(raw: dict[str, Any], field_path: str) -> ContentPinEntry:
+    """Parse a raw TOML dict into a ``ContentPinEntry``, validating all fields.
 
-    Validates every field.  The v4 on-disk source carries the alias-keyed per-entry
+    Args:
+        raw: A dict from the TOML parser representing one content-pin row.
+        field_path: Dot-path for error messages (e.g.
+            ``sources[0].content_pins[1]``).
+
+    Returns:
+        A validated ``ContentPinEntry`` dataclass instance.
+
+    Raises:
+        LockfileValidationError: If any field fails validation.
+    """
+    resolved_sha = raw["resolved_sha"]
+    _validate_resolved_sha(resolved_sha, f"{field_path}.resolved_sha")
+
+    path = raw["path"]
+    _validate_path_chars(path, f"{field_path}.path")
+
+    return ContentPinEntry(
+        name=raw["name"],
+        path=path,
+        resolved_sha=resolved_sha,
+    )
+
+
+def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
+    """Parse a raw schema-v5 ``[[sources]]`` TOML dict into a ``SourceEntry``.
+
+    Validates every field.  The on-disk source carries the alias-keyed per-entry
     fields ``alias, name, url, ref_spec, resolved_ref, resolved_sha, path`` (spec
-    Section 5.2).
+    Section 5.2), the ``[[sources.includes]]`` / ``[[sources.projects]]`` arrays,
+    and the v5 ``[[sources.content_pins]]`` array.
 
     Args:
         raw: A dict from the TOML parser representing one source entry.
@@ -636,6 +714,11 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
     raw_projects: list[dict[str, Any]] = raw.get("projects", [])
     projects = [_parse_project_entry(item, f"{field_path}.projects[{i}]") for i, item in enumerate(raw_projects)]
 
+    raw_content_pins: list[dict[str, Any]] = raw.get("content_pins", [])
+    content_pins = [
+        _parse_content_pin_entry(item, f"{field_path}.content_pins[{i}]") for i, item in enumerate(raw_content_pins)
+    ]
+
     registered_marketplaces = _validate_registered_marketplaces(
         raw.get("registered_marketplaces", []),
         f"{field_path}.registered_marketplaces",
@@ -652,6 +735,7 @@ def _parse_source_entry(raw: dict[str, Any], source_idx: int) -> SourceEntry:
         includes=includes,
         projects=projects,
         registered_marketplaces=registered_marketplaces,
+        content_pins=content_pins,
     )
 
 
@@ -724,7 +808,7 @@ def _serialize_include_entries(
 def _serialize_toml(lockfile: Lockfile) -> str:
     """Serialise a ``Lockfile`` to a TOML string without any third-party library.
 
-    The output format matches the fixed schema v4 structure exactly (spec
+    The output format matches the fixed schema v5 structure exactly (spec
     Section 5.2):
 
     - Top-level scalar fields (schema_version, generated_at, generator, kanon_hash,
@@ -736,7 +820,9 @@ def _serialize_toml(lockfile: Lockfile) -> str:
       per-entry fields ``alias, name, url, ref_spec, resolved_ref, resolved_sha,
       path`` plus a per-source ``registered_marketplaces`` array (written sorted
       for deterministic, byte-stable output) and followed by ``[[sources.includes]]``
-      chains (recursively) and ``[[sources.projects]]`` entries.
+      chains (recursively), ``[[sources.projects]]`` entries, and the v5
+      ``[[sources.content_pins]]`` array (written sorted by project name + path so
+      the serialised lock is byte-stable regardless of capture order).
 
     String values are encoded as TOML basic strings with all required control-
     character escapes applied.
@@ -779,6 +865,12 @@ def _serialize_toml(lockfile: Lockfile) -> str:
             lines.append(f"ref_spec = {_toml_str(project.ref_spec)}")
             lines.append(f"resolved_ref = {_toml_str(project.resolved_ref)}")
             lines.append(f"resolved_sha = {_toml_str(project.resolved_sha)}")
+        for pin in sorted(source.content_pins, key=lambda p: (p.name, p.path)):
+            lines.append("")
+            lines.append("[[sources.content_pins]]")
+            lines.append(f"name = {_toml_str(pin.name)}")
+            lines.append(f"path = {_toml_str(pin.path)}")
+            lines.append(f"resolved_sha = {_toml_str(pin.resolved_sha)}")
 
     return "\n".join(lines) + "\n"
 
@@ -797,11 +889,11 @@ def read_lockfile(path: Path) -> Lockfile:
       - ``path`` and ``path_in_repo``: must not contain NUL, newline, or tab.
       - ``schema_version > CURRENT_SCHEMA_VERSION``: raises ``LockfileSchemaError``
         with message "lockfile schema v<N> written by newer kanon; upgrade kanon-cli."
-      - ``schema_version < CURRENT_SCHEMA_VERSION``: schema v4 (spec Section 13
-        FLAG-C) is a breaking major, so there is no silent upgrader.  Any older
-        lock (v1, v2, v3) fails fast with an actionable ``LockfileSchemaError``
-        instructing the operator to regenerate the lock via ``kanon add`` /
-        ``kanon install``.
+      - ``schema_version < CURRENT_SCHEMA_VERSION``: schema v5 (spec Section 5.2,
+        AMENDED 2026-06-25) follows the same no-silent-upgrader policy as the v4
+        breaking major.  Any older lock (v1, v2, v3, v4) fails fast with an
+        actionable ``LockfileSchemaError`` instructing the operator to regenerate
+        the lock via ``kanon add`` / ``kanon install``.
       - ``schema_version == CURRENT_SCHEMA_VERSION``: parsed and validated directly.
 
     Args:
@@ -829,9 +921,9 @@ def read_lockfile(path: Path) -> Lockfile:
             f"ERROR: lockfile schema v{schema_version} is incompatible with this kanon "
             f"version (schema v{CURRENT_SCHEMA_VERSION}).\n"
             f"  Path: {path}\n"
-            f"  Schema v{CURRENT_SCHEMA_VERSION} is a breaking change: source entries are now "
-            f"keyed by alias, the per-entry version-constraint field was renamed to 'ref_spec', "
-            f"and the global [catalog] block was removed.\n"
+            f"  Schema v{CURRENT_SCHEMA_VERSION} adds per-source content-SHA pins "
+            f"([[sources.content_pins]]) on top of the v4 alias-keyed source entries; "
+            f"older locks carry no content pins and are not silently upgraded.\n"
             f"  There is no automatic upgrade from schema v{schema_version}.\n"
             f"  Remediation: regenerate the lockfile by running 'kanon add' to refresh the "
             f"alias-keyed declarations, then 'kanon install' to rewrite the lock at schema "
@@ -904,7 +996,8 @@ def check_lockfile_consistency(
     """Verify ``.kanon`` and ``.kanon.lock`` agree (spec FR-24, Section 4.5).
 
     The shared consistency check that ``kanon validate lockfile`` runs and that
-    ``kanon install`` runs implicitly before it resolves (spec Section 4.3).  It
+    ``kanon install`` runs before it resolves (spec Section 4.3): a drifted pair
+    makes the default install fail fast (exit 1) without mutating the lock.  It
     operates on already-parsed inputs so this module stays a pure lockfile
     component and does not depend on the ``.kanon`` parser.
 
@@ -931,7 +1024,7 @@ def check_lockfile_consistency(
             (the ref-spec). The revision is the value compared against the lock
             entry's ``ref_spec`` field.
         lockfile: The parsed ``.kanon.lock`` whose ``sources`` carry the
-            alias-keyed entries (schema v4).
+            alias-keyed entries (schema v5).
 
     Raises:
         LockfileConsistencyError: If a ``.kanon`` alias is duplicated, if the
@@ -966,8 +1059,9 @@ def check_lockfile_consistency(
             f"{', '.join(missing_in_lock) if missing_in_lock else '(none)'}\n"
             f"  Present in .kanon.lock but not declared in .kanon: "
             f"{', '.join(orphaned_in_lock) if orphaned_in_lock else '(none)'}\n"
-            f"  Remediation: run 'kanon install' to reconcile .kanon.lock with the "
-            f"current .kanon declarations."
+            f"  Remediation: run 'kanon install --reconcile' to reconcile .kanon.lock "
+            f"with the current .kanon declarations, or 'kanon install --refresh-lock' "
+            f"to rebuild the lock from scratch."
         )
 
     mismatches: list[str] = []
@@ -983,6 +1077,7 @@ def check_lockfile_consistency(
         raise LockfileConsistencyError(
             f"ERROR: .kanon and .kanon.lock ref-specs differ for one or more aliases.\n"
             f"{joined}\n"
-            f"  Remediation: run 'kanon install' to re-resolve and rewrite .kanon.lock "
-            f"with the current .kanon revisions."
+            f"  Remediation: run 'kanon install --reconcile' to re-resolve and rewrite "
+            f".kanon.lock with the current .kanon revisions, or "
+            f"'kanon install --refresh-lock' to rebuild the lock from scratch."
         )

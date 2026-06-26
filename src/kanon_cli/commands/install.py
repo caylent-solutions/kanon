@@ -12,6 +12,7 @@ import warnings
 from kanon_cli.constants import KANON_LOCK_FILE as _KANON_LOCK_FILE_ENV
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import InstallError, install
+from kanon_cli.core.lockfile import LockfileConsistencyError
 from kanon_cli.repo import RepoCommandError
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 
@@ -108,17 +109,30 @@ def register(subparsers) -> None:
     )
 
     parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        default=False,
+        help=(
+            "Opt in to the lenient npm-install reconcile when .kanon and "
+            ".kanon.lock have drifted. By default a drifted pair fails fast "
+            "(exit 1) without mutating the lock. With this flag, kanon prunes "
+            "orphaned lock entries, re-resolves added or changed sources, "
+            "replays unchanged sources, and rewrites .kanon.lock on success. "
+            "Use --refresh-lock to rebuild the entire lock from scratch instead."
+        ),
+    )
+    parser.add_argument(
         "--strict-lock",
         action="store_true",
         default=False,
         help=(
-            "Upgrade orphaned lock entries to a hard error. An orphaned lock "
-            "entry is a source present in .kanon.lock but absent from .kanon "
-            "(e.g. after 'kanon remove'). Without this flag, orphaned entries "
-            "are pruned and an info-line is emitted per orphan. With this flag, kanon exits with an error "
-            "listing every orphaned source. "
-            "Remediation: run without --strict-lock to prune, or restore the "
-            "missing KANON_SOURCE_<name>_* triples in .kanon."
+            "Upgrade orphaned lock entries to a hard error in the consistent "
+            "state. An orphaned lock entry is a source present in .kanon.lock "
+            "but absent from .kanon (e.g. after 'kanon remove'). Drift between "
+            ".kanon and .kanon.lock already fails fast by default; this flag "
+            "additionally fails on an orphan that survives a kanon_hash match. "
+            "Remediation: restore the missing KANON_SOURCE_<name>_* triples in "
+            ".kanon, or run with --reconcile to prune."
         ),
     )
     parser.add_argument(
@@ -126,12 +140,12 @@ def register(subparsers) -> None:
         action="store_true",
         default=False,
         help=(
-            "Upgrade branch drift to a hard error. Branch drift occurs when "
-            "the lockfile records a SHA for a branch-shaped source but the "
-            "branch's current tip on the remote is a different SHA. Without "
-            "this flag, the locked SHA is reused and an info-line is emitted. "
-            "With this flag, kanon exits with an error listing every drifted "
-            "source. "
+            "Upgrade branch drift to a hard error in the consistent state. "
+            "Branch drift occurs when the lockfile records a SHA for a "
+            "branch-shaped source but the branch's current tip on the remote is "
+            "a different SHA. Without this flag, the locked SHA is reused and an "
+            "info-line is emitted (the content pin is replayed). With this flag, "
+            "kanon exits with an error listing every drifted source. "
             "Remediation: run 'kanon install --refresh-lock-source <source>' "
             "to accept the new branch tip."
         ),
@@ -204,8 +218,9 @@ def _run(args) -> int | None:
             refresh_lock_source=args.refresh_lock_source,
             strict_lock=args.strict_lock,
             strict_drift=args.strict_drift,
+            reconcile=args.reconcile,
         )
-    except InstallError as exc:
+    except (InstallError, LockfileConsistencyError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:

@@ -371,7 +371,7 @@ class TestStrictLockEndToEnd:
         if orphan_url.startswith("/"):
             orphan_url = f"file://{orphan_url}"
         lock_path.write_text(
-            f"schema_version = 4\n"
+            f"schema_version = 5\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{kanon_hash}"\n'
@@ -624,7 +624,7 @@ class TestStrictLockOrphanErrorMessage:
             )
 
         body = (
-            f"schema_version = 4\n"
+            f"schema_version = 5\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{kanon_hash}"\n'
@@ -665,13 +665,13 @@ class TestStrictLockOrphanErrorMessage:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--strict-lock stderr must contain orphan name, '--strict-lock', and 'kanon remove'.
+        """--strict-lock stderr must contain orphan name, 'kanon install --reconcile', and 'kanon remove'.
 
         Spec reference: spec Section 4 E26 Failing test.
 
-        DEFECT-011 root cause: the current OrphanedLockEntryError message does not
-        include 'kanon remove' in the remediation hint. The test fails RED because the
-        expected substring is absent.
+        DEFECT-011 root cause: the OrphanedLockEntryError message must include both
+        remediation paths ('kanon install --reconcile' to prune and 'kanon remove' to
+        drop the source) so the operator can resolve the orphan either way.
 
         Setup:
         - Two bare repos: catA (entry 'source-delta') and catB (entry 'source-echo').
@@ -730,7 +730,9 @@ class TestStrictLockOrphanErrorMessage:
         assert expected_orphan_name in stderr, (
             f"Expected orphan name {expected_orphan_name!r} in stderr.\nstderr: {stderr!r}"
         )
-        assert "--strict-lock" in stderr, f"Expected '--strict-lock' in stderr (remediation hint).\nstderr: {stderr!r}"
+        assert "kanon install --reconcile" in stderr, (
+            f"Expected 'kanon install --reconcile' in stderr (remediation hint).\nstderr: {stderr!r}"
+        )
         assert "kanon remove" in stderr, (
             f"Expected 'kanon remove' in stderr (alternative remediation).\nstderr: {stderr!r}"
         )
@@ -813,17 +815,19 @@ class TestStrictLockOrphanErrorMessage:
 
 @pytest.mark.integration
 class TestStrictLockDefaultAutoPrune:
-    """Default install (no flags) auto-prunes orphaned lockfile entries.
+    """'kanon install --reconcile' prunes orphaned lockfile entries.
 
     DEFECT-014: when B's KANON_SOURCE_B_* triple is removed from .kanon but
-    B still exists in .kanon.lock, a subsequent 'kanon install' (no flags)
-    should exit 0, emit one INFO line per orphan ('pruned orphaned lock entry:
-    <name>'), and rewrite .kanon.lock without the orphaned entry.
+    B still exists in .kanon.lock, 'kanon install --reconcile' should exit 0,
+    emit one INFO line per orphan ('pruned orphaned lock entry: <name>'), and
+    rewrite .kanon.lock without the orphaned entry.
 
-    Under the npm-like reconcile contract, removing B's triple changes the
-    kanon_hash; plain 'kanon install' reconciles (prunes the orphan, replays the
-    surviving sources) and writes the pruned lockfile, exiting 0.  ('kanon install
-    --strict-lock' would instead raise OrphanedLockEntryError without mutating.)
+    Removing B's triple changes the kanon_hash and drops B's alias, so a plain
+    'kanon install' (no flags) now fails fast (exit 1) without mutating the lock;
+    the lenient prune+replay reconcile is opt-in via --reconcile, which prunes
+    the orphan, replays the surviving sources, writes the pruned lockfile, and
+    exits 0.  ('kanon install --strict-lock' on a same-hash orphan would instead
+    raise OrphanedLockEntryError without mutating.)
 
     The tests in this class run 'kanon install' as a subprocess so that they
     exercise the real CLI entry point and capture stdout/stderr + exit code.
@@ -941,16 +945,15 @@ class TestStrictLockDefaultAutoPrune:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Default install prunes a single orphan, emits INFO line, exits 0.
+        """'kanon install --reconcile' prunes a single orphan, emits INFO line, exits 0.
 
         Spec reference: spec Section 4 E34 Failing test.
 
-        Removing B's triple from .kanon changes the kanon_hash.  Under the
-        npm-like reconcile contract, plain 'kanon install' reconciles: it prunes
-        the orphaned B entry, replays the surviving sources, and writes the pruned
-        lockfile -- exiting 0 and emitting the 'pruned orphaned lock entry:' INFO
-        line.  (The pre-fix engine instead raised KanonHashMismatchError before
-        reaching orphan detection, the bug this guards against.)
+        Removing B's triple from .kanon changes the kanon_hash and drops B's
+        alias.  Plain 'kanon install' would now fail fast on the drift; the
+        --reconcile opt-in reconciles instead: it prunes the orphaned B entry,
+        replays the surviving sources, and writes the pruned lockfile -- exiting 0
+        and emitting the 'pruned orphaned lock entry:' INFO line.
 
         Setup:
         - Create two separate bare catalog repos (A and B) via
@@ -959,7 +962,7 @@ class TestStrictLockDefaultAutoPrune:
         - kanon add entry-b using B's catalog repo.
         - kanon install (builds .kanon.lock with both sources).
         - Remove B's KANON_SOURCE_<b_key>_* triple from .kanon.
-        - kanon install (no flags) -- the RED assertion target.
+        - kanon install --reconcile -- the GREEN assertion target.
 
         Assertions:
         - exit_code == 0.
@@ -1018,7 +1021,7 @@ class TestStrictLockDefaultAutoPrune:
             "A's URL line must remain in .kanon after removing B"
         )
 
-        second_result = self._kanon_install(workspace)
+        second_result = self._kanon_install(workspace, extra_args=["--reconcile"])
         stdout = second_result.stdout
 
         assert second_result.returncode == 0, (
@@ -1047,7 +1050,7 @@ class TestStrictLockDefaultAutoPrune:
         tmp_path: pathlib.Path,
         orphan_count: int,
     ) -> None:
-        """Default install emits exactly N INFO lines for N orphaned entries, exits 0.
+        """'kanon install --reconcile' emits exactly N INFO lines for N orphans, exits 0.
 
         Spec reference: spec Section 4 E34 Edge cases.
 
@@ -1055,7 +1058,7 @@ class TestStrictLockDefaultAutoPrune:
         - Build workspace with 1 active source + orphan_count orphan sources.
         - Install to create the lockfile.
         - Remove all orphan source triples from .kanon.
-        - Run kanon install (no flags).
+        - Run kanon install --reconcile.
         - Assert exactly orphan_count occurrences of 'pruned orphaned lock entry:'.
         - Assert exit_code == 0.
         - Assert zero orphan source names remain in the post-run .kanon.lock.
@@ -1103,7 +1106,7 @@ class TestStrictLockDefaultAutoPrune:
         for orphan_name in orphan_source_names:
             self._remove_source_triple(kanon_path, orphan_name)
 
-        second_result = self._kanon_install(workspace)
+        second_result = self._kanon_install(workspace, extra_args=["--reconcile"])
         stdout = second_result.stdout
 
         assert second_result.returncode == 0, (

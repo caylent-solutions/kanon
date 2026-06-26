@@ -86,7 +86,7 @@ def _write_lockfile_toml(path: pathlib.Path, kanon_hash: str) -> None:
         kanon_hash: The kanon_hash value to embed in the TOML.
     """
     toml = (
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2026-01-01T00:00:00Z"\n'
         'generator = "kanon-cli/2.0.0"\n'
         f'kanon_hash = "{kanon_hash}"\n'

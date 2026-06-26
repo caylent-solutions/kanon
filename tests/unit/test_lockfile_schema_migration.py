@@ -1,13 +1,13 @@
-"""Unit tests for lockfile schema migration policy -- updated for schema v4 (FLAG-C).
+"""Unit tests for lockfile schema migration policy -- updated for schema v5 (FLAG-C).
 
-Schema v4 (spec Section 5.2, Section 13 FLAG-C) is the breaking major: ``read_lockfile``
-fails fast on any older schema (v1, v2, v3) with an actionable regenerate error, and
-no silent upgrader to v4 is registered.  The migration registry (``_register_upgrader``
-/ ``_unregister_upgrader`` / ``_dispatch_migration``) remains the documented extension
-point for any future NON-breaking bump and is exercised here directly.
+Schema v5 (spec Section 5.2, Section 13 FLAG-C) is the latest breaking major:
+``read_lockfile`` fails fast on any older schema (v1, v2, v3, v4) with an actionable
+regenerate error, and no silent upgrader to v5 is registered.  The migration registry
+(``_register_upgrader`` / ``_unregister_upgrader`` / ``_dispatch_migration``) remains the
+documented extension point for any future NON-breaking bump and is exercised here directly.
 
 Covers:
-  - CURRENT_SCHEMA_VERSION exported and equals 4.
+  - CURRENT_SCHEMA_VERSION exported and equals 5.
   - Forward-incompatible read (schema_version > current) raises LockfileSchemaError.
   - Older-schema read (schema_version < current) is a hard fail-fast regenerate.
   - _dispatch_migration walks a registered upgrader chain to the current version.
@@ -36,13 +36,13 @@ _VALID_KANON_HASH = "sha256:" + "a" * 64
 
 
 @pytest.mark.unit
-def test_current_schema_version_exported_and_equals_4():
-    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 4."""
-    assert CURRENT_SCHEMA_VERSION == 4
+def test_current_schema_version_exported_and_equals_5():
+    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 5."""
+    assert CURRENT_SCHEMA_VERSION == 5
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("future_version", [5, 99])
+@pytest.mark.parametrize("future_version", [6, 99])
 def test_forward_incompatible_raises_schema_error_exact_message(future_version, tmp_path):
     """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError with exact message.
 
@@ -56,13 +56,13 @@ def test_forward_incompatible_raises_schema_error_exact_message(future_version, 
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("old_version", [1, 2, 3])
+@pytest.mark.parametrize("old_version", [1, 2, 3, 4])
 def test_older_schema_hard_fails_regenerate(old_version, tmp_path):
     """schema_version < CURRENT_SCHEMA_VERSION fails fast with the actionable regenerate error.
 
-    Schema v4 is the breaking major: there is no silent upgrader, so an older lock
-    must raise LockfileSchemaError naming the offending version and instructing the
-    operator to regenerate via 'kanon add' / 'kanon install'.
+    Schema v5 is the latest breaking major: there is no silent upgrader, so an older lock
+    (v4 included) must raise LockfileSchemaError naming the offending version and
+    instructing the operator to regenerate via 'kanon add' / 'kanon install'.
     """
     p = tmp_path / "kanon.lock"
     p.write_text(_minimal_toml(old_version))

@@ -22,13 +22,14 @@ class TestTagErrorDisplayCap:
 
 
 @pytest.mark.unit
-class TestExactOnlyRevisionRejectsWildcard:
-    """AC-54: <project revision> is exact-only -- the wildcard token is rejected.
+class TestPinnableRevisionRejectsWildcard:
+    """AC-54: <project revision> is pinnable (tag/branch-ref/sha) -- the wildcard token is rejected.
 
     The permissive _is_valid_revision mode (and its REVISION_WILDCARD constant)
-    are removed: the marketplace validator now accepts only an exact
-    refs/tags/<path>/<pep440> tag, rejecting the wildcard outright (spec Section
-    4.5 / Section 6 / FR-22).
+    are removed: the marketplace validator now accepts only a pinnable revision
+    (an exact refs/tags/<path>/<pep440> tag, a refs/heads/<name> branch ref, or a
+    40-hex commit SHA), rejecting the wildcard outright (spec Section 4.5 /
+    Section 6 / FR-22, AMENDED 2026-06-25).
     """
 
     def test_revision_wildcard_constant_is_removed(self) -> None:
@@ -39,15 +40,17 @@ class TestExactOnlyRevisionRejectsWildcard:
         )
 
     def test_validator_rejects_wildcard_revisions(self) -> None:
-        from kanon_cli.core.marketplace_validator import _is_exact_tag_revision
+        from kanon_cli.core.marketplace_validator import _is_pinnable_revision
 
-        assert _is_exact_tag_revision("*") is False
-        assert _is_exact_tag_revision("refs/tags/ex/proj/*") is False
+        assert _is_pinnable_revision("*") is False
+        assert _is_pinnable_revision("refs/tags/ex/proj/*") is False
 
-    def test_validator_accepts_exact_tag(self) -> None:
-        from kanon_cli.core.marketplace_validator import _is_exact_tag_revision
+    def test_validator_accepts_pinnable_revisions(self) -> None:
+        from kanon_cli.core.marketplace_validator import _is_pinnable_revision
 
-        assert _is_exact_tag_revision("refs/tags/ex/proj/1.0.0") is True
+        assert _is_pinnable_revision("refs/tags/ex/proj/1.0.0") is True
+        assert _is_pinnable_revision("refs/heads/main") is True
+        assert _is_pinnable_revision("a" * 40) is True
 
 
 @pytest.mark.unit

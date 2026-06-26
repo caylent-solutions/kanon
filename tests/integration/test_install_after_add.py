@@ -106,8 +106,8 @@ class TestInstallAfterAdd:
         with lock_path.open("rb") as fh:
             lock_data = tomllib.load(fh)
 
-        assert lock_data["schema_version"] == 4, (
-            f"expected a schema-v4 lockfile, got schema_version={lock_data.get('schema_version')!r}.\n"
+        assert lock_data["schema_version"] == 5, (
+            f"expected a schema-v5 lockfile, got schema_version={lock_data.get('schema_version')!r}.\n"
             f"  Full lockfile: {lock_data!r}"
         )
         assert "catalog" not in lock_data, (

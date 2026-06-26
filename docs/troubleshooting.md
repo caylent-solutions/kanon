@@ -108,38 +108,39 @@ kanon search
 
 `kanon install` exits non-zero with an error indicating that the
 lockfile schema version is incompatible with the running CLI. kanon 3.0.0
-writes schema v4; an older v3 (or earlier) lockfile **hard-fails** -- there
-is no automatic upgrade:
+writes schema v5; an older v4 (or earlier) lockfile **hard-fails** -- there
+is no automatic upgrade. v4 locks predate the per-source content pins and
+also need regeneration:
 
 ```text
-ERROR: lockfile schema v3 is incompatible with this kanon version (schema v4).
+ERROR: lockfile schema v4 is incompatible with this kanon version (schema v5).
   Path: .kanon.lock
-  Schema v4 is a breaking change: source entries are now keyed by alias,
-  the per-entry version-constraint field was renamed to 'ref_spec', and the
-  global [catalog] block was removed.
-  There is no automatic upgrade from schema v3.
+  Schema v5 adds per-source content-SHA pins ([[sources.content_pins]]) on top
+  of the v4 alias-keyed source entries; older locks carry no content pins and
+  are not silently upgraded.
+  There is no automatic upgrade from schema v4.
   Remediation: regenerate the lockfile by running 'kanon add' to refresh the
-  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v4.
+  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v5.
 ```
 
 ### Reproducer
 
 ```bash
-# Install with an older kanon that wrote schema version 3,
+# Install with an older kanon that wrote schema version 4 (or earlier),
 # then upgrade to kanon 3.0.0 and re-run:
 kanon install
 ```
 
 ### Fix
 
-Regenerate the lockfile at schema v4. There is no in-place upgrade and
+Regenerate the lockfile at schema v5. There is no in-place upgrade and
 `kanon install` is hermetic (it does not take `--catalog-source`), so refresh
 the alias-keyed declarations with `kanon add`, then rewrite the lock:
 
 ```bash
 # Re-add the entries so the .kanon blocks are alias-keyed (supply your catalog source):
 kanon add <entry> --catalog-source https://example.com/org/manifest-repo.git@main
-# Then rewrite the lockfile at schema v4:
+# Then rewrite the lockfile at schema v5:
 kanon install --refresh-lock
 ```
 
@@ -702,22 +703,18 @@ kanon install --refresh-lock-source <name> \
 
 ### Symptom
 
-Without `--strict-lock`, `kanon install` silently prunes orphaned lockfile
-entries and emits one info line per orphan to stderr:
-
-```text
-pruned orphaned lock entry: <name>
-```
-
-With `--strict-lock`, the command exits non-zero and enumerates every orphaned
-source by name. For a single orphaned entry (N == 1):
+A plain `kanon install` against a `.kanon` whose alias set has drifted from
+`.kanon.lock` already fails fast (the consistency check runs before
+resolving). `--strict-lock` additionally rejects an orphaned lock entry that
+survives a `kanon_hash` match. The command exits non-zero and enumerates
+every orphaned source by name. For a single orphaned entry (N == 1):
 
 ```text
 ERROR: 1 orphaned lockfile entry: alpha
 These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
 
 Remediation:
-  Run `kanon install` (without --strict-lock) to auto-prune, or
+  Run `kanon install --reconcile` to prune, or
   restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
   run `kanon remove <name>` for each orphan to clean the lockfile.
 ```
@@ -730,7 +727,7 @@ ERROR: 2 orphaned lockfile entries: alpha, beta
 These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
 
 Remediation:
-  Run `kanon install` (without --strict-lock) to auto-prune, or
+  Run `kanon install --reconcile` to prune, or
   restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
   run `kanon remove <name>` for each orphan to clean the lockfile.
 ```
@@ -752,13 +749,13 @@ kanon install --strict-lock
 
 Three remediation options are available; pick the one that matches your intent:
 
-- **Option 1: Auto-prune (accept the removal).**
-  Re-run `kanon install` without `--strict-lock`. The orphaned entries are
-  removed from the lockfile automatically. Use this option when the source
+- **Option 1: Reconcile (accept the removal).**
+  Re-run `kanon install --reconcile`. The orphaned entries are pruned from
+  the lockfile and the lock is rewritten. Use this option when the source
   removal was intentional and you want the lockfile to reflect it.
 
   ```bash
-  kanon install
+  kanon install --reconcile
   ```
 
 - **Option 2: Restore the missing triples (undo the removal).**
@@ -774,7 +771,7 @@ Three remediation options are available; pick the one that matches your intent:
 - **Option 3: Remove each orphan explicitly.**
   Run `kanon remove <name>` for each orphan listed in the error message. This
   cleans both `.kanon` and the lockfile in a single tracked operation. Use this
-  option when you want a clean, auditable removal rather than an auto-prune.
+  option when you want a clean, auditable removal rather than a reconcile.
 
   ```bash
   kanon remove alpha

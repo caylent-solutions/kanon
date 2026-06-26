@@ -1,4 +1,4 @@
-"""Unit tests for src/kanon_cli/core/lockfile.py -- schema validation rules (current: v4).
+"""Unit tests for src/kanon_cli/core/lockfile.py -- schema validation rules (current: v5).
 
 Covers every validation rule parametrically per AC-TEST-001:
   - resolved_sha shape (40 hex, 64 hex, uppercase rejected, mixed-case rejected, non-hex rejected)
@@ -7,8 +7,9 @@ Covers every validation rule parametrically per AC-TEST-001:
   - canonical_url mismatch on ProjectEntry
   - embedded NUL / newline / tab in path and path_in_repo
   - unknown schema_version raises LockfileSchemaError
-  - schema v4 alias-keyed round-trip, absent [catalog] block, ref_spec rename
-  - v3 (and older) lock is a hard fail-fast regenerate (FLAG-C); no silent upgrade
+  - schema v5 alias-keyed round-trip, absent [catalog] block, ref_spec rename
+  - v4 (and older) lock is a hard fail-fast regenerate (FLAG-C); no silent upgrade
+  - per-source content_pins round-trip, sorted by (name, path)
   - per-source registered_marketplaces ledger (default empty, sorted round-trip, validation)
   - dataclass construction and field access
 """
@@ -17,6 +18,7 @@ import pytest
 
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
+    ContentPinEntry,
     IncludeEntry,
     Lockfile,
     LockfileConsistencyError,
@@ -126,11 +128,12 @@ def _make_include(**kwargs) -> IncludeEntry:
 
 
 def _minimal_toml(schema_version: int = CURRENT_SCHEMA_VERSION, **overrides) -> str:
-    """Return a minimal valid schema-v4 TOML string for use with read_lockfile.
+    """Return a minimal valid schema-v5 TOML string for use with read_lockfile.
 
-    Schema v4 has no [catalog] block; a single alias-keyed [[sources]] entry
+    Schema v5 has no [catalog] block; a single alias-keyed [[sources]] entry
     carries the validated per-entry fields so the validation-rule tests have a
-    concrete target to mutate.
+    concrete target to mutate.  Content pins are optional, so the minimal lock
+    omits the [[sources.content_pins]] array entirely.
     """
     fields = {
         "schema_version": schema_version,
@@ -208,12 +211,12 @@ class TestDataclassConstruction:
 
 
 @pytest.mark.unit
-class TestSchemaV4AliasKeyedSources:
-    """AC-19: CURRENT_SCHEMA_VERSION is 4 and the lock is alias-keyed with no [catalog] block."""
+class TestSchemaV5AliasKeyedSources:
+    """AC-19: CURRENT_SCHEMA_VERSION is 5 and the lock is alias-keyed with no [catalog] block."""
 
-    def test_current_schema_version_is_4(self):
-        """The schema version constant is 4 (FR-7 / FR-21)."""
-        assert CURRENT_SCHEMA_VERSION == 4
+    def test_current_schema_version_is_5(self):
+        """The schema version constant is 5 (FR-7 / FR-21 / FR-22)."""
+        assert CURRENT_SCHEMA_VERSION == 5
 
     def test_source_serialised_with_alias_key_first(self, tmp_path):
         """write_lockfile emits the alias key first in each [[sources]] entry."""
@@ -599,14 +602,14 @@ class TestPathCharacterValidation:
 
 @pytest.mark.unit
 class TestSchemaVersionValidation:
-    """Tests for schema_version handling -- updated for the v4 FLAG-C regenerate policy.
+    """Tests for schema_version handling -- updated for the v5 FLAG-C regenerate policy.
 
     Forward-incompatible reads (schema_version > current) raise the upgrade-kanon-cli
-    error.  Any older schema (schema_version < current = 4) is a hard fail-fast
-    regenerate: schema v4 is the breaking major with no silent upgrader.
+    error.  Any older schema (schema_version < current = 5) is a hard fail-fast
+    regenerate: schema v5 is the latest breaking major with no silent upgrader.
     """
 
-    @pytest.mark.parametrize("future_version", [5, 99, 100])
+    @pytest.mark.parametrize("future_version", [6, 99, 100])
     def test_forward_incompatible_schema_raises_lockfile_schema_error(self, future_version, tmp_path):
         """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError."""
         toml_content = _minimal_toml(schema_version=future_version)
@@ -618,7 +621,7 @@ class TestSchemaVersionValidation:
         assert f"v{future_version}" in err_msg
         assert "upgrade kanon-cli" in err_msg
 
-    @pytest.mark.parametrize("old_version", [1, 2, 3])
+    @pytest.mark.parametrize("old_version", [1, 2, 3, 4])
     def test_older_schema_hard_fails_regenerate(self, old_version, tmp_path):
         """schema_version < CURRENT_SCHEMA_VERSION fails fast with the regenerate message (FLAG-C)."""
         toml_content = _minimal_toml(schema_version=old_version)
@@ -631,13 +634,13 @@ class TestSchemaVersionValidation:
         assert "kanon add" in err_msg
         assert "kanon install" in err_msg
 
-    def test_schema_version_4_accepted(self, tmp_path):
-        """schema_version == 4 is the current supported version and is accepted."""
-        toml_content = _minimal_toml(schema_version=4)
+    def test_schema_version_5_accepted(self, tmp_path):
+        """schema_version == 5 is the current supported version and is accepted."""
+        toml_content = _minimal_toml(schema_version=5)
         p = tmp_path / "kanon.lock"
         p.write_text(toml_content)
         lf = read_lockfile(p)
-        assert lf.schema_version == 4
+        assert lf.schema_version == 5
 
     def test_forward_incompat_schema_error_message_format(self, tmp_path):
         """LockfileSchemaError message for forward-incompatible reads matches spec text."""
@@ -661,7 +664,10 @@ class TestSchemaVersionValidation:
 
 @pytest.mark.unit
 class TestV3HardFailRegenerate:
-    """A loaded v3 (and older) lock fails fast with an actionable regenerate error."""
+    """A loaded v4-and-older lock fails fast with an actionable regenerate error.
+
+    v3 remains rejected; v4 is the new breaking boundary under schema v5.
+    """
 
     def test_v3_lock_raises_schema_error_flag_c(self, tmp_path):
         """A v3 lock raises LockfileSchemaError; there is no silent v3 -> v4 upgrader."""
@@ -707,6 +713,24 @@ class TestV3HardFailRegenerate:
 
         with pytest.raises(LockfileSchemaError):
             read_lockfile(p)
+
+    def test_v4_lock_raises_schema_error_regenerate(self, tmp_path):
+        """A v4 lock is the new breaking boundary: it fails fast with the regenerate error.
+
+        Schema v5 adds per-source content-SHA pins on top of v4; a v4 lock carries no
+        pins and there is no silent v4 -> v5 upgrader, so read_lockfile must reject it
+        with the actionable regenerate message that names schema v5.
+        """
+        v4_toml = _minimal_toml(schema_version=4)
+        p = tmp_path / "kanon.lock"
+        p.write_text(v4_toml)
+        with pytest.raises(LockfileSchemaError) as exc_info:
+            read_lockfile(p)
+        err_msg = str(exc_info.value)
+        assert "v4" in err_msg
+        assert "schema v5" in err_msg
+        assert "regenerate the lockfile" in err_msg
+        assert "kanon add" in err_msg and "kanon install" in err_msg
 
 
 @pytest.mark.unit
@@ -832,10 +856,10 @@ def _source_toml_block(*, name: str, registered_marketplaces_literal: str | None
     return "\n".join(lines) + "\n"
 
 
-def _bare_v4_header() -> str:
-    """Return the top-level scalar fields of a v4 lock with no sources appended yet."""
+def _bare_v5_header() -> str:
+    """Return the top-level scalar fields of a v5 lock with no sources appended yet."""
     return (
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2026-01-01T00:00:00Z"\n'
         'generator = "kanon-cli/2.0.0"\n'
         f'kanon_hash = "{_VALID_KANON_HASH}"\n'
@@ -929,23 +953,66 @@ class TestRegisteredMarketplacesField:
         second_bytes = p2.read_bytes()
         assert first_bytes == second_bytes
 
-    def test_v4_source_without_ledger_key_defaults_to_empty(self, tmp_path):
-        """A v4 source TOML lacking registered_marketplaces defaults to a per-source empty ledger."""
-        v4_toml = _bare_v4_header() + _source_toml_block(name="legacy", registered_marketplaces_literal=None)
+    def test_v5_source_without_ledger_key_defaults_to_empty(self, tmp_path):
+        """A v5 source TOML lacking registered_marketplaces defaults to a per-source empty ledger."""
+        v5_toml = _bare_v5_header() + _source_toml_block(name="legacy", registered_marketplaces_literal=None)
         p = tmp_path / "kanon.lock"
-        p.write_text(v4_toml)
+        p.write_text(v5_toml)
         lf = read_lockfile(p)
-        assert lf.schema_version == 4
+        assert lf.schema_version == 5
         assert len(lf.sources) == 1
         assert lf.sources[0].registered_marketplaces == [], "a missing registered_marketplaces key must default to []"
 
     def test_non_list_source_registered_marketplaces_raises_validation_error(self, tmp_path):
         """A per-source registered_marketplaces that is not a list of strings raises a validation error."""
-        bad_toml = _bare_v4_header() + _source_toml_block(name="src", registered_marketplaces_literal="[1, 2, 3]")
+        bad_toml = _bare_v5_header() + _source_toml_block(name="src", registered_marketplaces_literal="[1, 2, 3]")
         p = tmp_path / "kanon.lock"
         p.write_text(bad_toml)
         with pytest.raises(LockfileValidationError, match=r"sources\[0\].registered_marketplaces"):
             read_lockfile(p)
+
+
+@pytest.mark.unit
+class TestContentPinsRoundTrip:
+    """Schema v5 per-source content_pins serialise, parse back, and sort by (name, path)."""
+
+    def test_content_pins_roundtrip_sorted_by_name_then_path(self, tmp_path):
+        """write_lockfile then read_lockfile preserves pins, emitting them sorted by (name, path)."""
+        sha_a = "a" * 40
+        sha_b = "b" * 40
+        sha_c = "c" * 40
+        unsorted_pins = [
+            ContentPinEntry(name="zeta", path="services/zeta", resolved_sha=sha_c),
+            ContentPinEntry(name="alpha", path="services/beta", resolved_sha=sha_b),
+            ContentPinEntry(name="alpha", path="services/alpha", resolved_sha=sha_a),
+        ]
+        lf = _make_lockfile(sources=[_make_source(alias="src", name="src", content_pins=unsorted_pins)])
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+
+        text = p.read_text(encoding="utf-8")
+        pin_names = [
+            line.split("=", 1)[1].strip().strip('"') for line in text.splitlines() if line.startswith("name = ")
+        ]
+        ordered_pin_names = pin_names[-3:]
+        assert ordered_pin_names == ["alpha", "alpha", "zeta"], "pins must serialise sorted by (name, path)"
+
+        lf2 = read_lockfile(p)
+        round_tripped = lf2.sources[0].content_pins
+        assert [(pin.name, pin.path, pin.resolved_sha) for pin in round_tripped] == [
+            ("alpha", "services/alpha", sha_a),
+            ("alpha", "services/beta", sha_b),
+            ("zeta", "services/zeta", sha_c),
+        ]
+
+    def test_content_pins_default_empty_and_absent_array_parses(self, tmp_path):
+        """A v5 source with no content_pins serialises no [[sources.content_pins]] and parses to []."""
+        lf = _make_lockfile(sources=[_make_source(alias="src", name="src")])
+        p = tmp_path / "kanon.lock"
+        write_lockfile(lf, p)
+        assert "[[sources.content_pins]]" not in p.read_text(encoding="utf-8")
+        lf2 = read_lockfile(p)
+        assert lf2.sources[0].content_pins == []
 
 
 @pytest.mark.unit

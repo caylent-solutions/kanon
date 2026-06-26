@@ -8,11 +8,12 @@ Covers three behaviours of the PER-SOURCE marketplace attribution model:
     any user/keep-set marketplace (never written to any per-source ledger), must
     NOT be removed.
 
-(b) ``kanon install`` auto-prunes: when a source whose marketplace was
+(b) ``kanon install --reconcile`` prunes: when a source whose marketplace was
     registered is reconciled away (``.kanon`` rewritten from source A to source
     B), source A's marketplace is unregistered via
     ``claude plugin marketplace remove`` and the rewritten lock records each
-    surviving source's per-source ledger.
+    surviving source's per-source ledger.  (A plain ``kanon install`` would fail
+    fast on the alias-set drift without mutating the lock.)
 
 (c) Canonical flow: install A+B, ``kanon remove A`` (no reinstall), then
     ``kanon clean --orphans`` -> A's marketplace is unregistered, B's and the
@@ -167,9 +168,9 @@ def _write_kanonenv_sources(
 @pytest.mark.integration
 class TestInstallAutoPruneReconcile:
     def test_reconcile_from_a_to_b_unregisters_a_marketplace(self, tmp_path: pathlib.Path) -> None:
-        """Install source A (mp recorded), rewrite .kanon to B, reconcile -> A's mp unregistered.
+        """Install source A (mp recorded), rewrite .kanon to B, install --reconcile -> A's mp unregistered.
 
-        After the reconcile install, the recorded claude argv must include
+        After the ``--reconcile`` install, the recorded claude argv must include
         ``marketplace remove source_alpha`` (A's marketplace) and the rewritten
         lockfile's single source B must carry per-source ledger ``[source_bravo]``.
         """
@@ -229,7 +230,7 @@ class TestInstallAutoPruneReconcile:
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed) as mock_run,
         ):
-            install(kanonenv, lock_file_path=lock_path)
+            install(kanonenv, lock_file_path=lock_path, reconcile=True)
 
         removed = _extract_marketplace_remove_names(mock_run.call_args_list)
         assert "source_alpha" in removed, (

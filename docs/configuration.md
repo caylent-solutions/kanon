@@ -213,7 +213,7 @@ kanon search
 2. `KANON_CATALOG_SOURCES` environment variable
 
 These are the only two layers. There is no lockfile or `.kanon`
-fallback: the schema-v4 lockfile carries no catalog block, and `.kanon`
+fallback: the schema-v5 lockfile carries no catalog block, and `.kanon`
 records no catalog source.
 
 When neither source is set, a catalog-requiring command (`kanon search`,

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from kanon_cli.core.marketplace_validator import (
-    _is_exact_tag_revision,
+    _is_pinnable_revision,
     validate_include_chain,
     validate_linkfile_dest,
     validate_marketplace,
@@ -122,12 +122,14 @@ class TestNameUniqueness:
 
 
 @pytest.mark.unit
-class TestExactTagRevision:
-    """The exact-only <project revision> rule (spec Section 4.5 / Section 6 / FR-22).
+class TestPinnableRevision:
+    """The pinnable <project revision> rule (spec Section 4.5 / Section 6 / FR-22, AMENDED 2026-06-25).
 
-    Only refs/tags/<deep/path>/<pep440> exact tags are accepted; branches, the
-    wildcard, and version-range constraints are rejected -- the permissive
-    _is_valid_revision mode it replaces accepted all of those.
+    A revision is pinnable when it is a deep-path tag
+    (refs/tags/<deep/path>/<pep440>), a branch ref (refs/heads/<name>), or a
+    40-hex commit SHA. The wildcard, bare branch names, and version-range
+    constraints are rejected: the model is exact-tag-or-branch-ref-or-sha, never
+    an arbitrary spec.
     """
 
     @pytest.mark.parametrize(
@@ -145,25 +147,30 @@ class TestExactTagRevision:
             ("refs/tags/example/proj/1.0.0.dev0", "dev-release"),
             ("refs/tags/example/proj/1.0.0+local.build", "local-version"),
             ("refs/tags/deep/nested/path/proj/3.4.5", "deep-path"),
+            ("refs/heads/main", "branch-ref-main"),
+            ("refs/heads/feature/my-branch", "branch-ref-deep"),
+            ("a" * 40, "lowercase-sha-40"),
+            ("0123456789abcdef0123456789abcdef01234567", "mixed-hex-sha-40"),
         ],
     )
-    def test_exact_tag_accepted(self, revision: str, shape: str) -> None:
-        """AC-54: a full-PEP-440 exact tag is accepted (no \\d+\\.\\d+\\.\\d+ floor)."""
-        assert _is_exact_tag_revision(revision)
+    def test_pinnable_revision_accepted(self, revision: str, shape: str) -> None:
+        """AC-54: a full-PEP-440 exact tag, a branch ref, or a 40-hex SHA is accepted."""
+        assert _is_pinnable_revision(revision)
 
     @pytest.mark.parametrize(
         ("revision", "reason"),
         [
-            ("main", "branch-is-rejected"),
-            ("develop", "branch-is-rejected"),
+            ("main", "bare-branch-is-rejected"),
+            ("develop", "bare-branch-is-rejected"),
+            ("feature/my-branch", "bare-slashed-branch-is-rejected"),
             ("*", "bare-wildcard-is-rejected"),
             ("refs/tags/example/proj/*", "wildcard-trailing-is-rejected"),
             ("~=1.2.0", "single-constraint-is-rejected"),
             (">=1.0.0", "single-constraint-is-rejected"),
             (">=1.0.0,<2.0.0", "compound-constraint-is-rejected"),
+            (">=0.1.0,<1.0.0", "compound-constraint-is-rejected"),
             ("refs/tags/example/proj/~=1.0.0", "prefixed-constraint-is-rejected"),
             ("refs/tags/example/proj/>=1.0.0,<2.0.0", "prefixed-compound-constraint-is-rejected"),
-            ("refs/heads/main", "refs-heads-is-rejected"),
             ("refs/tags/no-semver", "no-trailing-path-component"),
             ("refs/tags/example/proj/1.2.x", "wildcard-suffix-is-not-pep440"),
             ("refs/tags/example/proj/release-1.0.0", "named-tag-is-not-pep440"),
@@ -172,11 +179,26 @@ class TestExactTagRevision:
             ("refs/tags/1.0.0", "missing-path-before-version"),
             ("random-string", "non-tag-string"),
             ("1.0.0", "bare-version-without-prefix"),
+            ("v1.0.0", "v-prefixed-bare-version"),
+            ("release-2024", "named-non-ref"),
+            ("A" * 40, "uppercase-hex-is-not-sha"),
+            ("a" * 39, "too-short-hex-is-not-sha"),
+            ("a" * 41, "too-long-hex-is-not-sha"),
         ],
     )
-    def test_non_exact_tag_rejected(self, revision: str, reason: str) -> None:
-        """AC-54: branches, the wildcard, constraints, and malformed shapes are rejected."""
-        assert not _is_exact_tag_revision(revision)
+    def test_non_pinnable_revision_rejected(self, revision: str, reason: str) -> None:
+        """AC-54: bare branches, the wildcard, constraints, and malformed shapes are rejected."""
+        assert not _is_pinnable_revision(revision)
+
+    def test_explicit_positive_branch_ref_and_sha(self) -> None:
+        """AC-54: a refs/heads/<name> branch ref and a 40-hex SHA are pinnable."""
+        assert _is_pinnable_revision("refs/heads/main") is True
+        assert _is_pinnable_revision("a" * 40) is True
+
+    def test_explicit_negative_bare_branch_and_wildcard(self) -> None:
+        """AC-54: a bare branch name and the wildcard are not pinnable."""
+        assert _is_pinnable_revision("main") is False
+        assert _is_pinnable_revision("*") is False
 
 
 @pytest.mark.unit
@@ -423,7 +445,7 @@ class TestValidateMarketplace:
         assert validate_marketplace(tmp_path, env={}, ls_remote=_ls_remote_hit) == 1
 
     def test_branch_revision_returns_one(self, tmp_path: Path) -> None:
-        """AC-54: a <project revision='main'> branch is rejected exact-only."""
+        """AC-54: a <project revision='main'> bare branch is rejected (pinnable rule)."""
         _write_xml(
             tmp_path / "repo-specs" / "branch-marketplace.xml",
             textwrap.dedent("""\

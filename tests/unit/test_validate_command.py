@@ -48,7 +48,7 @@ def _write_kanon(directory: Path, sources: dict[str, dict[str, str]]) -> Path:
 
 
 def _write_lock(directory: Path, sources: list[SourceEntry]) -> Path:
-    """Write a v4 lock file carrying the given source entries and return its path.
+    """Write a v5 lock file carrying the given source entries and return its path.
 
     Args:
         directory: Directory the .kanon.lock file is written into.
@@ -58,7 +58,7 @@ def _write_lock(directory: Path, sources: list[SourceEntry]) -> Path:
         The path to the written .kanon.lock file.
     """
     lockfile = Lockfile(
-        schema_version=4,
+        schema_version=5,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/3.0.0",
         kanon_hash=_VALID_KANON_HASH,

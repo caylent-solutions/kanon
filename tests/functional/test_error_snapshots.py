@@ -26,9 +26,11 @@ The fixtures are the canonical reference; the source must match them.
 Trigger procedure per slug:
 - ``missing-catalog-source``: ``kanon search`` with neither env var nor flag set.
 - ``lockfile-hash-mismatch``: ``kanon install --strict-lock`` with a ``.kanon``
-  file and a lockfile whose ``kanon_hash`` field intentionally differs from the
-  actual hash of the ``.kanon`` file.  (Plain ``kanon install`` reconciles the
-  drift under the npm-like contract; the clean error lives under ``--strict-lock``.)
+  file and a lockfile whose single source entry stays consistent with ``.kanon``
+  (same alias and ref-spec) but whose ``kanon_hash`` field intentionally differs
+  from the actual hash of the ``.kanon`` file, so the consistency check passes
+  and the drift is a pure kanon_hash mismatch.  (A plain ``kanon install`` also
+  fails fast on this mismatch; ``--reconcile`` opts back in to reconciling it.)
 - ``lockfile-sha-unreachable``: ``kanon install`` with a lockfile whose
   ``resolved_sha`` for a source points to a SHA that ``git ls-remote`` cannot
   find on the declared remote.  Uses an unreachable HTTPS remote so git fails
@@ -277,10 +279,14 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
     Writes a .kanon file whose source triples hash to the deterministic value
     sha256:2391f761252aa51bfed01b99b60deb08da28644fb84c9b7a5037d42ff111df1a,
     then writes a .kanon.lock with a fixed wrong kanon_hash
-    (sha256: followed by 64 'a' chars) so that the hash-mismatch check fires
-    under ``kanon install --strict-lock`` (the npm-ci analogue, which errors on
-    any drift without mutating the lockfile).  Plain ``kanon install`` would
-    instead reconcile the drift, so this snapshot exercises the strict path.
+    (sha256: followed by 64 'a' chars).  The lock's single [[sources]] entry is
+    kept consistent with .kanon (same alias and ref-spec), so the pre-resolve
+    .kanon <-> .kanon.lock alias-set / ref-spec consistency check passes and the
+    drift is a pure kanon_hash mismatch.  ``kanon install --strict-lock`` (the
+    npm-ci analogue, which errors on any drift without mutating the lockfile)
+    then surfaces the KanonHashMismatchError naming both hashes.  A plain
+    ``kanon install`` fails fast on the same mismatch; ``--reconcile`` would
+    instead reconcile it.
 
     The fixed wrong hash and the deterministic current hash match the values
     in tests/fixtures/errors/lockfile-hash-mismatch.txt exactly, making the
@@ -300,13 +306,23 @@ def _build_lockfile_hash_mismatch(tmp_path: pathlib.Path) -> pathlib.Path:
     )
 
     wrong_hash = "sha256:" + "a" * 64
+    placeholder_sha = "b" * 40
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
-        f'kanon_hash = "{wrong_hash}"\n',
+        f'kanon_hash = "{wrong_hash}"\n'
+        "\n"
+        "[[sources]]\n"
+        'alias = "example_pkg"\n'
+        'name = "example_pkg"\n'
+        'url = "https://example.com/org/manifest-repo.git"\n'
+        'ref_spec = "main"\n'
+        'resolved_ref = "refs/heads/main"\n'
+        f'resolved_sha = "{placeholder_sha}"\n'
+        'path = "repo-specs/example-pkg-marketplace.xml"\n',
         encoding="utf-8",
     )
     return ws
@@ -344,7 +360,7 @@ def _build_lockfile_sha_unreachable(tmp_path: pathlib.Path) -> pathlib.Path:
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
         f'kanon_hash = "{actual_hash}"\n'
@@ -443,7 +459,7 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
 
     lock_file = ws / ".kanon.lock"
     lock_file.write_text(
-        "schema_version = 4\n"
+        "schema_version = 5\n"
         'generated_at = "2024-01-01T00:00:00Z"\n'
         'generator = "kanon-cli 0.0.0"\n'
         f'kanon_hash = "{actual_hash}"\n'

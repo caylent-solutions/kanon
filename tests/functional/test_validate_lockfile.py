@@ -72,7 +72,7 @@ def _source_entry(alias, ref_spec):
 
 
 def _write_lock(directory, sources):
-    """Write a v4 ``.kanon.lock`` carrying the given source entries; return its path.
+    """Write a v5 ``.kanon.lock`` carrying the given source entries; return its path.
 
     Args:
         directory: Directory the ``.kanon.lock`` file is written into.
@@ -82,7 +82,7 @@ def _write_lock(directory, sources):
         The path to the written ``.kanon.lock`` file.
     """
     lockfile = Lockfile(
-        schema_version=4,
+        schema_version=5,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/3.0.0",
         kanon_hash=_VALID_KANON_HASH,

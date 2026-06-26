@@ -5,9 +5,13 @@ Checks:
     variable prefix, rejecting hard-coded or relative paths.
   - All <include> chains are unbroken (every referenced file exists).
   - All flattened project path names are unique across manifests.
-  - All <project revision> attributes are exact existing git tags
-    (refs/tags/<deep/path>/<pep440>): exact-only, no branch, no wildcard,
-    no version-range constraint (spec Section 4.5 / Section 6 / FR-22).
+  - All <project revision> attributes are pinnable refs: an exact existing git
+    tag (refs/tags/<deep/path>/<pep440>), a branch ref (refs/heads/<name>), or a
+    40-hex commit SHA. Wildcards (*) and version-range constraints (>=, <, ',',
+    ~=) are rejected: the model is exact-tag-or-branch-or-sha, never an arbitrary
+    spec (spec Section 4.5 / Section 6 / FR-22, AMENDED 2026-06-25). On install
+    a branch or tag resolves to a content SHA pinned in .kanon.lock (npm-style),
+    so determinism rests on the locked content SHA, not on tag immutability.
   - Every <project revision> -- including a revision a <project> inherits from
     the manifest's <default revision> -- is existence-checked against the
     project's resolved remote via git ls-remote (two-tier: a local/file://
@@ -16,6 +20,7 @@ Checks:
 """
 
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -27,6 +32,7 @@ from kanon_cli.constants import (
     KANON_GIT_LS_REMOTE_TIMEOUT,
     MARKETPLACE_DIR_PREFIX,
     REVISION_EXISTENCE_REQUIRED_ENV_VAR,
+    REVISION_REF_PREFIX_HEADS,
     REVISION_REF_PREFIX_TAGS,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
@@ -36,6 +42,9 @@ from kanon_cli.version import is_pep440_version
 
 
 LsRemoteRunner = Callable[[str, str], tuple[int, str, str]]
+
+
+_FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def validate_linkfile_dest(xml_path: Path) -> list[str]:
@@ -153,32 +162,46 @@ def validate_name_uniqueness(xml_files: list[Path]) -> list[str]:
     return errors
 
 
-def _is_exact_tag_revision(revision: str) -> bool:
-    """Return True if *revision* is an exact-tag ``<project revision>``.
+def _is_pinnable_revision(revision: str) -> bool:
+    """Return True if *revision* is a pinnable ``<project revision>``.
 
-    The exact-only revision grammar (spec Section 4.5 / Section 6 / FR-22) is:
+    The pinnable revision grammar (spec Section 4.5 / Section 6 / FR-22, AMENDED
+    2026-06-25 -- npm-style content-SHA locking) accepts any of three shapes:
 
-        refs/tags/<deep/path>/<pep440>
+        refs/tags/<deep/path>/<pep440>   -- an exact deep-path tag.
+        refs/heads/<branch>              -- a branch ref (e.g. refs/heads/main).
+        <40-hex>                         -- a full 40-character commit SHA.
 
-    where ``<pep440>`` is a single, canonical PEP 440 version token validated
-    by the shared :func:`kanon_cli.version.is_pep440_version` grammar (the same
-    full-PEP-440 grammar the resolver uses -- E7-F1-S1, DRY). The trailing
-    component is split off the last ``/``; the path between the
-    ``refs/tags/`` prefix and that component must be non-empty.
+    For the tag shape, ``<pep440>`` is a single, canonical PEP 440 version token
+    validated by the shared :func:`kanon_cli.version.is_pep440_version` grammar
+    (the same full-PEP-440 grammar the resolver uses -- E7-F1-S1, DRY); the
+    trailing component is split off the last ``/`` and the path between the
+    ``refs/tags/`` prefix and that component must be non-empty. For the branch
+    shape, the name after ``refs/heads/`` must be non-empty.
 
-    Exact-only means a branch (e.g. ``main``), the wildcard ``*``, and a
-    single or compound version-range constraint (e.g. ``>=0.1.0,<1.0.0``) are
-    all REJECTED: only a concrete existing-tag shape is accepted, so no project
-    is pinned to a moving target.
+    The wildcard ``*``, a bare branch name (e.g. ``main`` without the
+    ``refs/heads/`` prefix), and a single or compound version-range constraint
+    (e.g. ``>=0.1.0,<1.0.0``) are all REJECTED: the model is
+    exact-tag-or-branch-ref-or-sha, never an arbitrary spec. On install a tag or
+    branch resolves to a content SHA that is pinned in ``.kanon.lock``, so a
+    branch revision does not pin a moving target -- the locked SHA is replayed
+    byte-for-byte until an explicit ``--refresh-lock``.
 
     Args:
         revision: The ``revision`` attribute value of a manifest ``<project>``
             (or the inherited ``<default revision>``).
 
     Returns:
-        True only when *revision* is a ``refs/tags/<deep/path>/<pep440>`` exact
-        tag; False for branches, the wildcard, constraints, and any other shape.
+        True when *revision* is a deep-path tag, a ``refs/heads/<name>`` branch
+        ref, or a 40-hex commit SHA; False for the wildcard, bare branch names,
+        version-range constraints, and any other shape.
     """
+    if revision.startswith(REVISION_REF_PREFIX_HEADS):
+        return bool(revision[len(REVISION_REF_PREFIX_HEADS) :])
+
+    if _FULL_SHA_RE.match(revision):
+        return True
+
     if not revision.startswith(REVISION_REF_PREFIX_TAGS):
         return False
     remainder = revision[len(REVISION_REF_PREFIX_TAGS) :]
@@ -192,8 +215,9 @@ def _is_exact_tag_revision(revision: str) -> bool:
 
 
 _INVALID_REVISION_HINT = (
-    "must be an exact tag refs/tags/<path>/<pep440> "
-    "(exact-only: no branch, no '*' wildcard, no version-range constraint)"
+    "must be an exact tag refs/tags/<path>/<pep440>, a branch ref "
+    "refs/heads/<name>, or a 40-hex commit SHA "
+    "(no '*' wildcard, no bare branch name, no version-range constraint)"
 )
 
 
@@ -289,14 +313,15 @@ def _iter_project_revisions(
 
 
 def validate_tag_format(xml_files: list[Path], repo_root: Path) -> list[str]:
-    """Validate that every effective ``<project revision>`` is an exact tag.
+    """Validate that every effective ``<project revision>`` is pinnable.
 
     Checks each ``<project>`` element's effective revision -- its own
     ``revision`` attribute, or the ``<default revision>`` it inherits when the
-    attribute is omitted -- against the exact-only rule
-    (:func:`_is_exact_tag_revision`). A branch, the wildcard, and a single or
-    compound version-range constraint are all rejected with an actionable
-    exact-tag error (spec Section 4.5 / Section 6 / FR-22).
+    attribute is omitted -- against the pinnable rule
+    (:func:`_is_pinnable_revision`): a deep-path tag, a ``refs/heads/<name>``
+    branch ref, or a 40-hex commit SHA is accepted; the wildcard, a bare branch
+    name, and a single or compound version-range constraint are rejected with an
+    actionable error (spec Section 4.5 / Section 6 / FR-22, AMENDED 2026-06-25).
 
     Args:
         xml_files: List of paths to marketplace XML manifest files.
@@ -304,14 +329,14 @@ def validate_tag_format(xml_files: list[Path], repo_root: Path) -> list[str]:
             inheritance through the include chain.
 
     Returns:
-        List of error messages. Empty if all revisions are exact tags.
+        List of error messages. Empty if all revisions are pinnable.
         Each error identifies the file, project name, and invalid revision.
     """
     errors: list[str] = []
 
     for xml_file in xml_files:
         for project_name, revision, inherited in _iter_project_revisions(xml_file, repo_root):
-            if _is_exact_tag_revision(revision):
+            if _is_pinnable_revision(revision):
                 continue
             source = "inherited <default revision>" if inherited else "revision"
             errors.append(
@@ -471,23 +496,28 @@ def validate_revision_existence(
     env: dict[str, str],
     ls_remote: LsRemoteRunner,
 ) -> list[str]:
-    """Existence-check every exact-tag ``<project revision>`` against its remote.
+    """Existence-check every ref-shaped ``<project revision>`` against its remote.
 
-    For each ``<project>`` whose effective revision is an exact tag, resolves the
-    project's remote fetch URL and runs ``git ls-remote <url> <revision>`` through
-    *ls_remote*. Two-tier + local-aware semantics (spec Section 4.5):
+    For each ``<project>`` whose effective revision is a deep-path tag or a
+    ``refs/heads/<name>`` branch ref, resolves the project's remote fetch URL and
+    runs ``git ls-remote <url> <revision>`` through *ls_remote*. Two-tier +
+    local-aware semantics (spec Section 4.5):
 
-    - A local/``file://`` source resolves offline: a missing tag is always a hard
+    - A local/``file://`` source resolves offline: a missing ref is always a hard
       ERROR (the repo is reachable without the network).
-    - A remote source that is reachable: a missing tag is a hard ERROR.
+    - A remote source that is reachable: a missing ref is a hard ERROR.
     - A remote source that is unreachable/offline: existence degrades to
       format-only with a WARN, UNLESS the CI/gate flag
       ``KANON_VALIDATE_REQUIRE_EXISTENCE=1`` is set, in which case the
       unconfirmable existence is a hard ERROR (existence is mandatory).
 
-    Revisions that are not exact tags are skipped here -- their format error is
-    raised by :func:`validate_tag_format`; the existence check never double-reports
-    a format failure. Projects with no resolvable remote are skipped (the
+    A revision that is a 40-hex commit SHA is skipped here: ``git ls-remote
+    <url> <sha>`` matches by ref name and never returns a bare object id, so a
+    SHA cannot be existence-checked this way -- its reachability is enforced at
+    resolve/install time against the locked content pin. Revisions that are not
+    pinnable at all are also skipped -- their format error is raised by
+    :func:`validate_tag_format`; the existence check never double-reports a
+    format failure. Projects with no resolvable remote are skipped (the
     unresolved-remote error belongs to the remote-url check).
 
     Args:
@@ -507,7 +537,9 @@ def validate_revision_existence(
     for xml_file in xml_files:
         remote_urls = _resolve_project_remote_urls(xml_file, repo_root, env)
         for project_name, revision, _inherited in _iter_project_revisions(xml_file, repo_root):
-            if not _is_exact_tag_revision(revision):
+            if not _is_pinnable_revision(revision):
+                continue
+            if _FULL_SHA_RE.match(revision):
                 continue
             url = remote_urls.get(project_name)
             if url is None:
@@ -557,10 +589,11 @@ def validate_marketplace(
 
     Scans for catalog entry manifests (``*.xml`` with a ``<catalog-metadata>``
     block) and validates each one for linkfile dest attributes, include chain
-    integrity, project path uniqueness, exact-only ``<project revision>`` tag
-    format (covering revisions inherited from ``<default revision>``), and
-    two-tier + local-aware revision existence. Exits with a non-zero code if any
-    validation errors are found.
+    integrity, project path uniqueness, pinnable ``<project revision>`` format
+    (a deep-path tag, a ``refs/heads/<name>`` branch ref, or a 40-hex SHA;
+    covering revisions inherited from ``<default revision>``), and two-tier +
+    local-aware revision existence. Exits with a non-zero code if any validation
+    errors are found.
 
     Args:
         repo_root: Repository root directory.

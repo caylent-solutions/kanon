@@ -170,7 +170,7 @@ One stderr finding per orphan, plus the `[fail]` summary:
 
 ```text
 ERROR: orphan lock entry: source '<source-name>' is in .kanon.lock but absent from .kanon
-  Remediation: Run 'kanon install' to prune (or 'kanon install --strict-lock' to keep the lockfile authoritative).
+  Remediation: Run 'kanon install --reconcile' to prune (or 'kanon install --strict-lock' to keep the lockfile authoritative).
 [fail] no orphaned lock entries
 ```
 
@@ -300,7 +300,8 @@ Effective catalog source: https://example.com/org/manifest-repo.git@main (from K
 
 The provenance suffix is one of `(from --catalog-source CLI flag)` or
 `(from KANON_CATALOG_SOURCES env var)`. The lockfile never participates:
-schema v4 removed the `[catalog]` block.
+schema v5 (which, like v4, removed the `[catalog]` block) carries no
+catalog source.
 
 When `KANON_CATALOG_SOURCES` configures more than one source:
 
@@ -622,8 +623,8 @@ precedence (highest wins):
 3. None configured -- prints an informational line; no exit-1 from this
    condition alone.
 
-Schema v4 removed the lockfile `[catalog]` block, so the lockfile does NOT
-participate in catalog-source resolution. The resolved value is always printed
+Schema v5 (like the v4 schema before it) carries no lockfile `[catalog]`
+block, so the lockfile does NOT participate in catalog-source resolution. The resolved value is always printed
 (subcheck 6) so the operator can verify which catalog source is active before
 running catalog-dependent commands (`kanon add`, `kanon search`, `kanon
 outdated`, `kanon why`). `kanon install` is hermetic and does not consult a
@@ -742,13 +743,13 @@ $ kanon doctor
 
 [ok] kanon_hash consistency
 ERROR: orphan lock entry: source 'my-removed-source' is in .kanon.lock but absent from .kanon
-  Remediation: Run 'kanon install' to prune (or 'kanon install --strict-lock' to keep the lockfile authoritative).
+  Remediation: Run 'kanon install --reconcile' to prune (or 'kanon install --strict-lock' to keep the lockfile authoritative).
 [fail] no orphaned lock entries
 ```
 
 Exit code: `1`
 
-**Fix:** run `kanon install` to prune the orphaned entry.
+**Fix:** run `kanon install --reconcile` to prune the orphaned entry.
 
 ---
 

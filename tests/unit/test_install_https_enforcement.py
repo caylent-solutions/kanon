@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.core.install import InstallError, _run_install
+from kanon_cli.core.install import _run_install
 from kanon_cli.core.remote_url import InsecureRemoteUrlError
 
 
@@ -213,19 +213,20 @@ class TestInstallEnforcesHttpsPolicy:
 
 
 @pytest.mark.unit
-class TestLockfileConsistentMissingSourceRaisesInstallError:
+class TestLockfileConsistentMissingSourceRaisesConsistencyError:
     """Under LOCKFILE_CONSISTENT state, a source absent from the lockfile is a hard error."""
 
-    def test_source_missing_from_lockfile_raises_install_error(
+    def test_source_missing_from_lockfile_raises_consistency_error(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """If a .kanon source has no lockfile entry under LOCKFILE_CONSISTENT, InstallError is raised.
+        """If a .kanon source has no lockfile entry under LOCKFILE_CONSISTENT, a fail-fast error is raised.
 
         This guards the kanon_hash consistency invariant: if the hash matched but a source
-        is absent from the lockfile, something has corrupted the lockfile. A hard error is
-        preferable to silently falling back to the .kanon URL.
+        is absent from the lockfile, .kanon.lock was edited out of sync with .kanon. A hard
+        ``LockfileConsistencyError`` (no ``BUG:`` string) is raised, preferable to silently
+        falling back to the .kanon URL.
         """
         monkeypatch.delenv("KANON_ALLOW_INSECURE_REMOTES", raising=False)
 
@@ -236,6 +237,7 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
         from kanon_cli.core.lockfile import (
             CURRENT_SCHEMA_VERSION,
             Lockfile,
+            LockfileConsistencyError,
             write_lockfile,
         )
 
@@ -249,8 +251,12 @@ class TestLockfileConsistentMissingSourceRaisesInstallError:
         )
         write_lockfile(lf, lockfile_path)
 
-        with pytest.raises(InstallError, match="BUG: source 'mysource' not found in lockfile"):
+        with pytest.raises(LockfileConsistencyError) as excinfo:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
             )
+        rendered = str(excinfo.value)
+        assert "mysource" in rendered
+        assert "missing from .kanon.lock" in rendered
+        assert "BUG:" not in rendered

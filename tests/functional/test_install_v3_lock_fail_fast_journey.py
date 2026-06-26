@@ -1,8 +1,8 @@
 """Functional journey: ``kanon install`` fails fast on a legacy v3 ``.kanon.lock``.
 
-Exercises the schema-bump fail-fast (inventory item 7; spec FR-7 / FR-21,
+Exercises the schema-bump fail-fast (inventory item 7; spec FR-7 / FR-21 / FR-22,
 Section 5.2 / Section 13 FLAG-C) end-to-end as a real CLI black box (subprocess,
-no in-process mocks): a v3 lock is NOT silently upgraded to v4.
+no in-process mocks): a v3 lock is NOT silently upgraded to the current schema.
 
 The v3 lockfile written here mirrors, byte-for-byte field shape, the v3 format the
 unit suite uses (``tests/unit/test_lockfile.py::TestV3HardFailRegenerate``): a
@@ -19,7 +19,8 @@ Asserted behaviour for ``kanon install`` against the v3 pair:
     offending schema version (v3) and instructs the operator to regenerate the
     lock via ``kanon add`` / ``kanon install``;
   - the on-disk ``.kanon.lock`` is left byte-identical (still ``schema_version =
-    3`` with its ``[catalog]`` block) -- the legacy lock is never rewritten to v4.
+    3`` with its ``[catalog]`` block) -- the legacy lock is never rewritten to the
+    current schema.
 """
 
 from __future__ import annotations
@@ -75,7 +76,7 @@ def _legacy_v3_lock_text() -> str:
     Mirrors the v3 format the unit suite uses
     (``tests/unit/test_lockfile.py::TestV3HardFailRegenerate``): a global
     ``[catalog]`` block and a ``name``-keyed ``[[sources]]`` entry carrying the
-    old ``revision_spec`` field name (renamed to ``ref_spec`` in v4).
+    old ``revision_spec`` field name (renamed to ``ref_spec`` in v4, retained in v5).
     """
     return (
         f"{_LEGACY_SCHEMA_VERSION_LINE}\n"
@@ -208,7 +209,7 @@ class TestInstallV3LockFailFastJourney:
     def test_v3_lock_left_unupgraded_on_disk(
         self, v3_lock_project: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The failed install never rewrites the legacy lock to v4 (no silent upgrade)."""
+        """The failed install never rewrites the legacy lock to the current schema (no silent upgrade)."""
         monkeypatch.delenv(_CATALOG_SOURCES_ENV, raising=False)
         lock_path = v3_lock_project / _LOCKFILE_NAME
         original = lock_path.read_text(encoding="utf-8")

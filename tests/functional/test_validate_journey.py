@@ -89,16 +89,30 @@ def _make_catalog_repo(tmp_path, xml_body: str):
 
 @pytest.mark.functional
 class TestExactTagRevisionJourney:
-    """AC-54 leg 1: exact-only <project revision> accept/reject via the real CLI."""
+    """AC-54 leg 1: pinnable <project revision> accept/reject via the real CLI."""
 
-    def test_exact_tag_revision_accepted(self, tmp_path) -> None:
-        """An exact refs/tags/<path>/<pep440> revision validates green (exit 0)."""
-        repo_root = _make_catalog_repo(tmp_path, _marketplace_xml(_EXACT_TAG))
+    @pytest.mark.parametrize(
+        "accepted_revision",
+        [
+            _EXACT_TAG,
+            "refs/heads/main",
+            "refs/heads/feature/my-branch",
+            _VALID_SHA40,
+        ],
+    )
+    def test_pinnable_revision_accepted(self, tmp_path, accepted_revision: str) -> None:
+        """An exact tag, a refs/heads/<name> branch ref, or a 40-hex SHA validates green (exit 0).
+
+        The marketplace project uses an unresolved <remote>, so the existence
+        check is skipped and only the pinnable-format check runs.
+        """
+        repo_root = _make_catalog_repo(tmp_path, _marketplace_xml(accepted_revision))
 
         result = _run_kanon(_VALIDATE, _MARKETPLACE, _REPO_ROOT_FLAG, str(repo_root))
 
         assert result.returncode == 0, (
-            f"AC-54: an exact-tag revision must pass.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
+            f"AC-54: a pinnable revision={accepted_revision!r} must pass.\n"
+            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
         assert result.stderr == "", f"AC-54: no stderr expected on success.\n  stderr: {result.stderr!r}"
 
@@ -106,15 +120,16 @@ class TestExactTagRevisionJourney:
         "rejected_revision",
         [
             "main",
+            "develop",
+            "feature/my-branch",
             "*",
             ">=1.0.0,<2.0.0",
             "~=1.2.0",
             "refs/tags/example/proj/*",
-            "refs/heads/main",
         ],
     )
     def test_non_exact_revision_rejected(self, tmp_path, rejected_revision: str) -> None:
-        """A branch / wildcard / range-constraint revision exits 1 with the exact-tag error."""
+        """A bare branch / wildcard / range-constraint revision exits 1 with the exact-tag error."""
         repo_root = _make_catalog_repo(tmp_path, _marketplace_xml(rejected_revision))
 
         result = _run_kanon(_VALIDATE, _MARKETPLACE, _REPO_ROOT_FLAG, str(repo_root))
@@ -193,9 +208,9 @@ def _source_entry(alias, ref_spec):
 
 
 def _write_lock(directory, sources):
-    """Write a v4 ``.kanon.lock`` carrying the given source entries; return its path."""
+    """Write a v5 ``.kanon.lock`` carrying the given source entries; return its path."""
     lockfile = Lockfile(
-        schema_version=4,
+        schema_version=5,
         generated_at="2026-01-01T00:00:00Z",
         generator="kanon-cli/3.0.0",
         kanon_hash=_VALID_KANON_HASH,

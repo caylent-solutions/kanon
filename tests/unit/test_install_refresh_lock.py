@@ -58,11 +58,11 @@ def _write_lockfile(
 ) -> pathlib.Path:
     """Write a minimal valid schema-v4 .kanon.lock TOML file and return its path.
 
-    The v4 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
+    The v5 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
     """
     lock_path = directory / ".kanon.lock"
     content = f"""\
-schema_version = 4
+schema_version = 5
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{kanon_hash}"

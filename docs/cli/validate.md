@@ -75,9 +75,14 @@ manifest correctness.
 - Include chains are intact (all `<include name="...">` files exist).
 - Project path values (`<project path="...">`) are unique across all marketplace
   files.
-- Revision attributes (`<project revision="...">`) use the allowed formats:
-  `refs/tags/...`, PEP 440 version constraints (`~=`, `>=`, `<=`, `!=`, `==`),
-  wildcard (`*`), or a plain branch name.
+- Revision attributes (`<project revision="...">`) use one of the allowed
+  pinnable formats: an exact deep-path tag `refs/tags/<path>/<pep440>`, a
+  branch ref `refs/heads/<name>`, or a 40-hex commit SHA. The wildcard `*`,
+  a bare branch name (e.g. `main` without the `refs/heads/` prefix), and
+  version-range constraints (`>=X,<Y`, `~=`) are rejected. On install a tag
+  or branch revision resolves to a content SHA pinned in `.kanon.lock`
+  (`[[sources.content_pins]]`), so a branch revision does not pin a moving
+  target.
 
 **Exit codes:**
 
@@ -205,7 +210,10 @@ kanon validate metadata --repo-root . && echo "No errors -- safe to push"
 Check that a consumer project's `.kanon` declarations agree with its
 `.kanon.lock` entries, without network access. This is the same consistency
 check `kanon install` runs implicitly before it resolves (spec Section 4.5 /
-FR-24), exposed as a standalone command for CI and pre-commit use.
+FR-24), exposed as a standalone command for CI and pre-commit use. The same
+drift this command flags now also makes the default `kanon install` fail
+fast (exit 1) before resolving, without mutating the lock; reconcile it with
+`kanon install --reconcile` or rebuild with `kanon install --refresh-lock`.
 
 **Checks:**
 
@@ -225,7 +233,7 @@ No git operations are performed. No `git ls-remote` calls. No cloning.
 | Code | Meaning |
 |------|---------|
 | `0` | `.kanon` and `.kanon.lock` are consistent. |
-| Non-zero | A drift was found (duplicate alias, alias-set mismatch, or ref-spec mismatch); an actionable message names the offending alias(es) and the remediation (`kanon install`). |
+| Non-zero | A drift was found (duplicate alias, alias-set mismatch, or ref-spec mismatch); an actionable message names the offending alias(es) and the remediation (`kanon install --reconcile`, or `kanon install --refresh-lock` to rebuild). |
 
 **Arguments and options:**
 

@@ -327,7 +327,7 @@ class TestOrphanedLockEntryError:
     def test_str_contains_remediation(self) -> None:
         err = OrphanedLockEntryError(orphaned_names=["ghost"])
         s = str(err)
-        assert "--strict-lock" in s
+        assert "kanon install --reconcile" in s
 
     def test_is_install_error_subclass(self) -> None:
         from kanon_cli.core.install import InstallError

@@ -248,6 +248,7 @@ class TestInstallLifecycle:
             refresh_lock_source=None,
             strict_lock=False,
             strict_drift=False,
+            reconcile=False,
         )
         with (
             patch(

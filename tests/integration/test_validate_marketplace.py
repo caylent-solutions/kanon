@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from kanon_cli.core.marketplace_validator import (
-    _is_exact_tag_revision,
+    _is_pinnable_revision,
     validate_include_chain,
     validate_linkfile_dest,
     validate_marketplace,
@@ -138,7 +138,7 @@ class TestNameUniquenessValidation:
 
 @pytest.mark.integration
 class TestTagFormatValidation:
-    """Verify exact-only revision tag format validation (spec Section 4.5 / FR-22)."""
+    """Verify pinnable revision tag format validation (spec Section 4.5 / FR-22, AMENDED 2026-06-25)."""
 
     @pytest.mark.parametrize(
         "revision,filename_stem",
@@ -146,9 +146,12 @@ class TestTagFormatValidation:
             ("refs/tags/example/proj/1.0.0", "refs_tags"),
             ("refs/tags/example/proj/2024.6", "calver"),
             ("refs/tags/deep/nested/proj/1.2.0a1", "prerelease"),
+            ("refs/heads/main", "refs_heads"),
+            ("refs/heads/feature/my-branch", "refs_heads_deep"),
+            ("a" * 40, "sha40"),
         ],
     )
-    def test_exact_tag_revision_returns_no_errors(self, tmp_path: Path, revision: str, filename_stem: str) -> None:
+    def test_pinnable_revision_returns_no_errors(self, tmp_path: Path, revision: str, filename_stem: str) -> None:
         xml = _write_xml(
             tmp_path / f"m_{filename_stem}.xml",
             f'<manifest><project name="p" path=".packages/p" remote="r" revision="{revision}" /></manifest>',
@@ -161,12 +164,13 @@ class TestTagFormatValidation:
             ("~=1.2.0", "compat_release"),
             ("*", "wildcard"),
             ("main", "branch_main"),
+            ("develop", "branch_develop"),
+            ("feature/my-branch", "bare_slashed_branch"),
             (">=1.0.0", "gte_1_0_0"),
             ("refs/tags/example/proj/*", "prefixed_wildcard"),
-            ("refs/heads/main", "refs_heads"),
         ],
     )
-    def test_non_exact_revision_returns_error(self, tmp_path: Path, revision: str, filename_stem: str) -> None:
+    def test_non_pinnable_revision_returns_error(self, tmp_path: Path, revision: str, filename_stem: str) -> None:
         xml = _write_xml(
             tmp_path / f"m_{filename_stem}.xml",
             f'<manifest><project name="p" path=".packages/p" remote="r" revision="{revision}" /></manifest>',
@@ -176,7 +180,7 @@ class TestTagFormatValidation:
         assert "exact" in errors[0].lower()
 
     def test_range_constraint_returns_error(self, tmp_path: Path) -> None:
-        """A compound range constraint (XML-encoded) is rejected exact-only."""
+        """A compound range constraint (XML-encoded) is rejected (not pinnable)."""
         xml = _write_xml(
             tmp_path / "m_range.xml",
             '<manifest><project name="p" path=".packages/p" remote="r" revision="&gt;=1.0.0,&lt;2.0.0" /></manifest>',
@@ -185,20 +189,23 @@ class TestTagFormatValidation:
         assert len(errors) == 1
         assert "exact" in errors[0].lower()
 
-    def test_is_exact_tag_revision_wildcard_rejected(self) -> None:
-        assert _is_exact_tag_revision("*") is False
+    def test_is_pinnable_revision_wildcard_rejected(self) -> None:
+        assert _is_pinnable_revision("*") is False
 
-    def test_is_exact_tag_revision_refs_tags_accepted(self) -> None:
-        assert _is_exact_tag_revision("refs/tags/org/proj/1.0.0") is True
+    def test_is_pinnable_revision_refs_tags_accepted(self) -> None:
+        assert _is_pinnable_revision("refs/tags/org/proj/1.0.0") is True
 
-    def test_is_exact_tag_revision_constraint_rejected(self) -> None:
-        assert _is_exact_tag_revision("~=1.0.0") is False
+    def test_is_pinnable_revision_constraint_rejected(self) -> None:
+        assert _is_pinnable_revision("~=1.0.0") is False
 
-    def test_is_exact_tag_revision_refs_heads_rejected(self) -> None:
-        assert _is_exact_tag_revision("refs/heads/main") is False
+    def test_is_pinnable_revision_refs_heads_accepted(self) -> None:
+        assert _is_pinnable_revision("refs/heads/main") is True
 
-    def test_is_exact_tag_revision_branch_rejected(self) -> None:
-        assert _is_exact_tag_revision("main") is False
+    def test_is_pinnable_revision_sha_accepted(self) -> None:
+        assert _is_pinnable_revision("a" * 40) is True
+
+    def test_is_pinnable_revision_bare_branch_rejected(self) -> None:
+        assert _is_pinnable_revision("main") is False
 
 
 @pytest.mark.integration

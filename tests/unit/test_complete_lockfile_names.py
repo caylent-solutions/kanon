@@ -497,7 +497,7 @@ class TestCompleteMalformedLockfile:
         """Valid TOML that fails lockfile schema validation -> empty + log entry."""
         lock_path = tmp_path / ".kanon.lock"
 
-        lock_path.write_text("schema_version = 4\nfoo = 'bar'\n")
+        lock_path.write_text("schema_version = 5\nfoo = 'bar'\n")
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,

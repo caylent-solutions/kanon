@@ -30,14 +30,17 @@ The lockfile records:
   (`kanon_hash`).
 - The exact git ref and commit SHA for every source and transitive
   dependency in the dependency tree, keyed by the source alias.
+- The resolved content commit SHA of every `<project>` in each source's
+  resolved manifest tree (the per-source `[[sources.content_pins]]`
+  array, schema v5). See [Content pins](#content-pins).
 
-The schema-v4 lockfile carries no catalog block: `kanon install` is
+The schema-v5 lockfile carries no catalog block: `kanon install` is
 hermetic and neither resolves nor records a catalog source. See
 [Hermetic install](#hermetic-install).
 
 The lockfile schema version is embedded in the file and drives the
 migration policy. See [Schema migration](#schema-migration).
-This document describes schema version 4, the format shipped with
+This document describes schema version 5, the format shipped with
 kanon 3.0.0.
 
 **Default lockfile path.** When `kanon install ./alt.kanon` is run, the
@@ -49,15 +52,15 @@ default lockfile path is `./alt.kanon.lock` unless `--lock-file` or
 
 ## Format reference
 
-Schema version 4 uses TOML with three kinds of content: top-level scalar
+Schema version 5 uses TOML with three kinds of content: top-level scalar
 fields and zero or more `[[sources]]` table-arrays (each keyed by alias),
-each of which may contain `[[sources.includes]]` and `[[sources.projects]]`
-sub-tables. There is no `[catalog]` block.
+each of which may contain `[[sources.includes]]`, `[[sources.projects]]`,
+and `[[sources.content_pins]]` sub-tables. There is no `[catalog]` block.
 
 ### TOML schema
 
 ```toml
-schema_version         = 4
+schema_version         = 5
 generated_at           = "2026-05-11T13:42:00Z"
 generator              = "kanon-cli/3.0.0"
 kanon_hash             = "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
@@ -93,14 +96,20 @@ registered_marketplaces = ["package-a-marketplace"]
   ref_spec      = ">=1.0.0,<2.0.0"
   resolved_ref  = "refs/tags/1.4.2"
   resolved_sha  = "def4567890abcdef1234567890abcdef12345678"
+
+  [[sources.content_pins]]
+  name         = "vendor/example-package"
+  path         = "vendor/example-package"
+  resolved_sha = "def4567890abcdef1234567890abcdef12345678"
 ```
 
 ### Top-level fields
 
-**`schema_version`** (int) -- Must be `4`. Read first by `read_lockfile`
-on every invocation path. An older lockfile (`1`, `2`, or `3`) is a hard
-fail-fast: schema v4 is a breaking major and there is no automatic
-upgrade. See [Schema migration](#schema-migration).
+**`schema_version`** (int) -- Must be `5`. Read first by `read_lockfile`
+on every invocation path. An older lockfile (`1`, `2`, `3`, or `4`) is a
+hard fail-fast: schema v5 adds the per-source content pins on top of the
+v4 alias-keyed entries and there is no automatic upgrade. See
+[Schema migration](#schema-migration).
 
 **`generated_at`** (string) -- ISO-8601 UTC timestamp when the lockfile
 was written. Informational; not read by the state machine.
@@ -129,8 +138,8 @@ to the empty string.
 ### [[sources]] entries
 
 Each `[[sources]]` block represents one top-level source repository
-declared in the `.kanon` file. Entries are keyed by alias (schema v4): the
-`alias` field is the lock key and is written first.
+declared in the `.kanon` file. Entries are keyed by alias (schema v4+):
+the `alias` field is the lock key and is written first.
 
 **`alias`** (string) -- The local alias the source is keyed by, matching
 the `<alias>` in the `KANON_SOURCE_<alias>_*` declarations in `.kanon`.
@@ -160,7 +169,7 @@ set of marketplace names this source registered during the last
 defaults to `[]` for sources that registered no marketplace (or when
 marketplace install is disabled). This per-source ledger is the authority
 for marketplace ownership: `kanon clean --orphans` and the `kanon install`
-auto-prune (see [Marketplace ownership and pruning](#marketplace-ownership-and-pruning))
+marketplace prune (see [Marketplace ownership and pruning](#marketplace-ownership-and-pruning))
 consult it to attribute and unregister the marketplaces of a removed
 source, and never enumerate `~/.claude` to remove by exclusion -- so a
 marketplace kanon never recorded can never be unregistered.
@@ -169,6 +178,12 @@ marketplace kanon never recorded can never be unregistered.
 recursive, unbounded depth.
 
 **`projects`** (list) -- Zero or more `[[sources.projects]]` entries.
+
+**`content_pins`** (list of tables, schema v5) -- Zero or more
+`[[sources.content_pins]]` entries recording the resolved content commit
+SHA of each `<project>` in this source's resolved manifest tree (captured
+after `repo sync`). Defaults to `[]` for a source whose checkouts were not
+materialised. See [Content pins](#content-pins).
 
 ### [[sources.includes]] entries
 
@@ -211,6 +226,29 @@ v4 rename of the former `revision_spec`). Written at lock time.
 **`resolved_sha`** (string) -- Pinned commit SHA. Used to pin the project
 clone via repo sync.
 
+### [[sources.content_pins]] entries
+
+Each `[[sources.content_pins]]` block (schema v5) records the resolved
+content commit SHA of one `<project>` in this source's resolved manifest
+tree, captured after `repo sync`. A reinstall replays the locked content
+SHA byte-for-byte (npm-style content-SHA locking), so a branch or tag
+`<project revision>` is frozen to the locked commit until an explicit
+`kanon install --refresh-lock`. See [Content pins](#content-pins).
+
+**`name`** (string) -- The manifest `<project name>` the pin is for.
+
+**`path`** (string) -- The project's checkout path (`<project path>`),
+used to locate the checkout when re-capturing and to rewrite the replay
+revision.
+
+**`resolved_sha`** (string) -- The 40- or 64-hex content commit SHA
+captured at lock time.
+
+Content pins are RESOLVED outputs (like `resolved_sha`) and are EXCLUDED
+from `kanon_hash`: capturing or replaying a pin never changes the consumer
+drift signal. Entries are written sorted by `(name, path)` so the
+serialised lock is byte-stable regardless of capture order.
+
 ### Validation rules
 
 `read_lockfile` enforces the following rules. Any violation raises a
@@ -232,8 +270,18 @@ hex is rejected. Exception: `LockfileValidationError`. Remediation:
 of: (a) a valid PEP 440 `SpecifierSet` with optional monorepo path
 prefix (e.g., `subpackage/==1.0.0`); (b) the bare wildcard `*`
 ("any version", written verbatim by `add`/`install`); (c) starts with
-`refs/`; or (d) matches `^[a-zA-Z0-9_./+-]+$`.
+`refs/` (which covers both `refs/tags/...` tag refs and
+`refs/heads/<name>` branch refs); or (d) matches `^[a-zA-Z0-9_./+-]+$`.
 Exception: `LockfileValidationError`.
+
+This `ref_spec` is the source / catalog ref-spec. It is distinct from a
+manifest `<project revision>` (the content revision validated by
+`kanon validate marketplace`), which accepts an exact deep-path tag
+(`refs/tags/<path>/<pep440>`), a branch ref (`refs/heads/<name>`), or a
+40-hex commit SHA, and rejects the `*` wildcard, a bare branch name, and
+version-range constraints. On install a tag or branch `<project revision>`
+resolves to a content SHA pinned in `[[sources.content_pins]]`, so a
+branch revision does not pin a moving target.
 
 **Rule 4: `canonical_url` consistency.** Every `[[sources.projects]]`
 entry's `canonical_url` must equal `canonicalize_repo_url(url)`.
@@ -331,9 +379,35 @@ identical output. It does not touch the filesystem beyond reading the
 
 ---
 
+## Content pins
+
+Schema v5 records a per-source `[[sources.content_pins]]` array. Each pin
+row captures the resolved content commit SHA of one `<project>` in that
+source's resolved manifest tree, captured after `repo sync`:
+
+- **`name`** -- the manifest `<project name>`.
+- **`path`** -- the project's checkout path (`<project path>`).
+- **`resolved_sha`** -- the 40- or 64-hex content commit SHA captured at
+  lock time.
+
+A reinstall replays each locked content SHA byte-for-byte (npm-style
+content-SHA locking). A manifest `<project revision>` may be an exact
+deep-path tag (`refs/tags/<path>/<pep440>`), a branch ref
+(`refs/heads/<name>`), or a 40-hex commit SHA. On install a tag or branch
+revision resolves to a content SHA that is pinned here, so a branch
+revision does NOT pin a moving target: the locked SHA is replayed until an
+explicit `kanon install --refresh-lock` re-resolves it.
+
+Content pins are RESOLVED outputs (like `resolved_sha`) and are EXCLUDED
+from `kanon_hash`. Capturing, changing, or replaying a content pin never
+alters the consumer-side drift signal; `kanon_hash` continues to cover
+only the alias-keyed `.kanon` source declarations.
+
+---
+
 ## Hermetic install
 
-`kanon install` is hermetic (spec Section 4.3 / FR-14). The schema-v4
+`kanon install` is hermetic (spec Section 4.3 / FR-14). The schema-v5
 lockfile carries no catalog block, so install neither resolves nor records
 a catalog source: it is driven solely by the committed `.kanon` and
 `.kanon.lock`.
@@ -355,11 +429,12 @@ alias-keyed `.kanon` source declarations and changes whenever a source
 `URL`, `REF`, or `PATH` changes.
 
 A `kanon_hash` mismatch means `.kanon` changed since the lockfile was
-written. Plain `kanon install` reconciles the change automatically (see
-[Install reconcile model](#install-reconcile-model)); under `--strict-lock`
-a non-removal drift is a hard error, and `kanon install --refresh-lock`
-(full) or `kanon install --refresh-lock-source <name>` (one source chain)
-force a rebuild.
+written. Plain `kanon install` fails fast on this drift (exit 1) without
+mutating the lock (see [Install reconcile model](#install-reconcile-model));
+`kanon install --reconcile` opts in to the lenient prune-and-reconcile, and
+`kanon install --refresh-lock` (full) or
+`kanon install --refresh-lock-source <name>` (one source chain) force a
+rebuild.
 
 ---
 
@@ -427,14 +502,15 @@ unset and falls through to derivation.
 ### Policy overview (spec Section 5.2)
 
 Every kanon release ships with a single `CURRENT_SCHEMA_VERSION`
-constant (`4` in kanon 3.0.0). When `read_lockfile` encounters a lockfile
+constant (`5` in kanon 3.0.0). When `read_lockfile` encounters a lockfile
 whose `schema_version` differs from `CURRENT_SCHEMA_VERSION`, it applies
 one of three outcomes:
 
 - `schema_version > CURRENT` -- Fatal error: kanon is too old to read
   this lockfile.
-- `schema_version < CURRENT` -- Fatal error: schema v4 is a breaking
-  major with no automatic upgrade. The lockfile must be regenerated.
+- `schema_version < CURRENT` -- Fatal error: schema v5 adds per-source
+  content pins on top of the v4 alias-keyed entries, with no automatic
+  upgrade. The lockfile must be regenerated.
 - `schema_version == CURRENT` -- Parse directly; no migration applied.
 
 ### Forward-incompatible reads
@@ -456,23 +532,22 @@ supported kanon version.
 
 ### Older lockfiles hard-fail (no auto-upgrade)
 
-Schema v4 (kanon 3.0.0, spec Section 13 FLAG-C) is a breaking major:
-source entries are now keyed by alias, the per-entry version-constraint
-field was renamed to `ref_spec`, and the global `[catalog]` block was
-removed. There is **no** silent or automatic upgrade from any older
-schema. When `read_lockfile` encounters a v1, v2, or v3 lockfile
-(`schema_version < CURRENT_SCHEMA_VERSION`), it raises `LockfileSchemaError`
-and fails fast with an actionable message:
+Schema v5 (kanon 3.0.0) adds per-source content-SHA pins
+(`[[sources.content_pins]]`) on top of the v4 alias-keyed source entries.
+There is **no** silent or automatic upgrade from any older schema: older
+locks carry no content pins. When `read_lockfile` encounters a v1, v2,
+v3, or v4 lockfile (`schema_version < CURRENT_SCHEMA_VERSION`), it raises
+`LockfileSchemaError` and fails fast with an actionable message:
 
 ```text
-ERROR: lockfile schema v<N> is incompatible with this kanon version (schema v4).
+ERROR: lockfile schema v<N> is incompatible with this kanon version (schema v5).
   Path: <lockfile-path>
-  Schema v4 is a breaking change: source entries are now keyed by alias,
-  the per-entry version-constraint field was renamed to 'ref_spec', and the
-  global [catalog] block was removed.
+  Schema v5 adds per-source content-SHA pins ([[sources.content_pins]]) on top
+  of the v4 alias-keyed source entries; older locks carry no content pins and
+  are not silently upgraded.
   There is no automatic upgrade from schema v<N>.
   Remediation: regenerate the lockfile by running 'kanon add' to refresh the
-  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v4.
+  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v5.
 ```
 
 There is no in-memory migration and no upgrader chain. The only path
@@ -480,19 +555,19 @@ forward is to regenerate the lockfile.
 
 ### Operator regenerate path
 
-To replace an older (v1/v2/v3) lockfile with a v4 lockfile:
+To replace an older (v1/v2/v3/v4) lockfile with a v5 lockfile:
 
 ```bash
-# Refresh the alias-keyed .kanon declarations, then rewrite the lock at v4
+# Refresh the alias-keyed .kanon declarations, then rewrite the lock at v5
 kanon add <entry>[@<spec>] ...
 kanon install
 ```
 
 `kanon install` writes the lock at `CURRENT_SCHEMA_VERSION` on success.
-For an explicit full rebuild of an already-v4 lock, use
+For an explicit full rebuild of an already-v5 lock, use
 `kanon install --refresh-lock`.
 
-### Schema changelog (v1 to v4)
+### Schema changelog (v1 to v5)
 
 - **v1** -- original schema (`[catalog]`, `[[sources]]`, `kanon_hash`).
 - **v2** -- added the top-level `marketplace_registered` (bool) and
@@ -506,7 +581,13 @@ For an explicit full rebuild of an already-v4 lock, use
   version-constraint field was renamed from `revision_spec` to `ref_spec`
   on every source and project entry. The global `[catalog]` block was
   removed: the lock no longer serialises or parses a `[catalog]` inline
-  table. v1/v2/v3 lockfiles hard-fail on read (see above).
+  table.
+- **v5** (kanon 3.0.0) -- added the per-source `[[sources.content_pins]]`
+  array (`name`, `path`, `resolved_sha`) recording the resolved content
+  commit SHA of each `<project>` in the source's resolved manifest tree,
+  captured after `repo sync` and replayed byte-for-byte on reinstall.
+  Content pins are RESOLVED outputs and are excluded from `kanon_hash`.
+  v1/v2/v3/v4 lockfiles hard-fail on read (see above).
 
 ### Marketplace ownership and pruning
 
@@ -516,18 +597,22 @@ ledgers -- the marketplace names kanon itself recorded -- so user-managed
 or keep-set marketplaces (which were never written to any ledger) are
 never unregistered.
 
-**`kanon install` auto-prune.** When install rebuilds the marketplace set,
-it computes `OLD` (the union of every source's recorded
-`registered_marketplaces` in the existing lockfile) and `NEW` (the union
-of the marketplaces attributed to the current sources this run). Any name
-in `OLD` but not in `NEW` is an orphan -- a marketplace whose source was
-removed from `.kanon`, or whose per-dependency
+**`kanon install` marketplace prune.** When install rebuilds the
+marketplace set -- on a fresh install, an explicit `--refresh-lock` /
+`--refresh-lock-source`, or an opt-in `--reconcile` that reconciles a
+drifted `.kanon` -- it computes `OLD` (the union of every source's
+recorded `registered_marketplaces` in the existing lockfile) and `NEW`
+(the union of the marketplaces attributed to the current sources this
+run). Any name in `OLD` but not in `NEW` is an orphan -- a marketplace
+whose source was removed from `.kanon`, or whose per-dependency
 `KANON_SOURCE_<alias>_MARKETPLACE` flag was turned off -- and is
 unregistered from `~/.claude` via `claude plugin marketplace remove`
 (idempotent). Disabling a dependency's marketplace flag therefore prunes
 exactly what that dependency previously registered. The lockfile is then
 rewritten with each source's ledger refreshed to what it registered this
-run.
+run. (A plain `kanon install` against a drifted `.kanon` does not reach
+this path: it fails fast first -- see
+[Install reconcile model](#install-reconcile-model).)
 
 **`kanon clean --orphans`.** Before the normal teardown, this unregisters
 the marketplaces of orphaned sources -- `[[sources]]` entries recorded in
@@ -549,32 +634,37 @@ and `.kanon.lock` alone.
 ### Lockfile-hash drift
 
 When the `kanon_hash` computed from the current `.kanon` file differs
-from the value recorded in the lockfile, the behaviour follows the
-npm-like model described under [Install reconcile model](#install-reconcile-model):
+from the value recorded in the lockfile, the behaviour follows the model
+described under [Install reconcile model](#install-reconcile-model):
 
-- **Plain `kanon install` reconciles** (the `npm install` analogue).
-  Removed sources (orphans) are pruned, newly-added and changed-spec
-  sources are resolved fresh, unchanged sources preserve their locked
-  SHA, and the lockfile is rebuilt and written **once at the end on
-  success only**. No error is raised for ordinary edits to `.kanon`.
-
-- **`kanon install --strict-lock` errors on the drift** (the `npm ci`
-  analogue) and **never mutates the lockfile**. A pure-removal drift
-  raises `OrphanedLockEntryError` (naming each orphan); any other drift
-  (a newly-added source, or a changed ref spec) raises
-  `KanonHashMismatchError`:
+- **Plain `kanon install` fails fast** (exit 1) and **never mutates the
+  lockfile**. The FR-24 consistency check runs before any resolution and
+  rejects an alias-set drift (a source added to or removed from `.kanon`)
+  or a per-alias ref-spec mismatch with an actionable error, for example:
 
 ```text
-ERROR: .kanon has been modified since the lockfile was written.
-  Lockfile kanon_hash : <old-hash>
-  Current  kanon_hash : <new-hash>
-  Remediation: run 'kanon install --refresh-lock' to rebuild the entire
-  lockfile, or 'kanon install --refresh-lock-source <name>' to re-resolve
-  one source chain while preserving all other lockfile entries.
+ERROR: .kanon and .kanon.lock alias sets differ.
+  Declared in .kanon but missing from .kanon.lock: <new-alias>
+  Present in .kanon.lock but not declared in .kanon: <orphan-alias>
+  Remediation: run 'kanon install --reconcile' to reconcile .kanon.lock
+  with the current .kanon declarations, or 'kanon install --refresh-lock'
+  to rebuild the lock from scratch.
 ```
 
-`--strict-lock` is the gate to use in CI when the lockfile must be
-treated as authoritative and any drift should fail the pipeline.
+- **`kanon install --reconcile` reconciles** (the `npm install` analogue)
+  and rewrites the lock on success. Removed sources (orphans) are pruned,
+  newly-added and changed-spec sources are resolved fresh, unchanged
+  sources preserve their locked SHA, and the lockfile is rebuilt and
+  written **once at the end on success only**.
+
+- **`kanon install --refresh-lock`** discards the lockfile and rebuilds it
+  from scratch; `--refresh-lock-source <name>` re-resolves one source
+  chain while preserving all other lockfile entries.
+
+`--strict-lock` additionally rejects an orphaned lock entry that survives
+a `kanon_hash` match (a source present in `.kanon.lock` but absent from
+`.kanon`); ordinary drift already fails the default install, so strict is
+effectively the default for drift now.
 
 ### Branch drift
 
@@ -611,17 +701,37 @@ and during `LOCKFILE_CONSISTENT` replay.
 
 ## Install reconcile model
 
-`kanon install` treats `.kanon` and `.kanon.lock` the way `npm` treats
-`package.json` and `package-lock.json`.
+`kanon install` treats `.kanon` and `.kanon.lock` like `npm ci` by
+default: the committed lockfile is authoritative and any drift between
+`.kanon` and `.kanon.lock` is a hard error. The lenient `npm install`
+style reconcile is opt-in via `--reconcile`.
 
-### Plain `kanon install` -- reconcile (`npm install`)
+### Plain `kanon install` -- fail fast on drift (`npm ci`)
 
 When `.kanon` is unchanged since the lockfile was written
 (`LOCKFILE_CONSISTENT`), plain install replays every locked SHA verbatim
 and does not touch the remote or the lockfile.
 
-When `.kanon` has changed (the `kanon_hash` differs), plain install
-**reconciles** the lockfile to the new `.kanon`:
+When `.kanon` has drifted, the default `kanon install` runs the FR-24
+consistency check **before** resolving anything, exits 1, and **never
+mutates the lockfile**. Drift is either:
+
+- **Alias-set drift** -- a source added to or removed from `.kanon` since
+  the lock was written (the `.kanon` and `.kanon.lock` alias sets differ).
+- **Per-alias ref-spec mismatch** -- a source whose `.kanon` revision
+  differs from the `ref_spec` recorded in the lock.
+
+Both raise `LockfileConsistencyError` with the remediation: run
+`kanon install --reconcile` (lenient prune + reconcile) or
+`kanon install --refresh-lock` (full rebuild). The previous lenient
+default (auto-prune orphans + reconcile + exit 0) has been removed, and
+the `BUG: ... kanon_hash consistency violation` line it printed is gone.
+
+### `kanon install --reconcile` -- reconcile (`npm install`)
+
+`--reconcile` opts in to the lenient reconcile. When `.kanon` has changed
+(the `kanon_hash` differs), it reconciles the lockfile to the new
+`.kanon`:
 
 - **Prune** sources removed from `.kanon` (orphaned lock entries); one
   `pruned orphaned lock entry: <name>` info-line is emitted per orphan.
@@ -639,24 +749,20 @@ Info-line emitted on success:
 lockfile reconciled with .kanon (N sources, M projects)
 ```
 
-This means the common edit-then-install loop -- `kanon add`/`kanon
-remove` followed by `kanon install` -- "just works" without any flag,
+This makes the common edit-then-install loop -- `kanon add`/`kanon
+remove` followed by `kanon install --reconcile` -- "just work",
 including the case where one source is removed and another added in the
 same edit.
 
-### `kanon install --strict-lock` -- error on drift (`npm ci`)
+### `kanon install --strict-lock` -- reject surviving orphans
 
-`--strict-lock` makes the lockfile authoritative. Any drift between
-`.kanon` and the lockfile is a hard error and the lockfile is **never**
-mutated:
-
-- A pure-removal drift raises `OrphanedLockEntryError` listing each
-  orphan.
-- Any other drift (addition or changed ref spec) raises
-  `KanonHashMismatchError` (see [Lockfile-hash drift](#lockfile-hash-drift)).
-
-Use `--strict-lock` in CI to fail fast when a build's `.kanon` has
-drifted from its committed lockfile.
+Ordinary drift already fails the default install, so `--strict-lock` is
+effectively the default for drift. It additionally rejects an orphaned
+lock entry that survives a `kanon_hash` match -- a source present in
+`.kanon.lock` but absent from `.kanon` (e.g. after `kanon remove`) that
+did not change the hash. Remediation: restore the missing
+`KANON_SOURCE_<name>_*` triples in `.kanon`, or run with `--reconcile`
+to prune.
 
 ### `kanon install --refresh-lock` -- force rebuild
 

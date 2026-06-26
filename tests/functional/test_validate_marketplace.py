@@ -347,7 +347,7 @@ class TestProjectUniquenessValidation:
 
 @pytest.mark.functional
 class TestTagFormatValidation:
-    """AC-54 / AC-TEST-003: exact-only revision tag format (spec Section 4.5 / FR-22)."""
+    """AC-54 / AC-TEST-003: pinnable revision tag format (spec Section 4.5 / FR-22, AMENDED 2026-06-25)."""
 
     @pytest.mark.parametrize(
         "valid_revision",
@@ -356,13 +356,19 @@ class TestTagFormatValidation:
             "refs/tags/example/proj/2.3.4",
             "refs/tags/example/proj/2024.6",
             "refs/tags/deep/nested/proj/1.2.0a1",
+            "refs/heads/main",
+            "refs/heads/feature/my-branch",
+            "a" * 40,
         ],
     )
-    def test_exact_tag_revision_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
-        """AC-54 positive: an exact refs/tags/<path>/<pep440> revision passes validation.
+    def test_pinnable_revision_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
+        """AC-54 positive: an exact tag, a refs/heads/<name> branch ref, or a 40-hex SHA passes.
 
         Covers full PEP 440 trailing components (releases, calver, prereleases)
-        on deep tag paths -- the exact-only content scheme.
+        on deep tag paths, plus branch refs and commit SHAs -- the pinnable
+        content scheme. The fixture's <project remote="r"> has no resolvable
+        <remote> definition, so the existence check is skipped and only the
+        pinnable-format check runs.
         """
         repo_root = _make_repo(tmp_path)
         _write_xml(
@@ -373,7 +379,7 @@ class TestTagFormatValidation:
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
         assert result.returncode == 0, (
-            f"AC-54: expected exit 0 for exact-tag revision={valid_revision!r}.\n"
+            f"AC-54: expected exit 0 for pinnable revision={valid_revision!r}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert result.stderr == "", f"AC-CHANNEL-001: expected no stderr on success.\nstderr: {result.stderr!r}"
@@ -389,13 +395,12 @@ class TestTagFormatValidation:
             "refs/tags/example/proj/*",
             "refs/tags/no-semver",
             "random-string",
-            "refs/heads/main",
             "develop",
             "feature/my-branch",
         ],
     )
-    def test_non_exact_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
-        """AC-54 negative: branches, the wildcard, constraints, and malformed shapes fail.
+    def test_non_pinnable_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
+        """AC-54 negative: bare branches, the wildcard, constraints, and malformed shapes fail.
 
         AC-CHANNEL-001: error goes to stderr, not stdout.
         """

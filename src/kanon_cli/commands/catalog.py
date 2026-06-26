@@ -68,7 +68,7 @@ from kanon_cli.constants import (
 from kanon_cli.core.manifest import collect_remote_url_findings
 from kanon_cli.core.marketplace_validator import (
     _INVALID_REVISION_HINT,
-    _is_exact_tag_revision,
+    _is_pinnable_revision,
     _iter_project_revisions,
 )
 from kanon_cli.core.metadata import audit_catalog_metadata, derive_source_name, find_catalog_entry_files
@@ -614,20 +614,22 @@ AUDIT_CHECK_REGISTRY["remote-url"] = _check_remote_url_with_os_env
 
 
 def _check_project_revision_exact_tags(target_path: pathlib.Path) -> list[AuditFinding]:
-    """Check that every ``<project revision>`` in the catalog is an exact tag.
+    """Check that every ``<project revision>`` in the catalog is pinnable.
 
     Scans every catalog-entry manifest under ``target_path/repo-specs/`` and
     validates each ``<project>`` element's effective revision -- its own
     ``revision`` attribute, or the ``<default revision>`` it inherits when the
-    attribute is omitted -- against the SAME exact-only rule that
+    attribute is omitted -- against the SAME pinnable rule that
     ``kanon validate marketplace`` enforces, by reusing the shared
-    :func:`kanon_cli.core.marketplace_validator._is_exact_tag_revision`
-    predicate (DRY: the exact-tag grammar is never duplicated).
+    :func:`kanon_cli.core.marketplace_validator._is_pinnable_revision`
+    predicate (DRY: the pinnable grammar is never duplicated).
 
-    A branch, the ``*`` wildcard, and a single or compound version-range
-    constraint (e.g. ``>=0.1.0,<1.0.0``) are all rejected as ERROR findings
-    (code ``T002``) so that catalog audit and validate marketplace agree: a
-    revision validate marketplace rejects is also rejected here.
+    A deep-path tag, a ``refs/heads/<name>`` branch ref, and a 40-hex commit SHA
+    are accepted; the ``*`` wildcard, a bare branch name, and a single or
+    compound version-range constraint (e.g. ``>=0.1.0,<1.0.0``) are rejected as
+    ERROR findings (code ``T002``) so that catalog audit and validate
+    marketplace agree: a revision validate marketplace rejects is rejected here
+    identically (AMENDED 2026-06-25).
 
     Args:
         target_path: Root of the manifest repo (must contain ``repo-specs/``).
@@ -638,7 +640,7 @@ def _check_project_revision_exact_tags(target_path: pathlib.Path) -> list[AuditF
     findings: list[AuditFinding] = []
     for xml_file in find_catalog_entry_files(target_path):
         for project_name, revision, inherited in _iter_project_revisions(xml_file, target_path):
-            if _is_exact_tag_revision(revision):
+            if _is_pinnable_revision(revision):
                 continue
             source = "inherited <default revision>" if inherited else "revision"
             findings.append(
@@ -652,9 +654,10 @@ def _check_project_revision_exact_tags(target_path: pathlib.Path) -> list[AuditF
                         "rejects it identically."
                     ),
                     remediation=(
-                        f"Pin {project_name!r} to an exact tag of the form "
-                        "refs/tags/<path>/<pep440> (e.g. refs/tags/my-plugin/1.0.0). "
-                        "Run 'kanon validate marketplace' to confirm the manifest is exact-tag clean."
+                        f"Pin {project_name!r} to an exact tag refs/tags/<path>/<pep440> "
+                        "(e.g. refs/tags/my-plugin/1.0.0), a branch ref refs/heads/<name>, "
+                        "or a 40-hex commit SHA. "
+                        "Run 'kanon validate marketplace' to confirm the manifest is clean."
                     ),
                 )
             )
@@ -683,13 +686,14 @@ def _check_tag_format(
        are handled correctly -- only the last ``/``-delimited component is
        tested.
 
-    2. ``<project revision>`` exactness (code ``T002``, ERROR): every
+    2. ``<project revision>`` pinnability (code ``T002``, ERROR): every
        ``<project>`` element's effective revision is validated against the same
-       exact-only rule ``kanon validate marketplace`` enforces, via the shared
+       pinnable rule ``kanon validate marketplace`` enforces, via the shared
        :func:`_check_project_revision_exact_tags` helper (which reuses the
-       :func:`_is_exact_tag_revision` predicate).  A revision validate
-       marketplace rejects (a branch, the ``*`` wildcard, a version-range
-       constraint) is rejected here identically, so the two commands agree.
+       :func:`_is_pinnable_revision` predicate).  A revision validate
+       marketplace rejects (the ``*`` wildcard, a bare branch name, a
+       version-range constraint) is rejected here identically, so the two
+       commands agree.
 
     Args:
         target_path: Root of the manifest repo (must contain ``repo-specs/``).

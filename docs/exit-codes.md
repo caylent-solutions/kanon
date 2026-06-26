@@ -140,14 +140,16 @@ esac
 
 ### `kanon install` and lockfile drift
 
-`kanon install` follows the npm-like reconcile model. Plain
-`kanon install` reconciles `.kanon` against `.kanon.lock` (prune removed
-sources, resolve added/changed sources, replay unchanged ones) and exits
-`0`; ordinary `.kanon` edits do not produce a non-zero exit. To make the
-lockfile authoritative in CI, run `kanon install --strict-lock`: it exits
-`1` on any drift (an orphaned lock entry or a `kanon_hash` mismatch) and
-never mutates the lockfile. `kanon install --refresh-lock` forces a full
-rebuild and exits `0` on success. See
+`kanon install` treats the committed lockfile as authoritative by
+default. Plain `kanon install` runs the consistency check before
+resolving and exits `1` (fail fast) on any drift between `.kanon` and
+`.kanon.lock` -- an alias-set drift or a per-alias ref-spec mismatch --
+and never mutates the lockfile. To reconcile a drifted pair, run
+`kanon install --reconcile`: it prunes removed sources, resolves
+added/changed sources, replays unchanged ones, rewrites the lock, and
+exits `0`. `kanon install --refresh-lock` forces a full rebuild and exits
+`0` on success. `--strict-lock` additionally fails on an orphaned lock
+entry that survives a `kanon_hash` match. See
 [docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
 
 ### Gate on `kanon doctor` for workspace health checks

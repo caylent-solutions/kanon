@@ -36,20 +36,22 @@ alias-keyed `KANON_SOURCE_<alias>_*` blocks into `.kanon`, and from then
 on `kanon install` works from those blocks with no catalog source.
 
 On first run -- or when `--refresh-lock` is passed -- the lockfile
-`.kanon.lock` is written at schema v4. Subsequent runs in a consistent
+`.kanon.lock` is written at schema v5. Subsequent runs in a consistent
 state install directly from the lockfile without re-resolving.
 
 ## The reconcile model
 
-`kanon install` follows an npm-like reconcile model:
+`kanon install` treats the committed lockfile as authoritative by default
+(npm-ci style); the lenient reconcile is opt-in via `--reconcile`:
 
 - **Lockfile consistent** (`.kanon.lock` present and its `kanon_hash`
   matches `.kanon`): replay the pinned SHAs verbatim. No re-resolution.
-- **Lockfile drifted** (`.kanon.lock` present but `kanon_hash` differs,
-  e.g. after editing `.kanon`): by default, reconcile -- prune orphaned
-  entries, resolve added/changed sources fresh, replay unchanged ones,
-  and rewrite the lock once on success. With `--strict-lock` this drift
-  is a hard error instead (npm-ci style).
+- **Lockfile drifted** (`.kanon.lock` present but `.kanon` has changed,
+  e.g. after editing `.kanon`): by default this is a hard error -- the
+  consistency check runs before resolving and exits `1` without mutating
+  the lock. Pass `--reconcile` to prune orphaned entries, resolve
+  added/changed sources fresh, replay unchanged ones, and rewrite the
+  lock once on success.
 - **No lockfile**: resolve everything from `.kanon` and write
   `.kanon.lock`.
 
@@ -79,9 +81,10 @@ removed; the shared `KANON_HOME` store subsumes them.
 
 | Flag | Description |
 |------|-------------|
+| `--reconcile` | Opt in to the lenient reconcile when `.kanon` and `.kanon.lock` have drifted: prune orphaned entries, re-resolve added/changed sources, replay unchanged ones, and rewrite `.kanon.lock` on success. Without this flag a drifted pair fails fast. |
 | `--refresh-lock` | Ignore the existing lockfile, re-resolve every transitive version from scratch against the committed `.kanon`, and overwrite `.kanon.lock`. |
 | `--refresh-lock-source <name>` | Re-resolve exactly one top-level source's full chain while preserving every other source's lockfile entries verbatim. `<name>` may be the `KANON_SOURCE_<name>` alias or a catalog entry name. |
-| `--strict-lock` | Promote orphaned lock entries (and a `kanon_hash` drift) to a hard error instead of reconciling them (see [Orphaned lockfile entries](#orphaned-lockfile-entries)). |
+| `--strict-lock` | Additionally fail on an orphaned lock entry that survives a `kanon_hash` match (a source in `.kanon.lock` but absent from `.kanon`). Ordinary drift already fails the default install (see [Orphaned lockfile entries](#orphaned-lockfile-entries)). |
 | `--strict-drift` | Promote branch drift (a locked SHA differing from the branch's current tip) to a hard error instead of reusing the locked SHA. |
 | `--lock-file <path>` | Path to the lock file (default: `<kanon-file>.lock`; env `KANON_LOCK_FILE`). |
 
@@ -95,37 +98,41 @@ alias no longer has a matching `KANON_SOURCE_<alias>_URL` block in
 example, via `kanon remove`) but the lockfile has not yet been updated to
 reflect that removal.
 
-### Default behaviour: auto-prune
+### Default behaviour: fail fast
 
-By default, `kanon install` detects orphaned lockfile entries, removes them
-from the in-memory lockfile, and emits one INFO line per orphan:
+By default, `kanon install` detects orphaned lockfile entries (an
+alias-set drift) with the consistency check that runs **before** any
+resolution, exits `1`, and **never mutates the lockfile**. The error
+enumerates every orphaned source by name and points at the remediation
+flags:
 
 ```text
-pruned orphaned lock entry: <alias>
+ERROR: .kanon and .kanon.lock alias sets differ.
+  Present in .kanon.lock but not declared in .kanon: alpha
+  Remediation: run 'kanon install --reconcile' to reconcile .kanon.lock
+  with the current .kanon declarations, or 'kanon install --refresh-lock'
+  to rebuild the lock from scratch.
 ```
 
-For example, if a source aliased `alpha` was removed from `.kanon` and
-`.kanon.lock` still contains its entry, running `kanon install` produces:
+### Opt-in prune path: --reconcile
+
+To prune the orphans and rewrite the lock, pass `--reconcile`:
+
+```bash
+kanon install --reconcile
+```
+
+With `--reconcile`, `kanon install` removes each orphan from the
+in-memory lockfile and emits one INFO line per orphan:
 
 ```text
 pruned orphaned lock entry: alpha
 ```
 
 The lockfile is then rewritten without the orphaned entry and installation
-continues normally. No operator intervention is required.
-
-### Opt-in error path: --strict-lock
-
-If you want `kanon install` to fail loudly instead of silently pruning
-orphaned entries, pass `--strict-lock`:
-
-```bash
-kanon install --strict-lock
-```
-
-With `--strict-lock`, the command exits non-zero and enumerates every
-orphaned source by name so you can decide intentionally. For options to
-resolve the error, see
+continues normally. `--strict-lock` goes the other way: it additionally
+fails on an orphan that survives a `kanon_hash` match. For options to
+resolve a strict-lock error, see
 [docs/troubleshooting.md -- 15. Strict-lock Orphan Errors](troubleshooting.md#15-strict-lock-orphan-errors).
 
 ### Worked example
@@ -138,7 +145,13 @@ entry. You then remove the source:
 kanon remove my_lib
 ```
 
-The next bare `kanon install` automatically reconciles the lockfile:
+The next bare `kanon install` fails fast on the drift. Reconcile it with:
+
+```bash
+kanon install --reconcile
+```
+
+which prunes the orphan:
 
 ```text
 pruned orphaned lock entry: my_lib

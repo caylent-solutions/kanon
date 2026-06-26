@@ -362,8 +362,8 @@ def _check_orphan_locks(
                     code="ORPHAN_LOCK",
                     message=(f"orphan lock entry: source '{source.name}' is in .kanon.lock but absent from .kanon"),
                     remediation=(
-                        "Run 'kanon install' to prune (or 'kanon install --strict-lock' "
-                        "to keep the lockfile authoritative)."
+                        "Run 'kanon install --reconcile' to prune (or "
+                        "'kanon remove <name>' to drop the source from .kanon.lock)."
                     ),
                 )
             )

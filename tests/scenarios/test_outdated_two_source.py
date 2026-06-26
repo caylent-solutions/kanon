@@ -123,7 +123,7 @@ def _write_lockfile(lock_file: pathlib.Path, sources: list[dict[str, str]]) -> N
             ``ref_spec``, ``resolved_ref``, ``resolved_sha`` and ``path``.
     """
     lines = [
-        "schema_version = 4",
+        "schema_version = 5",
         'generated_at = "2026-01-01T00:00:00Z"',
         'generator = "kanon-cli/scenario"',
         f'kanon_hash = "sha256:{"a" * 64}"',

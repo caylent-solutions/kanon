@@ -48,8 +48,9 @@ emitted). Exit code is 1 when any error-level finding is detected.
   When supplied, this flag takes highest precedence in the effective
   catalog source resolution (see subcheck 6 below). Overrides the
   `KANON_CATALOG_SOURCES` environment variable. The lockfile no longer
-  carries a catalog source: schema v4 removed the `[catalog]` block, so
-  the lockfile does not participate in catalog-source resolution.
+  carries a catalog source: the current schema v5 (like v4 before it) has
+  no `[catalog]` block, so the lockfile does not participate in
+  catalog-source resolution.
 
 `--refresh-completion-cache`
 : Subcheck 8: Invalidate all files under `${KANON_HOME}/cache/completion-cache/`,
